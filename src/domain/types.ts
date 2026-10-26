@@ -35,6 +35,10 @@ export type DomainError =
   | { kind: "invalid-timestamp"; message: string }
   | { kind: "invalid-untrusted-text"; message: string }
   | { kind: "invalid-signal-id"; message: string }
+  | { kind: "invalid-evidence"; message: string }
+  | { kind: "invalid-signal"; message: string }
+  | { kind: "invalid-code-snippet"; message: string }
+  | { kind: "invalid-cant-tell"; message: string }
   | { kind: "invalid-clone-group-id"; message: string }
   | { kind: "invalid-cache-key"; message: string }
   | { kind: "invalid-page-size"; message: string };
