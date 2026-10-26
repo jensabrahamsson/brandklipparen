@@ -3,6 +3,7 @@
 // functions of the bytecode and never throw. No thresholds, weights or
 // signature tables live here; each reported selector is either paired with
 // its jump-target PC offset or explicitly marked unknown (A-15).
+import { stripCborFooter } from "./metadata.ts";
 import { PcOffset, Selector } from "./types.ts";
 import type { Bytecode, PcOffset as PcOffsetType, Selector as SelectorType } from "./types.ts";
 
@@ -117,35 +118,10 @@ export function opcodeName(opcode: number): string {
   return OPCODE_NAMES[opcode & 0xff] ?? "UNDEFINED";
 }
 
-// Length of the executable prefix: the trailing 53-byte CBOR metadata
-// footer is excluded, mirroring the rule behind CodeHash and SkeletonHash
-// in ./types.ts. Bytes after an INVALID marker are still swept linearly;
+// Linear sweep over the executable prefix: the CBOR metadata footer is cut
+// through the shared helper in ./metadata.ts, the same rule behind CodeHash
+// and SkeletonHash. Bytes after an INVALID marker are still swept linearly;
 // only the footer region is cut, so alignment can never throw the scan.
-function executableLength(bytecode: Bytecode): number {
-  if (bytecode.length < 53) {
-    return bytecode.length;
-  }
-  const start = bytecode.length - 53;
-  const ascii = (index: number): string => String.fromCharCode(bytecode[index] ?? 0);
-  const tag = ascii(start + 2) + ascii(start + 3) + ascii(start + 4) + ascii(start + 5);
-  const compiler =
-    ascii(start + 43) + ascii(start + 44) + ascii(start + 45) + ascii(start + 46);
-  if (
-    bytecode[start] === 0xa2 &&
-    bytecode[start + 1] === 0x64 &&
-    tag === "ipfs" &&
-    bytecode[start + 6] === 0x58 &&
-    bytecode[start + 7] === 0x22 &&
-    bytecode[start + 42] === 0x64 &&
-    compiler === "solc" &&
-    bytecode[start + 47] === 0x43 &&
-    bytecode[start + 51] === 0x00 &&
-    bytecode[start + 52] === 0x33
-  ) {
-    return start;
-  }
-  return bytecode.length;
-}
 
 export type Instruction = {
   readonly pc: number;
@@ -158,15 +134,16 @@ export type Instruction = {
 // so data never decodes as opcodes. A truncated trailing PUSH takes the
 // bytes that remain and ends the sweep; the sweep never throws.
 export function disassemble(bytecode: Bytecode): readonly Instruction[] {
-  const end = executableLength(bytecode);
+  const executable = stripCborFooter(bytecode);
+  const end = executable.length;
   const out: Instruction[] = [];
   let pc = 0;
   while (pc < end) {
-    const opcode = bytecode[pc] ?? 0;
+    const opcode = executable[pc] ?? 0;
     if (opcode >= 0x60 && opcode <= 0x7f) {
       const width = opcode - 0x5f;
       const available = Math.min(width, end - pc - 1);
-      const immediate = bytecode.slice(pc + 1, pc + 1 + available);
+      const immediate = executable.slice(pc + 1, pc + 1 + available);
       out.push({ pc, opcode, name: opcodeName(opcode), immediate });
       pc += 1 + available;
     } else {

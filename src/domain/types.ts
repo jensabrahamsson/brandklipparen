@@ -3,6 +3,7 @@
 // each type is the single entry path and returns Result, never throws.
 // Values are immutable by value (primitives) or freshly allocated on every
 // parse (byte arrays), so construction never shares mutable state.
+import { stripCborFooter } from "./metadata.ts";
 import { err, ok } from "./result.ts";
 import type { Result } from "./result.ts";
 
@@ -257,54 +258,22 @@ export const Bytecode = {
   },
 };
 
-// Standard Solidity CBOR metadata footer: 53 bytes ending in 00 33 with an
-// ipfs entry and a solc version. Returns the start index or -1.
-function cborFooterStart(bytes: Uint8Array): number {
-  if (bytes.length < 53) {
-    return -1;
-  }
-  const start = bytes.length - 53;
-  const ascii = (index: number): string => String.fromCharCode(bytes[index] ?? 0);
-  const text = ascii(start + 2) + ascii(start + 3) + ascii(start + 4) + ascii(start + 5);
-  const compiler =
-    ascii(start + 43) + ascii(start + 44) + ascii(start + 45) + ascii(start + 46);
-  if (
-    bytes[start] === 0xa2 &&
-    bytes[start + 1] === 0x64 &&
-    text === "ipfs" &&
-    bytes[start + 6] === 0x58 &&
-    bytes[start + 7] === 0x22 &&
-    bytes[start + 42] === 0x64 &&
-    compiler === "solc" &&
-    bytes[start + 47] === 0x43 &&
-    bytes[start + 51] === 0x00 &&
-    bytes[start + 52] === 0x33
-  ) {
-    return start;
-  }
-  return -1;
-}
-
-// keccak256 of the executable bytecode with CBOR metadata removed.
+// keccak256 of the executable bytecode with CBOR metadata removed through
+// the shared footer helper in ./metadata.ts.
 export type CodeHash = string & { readonly __brand: "CodeHash" };
 export const CodeHash = {
   of(bytecode: Bytecode): Result<CodeHash, DomainError> {
-    const footer = cborFooterStart(bytecode);
-    const executable = footer === -1 ? bytecode : bytecode.slice(0, footer);
-    return ok(keccak256Hex(executable) as CodeHash);
+    return ok(keccak256Hex(stripCborFooter(bytecode)) as CodeHash);
   },
 };
 
-// Hash over the opcode sequence with PUSH operands and CBOR metadata masked,
+// Hash over the opcode sequence of the executable prefix (CBOR metadata
+// stripped through the shared footer helper) with PUSH operands masked,
 // so equal templates with different parameters share one hash (glossary).
 export type SkeletonHash = string & { readonly __brand: "SkeletonHash" };
 export const SkeletonHash = {
   of(bytecode: Bytecode): Result<SkeletonHash, DomainError> {
-    const masked = Uint8Array.from(bytecode);
-    const footer = cborFooterStart(masked);
-    if (footer !== -1) {
-      masked.fill(0, footer);
-    }
+    const masked = Uint8Array.from(stripCborFooter(bytecode));
     let i = 0;
     while (i < masked.length) {
       const opcode = masked[i] ?? 0;
