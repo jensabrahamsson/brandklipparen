@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 860" width="1200" height="860" font-family="Inter, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif">
+  <title>Brandklipparen – logoförslag, översikt</title>
+  <defs>
+    <symbol id="vakt" viewBox="0 0 100 100">
+      <path d="M40 30 L48 8 L56 25 L64 27 L58 66 L66 96 L24 96 Q26 56 40 30 Z" fill="#4E6A8F"/>
+      <path d="M56 25 L64 27 L90 55 L92 65 L84 71 L70 65 L58 66 L52 44 Z" fill="#7E9CC2"/>
+      <path d="M62 37 L68 40 L62 43 Z" fill="#D4B36A"/>
+    </symbol>
+    <symbol id="springaren" viewBox="0 0 100 104">
+      <rect x="20" y="92" width="60" height="8" rx="2" fill="#7E9CC2"/>
+      <rect x="27" y="84" width="46" height="5" rx="1.5" fill="#7E9CC2"/>
+      <path d="M30 81 L31 62 Q31 40 42 27 L46 12 L54 22 Q73 25 83 47 L87 59 L77 63 L67 55 L61 57 Q71 69 71 81 Z" fill="#7E9CC2"/>
+      <path d="M35 44 L44 40 M33 54 L43 51 M32 64 L42 62" stroke="#0E1116" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="63" cy="37" r="3" fill="#D4B36A"/>
+    </symbol>
+    <symbol id="bytemanke" viewBox="-6 0 106 100">
+      <path d="M40 30 L48 8 L56 25 L64 27 L90 55 L92 65 L84 71 L70 65 L58 66 L66 96 L24 96 Q26 56 40 30 Z" fill="#7E9CC2"/>
+      <rect x="18" y="31" width="16" height="6" rx="3" fill="#D4B36A"/>
+      <rect x="4" y="43" width="24" height="6" rx="3" fill="#4E6A8F"/>
+      <rect x="12" y="55" width="13" height="6" rx="3" fill="#4E6A8F"/>
+      <rect x="6" y="67" width="18" height="6" rx="3" fill="#4E6A8F"/>
+      <path d="M62 37 L68 40 L62 43 Z" fill="#0E1116"/>
+    </symbol>
+  </defs>
+
+  <rect width="1200" height="860" fill="#0E1116"/>
+  <text x="60" y="70" fill="#E6EAF0" font-size="26" font-weight="600">Logoförslag</text>
+  <text x="60" y="98" fill="#8B95A3" font-size="15">Tre riktningar. Alla framåtvända (mot höger = framåt i tidslinjen), örat rest, ett öga i kornguld som enda varma detalj.</text>
+
+  <!-- tre kort -->
+  <g>
+    <rect x="60" y="130" width="340" height="400" rx="16" fill="#161B22" stroke="#262D38"/>
+    <use href="#vakt" x="150" y="170" width="160" height="160"/>
+    <text x="84" y="380" fill="#E6EAF0" font-size="18" font-weight="600">A · Vakt</text>
+    <text x="84" y="408" fill="#8B95A3" font-size="14">Fasetterat huvud i två blå toner.</text>
+    <text x="84" y="428" fill="#8B95A3" font-size="14">Rest öra = vaksamhet. Lugnast och</text>
+    <text x="84" y="448" fill="#8B95A3" font-size="14">mest tidlöst, fungerar ner till 16 px.</text>
+    <rect x="84" y="476" width="112" height="26" rx="13" fill="#1F3A2E"/>
+    <text x="140" y="494" fill="#5BD19A" font-size="13" font-weight="600" text-anchor="middle">Rekommenderas</text>
+  </g>
+  <g>
+    <rect x="430" y="130" width="340" height="400" rx="16" fill="#161B22" stroke="#262D38"/>
+    <use href="#springaren" x="520" y="166" width="160" height="166"/>
+    <text x="454" y="380" fill="#E6EAF0" font-size="18" font-weight="600">B · Springaren</text>
+    <text x="454" y="408" fill="#8B95A3" font-size="14">Schackets häst heter springare på</text>
+    <text x="454" y="428" fill="#8B95A3" font-size="14">svenska. Pjäsen hoppar över hinder,</text>
+    <text x="454" y="448" fill="#8B95A3" font-size="14">precis som du ska hoppa över fällor.</text>
+  </g>
+  <g>
+    <rect x="800" y="130" width="340" height="400" rx="16" fill="#161B22" stroke="#262D38"/>
+    <use href="#bytemanke" x="886" y="170" width="170" height="160"/>
+    <text x="824" y="380" fill="#E6EAF0" font-size="18" font-weight="600">C · Bytemanke</text>
+    <text x="824" y="408" fill="#8B95A3" font-size="14">Manen är rader av bytecode. Berättar</text>
+    <text x="824" y="428" fill="#8B95A3" font-size="14">vad produkten gör, men är detaljrikare</text>
+    <text x="824" y="448" fill="#8B95A3" font-size="14">och tappar manen under 24 px.</text>
+  </g>
+
+  <!-- lockup -->
+  <text x="60" y="590" fill="#8B95A3" font-size="13" font-weight="600" letter-spacing="1.5">ORDBILD OCH LOCKUP</text>
+  <rect x="60" y="606" width="620" height="120" rx="16" fill="#161B22" stroke="#262D38"/>
+  <use href="#vakt" x="88" y="626" width="80" height="80"/>
+  <text x="184" y="678" fill="#E6EAF0" font-size="38" font-weight="600" letter-spacing="-0.5">brandklipparen</text>
+  <text x="186" y="702" fill="#8B95A3" font-size="14">Senses the rug before you see it.</text>
+
+  <!-- ljus bakgrund -->
+  <rect x="700" y="606" width="440" height="120" rx="16" fill="#F4F2EC"/>
+  <g transform="translate(728 626)">
+    <svg viewBox="0 0 100 100" width="80" height="80">
+      <path d="M40 30 L48 8 L56 25 L64 27 L58 66 L66 96 L24 96 Q26 56 40 30 Z" fill="#2E4566"/>
+      <path d="M56 25 L64 27 L90 55 L92 65 L84 71 L70 65 L58 66 L52 44 Z" fill="#4E6A8F"/>
+      <path d="M62 37 L68 40 L62 43 Z" fill="#B8913A"/>
+    </svg>
+  </g>
+  <text x="824" y="678" fill="#1A2230" font-size="30" font-weight="600" letter-spacing="-0.5">brandklipparen</text>
+  <text x="826" y="702" fill="#5A6472" font-size="13">Ljus variant: djupare blå, mörkare guld</text>
+
+  <!-- små storlekar -->
+  <text x="60" y="776" fill="#8B95A3" font-size="13" font-weight="600" letter-spacing="1.5">SMÅ STORLEKAR (A)</text>
+  <use href="#vakt" x="60" y="790" width="48" height="48"/>
+  <use href="#vakt" x="124" y="798" width="32" height="32"/>
+  <use href="#vakt" x="172" y="806" width="24" height="24"/>
+  <use href="#vakt" x="212" y="810" width="16" height="16"/>
+  <text x="250" y="822" fill="#5E6876" font-size="13">48 · 32 · 24 · 16 px: favicon och plånboksnotiser</text>
+</svg>

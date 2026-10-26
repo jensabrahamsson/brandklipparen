@@ -1,0 +1,193 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 1020" width="1440" height="1020">
+  <title>Brandklipparen – skiss 1: startsida</title>
+  <style>
+    text { font-family: Inter, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif; fill: #E6EAF0; }
+    .m { font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; }
+    .s { fill: #8B95A3; }
+    .q { fill: #5E6876; }
+    .b { font-weight: 600; }
+    .lo { fill: #3FB97F; } .mid { fill: #E5A13A; } .hi { fill: #E5534B; }
+    .th { font-size: 12px; fill: #5E6876; font-weight: 600; letter-spacing: 0.8px; }
+  </style>
+  <defs>
+    <symbol id="vakt" viewBox="0 0 100 100">
+      <path d="M40 30 L48 8 L56 25 L64 27 L58 66 L66 96 L24 96 Q26 56 40 30 Z" fill="#4E6A8F"/>
+      <path d="M56 25 L64 27 L90 55 L92 65 L84 71 L70 65 L58 66 L52 44 Z" fill="#7E9CC2"/>
+      <path d="M62 37 L68 40 L62 43 Z" fill="#D4B36A"/>
+    </symbol>
+  </defs>
+
+  <rect width="1440" height="1020" fill="#0E1116"/>
+
+  <!-- NAV -->
+  <rect width="1440" height="64" fill="#0E1116"/>
+  <line x1="0" y1="64" x2="1440" y2="64" stroke="#1E242D"/>
+  <use href="#vakt" x="32" y="14" width="34" height="34"/>
+  <text x="74" y="39" font-size="18" class="b">brandklipparen</text>
+  <text x="290" y="38" font-size="14" class="b">Just deployed</text>
+  <text x="412" y="38" font-size="14" class="s">Watchlist</text>
+  <text x="500" y="38" font-size="14" class="s">API</text>
+  <text x="548" y="38" font-size="14" class="s">MCP</text>
+  <rect x="1060" y="18" width="236" height="28" rx="14" fill="#161B22" stroke="#262D38"/>
+  <circle cx="1078" cy="32" r="4" fill="#3FB97F"/>
+  <text x="1090" y="37" font-size="12" class="s">Ethereum · block <tspan class="m">21 408 377</tspan></text>
+  <text x="1330" y="38" font-size="14" class="s">Sign in</text>
+
+  <!-- HERO -->
+  <text x="720" y="168" font-size="40" class="b" text-anchor="middle" letter-spacing="-0.6">Know the risk before you buy.</text>
+  <text x="720" y="206" font-size="17" class="s" text-anchor="middle">Paste a contract address. Rug pull, honeypot and bot-pump risk from bytecode alone, explained in plain English.</text>
+
+  <!-- sökfält, fokuserat -->
+  <rect x="336" y="240" width="768" height="72" rx="17" fill="none" stroke="#7E9CC2" stroke-opacity="0.18" stroke-width="6"/>
+  <rect x="340" y="244" width="760" height="64" rx="14" fill="#161B22" stroke="#7E9CC2" stroke-width="1.5"/>
+  <circle cx="374" cy="274" r="8" fill="none" stroke="#8B95A3" stroke-width="2"/>
+  <line x1="380" y1="280" x2="386" y2="286" stroke="#8B95A3" stroke-width="2" stroke-linecap="round"/>
+  <text x="402" y="282" font-size="18" class="q">Paste contract address</text>
+  <text x="610" y="282" font-size="18" class="m q">0x…</text>
+  <rect x="968" y="254" width="120" height="44" rx="10" fill="#7E9CC2"/>
+  <text x="1028" y="282" font-size="15" class="b" text-anchor="middle" style="fill:#0E1116">Analyze</text>
+  <text x="720" y="340" font-size="13" class="q" text-anchor="middle">Try <tspan class="m s">0x1234…9a0f</tspan>   ·   press <tspan class="s">⌘K</tspan> anywhere   ·   result in ~3 s</text>
+
+  <!-- tre löften -->
+  <g font-size="13">
+    <circle cx="452" cy="381" r="3" fill="#7E9CC2"/>
+    <text x="462" y="386" class="s">Works on unverified contracts</text>
+    <circle cx="686" cy="381" r="3" fill="#7E9CC2"/>
+    <text x="696" y="386" class="s">Evidence for every signal</text>
+    <circle cx="888" cy="381" r="3" fill="#7E9CC2"/>
+    <text x="898" y="386" class="s">Explained by Muse</text>
+  </g>
+
+  <!-- JUST DEPLOYED -->
+  <rect x="80" y="430" width="1280" height="552" rx="16" fill="#161B22" stroke="#262D38"/>
+  <text x="112" y="476" font-size="20" class="b">Just deployed</text>
+  <circle cx="256" cy="470" r="4" fill="#3FB97F"/>
+  <circle cx="256" cy="470" r="8" fill="#3FB97F" fill-opacity="0.2"/>
+  <text x="270" y="475" font-size="13" class="s">Live · 14 new in the last 10 min</text>
+
+  <!-- filterchips -->
+  <rect x="938" y="452" width="48" height="30" rx="15" fill="#2A3A52"/>
+  <text x="962" y="472" font-size="13" class="b" text-anchor="middle">All</text>
+  <rect x="994" y="452" width="92" height="30" rx="15" fill="none" stroke="#262D38"/>
+  <circle cx="1010" cy="467" r="4" fill="#E5534B"/>
+  <text x="1020" y="472" font-size="13" class="s">High risk</text>
+  <rect x="1094" y="452" width="90" height="30" rx="15" fill="none" stroke="#262D38"/>
+  <circle cx="1110" cy="467" r="4" fill="#3FB97F"/>
+  <text x="1120" y="472" font-size="13" class="s">Low risk</text>
+  <rect x="1192" y="452" width="136" height="30" rx="15" fill="none" stroke="#262D38"/>
+  <text x="1260" y="472" font-size="13" class="s" text-anchor="middle">Unverified only</text>
+
+  <!-- kolumnrubriker -->
+  <text x="112" y="524" class="th">TOKEN</text>
+  <text x="330" y="524" class="th">AGE</text>
+  <text x="420" y="524" class="th">RISK SCORE</text>
+  <text x="580" y="524" class="th">RUG PULL</text>
+  <text x="680" y="524" class="th">HONEYPOT</text>
+  <text x="790" y="524" class="th">BOT-PUMP</text>
+  <text x="900" y="524" class="th">TOP SIGNAL</text>
+
+  <!-- rad 1: hög risk, ny -->
+  <rect x="81" y="540" width="1278" height="60" fill="#7E9CC2" fill-opacity="0.05"/>
+  <rect x="81" y="540" width="3" height="60" fill="#7E9CC2"/>
+  <line x1="96" y1="540" x2="1344" y2="540" stroke="#232A34"/>
+  <circle cx="128" cy="570" r="14" fill="#3B2F4A"/><text x="128" y="574" font-size="10" class="b" text-anchor="middle">NJ</text>
+  <text x="152" y="566" font-size="15" class="b">Nightjar <tspan class="s" font-weight="400">NJAR</tspan></text>
+  <text x="152" y="585" font-size="12" class="m q">0x71d0…2c4e</text>
+  <text x="330" y="575" font-size="14" class="s">38 s</text>
+  <rect x="420" y="556" width="104" height="28" rx="14" fill="#321A1B"/>
+  <text x="436" y="575" font-size="14" class="b hi">84</text><text x="460" y="575" font-size="13" class="hi">High</text>
+  <text x="580" y="568" font-size="14" class="b hi">62%</text><rect x="580" y="576" width="56" height="4" rx="2" fill="#262D38"/><rect x="580" y="576" width="35" height="4" rx="2" fill="#E5534B"/>
+  <text x="680" y="568" font-size="14" class="b hi">91%</text><rect x="680" y="576" width="56" height="4" rx="2" fill="#262D38"/><rect x="680" y="576" width="51" height="4" rx="2" fill="#E5534B"/>
+  <text x="790" y="568" font-size="14" class="b mid">34%</text><rect x="790" y="576" width="56" height="4" rx="2" fill="#262D38"/><rect x="790" y="576" width="19" height="4" rx="2" fill="#E5A13A"/>
+  <text x="900" y="575" font-size="14">Owner can blacklist sellers</text>
+  <text x="1330" y="575" font-size="16" class="q" text-anchor="end">›</text>
+
+  <!-- rad 2 -->
+  <line x1="96" y1="600" x2="1344" y2="600" stroke="#232A34"/>
+  <circle cx="128" cy="630" r="14" fill="#4A2A2E"/><text x="128" y="634" font-size="10" class="b" text-anchor="middle">LI</text>
+  <text x="152" y="626" font-size="15" class="b">Lingon Inu <tspan class="s" font-weight="400">LNGN</tspan></text>
+  <text x="152" y="645" font-size="12" class="m q">0x2b7c…e104</text>
+  <text x="330" y="635" font-size="14" class="s">1 min</text>
+  <rect x="420" y="616" width="104" height="28" rx="14" fill="#321A1B"/>
+  <text x="436" y="635" font-size="14" class="b hi">71</text><text x="460" y="635" font-size="13" class="hi">High</text>
+  <text x="580" y="628" font-size="14" class="b hi">77%</text><rect x="580" y="636" width="56" height="4" rx="2" fill="#262D38"/><rect x="580" y="636" width="43" height="4" rx="2" fill="#E5534B"/>
+  <text x="680" y="628" font-size="14" class="b lo">22%</text><rect x="680" y="636" width="56" height="4" rx="2" fill="#262D38"/><rect x="680" y="636" width="12" height="4" rx="2" fill="#3FB97F"/>
+  <text x="790" y="628" font-size="14" class="b mid">58%</text><rect x="790" y="636" width="56" height="4" rx="2" fill="#262D38"/><rect x="790" y="636" width="32" height="4" rx="2" fill="#E5A13A"/>
+  <text x="900" y="635" font-size="14">Owner can mint unlimited supply</text>
+  <text x="1330" y="635" font-size="16" class="q" text-anchor="end">›</text>
+
+  <!-- rad 3 -->
+  <line x1="96" y1="660" x2="1344" y2="660" stroke="#232A34"/>
+  <circle cx="128" cy="690" r="14" fill="#23394A"/><text x="128" y="694" font-size="10" class="b" text-anchor="middle">FR</text>
+  <text x="152" y="686" font-size="15" class="b">Frostbyte <tspan class="s" font-weight="400">FRST</tspan></text>
+  <text x="152" y="705" font-size="12" class="m q">0x5d02…31ac</text>
+  <text x="330" y="695" font-size="14" class="s">2 min</text>
+  <rect x="420" y="676" width="124" height="28" rx="14" fill="#2E2414"/>
+  <text x="436" y="695" font-size="14" class="b mid">46</text><text x="460" y="695" font-size="13" class="mid">Elevated</text>
+  <text x="580" y="688" font-size="14" class="b mid">38%</text><rect x="580" y="696" width="56" height="4" rx="2" fill="#262D38"/><rect x="580" y="696" width="21" height="4" rx="2" fill="#E5A13A"/>
+  <text x="680" y="688" font-size="14" class="b lo">12%</text><rect x="680" y="696" width="56" height="4" rx="2" fill="#262D38"/><rect x="680" y="696" width="7" height="4" rx="2" fill="#3FB97F"/>
+  <text x="790" y="688" font-size="14" class="b hi">64%</text><rect x="790" y="696" width="56" height="4" rx="2" fill="#262D38"/><rect x="790" y="696" width="36" height="4" rx="2" fill="#E5534B"/>
+  <text x="900" y="695" font-size="14">Whitelisted wallets can trade before launch</text>
+  <text x="1330" y="695" font-size="16" class="q" text-anchor="end">›</text>
+
+  <!-- rad 4 -->
+  <line x1="96" y1="720" x2="1344" y2="720" stroke="#232A34"/>
+  <circle cx="128" cy="750" r="14" fill="#25402F"/><text x="128" y="754" font-size="10" class="b" text-anchor="middle">KV</text>
+  <text x="152" y="746" font-size="15" class="b">Kvarn <tspan class="s" font-weight="400">KVRN</tspan></text>
+  <text x="152" y="765" font-size="12" class="m q">0x8e41…07bd</text>
+  <text x="330" y="755" font-size="14" class="s">3 min</text>
+  <rect x="420" y="736" width="96" height="28" rx="14" fill="#16291F"/>
+  <text x="436" y="755" font-size="14" class="b lo">12</text><text x="460" y="755" font-size="13" class="lo">Low</text>
+  <text x="580" y="748" font-size="14" class="b lo">8%</text><rect x="580" y="756" width="56" height="4" rx="2" fill="#262D38"/><rect x="580" y="756" width="5" height="4" rx="2" fill="#3FB97F"/>
+  <text x="680" y="748" font-size="14" class="b lo">4%</text><rect x="680" y="756" width="56" height="4" rx="2" fill="#262D38"/><rect x="680" y="756" width="3" height="4" rx="2" fill="#3FB97F"/>
+  <text x="790" y="748" font-size="14" class="b lo">15%</text><rect x="790" y="756" width="56" height="4" rx="2" fill="#262D38"/><rect x="790" y="756" width="8" height="4" rx="2" fill="#3FB97F"/>
+  <text x="900" y="755" font-size="14" class="s">Standard ERC-20, no owner functions</text>
+  <text x="1330" y="755" font-size="16" class="q" text-anchor="end">›</text>
+
+  <!-- rad 5 -->
+  <line x1="96" y1="780" x2="1344" y2="780" stroke="#232A34"/>
+  <circle cx="128" cy="810" r="14" fill="#3A3522"/><text x="128" y="814" font-size="10" class="b" text-anchor="middle">OC</text>
+  <text x="152" y="806" font-size="15" class="b">Orbit Cash <tspan class="s" font-weight="400">ORB</tspan></text>
+  <text x="152" y="825" font-size="12" class="m q">0x6a19…c3e2</text>
+  <text x="330" y="815" font-size="14" class="s">5 min</text>
+  <rect x="420" y="796" width="124" height="28" rx="14" fill="#2E2414"/>
+  <text x="436" y="815" font-size="14" class="b mid">55</text><text x="460" y="815" font-size="13" class="mid">Elevated</text>
+  <text x="580" y="808" font-size="14" class="b mid">51%</text><rect x="580" y="816" width="56" height="4" rx="2" fill="#262D38"/><rect x="580" y="816" width="29" height="4" rx="2" fill="#E5A13A"/>
+  <text x="680" y="808" font-size="14" class="b mid">30%</text><rect x="680" y="816" width="56" height="4" rx="2" fill="#262D38"/><rect x="680" y="816" width="17" height="4" rx="2" fill="#E5A13A"/>
+  <text x="790" y="808" font-size="14" class="b lo">22%</text><rect x="790" y="816" width="56" height="4" rx="2" fill="#262D38"/><rect x="790" y="816" width="12" height="4" rx="2" fill="#3FB97F"/>
+  <text x="900" y="815" font-size="14">Upgradeable proxy, logic can be swapped</text>
+  <text x="1330" y="815" font-size="16" class="q" text-anchor="end">›</text>
+
+  <!-- rad 6 -->
+  <line x1="96" y1="840" x2="1344" y2="840" stroke="#232A34"/>
+  <circle cx="128" cy="870" r="14" fill="#2B3448"/><text x="128" y="874" font-size="10" class="b" text-anchor="middle">TA</text>
+  <text x="152" y="866" font-size="15" class="b">Tundra AI <tspan class="s" font-weight="400">TNDR</tspan></text>
+  <text x="152" y="885" font-size="12" class="m q">0x3f88…a5d1</text>
+  <text x="330" y="875" font-size="14" class="s">7 min</text>
+  <rect x="420" y="856" width="104" height="28" rx="14" fill="#321A1B"/>
+  <text x="436" y="875" font-size="14" class="b hi">93</text><text x="460" y="875" font-size="13" class="hi">High</text>
+  <text x="580" y="868" font-size="14" class="b hi">70%</text><rect x="580" y="876" width="56" height="4" rx="2" fill="#262D38"/><rect x="580" y="876" width="39" height="4" rx="2" fill="#E5534B"/>
+  <text x="680" y="868" font-size="14" class="b hi">96%</text><rect x="680" y="876" width="56" height="4" rx="2" fill="#262D38"/><rect x="680" y="876" width="54" height="4" rx="2" fill="#E5534B"/>
+  <text x="790" y="868" font-size="14" class="b mid">41%</text><rect x="790" y="876" width="56" height="4" rx="2" fill="#262D38"/><rect x="790" y="876" width="23" height="4" rx="2" fill="#E5A13A"/>
+  <text x="900" y="875" font-size="14">Sell tax adjustable up to 100%</text>
+  <text x="1330" y="875" font-size="16" class="q" text-anchor="end">›</text>
+
+  <!-- rad 7 -->
+  <line x1="96" y1="900" x2="1344" y2="900" stroke="#232A34"/>
+  <circle cx="128" cy="930" r="14" fill="#2F2A40"/><text x="128" y="934" font-size="10" class="b" text-anchor="middle">HP</text>
+  <text x="152" y="926" font-size="15" class="b">Hyper Pug <tspan class="s" font-weight="400">HPUG</tspan></text>
+  <text x="152" y="945" font-size="12" class="m q">0x0c5e…6b72</text>
+  <text x="330" y="935" font-size="14" class="s">9 min</text>
+  <rect x="420" y="916" width="96" height="28" rx="14" fill="#16291F"/>
+  <text x="436" y="935" font-size="14" class="b lo">21</text><text x="460" y="935" font-size="13" class="lo">Low</text>
+  <text x="580" y="928" font-size="14" class="b lo">18%</text><rect x="580" y="936" width="56" height="4" rx="2" fill="#262D38"/><rect x="580" y="936" width="10" height="4" rx="2" fill="#3FB97F"/>
+  <text x="680" y="928" font-size="14" class="b lo">9%</text><rect x="680" y="936" width="56" height="4" rx="2" fill="#262D38"/><rect x="680" y="936" width="5" height="4" rx="2" fill="#3FB97F"/>
+  <text x="790" y="928" font-size="14" class="b lo">27%</text><rect x="790" y="936" width="56" height="4" rx="2" fill="#262D38"/><rect x="790" y="936" width="15" height="4" rx="2" fill="#3FB97F"/>
+  <text x="900" y="935" font-size="14" class="s">Fixed 2% fee, owner cannot change it</text>
+  <text x="1330" y="935" font-size="16" class="q" text-anchor="end">›</text>
+
+  <line x1="96" y1="960" x2="1344" y2="960" stroke="#232A34"/>
+
+  <!-- anteckningar (skissnivå) -->
+  <text x="80" y="1006" font-size="12" class="q">Skissanteckning: raden överst är nyss inkommen (markering bleknar efter 5 s). Klick på rad öppnar tokensidan. Färg följer alltid poängen: under 30 grön, 30–59 orange, 60+ röd.</text>
+</svg>

@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" width="1200" height="900">
+  <title>Brandklipparen – palett, typografi och komponenter</title>
+  <style>
+    text { font-family: Inter, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif; fill: #E6EAF0; }
+    .m { font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; }
+    .s { fill: #8B95A3; } .q { fill: #5E6876; } .b { font-weight: 600; }
+    .lo { fill: #3FB97F; } .mid { fill: #E5A13A; } .hi { fill: #E5534B; }
+    .th { font-size: 12px; fill: #5E6876; font-weight: 600; letter-spacing: 1.2px; }
+    .hex { font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; font-size: 12px; fill: #8B95A3; }
+  </style>
+  <defs>
+    <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="6" height="6" fill="#1A1F27"/>
+      <line x1="0" y1="0" x2="0" y2="6" stroke="#3A4250" stroke-width="2"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="900" fill="#0E1116"/>
+
+  <text x="60" y="70" font-size="26" class="b">Palett, typografi och komponenter</text>
+
+  <!-- BAS -->
+  <text x="60" y="120" class="th">BAS</text>
+  <g>
+    <rect x="60" y="134" width="120" height="72" rx="10" fill="#0E1116" stroke="#262D38"/>
+    <text x="60" y="226" font-size="13" class="b">Natt</text><text x="60" y="244" class="hex">#0E1116</text>
+    <rect x="196" y="134" width="120" height="72" rx="10" fill="#161B22"/>
+    <text x="196" y="226" font-size="13" class="b">Yta</text><text x="196" y="244" class="hex">#161B22</text>
+    <rect x="332" y="134" width="120" height="72" rx="10" fill="#262D38"/>
+    <text x="332" y="226" font-size="13" class="b">Kant</text><text x="332" y="244" class="hex">#262D38</text>
+    <rect x="468" y="134" width="120" height="72" rx="10" fill="#E6EAF0"/>
+    <text x="468" y="226" font-size="13" class="b">Text</text><text x="468" y="244" class="hex">#E6EAF0</text>
+    <rect x="604" y="134" width="120" height="72" rx="10" fill="#8B95A3"/>
+    <text x="604" y="226" font-size="13" class="b">Text 2</text><text x="604" y="244" class="hex">#8B95A3</text>
+    <rect x="740" y="134" width="120" height="72" rx="10" fill="#5E6876"/>
+    <text x="740" y="226" font-size="13" class="b">Text 3</text><text x="740" y="244" class="hex">#5E6876</text>
+  </g>
+
+  <!-- VARUMÄRKE -->
+  <text x="60" y="296" class="th">VARUMÄRKE</text>
+  <rect x="60" y="310" width="120" height="72" rx="10" fill="#7E9CC2"/>
+  <text x="60" y="402" font-size="13" class="b">Fjällblå</text><text x="60" y="420" class="hex">#7E9CC2</text>
+  <rect x="196" y="310" width="120" height="72" rx="10" fill="#4E6A8F"/>
+  <text x="196" y="402" font-size="13" class="b">Fjällblå djup</text><text x="196" y="420" class="hex">#4E6A8F</text>
+  <rect x="332" y="310" width="120" height="72" rx="10" fill="#D4B36A"/>
+  <text x="332" y="402" font-size="13" class="b">Kornguld</text><text x="332" y="420" class="hex">#D4B36A</text>
+  <text x="472" y="336" font-size="13" class="s">Fjällblå bär varumärket: logga, länkar, fokusring, primärknapp.</text>
+  <text x="472" y="358" font-size="13" class="s">Kornguld är den svenska detaljen: bara hästens öga och små accenter.</text>
+  <text x="472" y="380" font-size="13" class="s">Aldrig i data, så det inte kan förväxlas med riskfärgen orange.</text>
+
+  <!-- RISK -->
+  <text x="60" y="472" class="th">RISK (FÖLJER ALLTID POÄNGEN)</text>
+  <rect x="60" y="486" width="120" height="72" rx="10" fill="#3FB97F"/>
+  <text x="60" y="578" font-size="13" class="b">Låg 0–29</text><text x="60" y="596" class="hex">#3FB97F / #16291F</text>
+  <rect x="196" y="486" width="120" height="72" rx="10" fill="#E5A13A"/>
+  <text x="196" y="578" font-size="13" class="b">Förhöjd 30–59</text><text x="196" y="596" class="hex">#E5A13A / #2E2414</text>
+  <rect x="332" y="486" width="120" height="72" rx="10" fill="#E5534B"/>
+  <text x="332" y="578" font-size="13" class="b">Hög 60–100</text><text x="332" y="596" class="hex">#E5534B / #321A1B</text>
+  <rect x="468" y="486" width="120" height="72" rx="10" fill="url(#hatch)" stroke="#3A4250" stroke-dasharray="5 4"/>
+  <text x="468" y="578" font-size="13" class="b">Okänt</text><text x="468" y="596" class="hex">#3A4250 streckat</text>
+
+  <!-- komponenter -->
+  <text x="640" y="472" class="th">BADGES</text>
+  <rect x="640" y="490" width="96" height="28" rx="14" fill="#16291F"/>
+  <text x="656" y="509" font-size="14" class="b lo">12</text><text x="680" y="509" font-size="13" class="lo">Low</text>
+  <rect x="746" y="490" width="124" height="28" rx="14" fill="#2E2414"/>
+  <text x="762" y="509" font-size="14" class="b mid">46</text><text x="786" y="509" font-size="13" class="mid">Elevated</text>
+  <rect x="880" y="490" width="104" height="28" rx="14" fill="#321A1B"/>
+  <text x="896" y="509" font-size="14" class="b hi">84</text><text x="920" y="509" font-size="13" class="hi">High</text>
+  <text x="640" y="548" font-size="12" class="q">Siffra först, ord efter. Ordet finns så att färgblinda läser samma sak.</text>
+  <text x="640" y="584" class="th">SIGNALPÅVERKAN</text>
+  <text x="640" y="612" font-size="18" class="b hi">+24</text>
+  <text x="700" y="612" font-size="18" class="b mid">+4</text>
+  <text x="746" y="612" font-size="18" class="b lo">−5</text>
+  <text x="800" y="612" font-size="12" class="q">poäng som signalen lägger till eller drar av</text>
+
+  <!-- TYPOGRAFI -->
+  <text x="60" y="660" class="th">TYPOGRAFI</text>
+  <text x="60" y="706" font-size="40" class="b" letter-spacing="-0.6">Inter 40 / 600</text>
+  <text x="380" y="706" font-size="22" class="b">Inter 22 / 600 rubrik</text>
+  <text x="680" y="706" font-size="15">Inter 15 / 400 brödtext och förklaring</text>
+  <text x="60" y="754" font-size="14" class="m">JetBrains Mono 13–14 · 0x44337ea1 · blacklist(address) · PC 0x0a3f</text>
+  <text x="60" y="790" font-size="13" class="s">Inter för allt som läses, mono för allt som kopieras (adresser, selektorer, kod). Siffror alltid med tabular-nums.</text>
+  <text x="60" y="812" font-size="13" class="s">Engelska i produkten. Meningar i aktiv form, max två rader per förklaring, inga utropstecken, inga emojis.</text>
+
+  <text x="60" y="866" font-size="12" class="q">Hörn: kort 16 px, rader 14 px, knappar 8–10 px, badges helt rundade. Avstånd i steg om 4 px. Inga skuggor, bara ytor och 1 px kanter.</text>
+</svg>
