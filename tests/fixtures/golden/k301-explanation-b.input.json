@@ -1,0 +1,61 @@
+{
+  "templateVersion": "1.0.0",
+  "observed": {
+    "kind": "applies-now",
+    "measuredValue": {
+      "value": "0x0000000000000000000000000000000000000000000000000000000000000005",
+      "slot": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "block": 19000000,
+      "at": 1710000000000
+    },
+    "block": 19000000,
+    "at": 1710000000000
+  },
+  "signals": [
+    {
+      "kind": "capability",
+      "risk": "bot-pump",
+      "direction": "raises",
+      "severity": "medium",
+      "temporality": {
+        "kind": "can-change",
+        "changer": "0x02030405060708090a0b0c0d0e0f101112131415"
+      },
+      "evidence": [
+        { "selector": "0x095ea7b3", "offset": 200 }
+      ]
+    },
+    {
+      "kind": "clone-match",
+      "risk": "rug-pull",
+      "direction": "raises",
+      "severity": "high",
+      "similarity": 0.5,
+      "group": "drain-template-7",
+      "priorCount": 1,
+      "evidence": [
+        { "selector": "0xa9059cbb", "offset": 300 }
+      ]
+    },
+    {
+      "kind": "hard-to-analyze",
+      "risk": "rug-pull",
+      "cause": "obfuscated-structure",
+      "evidence": [
+        { "selector": "0x70a08231", "offset": 7 }
+      ]
+    },
+    {
+      "kind": "hard-to-analyze",
+      "risk": "honeypot",
+      "cause": "decompiler-error",
+      "evidence": [
+        {
+          "selector": "0x18160ddd",
+          "offset": 9,
+          "snippet": { "text": "revert(0, 0)", "line": 0 }
+        }
+      ]
+    }
+  ]
+}

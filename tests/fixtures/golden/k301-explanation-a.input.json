@@ -1,0 +1,70 @@
+{
+  "templateVersion": "1.0.0",
+  "observed": {
+    "kind": "can-change",
+    "changer": "0x0102030405060708090a0b0c0d0e0f1011121314"
+  },
+  "signals": [
+    {
+      "kind": "capability",
+      "risk": "rug-pull",
+      "direction": "raises",
+      "severity": "high",
+      "temporality": {
+        "kind": "applies-now",
+        "measuredValue": {
+          "value": "0x0000000000000000000000000000000000000000000000000000000000000001",
+          "slot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "block": 18000000,
+          "at": 1700000000000
+        },
+        "block": 18000000,
+        "at": 1700000000000
+      },
+      "evidence": [
+        { "selector": "0xa9059cbb", "offset": 11 }
+      ]
+    },
+    {
+      "kind": "capability",
+      "risk": "honeypot",
+      "direction": "lowers",
+      "severity": "low",
+      "temporality": {
+        "kind": "can-change",
+        "changer": "0x0102030405060708090a0b0c0d0e0f1011121314"
+      },
+      "evidence": [
+        { "selector": "0x70a08231", "offset": 64 },
+        { "selector": "0x70a08231" }
+      ]
+    },
+    {
+      "kind": "clone-match",
+      "risk": "honeypot",
+      "direction": "raises",
+      "severity": "medium",
+      "similarity": 0.85,
+      "group": "trap-erc20-fee",
+      "priorCount": 3,
+      "evidence": [
+        { "selector": "0x095ea7b3" }
+      ]
+    },
+    {
+      "kind": "hard-to-analyze",
+      "risk": "bot-pump",
+      "cause": "timeout",
+      "evidence": [
+        {
+          "selector": "0x18160ddd",
+          "offset": 42,
+          "snippet": {
+            "text": "{{severity}} ${risk} \"quoted\"\nsecond line",
+            "line": 3
+          }
+        }
+      ]
+    }
+  ]
+}

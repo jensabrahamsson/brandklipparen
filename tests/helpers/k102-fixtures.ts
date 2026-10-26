@@ -63,8 +63,10 @@ export function reviveCanonical(value: unknown): CanonicalValue {
 }
 
 export function listGoldenInputs(): string[] {
+  // Scoped to the k102 envelope fixtures: other suites (for example k301)
+  // keep their own frozen fixtures in the same golden directory.
   return readdirSync(goldenDir)
-    .filter((name) => name.endsWith(".input.json"))
+    .filter((name) => name.startsWith("k102-") && name.endsWith(".input.json"))
     .sort();
 }
 
