@@ -1,0 +1,11 @@
+{
+  "z": 1,
+  "a": { "$bigint": "-42" },
+  "m": { "$bytes": "0x" },
+  "nested": { "outer": { "inner": [{ "k2": 2, "k1": 1 }] } },
+  "unicodeKeys": { "ä": 1, "z": 2, "Å": 3 },
+  "bigArray": [3, 2, 1],
+  "emptyList": [],
+  "nothing": null,
+  "flag": true
+}

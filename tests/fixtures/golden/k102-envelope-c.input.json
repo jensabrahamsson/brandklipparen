@@ -1,0 +1,22 @@
+{
+  "address": "0x7e3f9a2b4c1d8e6f5a0b7c4d9e2f1a6b8c5d3e7f",
+  "artifactChecksum": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "block": 24208800,
+  "codeHash": "0xabababababababababababababababababababababababababababababababab",
+  "indexVersion": "0.1.0",
+  "modelVersion": "0.1.0",
+  "payload": {
+    "big": { "$bigint": "123456789012345678901234567890" },
+    "code": { "$bytes": "0x6001600055" },
+    "empty": {},
+    "flags": [true, false, null],
+    "note": "synthetic fixture with unicode: horse ▲",
+    "probabilities": { "bot-pump": 0, "honeypot": 0.5, "rug-pull": 0.123457 },
+    "score": 42,
+    "signals": [
+      { "id": "sig-b", "risk": "rug-pull", "severity": "high" },
+      { "id": "sig-a", "risk": "honeypot", "severity": "low" }
+    ]
+  },
+  "templateVersion": "0.1.0"
+}

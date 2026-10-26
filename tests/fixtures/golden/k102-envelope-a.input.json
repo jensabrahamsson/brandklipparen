@@ -1,0 +1,22 @@
+{
+  "templateVersion": "0.1.0",
+  "payload": {
+    "signals": [
+      { "severity": "high", "id": "sig-b", "risk": "rug-pull" },
+      { "id": "sig-a", "risk": "honeypot", "severity": "low" }
+    ],
+    "probabilities": { "rug-pull": 0.123457, "honeypot": 0.5, "bot-pump": 0 },
+    "score": 42,
+    "note": "synthetic fixture with unicode: horse ▲",
+    "big": { "$bigint": "123456789012345678901234567890" },
+    "code": { "$bytes": "0x6001600055" },
+    "empty": {},
+    "flags": [true, false, null]
+  },
+  "modelVersion": "0.1.0",
+  "indexVersion": "0.1.0",
+  "codeHash": "0xabababababababababababababababababababababababababababababababab",
+  "block": 24208800,
+  "artifactChecksum": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+  "address": "0x7e3f9a2b4c1d8e6f5a0b7c4d9e2f1a6b8c5d3e7f"
+}
