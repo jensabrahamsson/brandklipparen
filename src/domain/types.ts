@@ -41,7 +41,8 @@ export type DomainError =
   | { kind: "invalid-cant-tell"; message: string }
   | { kind: "invalid-clone-group-id"; message: string }
   | { kind: "invalid-cache-key"; message: string }
-  | { kind: "invalid-page-size"; message: string };
+  | { kind: "invalid-page-size"; message: string }
+  | { kind: "invalid-model-artifact"; message: string };
 
 // Placeholder operational limits (A-17). The running boundary passes the
 // versioned values from the operational configuration; these defaults keep
