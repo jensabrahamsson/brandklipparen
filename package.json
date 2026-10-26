@@ -1,0 +1,24 @@
+{
+  "name": "brandklipparen",
+  "version": "0.1.0",
+  "description": "Brandklipparen assesses risk of newly deployed ERC-20 tokens from contract bytecode alone.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "check": "npm run lint && npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "dependency-cruiser": "17.4.3",
+    "eslint": "9.39.5",
+    "fast-check": "4.10.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "3.2.7"
+  }
+}
