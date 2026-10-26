@@ -38,6 +38,63 @@ export type AssessmentExpectation = {
   readonly maxOutputChars: number;
 };
 
+// Placeholder output limit for tests and offline use (K-306, K-309).
+// Production passes the versioned operational value from
+// BRANDKLIPPAREN_ASSESSMENT_MAX_OUTPUT_BYTES through
+// resolveAssessmentOutputLimit at the composition root; the running
+// boundary never invents a limit of its own.
+export const DEFAULT_ASSESSMENT_MAX_OUTPUT_CHARS = 4000;
+
+// Size limit for the assessment text from the validated configuration
+// (A-17, I-14). An absent value keeps the placeholder default so unit
+// tests and offline runs stay well-formed without a demo configuration.
+export function resolveAssessmentOutputLimit(
+  assessmentMaxOutputBytes?: number | undefined,
+): number {
+  if (assessmentMaxOutputBytes === undefined) {
+    return DEFAULT_ASSESSMENT_MAX_OUTPUT_CHARS;
+  }
+  return assessmentMaxOutputBytes;
+}
+
+// Strict schema: exact key sets at every level, so unknown fields fail
+// validation instead of passing silently (K-306, K-502, M-05).
+const TOP_LEVEL_KEYS: readonly string[] = Object.freeze([
+  "claims",
+  "explanationVersion",
+  "modelId",
+  "promptVersion",
+  "provider",
+  "text",
+]);
+
+const CLAIM_KEYS: readonly string[] = Object.freeze(["signalLinks", "temporality", "text"]);
+
+const CAN_CHANGE_KEYS: readonly string[] = Object.freeze(["changer", "kind"]);
+
+const APPLIES_NOW_KEYS: readonly string[] = Object.freeze([
+  "at",
+  "block",
+  "kind",
+  "measuredValue",
+]);
+
+const MEASURED_VALUE_KEYS: readonly string[] = Object.freeze(["at", "block", "slot", "value"]);
+
+function hasExactlyKeys(record: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(record).sort();
+  if (actual.length !== expected.length) {
+    return false;
+  }
+  const wanted = expected.slice().sort();
+  for (let index = 0; index < actual.length; index += 1) {
+    if (actual[index] !== wanted[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function invalid(message: string): AssessmentModelError {
   return { kind: "invalid-output", message };
 }
@@ -55,6 +112,9 @@ function validateTemporality(raw: unknown): Temporality | null {
     return null;
   }
   if (record["kind"] === "can-change") {
+    if (!hasExactlyKeys(record, CAN_CHANGE_KEYS)) {
+      return null;
+    }
     const changerRaw = record["changer"];
     if (typeof changerRaw !== "string") {
       return null;
@@ -66,10 +126,16 @@ function validateTemporality(raw: unknown): Temporality | null {
     return { kind: "can-change", changer: changer.value };
   }
   if (record["kind"] === "applies-now") {
+    if (!hasExactlyKeys(record, APPLIES_NOW_KEYS)) {
+      return null;
+    }
     const measuredRaw = recordOf(record["measuredValue"]);
     const blockRaw = record["block"];
     const atRaw = record["at"];
     if (measuredRaw === null) {
+      return null;
+    }
+    if (!hasExactlyKeys(measuredRaw, MEASURED_VALUE_KEYS)) {
       return null;
     }
     const valueRaw = measuredRaw["value"];
@@ -118,6 +184,9 @@ export function validateAssessmentOutput(
   const record = recordOf(raw);
   if (record === null) {
     return err(invalid("assessment response must be an object"));
+  }
+  if (!hasExactlyKeys(record, TOP_LEVEL_KEYS)) {
+    return err(invalid("assessment response carries unknown fields"));
   }
   if (record["provider"] !== expected.provider) {
     return err({
@@ -175,6 +244,9 @@ export function validateAssessmentOutput(
     const claimRecord = recordOf(rawClaim);
     if (claimRecord === null) {
       return err(invalid("assessment claim must be an object"));
+    }
+    if (!hasExactlyKeys(claimRecord, CLAIM_KEYS)) {
+      return err(invalid("assessment claim carries unknown fields"));
     }
     const claimText = claimRecord["text"];
     if (typeof claimText !== "string" || claimText.length === 0) {
