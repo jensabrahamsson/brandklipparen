@@ -30,4 +30,11 @@ export default tseslint.config(
       "no-restricted-globals": ["error", "process", "fetch", "XMLHttpRequest", "WebSocket"],
     },
   },
+  {
+    files: ["src/plugins/**/*.ts"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: ["node:*"] }],
+      "no-restricted-globals": ["error", "process", "fetch", "XMLHttpRequest", "WebSocket"],
+    },
+  },
 );

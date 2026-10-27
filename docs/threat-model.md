@@ -906,7 +906,7 @@ by a wider audience than the operator.
   `k509_demo_log_output_reviewed_before_submission` goes through
   the demo log extract before submission.
 
-### 5.8 Plugin registry and plugin output (design per `docs/adr-plugin-architecture.md`)
+### 5.12 Plugin registry and plugin output (design per `docs/adr-plugin-architecture.md`)
 
 The plugin architecture in `docs/adr-plugin-architecture.md` (P-xx) adds
 one component, the static plugin registry in `src/plugins/registry.ts`,

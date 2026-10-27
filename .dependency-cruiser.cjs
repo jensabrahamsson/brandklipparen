@@ -29,6 +29,22 @@ module.exports = {
       from: { path: "src/interfaces" },
       to: { path: "src/(adapters|composition|apps)" },
     },
+    {
+      name: "boundary-detector-plugins-pure",
+      severity: "error",
+      comment:
+        "detector plugins import solely the plugin API and domain; adapters, interfaces, composition and apps stay out (ADR P-03).",
+      from: { path: "src/plugins" },
+      to: { path: "src/(adapters|interfaces|composition|apps)" },
+    },
+    {
+      name: "boundary-plugins-via-registry",
+      severity: "error",
+      comment:
+        "driving adapters, the web UI and driven adapters read plugin data through the application service, never by importing the registry (ADR P-08).",
+      from: { path: "src/(interfaces|apps|adapters)" },
+      to: { path: "src/plugins" },
+    },
   ],
   options: {
     doNotFollow: { path: "node_modules" },

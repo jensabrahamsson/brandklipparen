@@ -205,6 +205,7 @@ resolution, timeline, current storage values and baseline comparison.
 | K-025 MCP server tools | MVP | Thin driving adapter over K-027 gives the whole tool |
 | K-026 MCP server read-only | MVP | Same adapter and schema work as K-025 |
 | K-027 Shared application service | MVP | One service gives equal responses in three interfaces |
+| K-028 Typed plugin manifest and static registry | MVP | One typed manifest per plugin and one validated static registry; M-21 |
 | K-101 Response time: fast path and deepening | MVP | The demo promises a risk profile in a few seconds |
 | K-102 Deterministic analysis | MVP | Reproducibility is the product promise |
 | K-103 Accessibility WCAG AA | MVP | Built-in accessibility from the first view |
@@ -243,6 +244,7 @@ resolution, timeline, current storage values and baseline comparison.
 | K-501 Hostile bytecode | MVP | Attack surface exists from the first call; M-01, M-02 |
 | K-502 Prompt injection | MVP | Applies to the on-request Muse contract assessment with either provider; the deterministic core carries zero prompt injection surface; M-03–M-06, M-20 |
 | K-513 Assessment provider response and key protection | MVP | Both providers give validated, size-bounded responses with protected keys; M-11, M-20 |
+| K-514 Plugin supply chain: static registration only | MVP | Reviewed source only, no dynamic or remote code loading; M-21 |
 | K-503 SSRF | MVP | Address-driven fetch requires an allowlist from the start; M-07 |
 | K-504 Rate limiting | MVP | Cost protection from day one; M-08, M-09 |
 | K-505 Key handling | MVP | Keys in environment variables from the start; M-11 |
@@ -529,6 +531,34 @@ The matching is part of the fast path per K-101.
 - The index version is stated in the response, so hits are reproducible
   per K-102. Verification: integration test
   `k017_response_names_index_version`.
+
+### K-028 Typed plugin manifest, versioned plugin API and static registry (MVP)
+
+The project carries one typed manifest per plugin plus a versioned
+plugin API, and one static registry validated at startup. Proposed in
+`docs/adr-plugin-architecture.md` (P-01, P-02, P-07, P-08); this story
+enters the ID with the implementation. The registry starts empty beside
+the existing path, so analysis output stays unchanged until the S-043
+migration.
+
+- Each manifest carries a branded plugin id, a semver version, the
+  closed kind `"detector" | "assessment"`, an apiVersion, display name,
+  description, declared inputs from the closed catalogue, an output
+  schema inside the supported keyword subset, closed capability flags
+  and per-plugin limits, validated by a smart constructor.
+  Verification: unit tests on the manifest constructors in
+  `tests/unit/plugins/manifest.test.ts`.
+- The core exports one `PLUGIN_API_VERSION` starting at `1.0.0`; the
+  registry accepts a plugin whose apiVersion major equals the core
+  major and whose minor is at most the core minor, and turns every
+  other plugin away at startup with a typed error naming the plugin id
+  and both versions. Verification: unit test
+  `registry_rejects_duplicate_ids_and_unsupported_api_versions`.
+- Duplicate plugin ids and capability violations give a typed startup
+  error naming the plugin id. Registration is static and compile-time
+  only: no dynamic loading and no unregistered plugin ever runs.
+  Verification: unit tests `k514_registry_has_no_dynamic_loading` and
+  `k514_unregistered_plugin_never_runs`.
 
 ## 6. Interfaces (K-0xx, continued)
 
@@ -1814,6 +1844,28 @@ M-09 against H-04.
   ahead of each cap. Verification: integration test
   `k513_cost_caps_and_alerts_apply_to_both_providers`.
 
+### K-514 Plugin supply chain: static registration only (MVP)
+
+The project admits plugin code solely as reviewed source in this repo,
+registered statically at build time. Proposed in
+`docs/adr-plugin-architecture.md` (P-07) and
+`docs/threat-model.md` (H-15, M-21); this story enters the ID with the
+implementation. Fulfilled by M-21 against H-15 in
+`docs/threat-model.md`.
+
+- The registry is a frozen array assembled from static values in
+  `src/plugins/registry.ts` and handed to the composition root. No
+  dynamic loading of a computed module path, no directory scan of a
+  plugins folder, no plugin path from environment or configuration and
+  no code fetched over the network exists in the registry path.
+  Verification: CI check `k514_registry_has_no_dynamic_loading`,
+  which searches the registry and composition modules and requires
+  zero hits.
+- A plugin absent from the registry array is absent from output and
+  never invoked. Verification: unit test
+  `k514_unregistered_plugin_never_runs`, which requires that an
+  unregistered plugin id resolves to no plugin and no findings.
+
 ## 12. Traceability
 
 ### 12.1 Requirement to named test or measurement
@@ -1854,6 +1906,7 @@ the test per acceptance criterion.
 | K-025 | `k025_assess_token_matches_rest_for_same_codehash` (integration) |
 | K-026 | `k026_tools_leave_state_unchanged` (unit) |
 | K-027 | `k027_same_inputs_same_outputs_across_interfaces` (property) |
+| K-028 | `registry_rejects_duplicate_ids_and_unsupported_api_versions` (unit) |
 | K-101 | `k101_fast_path_p95_within_5s` (timing) |
 | K-102 | `k102_golden_fixtures_bit_identical` (golden) |
 | K-103 | `k103_wcag_aa_checklist_per_release` (review) |
@@ -1902,12 +1955,15 @@ the test per acceptance criterion.
 | K-511 | `k511_manipulated_rpc_response_flagged` (integration) |
 | K-512 | `k512_tampered_artifact_rejected_before_analysis` (integration) |
 | K-513 | `k513_tampered_or_oversize_provider_response_rejected` (integration) |
+| K-514 | `k514_registry_has_no_dynamic_loading` (CI check) |
 
 ### 12.2 Security requirements to threats and countermeasures
 
 The linkage below is complete in both directions against
 `docs/threat-model.md`: each K-5xx has its M-xx, and each M-xx in the
-threat model (M-01–M-20) appears in the table.
+threat model (M-01–M-21) appears in the table. M-22 maps to the
+proposed K-515, which enters this document with its implementation
+story, so the row is added then.
 
 | Requirement | Threat | Fulfilled by |
 |---|---|---|
@@ -1924,6 +1980,7 @@ threat model (M-01–M-20) appears in the table.
 | K-511 | H-09 | M-14 |
 | K-512 | H-11, H-12, H-13 | M-17, M-18, M-19 |
 | K-513 | H-14, H-04, H-05 | M-20, M-09, M-11 |
+| K-514 | H-15 | M-21 |
 
 M-06 points in the threat model also to K-307. The requirement lives in
 section 9 and is measured with

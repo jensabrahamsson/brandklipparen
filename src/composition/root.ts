@@ -18,7 +18,15 @@ import { createhostedOpenWeightsAdapterFromConfig } from "../adapters/assessment
 import { hosted_OPEN_WEIGHTS_MODEL_ID } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 import type { hostedOpenWeightsTransport } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 import { PromptVersion } from "../domain/types.ts";
+import { createEmptyPluginRegistry } from "../plugins/registry.ts";
+import type { PluginRegistry } from "../plugins/registry.ts";
 import type { AppConfig, ConfigError } from "../ports/config.ts";
+
+// S-042 (ADR P-12 step 0): the static plugin registry starts empty beside
+// the existing path. The value is validated through the registry builder
+// at startup; S-043 threads it into the application service when the
+// first detector migrates, leaving analysis output unchanged until then.
+export const EMPTY_PLUGIN_REGISTRY: PluginRegistry = createEmptyPluginRegistry();
 import type { ModelId } from "../domain/types.ts";
 import type { AssessmentProvider } from "../ports/assessmentModel.ts";
 
