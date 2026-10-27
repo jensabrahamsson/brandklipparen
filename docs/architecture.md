@@ -384,7 +384,7 @@ sides of the invariant (K-106).
 
 **A-11 Smart constructors at every boundary.** The principle is parse at
 the boundary: driving adapters' input and driven adapters' responses
-pass a smart constructor or a Zod schema (A-16) before the value
+pass a smart constructor or a boundary check (A-16) before the value
 reaches `application` or `domain`. After the boundary, each value carries its
 proof of validity in its type, so core functions take validity as
 given. An invalid address is turned away by `Address.parse` before the first
@@ -528,10 +528,11 @@ discriminated unions under A-12, so a new error branch gives a type error at eve
 translation site until the branch is handled.
 
 **A-16 Schema validation of all external data at the boundary.** Each adapter
-validates incoming external data against a Zod schema in the adapter module
-before the value passes a smart constructor into the core. The Zod schema
-generates the boundary type and the smart constructor generates the domain type,
-so schema and type share a definition. Validation covers RPC responses
+validates incoming external data with a boundary check in the adapter module
+(plain checks, and the framework route schema where one is declared)
+before the value passes a smart constructor into the core. The boundary check
+shapes the boundary type and the smart constructor generates the domain type,
+so check and type share a definition. Validation covers RPC responses
 (K-511), extdecomp output (K-008), Muse output against the versioned
 assessment schema (K-305, K-309), REST input (K-023), MCP input against the
 published input schema (K-026), cache entries at read (K-511) and
@@ -754,7 +755,7 @@ under I-04.
 | REST framework | Fastify 5.x | `package.json` + lock file | Schema validation in the framework supports A-16 and K-023 |
 | MCP | `@modelcontextprotocol/sdk` 1.x | `package.json` + lock file | Typed tool schemas for K-025 and K-026 |
 | Web UI | React 19.x with Vite 6.x | `apps/web/package.json` + lock file | Same TypeScript types in UI and API schema; the design in `design/README.md` is built component by component |
-| Schema validation | `zod` 3.x | `package.json` + lock file | One schema per boundary generates the boundary type for A-16 (K-023, K-026, K-305) |
+| Boundary validation | Plain checks plus smart constructors; Fastify 5.x route schemas where declared | No extra package; `package.json` + lock file | One boundary check per boundary shapes the boundary type for A-16 (K-023, K-026, K-305) |
 | Test runner | Vitest 3.x | `package.json` + lock file | Fast typed suite in the same language as the code (K-105) |
 | Property tests | `fast-check` 4.x | `package.json` + lock file | Seeded generators carry the invariants in A-22 |
 | E2E | Playwright 1.x | `package.json` + lock file | The main flows in K-020 and K-021 are tried in a browser |
@@ -829,7 +830,7 @@ change:
 | 4 | Type checking (`tsc --noEmit`, strict) and boundary enforcement (`dependency-cruiser`, A-06) are green | K-106, A-06, I-01 |
 | 5 | Domain values are created through smart constructors; new states are expressed as branches in the discriminated unions | K-106, A-10–A-13 |
 | 6 | The same input gives bit-identical output in the reproduction test; responses carry block number, code hash, model version, artifact checksum, index version and template version | K-102, A-32 |
-| 7 | External data is validated with a Zod schema at the boundary, errors follow Result and the error catalogue, and each external port keeps its limit fields | K-501, K-511, A-14–A-17 |
+| 7 | External data is validated with a boundary check at the boundary, errors follow Result and the error catalogue, and each external port keeps its limit fields | K-501, K-511, A-14–A-17 |
 | 8 | Affected security tests from the threat model are green: bytecode fuzzing and sandbox (M-01, M-02), injection for both providers (M-03–M-06, M-20), allowlist (M-07), rate and quota (M-08, M-09), keys (M-10, M-11), supply chain (M-12), text rendering (M-13), validated responses (M-14), MCP (M-15), logs (M-16) | K-501–K-513, M-01–M-20 |
 | 9 | The secret scan (gitleaks) is green and the configuration is validated in a typed way at startup with named variables | K-505, K-506, I-02, I-08 |
 | 10 | Model values are read solely from the versioned artifact with a verified checksum; operational limits are read solely from the operational configuration | K-008, K-210, K-211, A-17, A-20 |

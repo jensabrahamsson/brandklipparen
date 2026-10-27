@@ -174,6 +174,28 @@ function parseNonEmpty(name: string, raw: string, describe: string): Result<stri
   return ok(raw);
 }
 
+// Comma-separated API keys for the REST API (K-024, K-510, M-10). Each
+// entry becomes a SecretString, so raw key values never sit in plain
+// strings past this parse. Empty entries are skipped; a value with no
+// usable key is turned away.
+function parseApiKeys(name: string, raw: string): Result<readonly SecretString[], ConfigError> {
+  const keys: SecretString[] = [];
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    if (trimmed.length > 4096) {
+      return err(invalid(name, "must be API keys of at most 4096 characters"));
+    }
+    keys.push(new SecretString(trimmed));
+  }
+  if (keys.length === 0) {
+    return err(invalid(name, "must be a non-empty comma-separated list of API keys"));
+  }
+  return ok(keys);
+}
+
 function parseAlarmLevels(name: string, raw: string): Result<readonly number[], ConfigError> {
   const parts = raw.split(",");
   const levels: number[] = [];
@@ -215,6 +237,7 @@ const V = {
   assessmentMaxConcurrency: "BRANDKLIPPAREN_ASSESSMENT_MAX_CONCURRENCY",
   demoPublicUrl: "BRANDKLIPPAREN_DEMO_PUBLIC_URL",
   cacheDir: "BRANDKLIPPAREN_CACHE_DIR",
+  apiKeys: "BRANDKLIPPAREN_API_KEYS",
   apiKeyPepper: "BRANDKLIPPAREN_API_KEY_PEPPER",
   rateLimitPerKeyPerMinute: "BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE",
   quotaPerKeyPerDay: "BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY",
@@ -318,6 +341,12 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   );
   if (!cacheDir.ok) {
     return cacheDir;
+  }
+  // Optional in every setup: an empty key set fails closed in the REST
+  // adapter, which rejects analysis calls until a key is configured.
+  const apiKeys = optionalField(env, V.apiKeys, (raw) => parseApiKeys(V.apiKeys, raw));
+  if (!apiKeys.ok) {
+    return apiKeys;
   }
 
   const chainId = requiredWhen(env, V.chainId, isDemo, (raw) => {
@@ -577,6 +606,7 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     logLevel: logLevel.value,
     ...(httpPort.value === undefined ? {} : { httpPort: httpPort.value }),
     ...(cacheDir.value === undefined ? {} : { cacheDir: cacheDir.value }),
+    ...(apiKeys.value === undefined ? {} : { apiKeys: apiKeys.value }),
     ...(chainId.value === undefined ? {} : { chainId: chainId.value }),
     ...(rpcUrls.value === undefined ? {} : { rpcUrls: rpcUrls.value }),
     ...(extdecompMaxConcurrency.value === undefined
@@ -666,6 +696,9 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
 
   if (config.rpcUrls !== undefined) {
     Object.freeze(config.rpcUrls);
+  }
+  if (config.apiKeys !== undefined) {
+    Object.freeze(config.apiKeys);
   }
   if (config.alarmLevelsPercent !== undefined) {
     Object.freeze(config.alarmLevelsPercent);

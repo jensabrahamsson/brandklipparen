@@ -21,6 +21,14 @@ module.exports = {
       from: { path: "src/domain" },
       to: { dependencyTypes: ["core"] },
     },
+    {
+      name: "boundary-driving-via-application",
+      severity: "error",
+      comment:
+        "driving adapters reach the core through application and ports; concrete adapters and wiring stay in composition (A-04, A-06).",
+      from: { path: "src/interfaces" },
+      to: { path: "src/(adapters|composition|apps)" },
+    },
   ],
   options: {
     doNotFollow: { path: "node_modules" },

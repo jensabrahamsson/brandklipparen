@@ -68,6 +68,7 @@ export type AppConfig = {
   readonly logLevel: LogLevel;
   readonly httpPort?: number;
   readonly cacheDir?: string;
+  readonly apiKeys?: readonly SecretString[];
   readonly chainId?: ChainId;
   readonly rpcUrls?: readonly SecretString[];
   readonly extdecompMaxConcurrency?: number;

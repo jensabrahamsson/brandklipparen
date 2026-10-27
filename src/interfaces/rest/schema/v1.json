@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Brandklipparen REST API v1",
+  "description": "Published response schema for the versioned REST API (K-023). GET and POST /v1/analyze return the assessed envelope or the no-contract outcome; every error follows the uniform error format with status, code, message and requestId (A-18). GET /health returns the health shape and is public per I-12. Success bodies are the shared application service output byte for byte, so equal input gives equal bytes in every interface (K-027). The deepening per K-101 travels in the x-deepening-status response header until it streams in a later story.",
+  "anyOf": [
+    { "$ref": "#/definitions/assessed" },
+    { "$ref": "#/definitions/noContract" },
+    { "$ref": "#/definitions/health" },
+    { "$ref": "#/definitions/error" }
+  ],
+  "definitions": {
+    "assessed": {
+      "type": "object",
+      "required": ["kind", "target", "block", "proxy", "codeHash", "modelVersion", "artifactChecksum", "indexVersion", "templateVersion", "assessedAt", "probabilities", "score", "signals", "explanation", "cantTell"],
+      "properties": {
+        "kind": { "const": "assessed" },
+        "target": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+        "block": { "type": "integer", "minimum": 0 },
+        "proxy": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["none", "eip1967", "uups"] }
+          }
+        },
+        "codeHash": { "type": "string", "minLength": 1 },
+        "modelVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "artifactChecksum": { "type": "string", "minLength": 1 },
+        "indexVersion": { "type": "string", "minLength": 1 },
+        "templateVersion": { "type": "string", "minLength": 1 },
+        "assessedAt": { "type": "integer", "minimum": 0 },
+        "probabilities": {
+          "type": "object",
+          "required": ["rug-pull", "honeypot", "bot-pump"],
+          "properties": {
+            "rug-pull": { "type": "number", "minimum": 0, "maximum": 1 },
+            "honeypot": { "type": "number", "minimum": 0, "maximum": 1 },
+            "bot-pump": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "signals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind", "id", "risk", "evidence"],
+            "properties": {
+              "kind": { "enum": ["capability", "clone-match", "hard-to-analyze"] },
+              "id": { "type": "string", "minLength": 1 },
+              "risk": { "enum": ["rug-pull", "honeypot", "bot-pump"] },
+              "direction": { "enum": ["raises", "lowers"] },
+              "severity": { "enum": ["low", "medium", "high"] },
+              "similarity": { "type": "number", "minimum": 0, "maximum": 1 },
+              "group": { "type": "string" },
+              "priorCount": { "type": "integer", "minimum": 0 },
+              "cause": { "enum": ["timeout", "resource-limit", "decompiler-error", "obfuscated-structure"] },
+              "evidence": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["selector", "offset"],
+                  "properties": {
+                    "selector": { "type": "string", "pattern": "^0x[0-9a-fA-F]{8}$" },
+                    "offset": { "type": ["integer", "null"], "minimum": 0 }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "explanation": {
+          "type": "object",
+          "required": ["kind", "templateVersion", "claims"],
+          "properties": {
+            "kind": { "const": "template" },
+            "templateVersion": { "type": "string", "minLength": 1 },
+            "claims": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["text", "signalLinks", "temporality"],
+                "properties": {
+                  "text": { "type": "string" },
+                  "signalLinks": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+                  "temporality": {
+                    "type": "object",
+                    "required": ["kind"],
+                    "properties": {
+                      "kind": { "enum": ["applies-now", "can-change"] }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "cantTell": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["question", "dataSource"],
+            "properties": {
+              "question": { "type": "string", "minLength": 1 },
+              "dataSource": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "noContract": {
+      "type": "object",
+      "required": ["kind", "target", "block"],
+      "properties": {
+        "kind": { "const": "no-contract" },
+        "target": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+        "block": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "health": {
+      "type": "object",
+      "required": ["status", "apiVersion"],
+      "properties": {
+        "status": { "const": "ok" },
+        "apiVersion": { "const": "v1" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["status", "code", "message", "requestId"],
+      "properties": {
+        "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "requestId": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" }
+      }
+    }
+  }
+}
