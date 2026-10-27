@@ -35,7 +35,7 @@ the MVP path is green. Low-priority Stretch is cut first (see Buffer).
 | E-05 | Explanations and Muse contract assessment (high priority) | K-301–K-309, K-502, K-513 |
 | E-06 | Interfaces: shared service, REST, MCP, web UI | K-020–K-027, K-101, K-103, K-104, K-107 |
 | E-07 | Security, demo and submission | K-401–K-407, K-501–K-513 |
-| E-08 | Plugin architecture (design in `docs/adr-plugin-architecture.md`, P-xx) | K-028–K-031 (proposed), K-514, K-515 (proposed), K-102, K-210, K-305, K-309, K-032–K-033, K-516–K-517 (proposed, audit and PLUGIN.md) |
+| E-08 | Plugin architecture (design in `docs/adr-plugin-architecture.md`, P-xx) | K-028–K-031 (proposed), K-514, K-515 (proposed), K-102, K-210, K-305, K-309, K-032–K-033, K-516–K-517 (proposed, audit and PLUGIN.md), K-034, K-518 (proposed, adaptive web UI) |
 
 ## Stories
 
@@ -175,6 +175,26 @@ is advisory only and never affects scores or evidence (P-13, P-14).
 | S-057 | Web UI plugin Docs view: sanitized markdown rendering in the Plugins panel | K-033 (proposed), K-507, K-103, K-108 | MVP | `k517_plugin_docs_render_as_sanitized_markdown` (e2e) feeds a script-bearing `PLUGIN.md` and requires inert text, no raw-HTML execution, and the CSP header present; `k515_plugin_strings_render_as_inert_text` stays green. |
 | S-058 | Read view of the last CI audit report per plugin in REST and MCP (no audit trigger) | K-516 (proposed), K-031 (proposed), K-026 | Stretch | `k516_last_audit_report_shown_as_advisory_with_provider_and_model` requires the report's three separate states (`deterministic`, `ai: advisory`, `human-review`), provider, and model id in REST and MCP; `k516_clean_ai_report_alone_registers_no_plugin` requires that the read view alone changes no registration, score, or evidence. |
 
+Adaptive web UI extension (ADR section 13, P-18–P-23; threat model
+H-21–H-25, M-27–M-31). These stories are implemented after the plugin
+core: every story below depends on S-046 (registry exposure and the
+generic Plugins panel), and the schema-driven panel in S-059 builds on
+that panel rather than replacing it. S-042 and S-043 have landed and
+S-044 may be in progress; no completed story is renumbered. Proposed
+K-IDs K-034 and K-518 enter `docs/requirements.md` in their first
+implementation story below, in the same change. S-059–S-061 are MVP
+for this follow-on work; S-062–S-064 are Stretch (experimental AI
+layout) and cut first.
+
+| Story | Title | K-IDs | Priority | Test written first |
+|---|---|---|---|---|
+| S-059 | Schema-driven plugin panel: fixed component library renders every plugin output from its `outputSchema` (depends on S-046) | K-034 (proposed), K-031 (proposed), K-507, K-103 | MVP | `k034_every_output_schema_shape_renders_via_fixed_library` maps each subset shape (text, number, boolean, enum, list, nested object, evidence) to its library component, red against the S-046 panel, then green; `k034_unknown_schema_shape_falls_back_to_canonical_json_text` requires inert canonical JSON for an out-of-subset shape; `k515_plugin_strings_render_as_inert_text` stays green; a new example-shaped plugin fixture renders with no UI code changed. |
+| S-060 | Risk-adaptive deterministic layout: pure section ordering over the frozen analysis (depends on S-059) | K-034 (proposed), K-102, K-103 | MVP | `k034_high_risk_orders_severe_evidence_first` and `k034_low_risk_shows_calm_summary_first` on frozen fixtures per band, red against the static order, then green; property `k034_same_analysis_same_layout_across_runs` requires an identical section plan per frozen analysis, with DOM order equal to visual order and no section hidden in any band. |
+| S-061 | Simple / Expert mode toggle with locally persisted preference (depends on S-059) | K-034 (proposed), K-507, K-103 | MVP | `k034_invalid_stored_mode_falls_back_to_simple` seeds crafted and markup-bearing stored values and requires Simple; Playwright `k034_mode_toggle_persists_across_reload` toggles Expert, reloads, and requires Expert still applied; Playwright `k034_expert_mode_reveals_bytecode_selectors_raw_data` requires bytecode, selectors with PC offsets, and raw plugin payloads as inert text in Expert and absent in Simple, with scores and evidence unchanged. |
+| S-062 | Layout spec contract: `LayoutSpec` types, JSON Schema descriptor, `parseLayoutSpec` smart constructor (depends on S-060) | K-034 (proposed), K-518 (proposed), K-506 | Stretch | `k518_layout_spec_rejects_html_code_url_style_fields` feeds specs carrying markup, code, URL, and style fields and requires `invalid-output` with no partial spec applied, red against an accepting parser, then green; `k518_layout_spec_agrees_with_json_schema_on_fixtures` checks types and descriptor against each other on frozen examples in both directions (unknown id, duplicate placement, missing `summary` or `score`, oversize each fail). No new runtime dependency: plain checks plus JSON Schema per ADR P-22. |
+| S-063 | `PluginLayoutModelPort`: fake adapter, hosted Muse Spark Open implementation, `not configured` without key (depends on S-062) | K-518 (proposed), K-513, K-502, K-309 | Stretch | `runPluginLayoutModelPortContract` red against the fake, then green against the fake and the hosted adapter over a recorded transport (no network); `k518_layout_without_key_reports_not_configured_and_sends_nothing` requires the `not-configured` outcome and zero fake-adapter calls; `k518_injection_in_analysis_text_stays_quoted_data` feeds hide, invent, and restyle instructions in finding titles and requires quoted data with no non-spec result field. |
+| S-064 | Experimental AI layout in the web UI: opt-in toggle, `Experimental AI layout` label, deterministic fallback (depends on S-063 and S-061) | K-034 (proposed), K-518 (proposed), K-507, K-103 | Stretch | Playwright `k518_invalid_or_missing_spec_falls_back_to_deterministic_layout` serves an invalid spec and a missing spec through the fake adapter and requires the deterministic layout with the fallback notice; Playwright `k518_ai_layout_toggle_off_by_default_and_labelled` requires the mode off on first visit and the experimental label with provider and model id while on; property `k518_ai_layout_leaves_scores_evidence_and_text_unchanged` requires bit-identical scores, evidence, and finding text with the AI layout on, off, invalid, and absent. All AI-layout tests use the fake adapter; no test reaches the network. |
+
 Cut order inside E-08, if time runs short: S-048, S-049, S-050, S-051
 are Stretch and cut first, in that order. S-042–S-047 are the MVP of
 this epic and ship as one sequence or not at all, so the registry never
@@ -182,7 +202,11 @@ stands beside a permanent legacy path (P-12). Inside the audit and
 docs extension, S-058 is Stretch and cut first; S-052–S-057 are its
 MVP and ship as one sequence, so no plugin is ever exposed without
 validated docs and no AI report is ever shown without the
-deterministic gate in front of it.
+deterministic gate in front of it. Inside the adaptive web UI
+extension, S-064, S-063, and S-062 are Stretch and cut first, in that
+order; S-059–S-061 ship as one sequence after S-046, so the panel is
+never schema-driven without the deterministic layout and the mode
+toggle in front of it.
 
 ## Day-by-day plan, 27/10–4/11
 

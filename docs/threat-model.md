@@ -55,6 +55,7 @@ application service; driven adapters each implement one port.
 | Cache adapter | `adapters/cache` behind `CachePort` | Reading and writing analysis results per code hash and model version. | K-013 |
 | Model artifact adapter | `adapters/model` behind `ModelArtifactPort` | Loading and checksum verification of the frozen calibration artifact at startup. | K-011, K-210, K-211 |
 | Muse assessment adapters | `adapters/assessment/metaModelApi` and `adapters/assessment/hostedOpenWeights` behind `AssessmentModelPort` | Free-text Muse contract assessment through the selected provider, solely server-side and solely on request: Meta Model API with Muse Spark, or hosted with Muse Spark Open (`meta-models/muse-spark-open-1026`). | K-305, K-309, K-502, K-513 |
+| Layout model adapter (design per ADR section 13) | `adapters/layout/hostedOpenWeights` behind `PluginLayoutModelPort` | Experimental AI layout through hosted with Muse Spark Open (`meta-models/muse-spark-open-1026`), solely server-side and solely after an explicit opt-in in the web UI: returns a declarative layout spec that only orders and emphasises whitelisted sections. Without a key it reports `not configured` with zero provider calls. | K-518 (proposed), K-513 |
 | DeploymentFeed adapter | `adapters/feed` behind `DeploymentFeedPort` | Recently deployed tokens for the Just-deployed feed. | K-014, K-015 |
 | Clock and configuration adapters | `adapters/clock`, `adapters/config` behind `ClockPort`, `ConfigPort` | Current time as a value to the core; validated operational configuration as a typed value at startup. | K-102, K-104 |
 | Composition root | `composition` | The sole module that knows concrete adapter classes. Binds every port to exactly one adapter and hands a ready `AppServices` to the driving adapters. | K-027 |
@@ -146,6 +147,9 @@ flowchart TB
 | F-14 | Configuration, secrets and clock → composition root, application service and adapters | Typed operational configuration at startup, keys as environment variables from the secret store and current time as a `Timestamp` value per call. | B7 |
 | F-15 | Application service → client via web UI, REST API and MCP server | Assessment with probabilities, grade, signals with evidence, can't tell list, template-based explanation and, on request, clearly marked Muse-refined text. The response side of F-01 and F-02. | B8 |
 | F-16 | CI and build chain → running components and demo | Installed dependencies from lockfile, pinned extdecomp binary with verified checksum, digest-pinned image, model artifact and deployment to the demo. | B9 |
+| F-17 | Operator or CI → plugin audit, and on opt-in audit → hosted endpoint (design per ADR section 12) | Plugin source, manifest, and `PLUGIN.md` from one plugin directory in; deterministic check results and, on opt-in, structured advisory findings out. | B9, B5, B6 |
+| F-18 | Plugin registry → REST, MCP, and web UI callers (design per ADR P-16) | Validated `PLUGIN.md` content with its section list, read-only. | B8 |
+| F-19 | Web UI → REST layout route → layout service → hosted endpoint (design per ADR section 13) | Closed layout facts and quoted finding titles out after an explicit opt-in; validated declarative layout spec in with provider and model id. The deterministic adaptive layout (schema-driven rendering, risk-adaptive order, Simple / Expert) is client-side over F-15 data and adds no flow. | B1, B8, B5, B6 |
 
 The fast path as per K-101 consists of F-01/F-02, F-03, F-04/F-13,
 F-11, F-07 and F-15 with a template-based explanation from the core.
@@ -387,6 +391,21 @@ surface in every mode per section 6.
 | I | The AI phase sends unpublished plugin source, neighbouring repo files, or secrets to the provider. | Opt-in per run, the exact file list shown before sending, plugin files only under size caps, hashes logged with content kept outside the log (H-19, M-25). |
 | D | A large plugin or an oversize model response binds the audit or CI. | Per-file and total input caps, output size limits, deadline, and the typed `output-too-large` outcome with the deterministic result standing (H-20, M-26). |
 | E | A schema-invalid model response, or raw HTML in `PLUGIN.md`, reaches a reviewer or a visitor's browser as trusted content. | Findings pass `parsePluginAuditReport` before display with raw invalid text discarded; docs render through a sanitizer with raw HTML as inert text under the strict CSP and as marked untrusted data through MCP (H-20, M-26, M-13, M-15). |
+
+### 4.15 Adaptive web UI and AI layout (F-19, F-15 out; design per ADR section 13)
+
+The deterministic parts (schema-driven rendering, risk-adaptive order,
+Simple / Expert) run client-side over F-15 data and add no flow. The
+table below covers those parts and the opt-in AI layout leg F-19.
+
+| Cat. | Threat | Handling |
+|---|---|---|
+| S | A layout response comes from an endpoint outside the allowlist or impersonates the selected provider or model. | Calls go solely to the hosted allowlisted endpoint from validated configuration; provider and model id are verified and shown with the `Experimental AI layout` label (H-21, M-27). |
+| T | Analysis or plugin text instructs the layout model to hide, invent, or restyle content, or a crafted spec orders content deceptively. | Layout input is closed facts plus quoted finding titles in a tool-free call; the spec is whitelist-validated and can only order and emphasise unchanged frozen content (H-22, H-23, M-28, M-29). |
+| R | A visitor disputes what was shown under an AI-chosen order. | The deterministic content, score, and evidence are identical in every layout; the applied layout source, provider, model id, and layout prompt version are stated on the page (H-23, M-29). |
+| I | The layout call leaks the provider key, full analysis text, or neighbouring page data to the provider or the client. | The call is server-side with the key as header only; input is minimised to closed layout facts and capped quoted titles, logged as ids and versions (H-22, M-28). |
+| D | A slow, oversize, or repeated layout response binds the token page or the provider budget. | Deadline, input and output size limits, at most one call per uncached view, cache per code hash, prompt version, provider, and model id, and per-provider daily caps; every failure keeps the deterministic layout (H-21, M-27, M-09). |
+| E | A spec carrying HTML, code, URLs, or styles executes in the visitor's browser, or a tampered stored mode preference steers rendering. | Spec fields outside the whitelist descriptor are unrepresentable and the whole spec is discarded; all content renders as escaped text under the strict CSP with no new HTML sink; the stored mode is read against a closed `simple` / `expert` union (H-24, H-25, M-27, M-30, M-31). |
 
 ## 5. Threats with countermeasure, requirement ID and test
 
@@ -1142,6 +1161,166 @@ does not have mislead reviewers and users about what a finding means.
   script-bearing `PLUGIN.md` through the Docs view and requires
   inert text with the CSP header present.
 
+The adaptive UI update (ADR section 13, P-18–P-23) adds one further
+surface inside this same section, so plugin threats stay in one place:
+an adaptive web UI over the registry output — schema-driven rendering
+through a fixed component library, a deterministic risk-adaptive
+layout, and a Simple / Expert toggle persisted in `localStorage` —
+plus an experimental, off-by-default AI layout mode. One flow is named
+for the AI leg: F-19 (closed layout facts and quoted finding titles
+from the web UI through the REST layout route and the layout service
+to the hosted endpoint, and the validated layout spec back), crossing
+B1 and B8 on the client leg and B5/B6 on the provider leg. The
+deterministic adaptive parts run client-side over F-15 data and add no
+flow. The K-ID K-518, and the functional K-034, are proposed in the ADR
+and enter `docs/requirements.md` with their first implementation
+stories (S-059–S-064), in the same change, per section 1 point 4.
+
+**H-21 Malicious, oversize, or identity-mismatched layout spec
+(F-19, B5, B6, B8).**
+A tampered, malformed, oversize, or wrong-provider response from the
+layout provider — or a spec crafted to name sections that do not
+exist, duplicate placements, drop the summary or score, or exceed the
+placement cap — is applied to the token page, so the page order is
+steered by an unvalidated value or the page binds on a huge spec.
+
+- M-27 Whitelist-validated layout spec with total fallback: every
+  layout response passes the plain-check smart constructor
+  `parseLayoutSpec` against the TypeScript `LayoutSpec` type and its
+  JSON Schema descriptor (ADR P-22, no new schema library) before the
+  UI applies it. The descriptor admits only whitelisted `sectionId`
+  values, the closed `emphasis` enum, and the optional `collapsed`
+  flag, with `additionalProperties: false`, a placement cap, and
+  `summary` and `score` always present and never collapsible.
+  Schema-invalid, oversize, duplicate, unknown-section, or
+  identity-mismatched output gives the typed `invalid-output`,
+  `output-too-large`, or `provider-mismatch` branch per A-15, the raw
+  model text is discarded, and the deterministic P-19 layout stands.
+  Provider and model id are verified against the selected
+  configuration, and calls go solely to the hosted allowlisted
+  endpoint with deadline and size limits per A-17. Requirement:
+  K-518 (proposed), K-513. Test: the unit test
+  `k518_layout_spec_rejects_html_code_url_style_fields` feeds specs
+  carrying markup, code, URL, and style fields and requires the
+  `invalid-output` outcome with the deterministic layout standing;
+  the contract test `k518_layout_spec_agrees_with_json_schema_on_fixtures`
+  checks the typed spec and the descriptor against each other on
+  frozen examples in both directions; the contract suite
+  `runPluginLayoutModelPortContract` requires the same outcomes
+  against the fake adapter and the hosted adapter over a recorded
+  transport, with zero network in tests.
+
+**H-22 Prompt injection via analysis or plugin text into the layout
+model (F-19, B3, B6).**
+Finding titles, plugin display names, token strings, or decompiled
+text that the layout facts quote carry instruction-like text that
+tries to make the layout model hide severe evidence, invent sections,
+downplay a risk by ordering, or change the spec format. The layout
+input is narrower than the assessment evidence list, but every quoted
+string in it is attacker-influenced through the analysed contract.
+
+- M-28 Injection-resistant layout prompt over minimised, quoted
+  input: the layout prompt keeps its system instruction in its own
+  field and passes only closed layout facts (present section ids,
+  score band, severity counts, plugin ids and outcomes) plus finding
+  titles quoted through `UntrustedText.quote` with a length cap, in a
+  tool-free call, with the instruction that quoted content is data
+  for ordering and never instructions to follow (ADR P-21). Raw
+  bytecode, decompiled code, and full finding text never enter the
+  layout prompt. A response that follows an embedded instruction
+  either fails spec validation in M-27 or amounts to an ordering
+  choice over unchanged content under M-29. The prompt is logged as
+  layout prompt version, provider, model id, and section ids per
+  I-10, with quoted content kept outside the log. Requirement:
+  K-518 (proposed), K-502. Test: the unit test
+  `k518_injection_in_analysis_text_stays_quoted_data` feeds finding
+  titles carrying hide, invent, and restyle instructions through the
+  fake layout adapter and requires them as quoted data in the prompt
+  and no non-spec field in the result; the contract suite
+  `runPluginLayoutModelPortContract` requires the same quoting
+  against the fake and the hosted adapter over a recorded transport.
+
+**H-23 AI layout treated as authority over evidence (F-19, B8).**
+An AI-chosen order is read — by a visitor, a screenshot, or later
+code — as a change to the assessment itself: severe evidence placed
+last or collapsed is taken as absent, an emphasised section is taken
+as more severe than the frozen severity states, or a layout field
+becomes an input to scoring, evidence, or finding text. The failure
+is presentational and architectural at once, as in H-18.
+
+- M-29 Presentation-only layout over frozen content: the layout spec
+  type has no field that the analysis, scoring, registry, or
+  assessment paths read, and all content — scores, probabilities,
+  signals, plugin findings, evidence, explanations, and assessment
+  text — is rendered from the frozen analysis exactly as under the
+  deterministic layout (ADR P-18, P-19, P-23). The spec can only
+  order, emphasise, or collapse sections the deterministic plan marks
+  collapsible; `summary` and `score` are always present. While an AI
+  layout is applied the page carries the label `Experimental AI
+  layout` with provider and model id, and the deterministic layout
+  returns with one toggle. Requirement: K-518 (proposed), K-307.
+  Test: the property test
+  `k518_ai_layout_leaves_scores_evidence_and_text_unchanged` renders
+  a frozen analysis with the AI layout on, off, invalid, and absent
+  and requires bit-identical scores, probabilities, signals,
+  evidence, and finding text; the Playwright test
+  `k518_ai_layout_toggle_off_by_default_and_labelled` requires the
+  mode off on first visit and the experimental label with provider
+  and model id while it is on.
+
+**H-24 Script via a layout spec or layout-driven rendering in the UI
+(F-19, F-15, B8).**
+A spec value, a component prop derived from plugin output, or expert
+detail (bytecode, selectors, raw plugin payloads) carries markup or
+script that executes in the visitor's browser because the adaptive
+renderer introduces a raw-HTML sink or trusts a spec field as markup.
+This is H-07 reached through the new renderer, so the countermeasure
+keeps the same posture and adds no new sink.
+
+- M-30 Text-only layout rendering under the strict CSP: the fixed
+  component library (ADR P-18) renders every plugin string, spec
+  value, and expert detail as escaped text, introduces no raw-HTML
+  sink (`dangerouslySetInnerHTML` or equivalent), and keeps the
+  strict CSP on every response (K-507, M-13). Spec values reach
+  components only as whitelisted enum ids after M-27 validation, so
+  no spec field is ever rendered as markup, a URL, or a style. The
+  existing static guard that bans HTML sinks in web sources covers
+  the renderer and the layout code unchanged. Requirement: K-518
+  (proposed), K-507. Test: the e2e test
+  `k507_script_bearing_data_renders_as_inert_text` extended to the
+  schema-driven panel and expert detail requires inert text; the
+  Playwright test `k518_invalid_or_missing_spec_falls_back_to_deterministic_layout`
+  feeds an invalid spec and a missing spec and requires the
+  deterministic layout with the fallback notice; the unit test
+  `k507_no_html_sinks_or_eval_in_web_sources` stays green over the
+  new sources.
+
+**H-25 Tampered localStorage mode preference (web UI, local to the
+device).**
+A script on another origin path, a browser extension, or a visitor
+editing storage writes a crafted value under the mode key, hoping it
+reaches the renderer as a mode, a component name, or markup, or that
+Expert detail appears without the visitor choosing it. The impact is
+bounded to that device and that visitor: no server state, no other
+visitor, and no analysis value reads the preference.
+
+- M-31 Closed-union read of the local mode preference: the preference
+  is stored under one versioned key (`brandklipparen-ui-mode`) and
+  read once at start-up against the closed union `simple` / `expert`;
+  any other stored value is ignored and Simple applies (ADR P-20).
+  The value is never sent to the server, never part of a cache key,
+  never logged, and selects only which already-rendered sections are
+  visible; Expert content renders as escaped text under M-30 in both
+  modes. Severity is low and recorded as such: the worst outcome of a
+  successful tamper is the wrong detail depth on that device until
+  the visitor toggles the mode. Requirement: K-034 (proposed),
+  K-507. Test: the unit test
+  `k034_invalid_stored_mode_falls_back_to_simple` seeds crafted,
+  oversize, and markup-bearing stored values and requires Simple with
+  no stored string reaching the renderer; the Playwright test
+  `k034_mode_toggle_persists_across_reload` toggles Expert, reloads,
+  and requires Expert still applied with the analysis unchanged.
+
 ## 6. Muse contract assessment: bounded MVP feature with both providers
 
 The MVP feature is the button or tab "Muse contract assessment" in
@@ -1282,6 +1461,26 @@ section 6.3, with the template text as the outcome at every deviation.
   `k305_assessment_within_timeout_or_template` tests the target with
   delayed fakes for both providers (M-05, M-20, K-502, K-513).
 
+### 6.4 Experimental AI layout: bounded presentation surface
+
+The experimental AI layout (ADR P-21–P-23, H-21–H-24) is a second
+bounded model surface beside the assessment, with the same shape: off
+by default, solely after an explicit opt-in in the web UI, solely
+server-side through `PluginLayoutModelPort` to hosted, and never an
+input to the deterministic core, which keeps zero prompt injection
+surface per section 6.1 — the analysis path makes zero layout calls
+ahead of the opt-in, and the layout result reaches only the section
+order on one token page. Marking, caching, and cost protection mirror
+section 6.3: the page states `Experimental AI layout` with provider
+and model id while an AI layout is applied; specs are cached per code
+hash, layout prompt version, provider, and model id with at most one
+call per uncached view and the per-provider daily caps in I-14; and
+every error branch, including `not-configured` without a key, leaves
+the deterministic layout standing with a notice. Tests are the
+contract suite `runPluginLayoutModelPortContract` against the fake
+with zero network, the unit tests in M-27 and M-28, and the Playwright
+tests in M-29 and M-30 for fallback and toggle behaviour.
+
 ## 7. Attack surface list
 
 The list covers every entry point to running code, to storage and
@@ -1311,6 +1510,8 @@ as per K-210.
 | Plugin registry and `pluginResults` (design per `docs/adr-plugin-architecture.md`) | Internal; registration solely at build time from reviewed source in the repo | Frozen manifests and declared deterministic facts in; validated findings out under `pluginResults` | Static compile-time registration with startup manifest, API-version, and capability validation; output schema, evidence, count, and size bounds; weight 0 until the artifact names the plugin; text-only generic rendering (M-21, M-22). |
 | Plugin audit: CLI and CI job (design per ADR P-13, P-14) | Operator or CI identity; AI phase solely on opt-in with a configured hosted key | Plugin source, manifest, and `PLUGIN.md` from one plugin directory in; deterministic check results and, on opt-in, structured advisory findings out | Deterministic checks run first and block on failure; the AI phase sends solely the listed plugin files, quoted as untrusted data under size caps, tool-free; findings are schema-validated and advisory only; without a key the AI phase reports `not configured` with zero provider calls (M-23–M-25). |
 | Plugin docs: `PLUGIN.md` via REST, MCP, and web UI (design per ADR P-15, P-16) | API key in header for REST and MCP as per the plugin list; web UI through the REST API | Plugin id in; validated markdown with its section list out | Read-only; presence and required sections validated deterministically before exposure; markdown rendered through a sanitizer with raw HTML as inert text under the strict CSP (M-26, M-13). |
+| Adaptive web UI: schema-driven panel, risk-adaptive layout, Simple / Expert (design per ADR P-18–P-20) | Open surface that calls the REST API through the published schema; mode preference in `localStorage` on the device | Frozen analysis and registry output in; ordered sections out | Client-side only; fixed component library with canonical-JSON fallback; deterministic order from frozen fields; stored mode read against the closed `simple` / `expert` union (M-30, M-31). |
+| AI layout: `POST /v1/layout` and hosted layout call (design per ADR P-21) | API key in header; solely after an explicit opt-in in the web UI | Code hash and closed layout facts in; validated layout spec with provider and model id out | Off by default; `layout-not-configured` with zero provider calls without a key; whitelist spec validation with total deterministic fallback; at most one call per uncached view with per-provider caps (M-27–M-29). |
 
 ## 8. Top 5 threats for the public demo
 
@@ -1371,6 +1572,18 @@ section 1:
 - Keys in the hands of an authorised operator and the platform's
   own access to the secret store are handled by the platform
   permission model as per I-09.
+- An AI layout that is valid under M-27 can still order sections
+  unwisely — severe evidence last within the allowed placements, or a
+  calm emphasis on a high-risk page. The content, score, and evidence
+  stay identical and labelled as experimental (M-29); the residual is
+  persuasion through order, bounded by the always-present `summary`
+  and `score` and by the one-toggle return to the deterministic
+  layout.
+- The Simple / Expert preference in `localStorage` is a low-integrity
+  local value by design (H-25). A tampered value can at most flip the
+  detail depth on that device; it is accepted as a residual because
+  the closed-union read in M-31 keeps every other value at Simple and
+  no server or analysis state ever reads it.
 
 Assumptions, each verified as far as the review reaches:
 
@@ -1423,6 +1636,11 @@ K-5xx to its threats and countermeasures, is in section 12.2 in
 | M-24 Injection-resistant audit prompt over quoted untrusted files | H-17 | K-516 (proposed), K-502 | `k516_injection_in_source_or_docs_stays_quoted_data` (unit) |
 | M-25 Opt-in, minimised, and logged source disclosure for the audit | H-19 | K-516 (proposed), K-505, K-513 | `k516_audit_sends_only_listed_plugin_files` (integration) |
 | M-26 Schema-validated audit findings and sanitized, checked plugin docs | H-20 | K-517 (proposed), K-516 (proposed), K-507, K-508 | `k517_plugin_docs_render_as_sanitized_markdown` (e2e) |
+| M-27 Whitelist-validated layout spec with total fallback | H-21 | K-518 (proposed), K-513 | `k518_layout_spec_rejects_html_code_url_style_fields` (unit) |
+| M-28 Injection-resistant layout prompt over minimised, quoted input | H-22 | K-518 (proposed), K-502 | `k518_injection_in_analysis_text_stays_quoted_data` (unit) |
+| M-29 Presentation-only layout over frozen content | H-23 | K-518 (proposed), K-307 | `k518_ai_layout_leaves_scores_evidence_and_text_unchanged` (property) |
+| M-30 Text-only layout rendering under the strict CSP | H-24 | K-518 (proposed), K-507 | `k518_invalid_or_missing_spec_falls_back_to_deterministic_layout` (Playwright) |
+| M-31 Closed-union read of the local mode preference | H-25 | K-034 (proposed), K-507 | `k034_invalid_stored_mode_falls_back_to_simple` (unit) |
 
 Every row in the table is included in the suite or the gate as per A-22
 and I-01. A change that activates a new component, port or

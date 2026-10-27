@@ -57,11 +57,20 @@ holds by construction and by CI enforcement, not by convention.
 | Isolation | Detector plugins run in-process as trusted, pure, size-bounded functions in v1. Worker isolation is a precondition for any untrusted detector code (P-06). Assessment plugins keep the existing port limits, deadline, and cost caps. |
 | Plugin audit | Deterministic static checks first, then an optional advisory AI review through the existing hosted open-weights assessment path. The AI result never approves a plugin and never affects scores or evidence (P-13, P-14). |
 | Plugin documentation | Every plugin ships a required `PLUGIN.md` with fixed sections, validated deterministically and exposed read-only through REST, MCP, and the web UI with sanitized rendering (P-15, P-16). The audit checks documented claims against the code (P-17). |
+| Adaptive web UI (after plugin core) | Schema-driven rendering from each plugin's `outputSchema` through a fixed component library, a deterministic risk-adaptive layout, and a Simple / Expert toggle persisted locally (P-18–P-20). No per-plugin UI code. |
+| Experimental AI layout | Off by default. Muse Spark Open returns a declarative layout spec in JSON that only chooses, orders, and emphasises whitelisted components. It never emits HTML, code, URLs, or styles and never changes scores, evidence, or finding text. Invalid or missing spec falls back to the deterministic layout (P-21–P-23). |
 
 Note on status: story S-042 (plugin API, manifest validation, and the
 empty static registry in `src/plugins/`) has landed. This update extends
 the design only; it renumbers nothing in P-01–P-12, K-028–K-031, or
 K-514–K-515, and adds its stories after S-051 (section 12.5).
+
+Note on status (adaptive UI): S-042 and S-043 have landed and S-044 may
+be in progress. Section 13 adds P-18–P-23 for an adaptive web UI that is
+implemented after the plugin core. It renumbers nothing in P-01–P-17,
+adds its stories after S-058 (section 13.6), and proposes K-034 and
+K-518. The deterministic parts (P-18–P-20) are MVP for that follow-on
+work; the AI layout mode (P-21) is experimental and Stretch.
 
 ## 3. Typed plugin contract and manifest
 
@@ -600,6 +609,8 @@ in the same change as their implementation stories begin:
 | K-033 | Plugin docs exposure: REST docs route, MCP docs resource, sanitized web UI docs view from one registry (P-16) | MVP (for E-08 audit/docs) |
 | K-516 | Plugin audit: deterministic static gate plus optional advisory AI review; acceptance requires deterministic pass and human review (P-13, P-14) | MVP (for E-08 audit/docs) |
 | K-517 | Plugin documentation integrity: documented claims checked against manifest and code, deterministically and by advisory review (P-17) | MVP (for E-08 audit/docs) |
+| K-034 | Adaptive web UI: schema-driven plugin rendering, deterministic risk-adaptive layout, Simple / Expert modes (P-18–P-20) | MVP (for E-08 adaptive UI, after S-046) |
+| K-518 | AI layout safety: whitelist declarative layout spec, presentation-only, deterministic fallback (P-21–P-23) | Stretch (for E-08 adaptive UI) |
 
 Threat-model additions are drafted in `docs/threat-model.md` in this
 change (H-15, H-16, M-21, M-22) against K-514 and K-515, and take effect
@@ -665,6 +676,19 @@ the named points; none blocks S-042:
    read-only to the same API-key holders as `GET /v1/plugins`. Whether
    plugin docs become public on the demo (no key) is open; the default
    keeps the key gate.
+8. AI layout on the demo. The default in P-21 keeps the experimental AI
+   layout off by default for every visitor, enabled only by an explicit
+   toggle in the token page. Whether the public demo enables it at all
+   (it costs a provider call per uncached view) is Jens's call before
+   S-064 starts; the default is demo-off, locally testable with a key.
+9. Layout input text. The default in P-21 sends only closed layout
+   facts (section ids, score band, severity counts, plugin outcomes)
+   plus quoted finding titles under a length cap. Whether raw finding
+   text beyond titles is ever layout input is open; the default is no.
+10. Mode persistence scope. The default in P-20 persists Simple / Expert
+    in `localStorage` on this device only. Whether the preference is
+    also mirrored server-side per API key is open; the default is no
+    server state for a presentation preference.
 
 ## 12. Plugin audit and required PLUGIN.md
 
@@ -966,3 +990,237 @@ Alternatives considered for this update and set aside:
 - A per-plugin docs route or UI component. Rejected for the same
   reason as in section 10: one registry-derived surface, reviewed
   once (P-16).
+
+## 13. Adaptive web UI (after the plugin core)
+
+This section adds P-18–P-23. It designs presentation only: no rule here
+changes analysis, scoring, evidence, or finding text (P-05, K-307,
+A-33). Implementation follows the plugin core — every story in
+section 13.6 depends on S-046 (registry exposure: REST plugin list,
+`pluginResults` in the envelope, and the generic Plugins panel) and
+builds on the schema-driven panel that S-046 ships. The web UI today
+is React in `apps/web` with an assessment tab on the token page,
+text-only rendering under a strict CSP (K-507), and UI types that
+mirror the published REST schema without importing core modules; the
+adaptive UI keeps all three properties.
+
+### 13.1 Schema-driven rendering through a fixed component library
+
+**P-18 Plugin output is rendered generically from its declared
+`outputSchema` through a fixed component library, so a new plugin
+needs no UI code.** This extends the generic panel in P-10:
+
+- The library is a closed set of presentational components owned by
+  `apps/web` (working set: summary card, severity badge, evidence
+  list with selector and PC offset, metric with tabular figures
+  (K-103), text block, key-value list, nested object, list, and a
+  canonical-JSON fallback). The set is versioned with the UI; adding
+  a component is one reviewed renderer change for all plugins, never
+  a per-plugin change.
+- The renderer maps only the documented `outputSchema` keyword subset
+  (section 3.3) to those components: `string` to text, `number` and
+  `integer` to metric, `boolean` and `enum` to badge or text,
+  `array` to list, `object` to key-value or nested object, with
+  evidence-shaped entries to the evidence list. Component choice is a
+  pure function of schema shape and value type.
+- Plugin-supplied component names, markup, styles, scripts, URLs, and
+  class names are unrepresentable: the schema subset carries no such
+  field, and every plugin string renders as escaped text under the
+  strict CSP (K-507, M-13). The existing static guard that bans HTML
+  sinks in web sources (K-507) covers the new renderer unchanged.
+- An unknown or out-of-subset schema shape falls back to canonical
+  JSON rendered as text, exactly as P-10 states. A plugin that needs
+  a shape outside the subset files a design change for the library,
+  reviewed once for all plugins.
+
+### 13.2 Risk-adaptive deterministic layout
+
+**P-19 Section order and emphasis follow deterministic rules over the
+frozen analysis, never a model.** A pure layout function in `apps/web`
+takes only frozen, already-rendered facts — score and its word band,
+per-risk probabilities, signal severities and directions, plugin
+outcomes, and the can't-tell count — and returns an ordered section
+plan for the token page:
+
+- High risk (highest band): the most severe evidence-bearing sections
+  come first (signals and plugin findings ordered by severity), then
+  score and explanation, then summary detail.
+- Low risk (lowest band): a calm summary comes first (score, word,
+  one-line outcome), with evidence sections following in their
+  standard order.
+- Middle band: the standard order, unchanged from the static page.
+
+The function recomputes nothing: it reads the frozen score, band, and
+severities and never re-derives risk. The same analysis always yields
+the same plan, in DOM order as well as visual order (K-103), so
+keyboard and screen-reader order match what is seen. Reordering never
+hides content: every section stays present and reachable in every
+band; only order and visual emphasis change. This layout is the
+default for every visitor and the fallback for P-21.
+
+### 13.3 Simple / Expert mode
+
+**P-20 A Simple / Expert toggle controls detail depth; the
+preference is presentation state only, persisted locally.** Simple is
+the default and shows summary, score, signals, plugin findings,
+explanations, and the assessment tab as today. Expert additionally
+shows what the response already carries: bytecode, selectors with PC
+offsets, disassembly or decompiled snippets where present, and raw
+plugin payloads as canonical JSON text. The toggle therefore reveals
+or hides sections of the same frozen response; it triggers no new
+analysis, no new fetch of analysis data, and no score or evidence
+change.
+
+Persistence: the preference is stored in `localStorage` under one
+versioned key (`brandklipparen-ui-mode`, value `simple` or `expert`),
+read once at start-up and validated against that closed union; any
+other stored value is ignored and Simple applies. The value is never
+sent to the server, never part of a cache key, and never logged. The
+threat notes for this storage are in H-25 and M-31 of the threat
+model: the stored value is a low-integrity local preference, so
+tampering can at most flip the detail depth on that device, and the
+closed-union read keeps a crafted value from reaching the renderer as
+anything but `simple` or `expert`. Expert content is still contract
+data and renders as escaped text under the CSP in both modes (K-507).
+
+### 13.4 Experimental AI layout (off by default)
+
+**P-21 An experimental AI layout mode may reorder and emphasise the
+same sections from a declarative layout spec; it is off by default,
+clearly labelled, and presentation-only.** The mode is Stretch. When
+a visitor explicitly enables it on the token page, the web UI asks
+the server for a layout spec for the current analysis; the server —
+never the browser — calls Muse Spark Open
+(`meta-models/muse-spark-open-1026`) on hosted through a new small
+port, working title `PluginLayoutModelPort`, built in parallel to
+`PluginAuditModelPort` (P-14) and reusing the hosted adapter's
+transport, server-side key handling, deadline, size limits,
+concurrency bound, and cost caps (A-17, I-13, I-14). It does not
+reuse the K-302 evidence list or the K-305 assessment schema: layout
+input is presentation facts, not contract evidence. Working REST
+shape: `POST /v1/layout` behind the same API-key gate as the analysis
+routes (K-024), returning the validated spec with provider and model
+id, or the typed `layout-not-configured` outcome when no hosted key
+is configured — the same posture as `assessment-not-configured`,
+with zero provider calls. There is no MCP layout tool in v1; layout
+is a web-UI presentation concern.
+
+The port returns `Result<LayoutSpec, PluginLayoutModelError>` with
+the A-15 branches mirrored from the audit port (`timeout`,
+`rate-limited`, `invalid-output`, `output-too-large`,
+`provider-mismatch`, `unavailable`, plus `not-configured`). Tests run
+against a fake adapter with zero network, in the same contract style
+as `runPluginAuditModelPortContract`: a `runPluginLayoutModelPortContract`
+suite against the fake and the hosted adapter over a recorded
+transport.
+
+Hard bounds, by construction:
+
+- The model returns only a declarative spec (P-22) that chooses,
+  orders, and emphasises whitelisted section and component ids from
+  the deterministic plan. It never emits HTML, code, URLs, styles,
+  class names, or free text, and no field of the spec can carry them.
+- The spec never changes scores, probabilities, signals, evidence, or
+  the text of findings, explanations, or assessments. All content is
+  rendered from the frozen analysis exactly as in P-18 and P-19;
+  the spec can at most place and emphasise it, subject to P-23.
+- Input to the model is untrusted. The layout prompt keeps its system
+  instruction in its own field and passes only closed layout facts
+  (present section ids, score band, severity counts, plugin ids and
+  outcomes) plus finding titles quoted through `UntrustedText.quote`
+  under a length cap, in a tool-free call (K-308, M-04 pattern).
+  Analysis and plugin text that instructs the model to hide, invent,
+  or restyle content is therefore quoted data; a response that
+  follows it fails spec validation in P-22 or is visible to the
+  visitor as an ordering choice over unchanged content.
+- Cost and caching mirror the assessment path: at most one layout
+  call per uncached analysis view, cached per code hash, layout
+  prompt version, provider, and model id, under the per-provider
+  daily caps in I-14. The deterministic page renders first; an AI
+  layout, when it arrives, only re-places sections.
+
+### 13.5 Layout spec contract: types plus JSON Schema, no new library
+
+**P-22 The layout spec is a closed typed value validated by plain
+checks plus a JSON Schema descriptor; no schema library is added.**
+Following section 3.3 and P-14:
+
+- TypeScript types are normative. Working shape:
+  `LayoutSpec` carries a spec version and a bounded list of
+  placements; each placement names one `sectionId` from a closed
+  whitelist enum (the sections the deterministic plan can emit, for
+  example `summary`, `score`, `signals`, `plugin-findings`,
+  `evidence`, `cant-tell`, `assessment`, `expert-detail`), an
+  `emphasis` from `normal | high | low`, and an optional `collapsed`
+  flag for sections the deterministic plan marks collapsible.
+  `summary` and `score` are always present, never collapsible, and
+  keep their content in every spec.
+- A JSON Schema descriptor (the draft-07 subset in section 3.3,
+  `additionalProperties: false`) is carried beside the types and
+  published with the REST schema, and a plain-check smart
+  constructor, `parseLayoutSpec`, validates every model response
+  before the UI applies it — in the style of `parsePluginAuditReport`
+  and `validateAssessmentOutput`. Unknown section ids, duplicate
+  placements, placements for absent sections, missing required
+  sections, oversize specs, and any field outside the descriptor
+  give the typed `invalid-output` outcome and the whole spec is
+  discarded; no partial spec is applied.
+- **No zod.** Zod is not a dependency in this repo; runtime validation
+  is plain checks plus smart constructors (A-16), JSON Schema
+  descriptors already exist for REST and MCP, and `ajv` is a
+  test-only devDependency. Adding zod solely for the layout spec
+  would add a runtime dependency under K-506 and I-04 supply-chain
+  review and a second source of truth beside the TypeScript types,
+  for a small closed spec shape the existing style already covers.
+  The product request's mention of zod is therefore met with the
+  repo's established equivalent, and this paragraph is the record of
+  that choice. A contract test checks that the typed spec and the
+  descriptor agree on frozen examples in both directions.
+
+**P-23 Any invalid, missing, or unavailable AI layout falls back to
+the deterministic layout, and the AI layout is never an authority
+over content.** Every port error branch, a schema-invalid spec, an
+identity-mismatched response, and the `not-configured` outcome leave
+the P-19 deterministic plan standing, with a short notice that the
+deterministic layout is shown. While an AI layout is applied, the
+page carries the label `Experimental AI layout` with provider and
+model id, beside — never instead of — the unchanged deterministic
+content. No code path reads the spec as evidence: the spec type has
+no field the analysis, scoring, registry, or assessment paths can
+consume, and the property test in S-064 requires bit-identical
+scores, evidence, and finding text with the AI layout on, off,
+invalid, and absent.
+
+### 13.6 Stories and requirements added by this update
+
+Stories S-059–S-064 are added under epic E-08 in `backlog.md`, after
+S-058, test-first like every E-08 story. S-059–S-061 (deterministic
+adaptive UI) are MVP for this follow-on work; S-062–S-064 (AI layout)
+are Stretch and cut first. Every story depends on S-046; S-060 and
+later also on the stories named in `backlog.md`. Proposed new K-IDs,
+entered in `docs/requirements.md` by their first implementation story
+in the same change (section 10 rule, threat-model section 1 point 4):
+
+| Proposed ID | Title | Priority |
+|---|---|---|
+| K-034 | Adaptive web UI: schema-driven plugin rendering, deterministic risk-adaptive layout, Simple / Expert modes | MVP (for E-08 adaptive UI, after S-046) |
+| K-518 | AI layout safety: whitelist declarative layout spec, presentation-only, deterministic fallback | Stretch (for E-08 adaptive UI) |
+
+Alternatives considered for this update and set aside:
+
+- Per-plugin UI components or a plugin-supplied component name in the
+  schema. Rejected in P-18 for the same reason as in section 10: one
+  fixed library, reviewed once, keeps plugin markup unrepresentable.
+- Letting the AI layout emit HTML, CSS, or component code for richer
+  pages. Rejected in P-21 and P-22: a declarative whitelist spec over
+  frozen content keeps the K-507 posture and makes fallback total.
+- Zod for the layout spec. Set aside in P-22: plain checks plus a
+  JSON Schema descriptor are the repo norm, and a new runtime
+  dependency needs its own justification against K-506 and I-04.
+- A browser-direct call to the provider for layout. Rejected: the
+  provider key stays server-side (I-09, I-13), and the server call
+  keeps caps, caching, and identity checks in one place.
+- An MCP layout tool. Deferred: layout is web-UI presentation; an
+  MCP caller that needs ordering can read the same frozen fields and
+  order locally. A tool is added only through the K-026 review if a
+  caller appears.
