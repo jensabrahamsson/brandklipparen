@@ -9,7 +9,9 @@
 // typed plugin outcome while the rest of the analysis stands (P-06).
 import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
+import type { CloneHit } from "../domain/clones.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../domain/evidence.ts";
+import type { HardToAnalyzeCause } from "../domain/signals.ts";
 import type {
   Bytecode as BytecodeType,
   CodeHash as CodeHashType,
@@ -27,11 +29,19 @@ import type { PluginRegistry } from "./registry.ts";
 // Closed detector input for v1 (ADR section 3.2): facts the host has already
 // computed deterministically. The capability plugin declares solely
 // `bytecode`, which travels with its CodeHash per the catalogue row
-// "Bytecode with CodeHash". Later detectors add optional catalogue facts
-// here as their manifests declare them.
+// "Bytecode with CodeHash". The clone-match plugin additionally declares
+// `cloneMatch`: the template hit the host looked up through CloneIndexPort,
+// or null on a miss or an index failure. The hard-to-analyze plugin
+// declares solely `bytecode` and reads the host-supplied `decompilerCause`
+// fact beside it: the cause the host derived from the DecompilerPort
+// failure, or null when decompilation succeeded or no worker is bound.
+// Both facts stay optional on the type so detectors written against an
+// earlier input keep compiling; the host always sets them explicitly.
 export type DetectorInput = {
   readonly bytecode: BytecodeType;
   readonly codeHash: CodeHashType;
+  readonly cloneMatch?: CloneHit | null;
+  readonly decompilerCause?: HardToAnalyzeCause | null;
 };
 
 // One detector finding (ADR section 4.1): the id namespaces the plugin id
@@ -65,11 +75,22 @@ export type PluginResultEntry = {
 
 // Frozen detector input construction. The host passes exactly the declared
 // inputs and nothing else; values are frozen so detect cannot widen them.
+// Host-computed facts default to null, so a detector without a hit or a
+// cause reads an explicit empty fact instead of an absent field.
 export function createDetectorInput(
   bytecode: BytecodeType,
   codeHash: CodeHashType,
+  facts?: {
+    readonly cloneMatch?: CloneHit | null;
+    readonly decompilerCause?: HardToAnalyzeCause | null;
+  },
 ): DetectorInput {
-  return Object.freeze({ bytecode, codeHash });
+  return Object.freeze({
+    bytecode,
+    codeHash,
+    cloneMatch: facts?.cloneMatch ?? null,
+    decompilerCause: facts?.decompilerCause ?? null,
+  });
 }
 
 function isRecord(value: unknown): value is { readonly [key: string]: unknown } {

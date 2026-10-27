@@ -77,6 +77,8 @@ describe("capability detector plugin", () => {
     }
     expect(built.value.plugins.map((entry) => entry.id)).toEqual([
       "dev.brandklipparen.capability",
+      "dev.brandklipparen.clone-match",
+      "dev.brandklipparen.hard-to-analyze",
     ]);
     expect(Object.isFrozen(built.value)).toBe(true);
   });
@@ -116,7 +118,7 @@ describe("capability detector plugin", () => {
       throw new Error("expected an assessed envelope");
     }
     const envelope = analysed.value.envelope;
-    expect(envelope.pluginResults.length).toBe(1);
+    expect(envelope.pluginResults.length).toBe(3);
     const entry = envelope.pluginResults[0];
     expect(entry?.pluginId).toBe("dev.brandklipparen.capability");
     expect(entry?.outcome).toBe("ok");

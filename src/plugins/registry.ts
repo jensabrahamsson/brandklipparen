@@ -12,6 +12,8 @@ import { PLUGIN_API_VERSION, isSupportedApiVersion } from "./api.ts";
 import type { PluginId, PluginManifest } from "./api.ts";
 import type { DetectorPlugin } from "./detector.ts";
 import { capabilityDetectorPlugin } from "./detectors/capability/index.ts";
+import { cloneMatchDetectorPlugin } from "./detectors/clone-match/index.ts";
+import { hardToAnalyzeDetectorPlugin } from "./detectors/hard-to-analyze/index.ts";
 
 // Typed startup errors (P-02, P-08). Each error names the plugin id, and
 // the version error names both versions, with values kept outside the
@@ -100,12 +102,15 @@ export function registeredPluginIds(registry: PluginRegistry): readonly PluginId
   return registry.plugins.map((manifest) => manifest.id);
 }
 
-// First-party detector set (S-043, P-12 step 1): the capability detector is
-// the first registered detector plugin. The list is a frozen static value;
-// configuration selects among registered plugins only and never names code
-// to load (P-07).
+// First-party detector set (S-043, P-12 step 1; S-044, P-12 step 2): the
+// capability detector is the first registered detector plugin, followed by
+// the clone-match and hard-to-analyze detectors. The list is a frozen
+// static value; configuration selects among registered plugins only and
+// never names code to load (P-07).
 export const DEFAULT_DETECTOR_PLUGINS: readonly DetectorPlugin[] = Object.freeze([
   capabilityDetectorPlugin,
+  cloneMatchDetectorPlugin,
+  hardToAnalyzeDetectorPlugin,
 ]);
 
 // Executable lookup beside the validated manifest registry: the application
