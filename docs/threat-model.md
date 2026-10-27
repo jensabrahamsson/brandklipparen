@@ -906,6 +906,78 @@ by a wider audience than the operator.
   `k509_demo_log_output_reviewed_before_submission` goes through
   the demo log extract before submission.
 
+### 5.8 Plugin registry and plugin output (design per `docs/adr-plugin-architecture.md`)
+
+The plugin architecture in `docs/adr-plugin-architecture.md` (P-xx) adds
+one component, the static plugin registry in `src/plugins/registry.ts`,
+and one response field, `pluginResults`. Registration is compile-time
+only, detector plugins are pure functions over declared frozen facts,
+assessment plugins stay behind `AssessmentModelPort`, and plugin
+findings carry weight 0 until the versioned model artifact names them.
+The K-IDs K-514 and K-515 below are proposed in the ADR and enter
+`docs/requirements.md` with story S-042, in the same change, per
+section 1 point 4 of this file.
+
+**H-15 Plugin code admitted outside the reviewed supply chain
+(registry, B9).**
+A plugin loaded at run time from a directory, an environment-named path,
+or a network source brings unreviewed code into the deterministic
+analyzer, bypassing the locked, pinned, and scanned supply chain in
+M-12 and the boundary rules in A-06.
+
+- M-21 Static, compile-time registration of reviewed plugin source:
+  the registry is a frozen array built from static imports in
+  `src/plugins/registry.ts` and wired solely by the composition root
+  per A-03. No dynamic import of a computed specifier, no filesystem
+  scan, no plugin path from environment or configuration, and no code
+  fetched over the network exists in the registry path. Configuration
+  selects among already-registered plugins only. Any future
+  separately distributed plugin enters by signature and checksum
+  verification at build time with static import, under its own
+  threat-model change. Requirement: K-514 (proposed), K-506. Test:
+  the CI check `k514_registry_has_no_dynamic_loading` searches the
+  registry and composition modules for dynamic import, filesystem
+  scan, and environment-named module paths and requires zero hits;
+  the unit test `k514_unregistered_plugin_never_runs` requires that a
+  plugin absent from the registry array is absent from analysis
+  output.
+
+**H-16 Malicious or defective plugin output skews scores, breaks
+determinism, or reaches the browser as markup (plugin output, B6, B8).**
+A detector plugin that reads a clock, randomness, or the network, that
+returns findings without evidence, that sizes its output to bind
+serialization, or whose strings carry markup or instruction-like text
+breaks K-102 bit-identity, steers the score around calibration, or
+executes in a visitor's browser through the generic UI panel.
+
+- M-22 Pure, bounded, schema-validated, weight-0 plugin output rendered
+  as text: detector `detect` functions are synchronous and typed to
+  receive solely frozen declared facts, enforced by the
+  dependency-cruiser rules `boundary-detector-plugins-pure` and
+  `boundary-plugins-via-registry` and the ESLint restrictions on
+  `node:*`, clock, randomness, and network access in detector modules
+  (P-03). The host validates every output against the manifest
+  `outputSchema`, the evidence requirement per A-13, and the manifest
+  limits (`maxFindings`, `maxEvidencePerFinding`, `maxOutputBytes`)
+  before serialization; deviations give the typed outcome
+  `invalid-output` for that plugin and leave the analysis standing.
+  Findings enter `pluginResults` only, sorted by plugin id and finding
+  id through `canonicalSerialize`, and enter `score` solely after a
+  new model artifact version names the plugin (P-05, K-210). Every
+  plugin string renders as escaped text under the strict CSP in the
+  generic panel; plugin-supplied markup, styles, and scripts are
+  unrepresentable in the output-schema subset (K-507, M-13).
+  Requirement: K-515 (proposed), K-102, K-507. Test: the registry
+  contract suite `runDetectorPluginContract` requires bit-identical
+  canonical output across two runs, a typed `invalid-output` outcome
+  on schema, evidence, and size violations, and unchanged inputs;
+  the property test
+  `plugin_findings_leave_probabilities_and_score_unchanged` requires
+  bit-identical probabilities, score, and signals with each plugin
+  enabled and disabled; the e2e test
+  `k515_plugin_strings_render_as_inert_text` requires script-bearing
+  plugin strings to render as inert text in the Plugins panel.
+
 ## 6. Muse contract assessment: bounded MVP feature with both providers
 
 The MVP feature is the button or tab "Muse contract assessment" in
@@ -1072,6 +1144,7 @@ as per K-210.
 | Logs and health responses out | Operator access to the platform log extract; open health status | Allowlisted log fields out; status per dependency out | Field allowlist and redaction as per I-10 at every log level (M-16). |
 | CI: push, pull request and release | GitHub permission with least privilege per job as per I-03 | Code, lockfiles, fixtures and artifacts | Green gate with eleven named blocking jobs as per I-01; pinned Actions on SHA, images on digest and extdecomp on checksum; gitleaks, vulnerability and licence checks (M-12). |
 | Offline chain: dataset and training | Operator access outside the repo; run during the hackathon | Fresh public on-chain data with address, bytecode, deploy block and label source | Provenance per data point, label policy, time- and cluster-divided splits, locked seeds and a reproducible command; export solely as artifact under `model/` (M-18, M-19). |
+| Plugin registry and `pluginResults` (design per `docs/adr-plugin-architecture.md`) | Internal; registration solely at build time from reviewed source in the repo | Frozen manifests and declared deterministic facts in; validated findings out under `pluginResults` | Static compile-time registration with startup manifest, API-version, and capability validation; output schema, evidence, count, and size bounds; weight 0 until the artifact names the plugin; text-only generic rendering (M-21, M-22). |
 
 ## 8. Top 5 threats for the public demo
 
@@ -1178,6 +1251,8 @@ K-5xx to its threats and countermeasures, is in section 12.2 in
 | M-18 Provenance and leakage-free splits | H-12 | K-512 | `k512_training_data_provenance_checked` (review) |
 | M-19 Locked seeds and canonical determinism | H-13 | K-512 | `k102_two_runs_across_processes_bit_identical` (integration) |
 | M-20 Validated, size-bounded, identity-checked provider responses | H-14, H-02 | K-513, K-502, K-505 | `k513_tampered_or_oversize_provider_response_rejected` (integration) |
+| M-21 Static, compile-time registration of reviewed plugin source | H-15 | K-514 (proposed), K-506 | `k514_registry_has_no_dynamic_loading` (CI check) |
+| M-22 Pure, bounded, schema-validated, weight-0 plugin output rendered as text | H-16 | K-515 (proposed), K-102, K-507 | `runDetectorPluginContract` (contract) |
 
 Every row in the table is included in the suite or the gate as per A-22
 and I-01. A change that activates a new component, port or

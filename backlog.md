@@ -35,6 +35,7 @@ the MVP path is green. Low-priority Stretch is cut first (see Buffer).
 | E-05 | Explanations and Muse contract assessment (high priority) | K-301–K-309, K-502, K-513 |
 | E-06 | Interfaces: shared service, REST, MCP, web UI | K-020–K-027, K-101, K-103, K-104, K-107 |
 | E-07 | Security, demo and submission | K-401–K-407, K-501–K-513 |
+| E-08 | Plugin architecture (design in `docs/adr-plugin-architecture.md`, P-xx) | K-028–K-031 (proposed), K-514, K-515 (proposed), K-102, K-210, K-305, K-309 |
 
 ## Stories
 
@@ -131,6 +132,34 @@ and requirements and Muse Spark for code.
 | S-039 | Write submission texts: "Describe your use of Meta products" and "Why are Meta's models important to your solution" | K-406 | MVP | Reviews `k406_describe_use_of_meta_products_written` and `k406_why_meta_models_important_written`, signed on 3/11. |
 | S-040 | Submission package: track Indie Developer, problem statement Build for Your World, repo public, links resolve | K-403, K-405, K-406 | MVP | Reviews `k406_submission_track_indie_developer`, `k406_submission_problem_build_for_your_world` and `k406_submission_links_resolve` on 4/11. |
 | S-041 | Live final preparation: runbook, rehearsal and fallbacks | K-407 | Stretch | Reviews `k407_live_final_runbook_rehearsed`, `k407_live_final_rehearsal_completed` and `k407_live_final_fallbacks_reachable`. |
+
+### E-08 Plugin architecture
+
+Design: `docs/adr-plugin-architecture.md` (P-01–P-12). Proposed K-IDs
+K-028–K-031 and K-514–K-515 enter `docs/requirements.md` in S-042, in
+the same change. Scheduling follows open decision 1 in the ADR: the
+epic starts after the submission-critical path is green, unless Jens
+moves S-042–S-044 into the 27/10–4/11 window at the 31/10 checkpoint.
+No story in this epic leaves a dual path behind; each migration story
+deletes its legacy path in the same story (P-12).
+
+| Story | Title | K-IDs | Priority | Test written first |
+|---|---|---|---|---|
+| S-042 | Plugin API, manifest validation and static registry (empty) | K-028 (proposed), K-514 (proposed), K-106 | MVP | `registry_rejects_duplicate_ids_and_unsupported_api_versions` and `k514_registry_has_no_dynamic_loading` fail on a duplicate, an out-of-range `apiVersion` and a dynamic import, then pass clean; `k514_unregistered_plugin_never_runs` requires a plugin absent from the registry to be absent from output. |
+| S-043 | Capability detector as first detector plugin, legacy direct call deleted | K-029 (proposed), K-010, K-102 | MVP | `runDetectorPluginContract` (determinism across two runs, schema agreement, evidence presence, unchanged inputs) red against the unwrapped detector, then green; golden fixtures stay bit-identical apart from the reviewed additive `pluginResults` field. |
+| S-044 | Clone-match and hard-to-analyze detector plugins, inline wiring deleted | K-029 (proposed), K-017, K-008 | MVP | `k017_clone_hit_reports_similarity_group_and_count` and `k008_timeout_yields_hard_to_analyze_signal` pass through the registry path; a repo search for direct `cloneMatchSignal` calls outside plugin modules returns zero hits. |
+| S-045 | Assessment adapters registered as assessment plugins, exactly one active | K-030 (proposed), K-305, K-309, K-307 | MVP | `runAssessmentModelPortContract` green against both registered plugins and the fake; `k309_config_selects_exactly_one_assessment_adapter` passes with selection by plugin id; `k307_scores_and_evidence_identical_with_and_without_adapter` stays green. |
+| S-046 | Registry exposure: REST plugin list, MCP listing, generic web UI panel | K-031 (proposed), K-023, K-025, K-027, K-507 | MVP | `k031_plugin_list_matches_registry_in_rest_and_mcp` and `k027_same_inputs_same_outputs_across_interfaces` (extended to `pluginResults`); e2e `k515_plugin_strings_render_as_inert_text` and `plugin_findings_leave_probabilities_and_score_unchanged` (property). |
+| S-047 | Calibration promotion: artifact-named plugin findings enter the score, legacy conversions deleted | K-029 (proposed), K-210, K-211, K-205, K-206 | MVP | `k210_plugin_weight_read_from_artifact_only` with two artifact versions (unnamed plugin at weight 0, named plugin calibrated); `k211_wrong_checksum_rejected_before_analysis` stays green; repo search confirms one conversion path through the artifact mapping. |
+| S-048 | Per-plugin MCP tools generated from the registry | K-031 (proposed), K-025, K-026, K-508 | Stretch | `k026_new_tool_security_review_recorded` per generated tool; `k025_unknown_tool_returns_machine_readable_error` covers tools outside the startup registry snapshot. |
+| S-049 | Signed allowlist distribution for separately published plugins | K-514 (proposed), K-506 | Stretch | `k514_unsigned_or_tampered_plugin_rejected_at_build` feeds an unsigned and a byte-changed plugin package and requires a build-time rejection before any import; requires its own threat-model change first. |
+| S-050 | Worker isolation for untrusted detector plugins | K-515 (proposed), K-501, K-101 | Stretch | `k501_pathological_input_isolates_to_its_analysis` extended to a runaway detector plugin: parallel analyses continue and the plugin records a typed timeout outcome. Precondition for registering any unreviewed detector. |
+| S-051 | Example plugin under `examples/plugins/` and "Writing a plugin" guide | K-028 (proposed), K-108 | Stretch | `example_plugin_registers_and_reports_weight_zero` runs the example detector on a frozen fixture through a local registry and requires a weight-0 finding in `pluginResults`, in `GET /v1/plugins`, and in the Plugins panel with no interface code changed. |
+
+Cut order inside E-08, if time runs short: S-048, S-049, S-050, S-051
+are Stretch and cut first, in that order. S-042–S-047 are the MVP of
+this epic and ship as one sequence or not at all, so the registry never
+stands beside a permanent legacy path (P-12).
 
 ## Day-by-day plan, 27/10–4/11
 
