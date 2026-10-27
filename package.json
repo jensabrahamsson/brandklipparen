@@ -12,6 +12,10 @@
     "check": "npm run lint && npm run typecheck && npm test",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "typecheck:web": "npm --prefix apps/web run typecheck",
+    "test:web": "npm --prefix apps/web test",
+    "e2e:web": "npm --prefix apps/web run e2e",
+    "build:web": "npm --prefix apps/web run build",
     "lint": "eslint .",
     "check": "npm run lint && npm run typecheck && npm test"
   },

@@ -8,9 +8,13 @@ import { SecretString, formatConfigError } from "../../src/ports/config.ts";
 import type { AppConfig } from "../../src/ports/config.ts";
 import {
   assessmentHealthStatus,
+  createAssessmentServiceFromConfig,
+  DEFAULT_ASSESSMENT_PROVIDER,
+  DEFAULT_hosted_MODEL_ID,
   selectAssessmentBinding,
 } from "../../src/composition/root.ts";
-import { IndexVersion, ModelVersion } from "../../src/domain/types.ts";
+import { IndexVersion, ModelId, ModelVersion } from "../../src/domain/types.ts";
+import type { AppServices } from "../../src/application/analyzeToken.ts";
 import type { Result } from "../../src/domain/result.ts";
 
 function mustOk<T>(result: Result<T, { message: string }>): T {
@@ -194,3 +198,44 @@ describe("composition-root assessment provider selection (K-309)", () => {
     expect(text.includes(secret)).toBe(false);
   });
 });
+
+describe("default assessment intent is hosted open-weights (S-029, K-309)", () => {
+  test("s029_default_provider_is_hosted_open_weights", () => {
+    expect(DEFAULT_ASSESSMENT_PROVIDER).toBe("hosted-open-weights");
+    expect(DEFAULT_hosted_MODEL_ID).toBe("meta-models/muse-spark-open-1026");
+  });
+
+  test("k309_missing_assessment_key_disables_assessment", () => {
+    const services = stubServices();
+    const cases: readonly AppConfig[] = [
+      {
+        ...manualBaseConfig(),
+        assessmentProvider: "hosted-open-weights",
+        assessmenthostedModelId: mustOk(ModelId.parse("meta-models/muse-spark-open-1026")),
+        assessmenthostedBaseUrl: "https://hosted.example.invalid",
+      },
+      {
+        ...manualBaseConfig(),
+        assessmentProvider: "meta-model-api",
+        assessmentMetaModelId: mustOk(ModelId.parse("fake-meta-spark-1")),
+        assessmentMetaBaseUrl: "https://meta-api.example.invalid",
+      },
+    ];
+    for (const config of cases) {
+      const built = createAssessmentServiceFromConfig(config, services);
+      expect(built.ok).toBe(true);
+      if (!built.ok) {
+        continue;
+      }
+      expect(built.value.provider).toBeNull();
+      expect(built.value.modelId).toBeNull();
+    }
+  });
+});
+
+function stubServices(): AppServices {
+  const unused = (): never => {
+    throw new Error("stub service must not be called on the disabled path");
+  };
+  return { analyzeToken: unused, resolveProxy: unused };
+}

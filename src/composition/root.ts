@@ -15,6 +15,7 @@ import type { AssessmentService } from "../application/assessmentService.ts";
 import { createMetaModelApiAdapterFromConfig } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
 import type { MetaModelApiTransport } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
 import { createhostedOpenWeightsAdapterFromConfig } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
+import { hosted_OPEN_WEIGHTS_MODEL_ID } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 import type { hostedOpenWeightsTransport } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 import { PromptVersion } from "../domain/types.ts";
 import type { AppConfig, ConfigError } from "../ports/config.ts";
@@ -41,6 +42,16 @@ export type AssessmentHealthStatus =
 const PROVIDER_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_PROVIDER";
 const META_MODEL_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID";
 const hosted_MODEL_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID";
+
+// Documented default assessment intent (S-029, K-309): Jens's demo default
+// is the hosted open-weights provider with the published open-weights
+// model id. These constants guide documentation, the example environment
+// and UI labelling only. The composition root never auto-selects a
+// provider: an unset BRANDKLIPPAREN_ASSESSMENT_PROVIDER still disables the
+// feature, and a selected provider without its API key stays disabled with
+// zero provider calls (not configured) instead of failing startup.
+export const DEFAULT_ASSESSMENT_PROVIDER: AssessmentProvider = "hosted-open-weights";
+export const DEFAULT_hosted_MODEL_ID: string = hosted_OPEN_WEIGHTS_MODEL_ID;
 
 function hasProviderCredentials(config: AppConfig): boolean {
   return (
@@ -174,6 +185,9 @@ export function createAssessmentServiceFromConfig(
       overrides.metaTransport,
     );
     if (!adapter.ok) {
+      if (adapter.error.kind === "missing-variable") {
+        return disabled;
+      }
       return err(adapter.error);
     }
     return ok(
@@ -197,6 +211,13 @@ export function createAssessmentServiceFromConfig(
     overrides.hostedTransport,
   );
   if (!adapter.ok) {
+    // A selected provider without its credentials or endpoint is not
+    // configured (S-029): stay disabled with zero provider calls so health
+    // reports disabled and the API answers assessment-not-configured.
+    // Malformed values stay startup errors.
+    if (adapter.error.kind === "missing-variable") {
+      return disabled;
+    }
     return err(adapter.error);
   }
   return ok(

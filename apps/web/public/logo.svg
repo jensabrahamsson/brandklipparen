@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
+  <title>Brandklipparen – märke A "Vakt"</title>
+  <!-- Fasetterat hästhuvud i profil, framåtvänt, örat rest: vaksamhet. -->
+  <rect width="120" height="120" rx="26" fill="#0E1116"/>
+  <g transform="translate(10 10)">
+    <!-- hals -->
+    <path d="M40 30 L48 8 L56 25 L64 27 L58 66 L66 96 L24 96 Q26 56 40 30 Z" fill="#4E6A8F"/>
+    <!-- ansikte -->
+    <path d="M56 25 L64 27 L90 55 L92 65 L84 71 L70 65 L58 66 L52 44 Z" fill="#7E9CC2"/>
+    <!-- öga: kornguld -->
+    <path d="M62 37 L68 40 L62 43 Z" fill="#D4B36A"/>
+  </g>
+</svg>

@@ -1,0 +1,102 @@
+// UI types derived from the published REST schema
+// (src/interfaces/rest/schema/v1.json). The web app talks to the core only
+// through the REST published schema (A-04): these shapes mirror the schema
+// and never import domain, application or adapter modules.
+
+export type RiskKind = "rug-pull" | "honeypot" | "bot-pump";
+
+export type RiskWord = "Low" | "Elevated" | "High";
+
+export type RiskBand = {
+  readonly word: RiskWord;
+  readonly min: number;
+  readonly max: number;
+};
+
+export type Probabilities = Record<RiskKind, number>;
+
+export type EvidenceEntry = {
+  readonly selector: string;
+  readonly offset: number | null;
+};
+
+export type SignalDirection = "raises" | "lowers";
+
+export type Signal = {
+  readonly kind: "capability" | "clone-match" | "hard-to-analyze";
+  readonly id: string;
+  readonly risk: RiskKind;
+  readonly direction?: SignalDirection | undefined;
+  readonly severity?: "low" | "medium" | "high" | undefined;
+  readonly similarity?: number | undefined;
+  readonly group?: string | undefined;
+  readonly priorCount?: number | undefined;
+  readonly cause?: string | undefined;
+  readonly evidence: readonly EvidenceEntry[];
+};
+
+export type ExplanationClaim = {
+  readonly text: string;
+  readonly signalLinks: readonly string[];
+  readonly temporality: { readonly kind: "applies-now" | "can-change" };
+};
+
+export type CantTellEntry = {
+  readonly question: string;
+  readonly dataSource: string;
+};
+
+export type ProxyInfo = {
+  readonly kind: string;
+  readonly implementation?: string | undefined;
+  readonly admin?: string | undefined;
+};
+
+export type AnalyzeSuccess = {
+  readonly kind: "assessed";
+  readonly target: string;
+  readonly block: number;
+  readonly proxy: ProxyInfo;
+  readonly codeHash: string;
+  readonly modelVersion: string;
+  readonly artifactChecksum: string;
+  readonly indexVersion: string;
+  readonly templateVersion: string;
+  readonly assessedAt: number;
+  readonly probabilities: Probabilities;
+  readonly score: number;
+  readonly signals: readonly Signal[];
+  readonly explanation: {
+    readonly kind: "template";
+    readonly templateVersion: string;
+    readonly claims: readonly ExplanationClaim[];
+  };
+  readonly cantTell: readonly CantTellEntry[];
+  readonly deepening: "pending" | "ready";
+};
+
+export type NoContract = {
+  readonly kind: "no-contract";
+  readonly target: string;
+  readonly block: number;
+};
+
+export type AnalyzeResult = AnalyzeSuccess | NoContract;
+
+export type AssessmentReady = {
+  readonly status: "ready";
+  readonly text: string;
+  readonly provider: string;
+  readonly modelId: string;
+};
+
+export type AssessmentState =
+  | { readonly status: "idle" }
+  | { readonly status: "loading" }
+  | { readonly status: "not-configured" }
+  | { readonly status: "error"; readonly message: string }
+  | AssessmentReady;
+
+export type HealthState =
+  | { readonly assessment: { readonly provider: string; readonly modelId: string } }
+  | { readonly assessment: { readonly disabled: true } };

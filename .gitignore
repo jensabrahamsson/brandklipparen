@@ -6,6 +6,8 @@ dist/
 
 # Test coverage
 coverage/
+apps/web/test-results/
+apps/web/playwright-report/
 
 # Environment files
 .env
