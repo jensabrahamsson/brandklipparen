@@ -14,6 +14,7 @@ export type HttpErrorCode =
   | "validation-error"
   | "request-too-large"
   | "not-found"
+  | "assessment-not-configured"
   | "upstream-unavailable"
   | "service-unavailable"
   | "internal-error";
@@ -66,6 +67,15 @@ export function requestTooLarge(requestId: string): HttpError {
 
 export function notFound(requestId: string): HttpError {
   return requestError(404, "not-found", "Unknown path: breaking changes receive a new major version.", requestId);
+}
+
+export function assessmentNotConfigured(requestId: string): HttpError {
+  return requestError(
+    501,
+    "assessment-not-configured",
+    "Assessment is not configured: set an assessment provider to enable it.",
+    requestId,
+  );
 }
 
 // Translation of the shared service outcome to the HTTP error format. The

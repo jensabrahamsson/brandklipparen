@@ -15,6 +15,7 @@ export type McpErrorCode =
   | "validation-error"
   | "request-too-large"
   | "unknown-tool"
+  | "assessment-not-configured"
   | "upstream-unavailable"
   | "service-unavailable"
   | "internal-error";
@@ -69,6 +70,14 @@ export function unknownTool(name: string, requestId: string): McpToolError {
     `Unknown tool: ${JSON.stringify(name)}. The tool list is closed; see tools/list.`,
     requestId,
     name,
+  );
+}
+
+export function assessmentNotConfigured(requestId: string): McpToolError {
+  return mcpError(
+    "assessment-not-configured",
+    "Assessment is not configured: set an assessment provider to enable it.",
+    requestId,
   );
 }
 

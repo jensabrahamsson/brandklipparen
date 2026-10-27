@@ -14,8 +14,11 @@ import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from
 import { randomUUID } from "node:crypto";
 import { serializeAssessment } from "../../application/analyzeToken.ts";
 import type { AppServices } from "../../application/analyzeToken.ts";
+import { serializeTokenAssessment } from "../../application/assessmentService.ts";
+import type { AssessmentService } from "../../application/assessmentService.ts";
 import { Address, BlockNumber, RequestId, Timestamp } from "../../domain/types.ts";
 import type {
+  Address as AddressType,
   BlockNumber as BlockNumberType,
   IndexVersion,
   ModelVersion,
@@ -27,6 +30,7 @@ import { createApiKeyStore } from "./apiKeys.ts";
 import type { ApiKeyStore } from "./apiKeys.ts";
 import type { SecretString } from "../../ports/config.ts";
 import {
+  assessmentNotConfigured,
   invalidApiKey,
   keyInUrlOrBody,
   missingApiKey,
@@ -60,6 +64,9 @@ export type RestServerOptions = {
   readonly analyzeTimeoutMs?: number | undefined;
   readonly maxQueryChars?: number | undefined;
   readonly maxBodyBytes?: number | undefined;
+  // Absent service means the assessment feature is disabled through
+  // configuration (K-309): /v1/assessment answers assessment-not-configured.
+  readonly assessmentService?: AssessmentService | undefined;
 };
 
 export type RestServer = {
@@ -177,49 +184,77 @@ export function createRestServer(options: RestServerOptions): RestServer {
       .send(JSON.stringify({ status: "ok", apiVersion: API_VERSION }));
   });
 
-  async function handleAnalyze(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
-    const requestId = issueRequestId();
+  // Shared boundary gate for the analysis routes (A-11, A-16): URL size,
+  // secret-like keys, API key and typed address and block. The assessment
+  // route reuses the same gate, so both routes face identical limits.
+  type GatedInput = {
+    readonly apiKey: string;
+    readonly address: AddressType;
+    readonly block: BlockNumberType | "latest";
+  };
+
+  function gateRequest(
+    request: FastifyRequest,
+    rawInput: unknown,
+    requestId: RequestId,
+  ): { readonly ok: true; readonly value: GatedInput } | { readonly ok: false; readonly error: HttpError } {
     if ((request.raw.url ?? "").length > maxQueryChars) {
-      return sendError(reply, requestTooLarge(requestId));
+      return { ok: false, error: requestTooLarge(requestId as string) };
     }
     if (hasSecretLikeKey(request.query) || hasSecretLikeKey(rawInput)) {
-      return sendError(reply, keyInUrlOrBody(requestId));
+      return { ok: false, error: keyInUrlOrBody(requestId as string) };
     }
     const headerKey = request.headers[API_KEY_HEADER];
     if (headerKey === undefined) {
-      return sendError(reply, missingApiKey(requestId));
+      return { ok: false, error: missingApiKey(requestId as string) };
     }
     if (typeof headerKey !== "string" || !store.verify(headerKey)) {
-      return sendError(reply, invalidApiKey(requestId));
+      return { ok: false, error: invalidApiKey(requestId as string) };
     }
     const parsedInput = parseAnalyzeInput(rawInput);
     if (parsedInput === null) {
-      return sendError(
-        reply,
-        validationError("Invalid address: expected 0x followed by 40 hex characters.", requestId),
-      );
+      return {
+        ok: false,
+        error: validationError("Invalid address: expected 0x followed by 40 hex characters.", requestId as string),
+      };
     }
     const address = Address.parse(parsedInput.address);
     if (!address.ok) {
-      return sendError(
-        reply,
-        validationError("Invalid address: expected 0x followed by 40 hex characters.", requestId),
-      );
+      return {
+        ok: false,
+        error: validationError("Invalid address: expected 0x followed by 40 hex characters.", requestId as string),
+      };
     }
     const block = parseBlock(parsedInput.block);
     if (!block.ok) {
-      return sendError(
-        reply,
-        validationError("Invalid block: expected latest or a non-negative integer.", requestId),
-      );
+      return {
+        ok: false,
+        error: validationError("Invalid block: expected latest or a non-negative integer.", requestId as string),
+      };
     }
+    return { ok: true, value: { apiKey: headerKey, address: address.value, block: block.value } };
+  }
+
+  // Current day as YYYY-MM-DD for the per-key daily cost meter (I-14).
+  // Driving adapters may read the clock; the core stays pure (A-32).
+  function currentDay(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  async function handleAnalyze(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const { address, block } = gated.value;
     const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
     if (!deadline.ok) {
       return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
     }
     const analysed = await options.services.analyzeToken({
-      address: address.value,
-      block: block.value,
+      address,
+      block,
       requestId,
       deadline: deadline.value,
       modelVersion: options.modelVersion,
@@ -255,12 +290,82 @@ export function createRestServer(options: RestServerOptions): RestServer {
       .send(serializeAssessment(analysed.value.envelope));
   }
 
+  // On-request Muse contract assessment (S-038, K-305, K-309): same gate
+  // as the analysis routes, then the shared assessment service. Scores and
+  // evidence pass through untouched; the assessment lands in its own field
+  // with provider and model id labelling. A capped key or a provider error
+  // still answers 200 with the template explanation standing (K-306).
+  async function handleAssessment(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const service = options.assessmentService;
+    if (service === undefined) {
+      return sendError(reply, assessmentNotConfigured(requestId));
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const requested = await service.requestForToken({
+      address: gated.value.address,
+      block: gated.value.block,
+      requestId,
+      deadline: deadline.value,
+      modelVersion: options.modelVersion,
+      indexVersion: options.indexVersion,
+      templateVersion: options.templateVersion,
+      catalogue: options.catalogue,
+      apiKeyId: store.keyId(gated.value.apiKey) ?? "unknown-key",
+      day: currentDay(),
+    });
+    if (!requested.ok) {
+      const mapped = toHttpError(requested.error);
+      return sendError(
+        reply,
+        requestError(mapped.status, mapped.code, mapped.message, requestId),
+      );
+    }
+    if (requested.value.kind === "disabled") {
+      return sendError(reply, assessmentNotConfigured(requestId));
+    }
+    if (requested.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: requested.value.target as string,
+        block: requested.value.block as number,
+      });
+      return reply
+        .code(200)
+        .header(REQUEST_ID_HEADER, requestId)
+        .header(DEEPENING_STATUS_HEADER, "pending")
+        .type("application/json")
+        .send(body);
+    }
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .header(DEEPENING_STATUS_HEADER, "pending")
+      .type("application/json")
+      .send(serializeTokenAssessment(requested.value));
+  }
+
   app.get("/v1/analyze", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleAnalyze(request, reply, request.query);
   });
 
   app.post("/v1/analyze", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleAnalyze(request, reply, request.body);
+  });
+
+  app.get("/v1/assessment", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleAssessment(request, reply, request.query);
+  });
+
+  app.post("/v1/assessment", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleAssessment(request, reply, request.body);
   });
 
   return Object.freeze({

@@ -18,6 +18,8 @@ import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { serializeAssessment } from "../../application/analyzeToken.ts";
 import type { AppServices } from "../../application/analyzeToken.ts";
+import { serializeTokenAssessment } from "../../application/assessmentService.ts";
+import type { AssessmentService } from "../../application/assessmentService.ts";
 import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import { canonicalSerialize } from "../../domain/serialize.ts";
@@ -28,6 +30,7 @@ import type { SecretString } from "../../ports/config.ts";
 import { createApiKeyStore } from "../rest/apiKeys.ts";
 import type { ApiKeyStore } from "../rest/apiKeys.ts";
 import {
+  assessmentNotConfigured,
   invalidApiKey,
   keyInToolArgs,
   missingApiKey,
@@ -39,12 +42,14 @@ import {
 import type { McpToolError } from "./errors.ts";
 import {
   ASSESS_TOKEN_TOOL,
+  REQUEST_ASSESSMENT_TOOL,
   TOOL_DEFINITIONS,
   TOOL_LIST_VERSION,
   findTool,
   parseAssessTokenInput,
+  parseRequestAssessmentInput,
 } from "./tools.ts";
-import type { ToolDefinition } from "./tools.ts";
+import type { AssessTokenInput, ToolDefinition } from "./tools.ts";
 
 export const MCP_SERVER_NAME = "brandklipparen-mcp";
 export const MCP_SERVER_VERSION = "1.0.0";
@@ -63,6 +68,9 @@ export type McpServerOptions = {
   readonly catalogue: CapabilityCatalogue;
   readonly analyzeTimeoutMs?: number | undefined;
   readonly maxMessageBytes?: number | undefined;
+  // Absent service means the assessment feature is disabled through
+  // configuration (K-309): request_assessment answers assessment-not-configured.
+  readonly assessmentService?: AssessmentService | undefined;
 };
 
 // Tool result content: the canonical assessment text as data for the user.
@@ -128,38 +136,66 @@ export function createMcpServer(options: McpServerOptions): McpServer {
   const analyzeTimeoutMs = options.analyzeTimeoutMs ?? DEFAULT_ANALYZE_TIMEOUT_MS;
   const maxMessageBytes = options.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES;
 
+  // Shared tool gate (A-11, A-16, K-026): API key, message size and the
+  // published input schema. Both reading tools reuse the same gate, so
+  // assess_token and request_assessment face identical limits. The stable
+  // key id names the caller to the cost meter without exposing the key.
+  function gateToolArgs(
+    args: unknown,
+    parse: (raw: unknown) => { readonly kind: string; readonly message?: string } | { readonly input: AssessTokenInput },
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Result<{ readonly input: AssessTokenInput; readonly apiKeyId: string }, McpToolError> {
+    let apiKeyId = "anonymous";
+    if (keyGate) {
+      const candidate = callOptions?.apiKey;
+      if (candidate === undefined) {
+        return err(missingApiKey(requestId as string));
+      }
+      if (!store.verify(candidate)) {
+        return err(invalidApiKey(requestId as string));
+      }
+      apiKeyId = store.keyId(candidate) ?? "unknown-key";
+    }
+    const argLength = safeJsonLength(args);
+    if (argLength === null) {
+      return err(validationError("Invalid arguments: expected an object with address and block.", requestId as string));
+    }
+    if (argLength > maxMessageBytes) {
+      return err(requestTooLarge(requestId as string));
+    }
+    const parsed = parse(args);
+    if ("kind" in parsed) {
+      switch (parsed.kind) {
+        case "request-too-large":
+          return err(requestTooLarge(requestId as string));
+        case "key-in-url-or-body":
+          return err(keyInToolArgs(requestId as string));
+        case "validation-error":
+          return err(validationError(parsed.message ?? "Invalid arguments.", requestId as string));
+        default:
+          return err(validationError("Invalid arguments: expected an object with address and block.", requestId as string));
+      }
+    }
+    return ok({ input: parsed.input, apiKeyId });
+  }
+
+  // Current day as YYYY-MM-DD for the per-key daily cost meter (I-14).
+  // Driving adapters may read the clock; the core stays pure (A-32).
+  function currentDay(): string {
+    return new Date().toISOString().slice(0, 10);
+  }
+
   async function runAssessToken(
     args: unknown,
     requestId: RequestId,
     callOptions: CallToolOptions | undefined,
   ): Promise<Result<McpToolResult, McpToolError>> {
-    if (keyGate) {
-      const candidate = callOptions?.apiKey;
-      if (candidate === undefined) {
-        return err(missingApiKey(requestId));
-      }
-      if (!store.verify(candidate)) {
-        return err(invalidApiKey(requestId));
-      }
+    const gated = gateToolArgs(args, parseAssessTokenInput, requestId, callOptions);
+    if (!gated.ok) {
+      return err(gated.error);
     }
-    const argLength = safeJsonLength(args);
-    if (argLength === null) {
-      return err(validationError("Invalid arguments: expected an object with address and block.", requestId));
-    }
-    if (argLength > maxMessageBytes) {
-      return err(requestTooLarge(requestId));
-    }
-    const parsed = parseAssessTokenInput(args);
-    if ("kind" in parsed) {
-      switch (parsed.kind) {
-        case "request-too-large":
-          return err(requestTooLarge(requestId));
-        case "key-in-url-or-body":
-          return err(keyInToolArgs(requestId));
-        case "validation-error":
-          return err(validationError(parsed.message, requestId));
-      }
-    }
+    const parsed = { input: gated.value.input };
     const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
     if (!deadline.ok) {
       return err({
@@ -196,6 +232,65 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     });
   }
 
+  // On-request Muse contract assessment (S-038, K-305, K-309): the same
+  // gate as assess_token, then the shared assessment service. Scores and
+  // evidence pass through untouched; the assessment lands in its own field
+  // with provider and model id labelling. A capped key or a provider error
+  // still answers with the template explanation standing (K-306).
+  async function runRequestAssessment(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const gated = gateToolArgs(args, parseRequestAssessmentInput, requestId, callOptions);
+    if (!gated.ok) {
+      return err(gated.error);
+    }
+    const service = options.assessmentService;
+    if (service === undefined) {
+      return err(assessmentNotConfigured(requestId as string));
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return err({
+        code: "internal-error",
+        message: "Analysis failed; retry with the same request ID.",
+        requestId: requestId as string,
+      } satisfies McpToolError);
+    }
+    const requested = await service.requestForToken({
+      address: gated.value.input.address,
+      block: gated.value.input.block,
+      requestId,
+      deadline: deadline.value,
+      modelVersion: options.modelVersion,
+      indexVersion: options.indexVersion,
+      templateVersion: options.templateVersion,
+      catalogue: options.catalogue,
+      apiKeyId: gated.value.apiKeyId,
+      day: currentDay(),
+    });
+    if (!requested.ok) {
+      const mapped = toMcpError(requested.error);
+      return err({ ...mapped, requestId: requestId as string });
+    }
+    if (requested.value.kind === "disabled") {
+      return err(assessmentNotConfigured(requestId as string));
+    }
+    if (requested.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: requested.value.target as string,
+        block: requested.value.block as number,
+      });
+      return ok({ content: Object.freeze([textBlock(body)]), isError: false });
+    }
+    return ok({
+      content: Object.freeze([textBlock(serializeTokenAssessment(requested.value))]),
+      isError: false,
+    });
+  }
+
   async function callTool(
     name: string,
     args: unknown,
@@ -209,10 +304,16 @@ export function createMcpServer(options: McpServerOptions): McpServer {
         requestId: "00000000-0000-4000-8000-000000000000",
       });
     }
-    if (name !== ASSESS_TOKEN_TOOL || findTool(name) === null) {
-      return err(unknownTool(name, requestId));
+    if (findTool(name) === null) {
+      return err(unknownTool(name, requestId as string));
     }
-    return runAssessToken(args, requestId, callOptions);
+    if (name === ASSESS_TOKEN_TOOL) {
+      return runAssessToken(args, requestId, callOptions);
+    }
+    if (name === REQUEST_ASSESSMENT_TOOL) {
+      return runRequestAssessment(args, requestId, callOptions);
+    }
+    return err(unknownTool(name, requestId as string));
   }
 
   function jsonRpcError(

@@ -22,12 +22,17 @@ export const MCP_MAX_BLOCK_CHARS = 64;
 // analysis, mirroring the REST key-in-URL-or-body rule (M-10).
 const SECRET_LIKE = /key|token|secret|password|auth/i;
 
-// Closed tool list, versioned per tool (K-025, M-15). The MVP exposes a
-// single reading tool; the list grows solely through the reviewed path in
-// K-026.
+// Closed tool list, versioned per tool (K-025, M-15). The MVP exposes
+// reading tools over the same service; the list grows solely through the
+// reviewed path in K-026.
 export const TOOL_LIST_VERSION = "1.0.0";
 export const ASSESS_TOKEN_TOOL = "assess_token";
 export const ASSESS_TOKEN_VERSION = "1.0.0";
+// On-request Muse contract assessment (S-038, K-305, K-309): a separate
+// reading tool over the shared assessment service. Scores and evidence
+// pass through untouched; the assessment lands in its own labelled field.
+export const REQUEST_ASSESSMENT_TOOL = "request_assessment";
+export const REQUEST_ASSESSMENT_VERSION = "1.0.0";
 
 export type JsonSchema = {
   readonly type: "object";
@@ -67,6 +72,27 @@ export const ASSESS_TOKEN_INPUT_SCHEMA: JsonSchema = Object.freeze({
   }),
 });
 
+export const REQUEST_ASSESSMENT_INPUT_SCHEMA: JsonSchema = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: Object.freeze(["address"]),
+  properties: Object.freeze({
+    address: Object.freeze({
+      type: "string",
+      description: "Contract address as 0x followed by 40 hex characters.",
+      minLength: 1,
+      maxLength: MCP_MAX_ADDRESS_CHARS,
+    }),
+    block: Object.freeze({
+      description: "Block context: latest or a non-negative integer.",
+      anyOf: Object.freeze([
+        Object.freeze({ type: "string", minLength: 1, maxLength: MCP_MAX_BLOCK_CHARS }),
+        Object.freeze({ type: "integer", minimum: 0 }),
+      ]),
+    }),
+  }),
+});
+
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
   Object.freeze({
     name: ASSESS_TOKEN_TOOL,
@@ -74,6 +100,13 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       "Assess the risk of a newly deployed ERC-20 token from its contract bytecode: calibrated probabilities, score and evidence with selectors. Read-only.",
     version: ASSESS_TOKEN_VERSION,
     inputSchema: ASSESS_TOKEN_INPUT_SCHEMA,
+  }),
+  Object.freeze({
+    name: REQUEST_ASSESSMENT_TOOL,
+    description:
+      "Request the Muse contract assessment for a token: the same probabilities, score and evidence as assess_token plus a separate Muse-generated assessment field labelled with provider and model id. Runs solely on request. Read-only.",
+    version: REQUEST_ASSESSMENT_VERSION,
+    inputSchema: REQUEST_ASSESSMENT_INPUT_SCHEMA,
   }),
 ]);
 
@@ -94,10 +127,12 @@ export type AssessInputError =
   | { readonly kind: "request-too-large"; readonly message: string }
   | { readonly kind: "key-in-url-or-body"; readonly message: string };
 
-// Strict boundary check for assess_token arguments (A-16, M-15): the value
+// Strict boundary check for token address arguments (A-16, M-15): the value
 // must be a plain object with solely the published fields, within the same
 // length caps as REST. Format proof comes from the smart constructors.
-export function parseAssessTokenInput(args: unknown): AssessInputError | { readonly input: AssessTokenInput } {
+// Both reading tools share this gate, so assess_token and request_assessment
+// face identical limits.
+function parseTokenAddressInput(args: unknown): AssessInputError | { readonly input: AssessTokenInput } {
   if (typeof args !== "object" || args === null || Array.isArray(args)) {
     return { kind: "validation-error", message: "Invalid arguments: expected an object with address and block." };
   }
@@ -153,6 +188,16 @@ export function parseAssessTokenInput(args: unknown): AssessInputError | { reado
     };
   }
   return { input: Object.freeze({ address: address.value, block }) };
+}
+
+export function parseAssessTokenInput(args: unknown): AssessInputError | { readonly input: AssessTokenInput } {
+  return parseTokenAddressInput(args);
+}
+
+// Strict boundary check for request_assessment arguments: the same gate as
+// assess_token, so the assessment request faces identical limits (K-026).
+export function parseRequestAssessmentInput(args: unknown): AssessInputError | { readonly input: AssessTokenInput } {
+  return parseTokenAddressInput(args);
 }
 
 // Block context shared with the REST adapter: latest, a string of digits or

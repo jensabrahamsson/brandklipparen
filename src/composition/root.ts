@@ -1,13 +1,22 @@
 // Composition root: single wiring module (A-03, K-309).
-// This story binds no real provider adapters yet (they arrive in later
-// stories); the root resolves the validated configuration to exactly one
-// assessment binding, or none when disabled. Invalid or ambiguous selection
+// The root resolves the validated configuration to exactly one assessment
+// binding, or none when disabled, and builds the matching assessment
+// service for the driving adapters (S-038). No default provider is ever
+// chosen here: an unset provider, or a placeholder model id, leaves the
+// feature disabled with zero provider calls. Invalid or ambiguous selection
 // is a typed startup error naming the variable with values kept outside
 // the error text (A-15, K-505).
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
 import { createAppServices } from "../application/analyzeToken.ts";
 import type { AnalyzeTokenPorts, AppServices } from "../application/analyzeToken.ts";
+import { createAssessmentService } from "../application/assessmentService.ts";
+import type { AssessmentService } from "../application/assessmentService.ts";
+import { createMetaModelApiAdapterFromConfig } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
+import type { MetaModelApiTransport } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
+import { createhostedOpenWeightsAdapterFromConfig } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
+import type { hostedOpenWeightsTransport } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
+import { PromptVersion } from "../domain/types.ts";
 import type { AppConfig, ConfigError } from "../ports/config.ts";
 import type { ModelId } from "../domain/types.ts";
 import type { AssessmentProvider } from "../ports/assessmentModel.ts";
@@ -79,4 +88,123 @@ export function assessmentHealthStatus(binding: AssessmentBinding): AssessmentHe
     return { disabled: true };
   }
   return { provider: binding.provider, modelId: binding.modelId };
+}
+
+// Placeholder operational default for the per-key daily assessment cap
+// (I-08, I-14): read when the validated configuration carries no value
+// (local and CI runs). The demo configuration always sets the versioned
+// per-key cap, so production never reads this fallback.
+const PLACEHOLDER_DAILY_CAP_PER_KEY = 100;
+
+// Placeholder prompt version for runs without a configured prompt: tests
+// and offline runs stay well-formed. The demo configuration always sets
+// the versioned prompt version per K-305.
+const PLACEHOLDER_PROMPT_VERSION = "1.0.0";
+
+// Model ids that read as an unset or placeholder selection: an exact,
+// case-insensitive match disables the feature instead of binding an
+// adapter. Real model ids from either provider never match these values,
+// so a configured provider keeps its binding (K-309).
+const PLACEHOLDER_MODEL_IDS: readonly string[] = Object.freeze([
+  "placeholder",
+  "unset",
+  "none",
+  "disabled",
+  "example",
+]);
+
+function isPlaceholderModelId(modelId: string): boolean {
+  return PLACEHOLDER_MODEL_IDS.includes(modelId.trim().toLowerCase());
+}
+
+export type AssessmentTransportOverrides = {
+  readonly metaTransport?: MetaModelApiTransport | undefined;
+  readonly hostedTransport?: hostedOpenWeightsTransport | undefined;
+};
+
+// Builds the assessment service from the validated configuration (S-038,
+// K-309): exactly one provider adapter when the configuration selects one,
+// otherwise a disabled service that answers assessment-not-configured with
+// zero provider calls. Transports stay injectable so tests replay recorded
+// fixtures and never touch the network.
+export function createAssessmentServiceFromConfig(
+  config: AppConfig,
+  services: AppServices,
+  overrides: AssessmentTransportOverrides = {},
+): Result<AssessmentService, ConfigError> {
+  const binding = selectAssessmentBinding(config);
+  if (!binding.ok) {
+    return err(binding.error);
+  }
+  const promptVersion =
+    config.assessmentPromptVersion === undefined
+      ? PromptVersion.parse(PLACEHOLDER_PROMPT_VERSION)
+      : ok(config.assessmentPromptVersion);
+  if (!promptVersion.ok) {
+    return err({
+      kind: "invalid-value",
+      variable: "BRANDKLIPPAREN_ASSESSMENT_PROMPT_VERSION",
+      reason: "must be semver MAJOR.MINOR.PATCH",
+    });
+  }
+  const dailyCapPerKey = config.budgetPerKeyDailyCapAssessmentCalls ?? PLACEHOLDER_DAILY_CAP_PER_KEY;
+  const disabled: Result<AssessmentService, ConfigError> = ok(
+    createAssessmentService({
+      analyze: services.analyzeToken,
+      promptVersion: promptVersion.value,
+      dailyCapPerKey,
+    }),
+  );
+  if (binding.value.kind === "disabled") {
+    return disabled;
+  }
+  if (isPlaceholderModelId(binding.value.modelId as string)) {
+    return disabled;
+  }
+  if (binding.value.provider === "meta-model-api") {
+    const adapter = createMetaModelApiAdapterFromConfig(
+      {
+        assessmentMetaBaseUrl: config.assessmentMetaBaseUrl,
+        assessmentMetaApiKey: config.assessmentMetaApiKey,
+        assessmentMetaModelId: config.assessmentMetaModelId,
+        assessmentDeadlineMs: config.assessmentDeadlineMs,
+        assessmentMaxInputBytes: config.assessmentMaxInputBytes,
+        assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
+      },
+      overrides.metaTransport,
+    );
+    if (!adapter.ok) {
+      return err(adapter.error);
+    }
+    return ok(
+      createAssessmentService({
+        analyze: services.analyzeToken,
+        adapter: adapter.value,
+        promptVersion: promptVersion.value,
+        dailyCapPerKey,
+      }),
+    );
+  }
+  const adapter = createhostedOpenWeightsAdapterFromConfig(
+    {
+      assessmenthostedBaseUrl: config.assessmenthostedBaseUrl,
+      assessmenthostedApiKey: config.assessmenthostedApiKey,
+      assessmenthostedModelId: config.assessmenthostedModelId,
+      assessmentDeadlineMs: config.assessmentDeadlineMs,
+      assessmentMaxInputBytes: config.assessmentMaxInputBytes,
+      assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
+    },
+    overrides.hostedTransport,
+  );
+  if (!adapter.ok) {
+    return err(adapter.error);
+  }
+  return ok(
+    createAssessmentService({
+      analyze: services.analyzeToken,
+      adapter: adapter.value,
+      promptVersion: promptVersion.value,
+      dailyCapPerKey,
+    }),
+  );
 }

@@ -4,6 +4,7 @@
   "description": "Published response schema for the versioned REST API (K-023). GET and POST /v1/analyze return the assessed envelope or the no-contract outcome; every error follows the uniform error format with status, code, message and requestId (A-18). GET /health returns the health shape and is public per I-12. Success bodies are the shared application service output byte for byte, so equal input gives equal bytes in every interface (K-027). The deepening per K-101 travels in the x-deepening-status response header until it streams in a later story.",
   "anyOf": [
     { "$ref": "#/definitions/assessed" },
+    { "$ref": "#/definitions/assessedWithAssessment" },
     { "$ref": "#/definitions/noContract" },
     { "$ref": "#/definitions/health" },
     { "$ref": "#/definitions/error" }
@@ -107,6 +108,68 @@
           }
         }
       }
+    },
+    "assessedWithAssessment": {
+      "description": "On-request Muse contract assessment (K-305, K-309): the assessed envelope byte for byte plus the separate assessment field with provider and model labelling. Scores and evidence never move.",
+      "allOf": [
+        { "$ref": "#/definitions/assessed" },
+        {
+          "type": "object",
+          "required": ["assessment", "assessmentFallback", "fromCache"],
+          "properties": {
+            "assessment": {
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "required": ["text", "provider", "modelId", "promptVersion", "explanationVersion", "claims"],
+                  "properties": {
+                    "text": { "type": "string", "minLength": 1 },
+                    "provider": { "enum": ["meta-model-api", "hosted-open-weights"] },
+                    "modelId": { "type": "string", "minLength": 1 },
+                    "promptVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+                    "explanationVersion": { "type": "string", "minLength": 1 },
+                    "claims": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["text", "signalLinks", "temporality"],
+                        "properties": {
+                          "text": { "type": "string", "minLength": 1 },
+                          "signalLinks": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+                          "temporality": {
+                            "type": "object",
+                            "required": ["kind"],
+                            "properties": {
+                              "kind": { "enum": ["applies-now", "can-change"] }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "assessmentFallback": {
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "required": ["errorKind", "reason"],
+                  "properties": {
+                    "errorKind": {
+                      "enum": ["not-requested", "timeout", "rate-limited", "invalid-output", "output-too-large", "provider-mismatch", "unavailable"]
+                    },
+                    "reason": { "type": "string", "minLength": 1 }
+                  }
+                }
+              ]
+            },
+            "fromCache": { "type": "boolean" }
+          }
+        }
+      ]
     },
     "noContract": {
       "type": "object",
