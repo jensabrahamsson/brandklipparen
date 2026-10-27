@@ -4,7 +4,7 @@
   "description": "Brandklipparen assesses risk of newly deployed ERC-20 tokens from contract bytecode alone.",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22 <23"
   },
   "scripts": {
     "freeze-artifact": "node --experimental-strip-types scripts/freeze-artifact.ts",

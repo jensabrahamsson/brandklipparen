@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
@@ -40,6 +40,33 @@ describe("CI gate enforcement", () => {
       rmSync(probe, { force: true });
     }
   }, GATE_TIMEOUT_MS);
+
+  test("i03_actions_pinned_to_full_sha", () => {
+    // I-03: every action reference pins a full 40-char commit SHA with a
+    // version comment; tag or branch references turn the gate red.
+    const workflow = readFileSync(join(repoRoot, ".github", "workflows", "ci.yml"), "utf8");
+    const usesLines = workflow.split("\n").filter((line) => line.includes("uses:"));
+    expect(usesLines.length).toBeGreaterThan(0);
+    for (const line of usesLines) {
+      expect(line).toMatch(/uses:\s*[\w-]+\/[\w-]+\@[0-9a-f]{40}\s+#\s*v\d+/);
+    }
+    expect(workflow).not.toMatch(/TODO.*pin/i);
+  });
+
+  test("i05_runtime_pinned_to_node22", () => {
+    // I-05/A-29: the runtime is Node.js 22 LTS in .nvmrc and engines.
+    // The running-major assertion holds only under CI so local drift to
+    // a newer Node stays green; CI pins the runner to Node 22 instead.
+    const nvmrc = readFileSync(join(repoRoot, ".nvmrc"), "utf8").trim();
+    expect(nvmrc).toBe("22");
+    const manifest = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")) as {
+      engines?: { node?: string };
+    };
+    expect(manifest.engines?.node).toBe(">=22 <23");
+    if (process.env["CI"] !== undefined) {
+      expect(process.version.split(".")[0]).toBe("v22");
+    }
+  });
 
   test("k106_typecheck_blocks_on_error", () => {
     // Type-check only the small fixtures with dedicated minimal tsconfigs,
