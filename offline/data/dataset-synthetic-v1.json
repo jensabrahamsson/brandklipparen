@@ -1,0 +1,62 @@
+{
+  "dataVersion": "synthetic-v1",
+  "labelPolicyVersion": "1.0.0",
+  "blockRange": {
+    "from": 23100001,
+    "to": 23100004
+  },
+  "datapoints": [
+    {
+      "address": "0x8f3a4b2c6D1e5F708192a3b4c5D6e7F8091a2b3c",
+      "bytecode": "0x6080604052600a60005500",
+      "blockNumber": 23100001,
+      "source": "synthetic",
+      "codeHash": "0xad7804769a50d927a8520a6eb81adc97cb2e516379dd2ca6d4a6b15265a4eeb6",
+      "label": {
+        "rug-pull": "negative",
+        "honeypot": "negative",
+        "bot-pump": "negative",
+        "rationale": "no-capability-found"
+      }
+    },
+    {
+      "address": "0x4d2F7A1C9E5b8063D4A1f8C2e6b0d3f5A7C9e1b4",
+      "bytecode": "0x6080604052600b60015500",
+      "blockNumber": 23100002,
+      "source": "synthetic",
+      "codeHash": "0x133b2548df5b9b3f8a5f49bf99c79eda77ab95447e59f16f034723fe7800f542",
+      "label": {
+        "rug-pull": "positive",
+        "honeypot": "negative",
+        "bot-pump": "negative",
+        "rationale": "owner-mint-capability"
+      }
+    },
+    {
+      "address": "0x91C4e7a2F5b803D6A1e4C7b9d0F2a5C8e3b6D1f4",
+      "bytecode": "0x608060405263deadbeef600035146100155700",
+      "blockNumber": 23100003,
+      "source": "synthetic",
+      "codeHash": "0xa43928136aa9d75b67418ab9bceeba27d8fb3ace6cf3a1d3a48f57a5fb2cc1db",
+      "label": {
+        "rug-pull": "negative",
+        "honeypot": "positive",
+        "bot-pump": "negative",
+        "rationale": "transfer-gate-capability"
+      }
+    },
+    {
+      "address": "0x2b7d4F9A1c5e8036B8D2F4A7C9E1b5D0f3a6c8E2",
+      "bytecode": "0x608060405263cafef00d6000351461001b5700",
+      "blockNumber": 23100004,
+      "source": "synthetic",
+      "codeHash": "0xb8c1ad7ea5d7abc66cc2211c900b05923a648a209832dd851f41948456a78e39",
+      "label": {
+        "rug-pull": "negative",
+        "honeypot": "negative",
+        "bot-pump": "positive",
+        "rationale": "holder-cap-capability"
+      }
+    }
+  ]
+}
