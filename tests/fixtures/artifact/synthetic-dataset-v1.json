@@ -1,0 +1,12 @@
+{
+  "dataVersion": "synthetic-v1",
+  "seed": 211,
+  "severityCounts": { "low": 1, "medium": 2, "high": 4 },
+  "causeCounts": { "timeout": 2, "resource-limit": 2, "decompiler-error": 4, "obfuscated-structure": 2 },
+  "riskOutcomes": {
+    "rug-pull": { "positives": 4, "negatives": 2 },
+    "honeypot": { "positives": 2, "negatives": 2 },
+    "bot-pump": { "positives": 4, "negatives": 6 }
+  },
+  "riskShares": { "rug-pull": 5, "honeypot": 3, "bot-pump": 2 }
+}
