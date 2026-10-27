@@ -1,6 +1,6 @@
-// Playwright smoke for the web UI (S-029): start page, token page with a
-// mocked REST analyze response, and the assessment not-configured state.
-// No live chain or provider calls: every REST response is route-mocked.
+// Playwright smoke for the web UI: start page, token page with a mocked
+// REST analyze response, and the assessment not-configured state. No live
+// chain or provider calls: every REST response is route-mocked.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -94,24 +94,26 @@ test("k020_valid_address_navigates_to_token_page", async ({ page }) => {
 test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  await expect(page.getByRole("status").first()).toContainText("84");
-  await expect(page.getByRole("status").first()).toContainText("High");
+  await expect(page.getByTestId("risk-badge").first()).toContainText("84");
+  await expect(page.getByTestId("risk-badge").first()).toContainText("High");
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
   await expect(page.getByText("Honeypot", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("91%", { exact: true })).toBeVisible();
   await expect(page.getByText("What bytecode alone cannot tell you")).toBeVisible();
+  await expect(page.getByText("The owner can stop you from selling.").first()).toBeVisible();
+  await expect(page.getByLabel(/Template explanation/)).toContainText("v1.0.0");
 });
 
 test("k305_assessment_tab_shows_not_configured", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByRole("tab", { name: "Contract assessment with Muse" }).click();
-  await expect(page.getByText("open weights")).toBeVisible();
+  await page.getByRole("tab", { name: "Contract assessment" }).click();
+  await expect(page.getByText("Assessment is not configured: the REST API reports no assessment provider.")).toBeVisible();
   await page.getByRole("button", { name: "Request assessment" }).click();
   await expect(page.getByText("Assessment is not configured.")).toBeVisible();
   // The deterministic score stands untouched beside the panel.
   await page.getByRole("tab", { name: "Overview" }).click();
-  await expect(page.getByRole("status").first()).toContainText("84");
+  await expect(page.getByTestId("risk-badge").first()).toContainText("84");
 });
 
 test("k507_hostile_signal_renders_as_text_only", async ({ page }) => {
@@ -135,4 +137,40 @@ test("k507_hostile_signal_renders_as_text_only", async ({ page }) => {
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByText("<img src=x onerror=alert(1)>").first()).toBeVisible();
   expect(await page.locator("section[aria-label='Signals'] img").count()).toBe(0);
+});
+
+test("design_review_skip_link_keeps_hash", async ({ page }) => {
+  await mockRest(page);
+  await page.goto(`/#/token/${ADDRESS}`);
+  await expect(page.getByTestId("risk-badge").first()).toContainText("84");
+  await page.locator("a.skip-link").focus();
+  await page.keyboard.press("Enter");
+  expect(new URL(page.url()).hash).toBe(`#/token/${ADDRESS}`);
+  await expect(page.locator("#main")).toBeFocused();
+});
+
+test("design_review_tabs_keyboard_and_panels", async ({ page }) => {
+  await mockRest(page);
+  await page.goto(`/#/token/${ADDRESS}`);
+  const overview = page.getByRole("tab", { name: "Overview" });
+  const assessment = page.getByRole("tab", { name: "Contract assessment" });
+  await expect(overview).toHaveAttribute("aria-controls", "panel-overview");
+  await expect(assessment).toHaveAttribute("aria-controls", "panel-assessment");
+  await overview.click();
+  await expect(overview).toHaveAttribute("tabindex", "0");
+  await expect(assessment).toHaveAttribute("tabindex", "-1");
+  await page.keyboard.press("ArrowRight");
+  await expect(assessment).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#panel-assessment")).toBeVisible();
+  await expect(page.locator("#panel-overview")).toBeHidden();
+  await page.keyboard.press("ArrowLeft");
+  await expect(overview).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#panel-overview")).toBeVisible();
+});
+
+test("design_review_preview_serves_csp_header", async ({ request }) => {
+  const response = await request.get("/");
+  const csp = response.headers()["content-security-policy"] ?? "";
+  expect(csp).toContain("default-src 'self'");
+  expect(csp).toContain("frame-ancestors 'none'");
 });

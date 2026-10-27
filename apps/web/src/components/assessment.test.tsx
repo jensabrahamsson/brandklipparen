@@ -2,35 +2,62 @@ import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
 import { AssessmentPanel } from "./AssessmentPanel.tsx";
 import { RiskBadge } from "./RiskBadge.tsx";
+import type { ProviderInfo } from "../types.ts";
 
-describe("assessment panel separation (K-305)", () => {
-  test("k305_assessment_panel_shows_not_configured", () => {
+const READY_PROVIDER: ProviderInfo = { status: "ready", provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" };
+const DISABLED_PROVIDER: ProviderInfo = { status: "disabled" };
+const LOADING_PROVIDER: ProviderInfo = { status: "loading" };
+
+describe("assessment panel separation", () => {
+  test("design_review_idle_shows_real_provider_from_health", () => {
     const html = renderToString(
-      <AssessmentPanel state={{ status: "not-configured" }} score={84} onRequest={() => undefined} />,
+      <AssessmentPanel state={{ status: "idle" }} score={84} provider={READY_PROVIDER} onRequest={() => undefined} />,
     );
-    expect(html).toContain("not configured");
-    expect(html).toContain("open weights");
+    expect(html).toContain("hosted-open-weights");
+    expect(html).toContain("meta-models/muse-spark-open-1026");
   });
 
-  test("k305_assessment_text_mentions_open_weights_provider", () => {
+  test("design_review_idle_shows_disabled_when_health_reports_none", () => {
+    const html = renderToString(
+      <AssessmentPanel state={{ status: "idle" }} score={84} provider={DISABLED_PROVIDER} onRequest={() => undefined} />,
+    );
+    expect(html).toContain("not configured");
+    expect(html).not.toContain("hosted-open-weights");
+  });
+
+  test("design_review_idle_shows_checking_while_health_loads", () => {
+    const html = renderToString(
+      <AssessmentPanel state={{ status: "idle" }} score={84} provider={LOADING_PROVIDER} onRequest={() => undefined} />,
+    );
+    expect(html).toContain("Checking assessment provider");
+  });
+
+  test("design_review_ready_shows_response_label", () => {
     const html = renderToString(
       <AssessmentPanel
         state={{
           status: "ready",
           text: "The owner can pause trading.",
-          provider: "hosted-open-weights",
-          modelId: "meta-models/muse-spark-open-1026",
+          provider: "meta-model-api",
+          modelId: "review-model-7",
         }}
         score={84}
+        provider={READY_PROVIDER}
         onRequest={() => undefined}
       />,
     );
-    expect(html).toContain("hosted-open-weights");
-    expect(html).toContain("meta-models/muse-spark-open-1026");
-    expect(html).toContain("Muse");
+    expect(html).toContain("meta-model-api");
+    expect(html).toContain("review-model-7");
   });
 
-  test("k305_assessment_does_not_alter_score_props", () => {
+  test("design_review_not_configured_state_preserved", () => {
+    const html = renderToString(
+      <AssessmentPanel state={{ status: "not-configured" }} score={84} provider={DISABLED_PROVIDER} onRequest={() => undefined} />,
+    );
+    expect(html).toContain("not configured");
+  });
+
+  test("design_review_assessment_does_not_alter_score", () => {
     const before = renderToString(<RiskBadge score={84} />);
     renderToString(
       <AssessmentPanel
@@ -41,6 +68,7 @@ describe("assessment panel separation (K-305)", () => {
           modelId: "meta-models/muse-spark-open-1026",
         }}
         score={84}
+        provider={READY_PROVIDER}
         onRequest={() => undefined}
       />,
     );
@@ -50,7 +78,7 @@ describe("assessment panel separation (K-305)", () => {
     expect(after).toContain("High");
   });
 
-  test("k103_risk_badge_shows_number_and_word", () => {
+  test("design_review_risk_badge_shows_number_and_word", () => {
     expect(renderToString(<RiskBadge score={12} />)).toContain("12");
     expect(renderToString(<RiskBadge score={12} />)).toContain("Low");
     expect(renderToString(<RiskBadge score={45} />)).toContain("Elevated");

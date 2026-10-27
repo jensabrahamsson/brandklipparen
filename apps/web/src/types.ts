@@ -72,7 +72,10 @@ export type AnalyzeSuccess = {
     readonly claims: readonly ExplanationClaim[];
   };
   readonly cantTell: readonly CantTellEntry[];
-  readonly deepening: "pending" | "ready";
+  // "unavailable" is UI-side only (design review P0-6): the header only
+  // ever says pending/ready; the UI records exhausted deepening polls so
+  // it can hide the streaming promise instead of leaving a lying line.
+  readonly deepening: "pending" | "ready" | "unavailable";
 };
 
 export type NoContract = {
@@ -96,6 +99,14 @@ export type AssessmentState =
   | { readonly status: "not-configured" }
   | { readonly status: "error"; readonly message: string }
   | AssessmentReady;
+
+// Provider label for the assessment panel (design review P0-3): the real
+// {provider, modelId} from GET /health, or disabled when the REST API
+// reports no assessment provider. Never hard-coded.
+export type ProviderInfo =
+  | { readonly status: "loading" }
+  | { readonly status: "disabled" }
+  | { readonly status: "ready"; readonly provider: string; readonly modelId: string };
 
 export type HealthState =
   | { readonly assessment: { readonly provider: string; readonly modelId: string } }

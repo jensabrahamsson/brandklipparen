@@ -1,16 +1,7 @@
-import { useCallback, useEffect, useState, type JSX } from "react";
+import { useCallback, useEffect, useState, type JSX, type MouseEvent } from "react";
+import { parseHash, type Route } from "./lib/route.ts";
 import { StartPage } from "./pages/StartPage.tsx";
 import { TokenPage } from "./pages/TokenPage.tsx";
-
-type Route = { readonly name: "start" } | { readonly name: "token"; readonly address: string };
-
-function parseHash(hash: string): Route {
-  const match = /^#\/token\/(.+)$/.exec(hash);
-  if (match?.[1] !== undefined) {
-    return { name: "token", address: decodeURIComponent(match[1]) };
-  }
-  return { name: "start" };
-}
 
 function loadApiKey(): string {
   try {
@@ -48,9 +39,20 @@ export function App(): JSX.Element {
     window.location.hash = "#/";
   }, []);
 
+  // Design review P0-2: a plain "#main" link resets hash routing to the
+  // start page. Prevent the default jump, keep the hash, move focus.
+  const onSkip = useCallback((event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    const main = document.getElementById("main");
+    if (main !== null) {
+      main.focus({ preventScroll: true });
+      main.scrollIntoView();
+    }
+  }, []);
+
   return (
     <div>
-      <a className="skip-link" href="#main">
+      <a className="skip-link" href="#main" onClick={onSkip}>
         Skip to content
       </a>
       <header className="page topbar" style={{ paddingBottom: 0 }}>
@@ -58,15 +60,10 @@ export function App(): JSX.Element {
           <img src="/logo.svg" alt="brandklipparen logo" />
           brandklipparen
         </a>
-        <nav aria-label="Primary">
-          <a href="#/" aria-current={route.name === "start" ? "page" : undefined}>
-            Just deployed
-          </a>
-        </nav>
         <span className="spacer" />
-        <span className="quiet numeric">bytecode only · deterministic</span>
+        <span className="quiet numeric topbar-tagline">bytecode only · deterministic</span>
       </header>
-      <main id="main">
+      <main id="main" tabIndex={-1}>
         {route.name === "start" ? (
           <StartPage
             chain={chain}

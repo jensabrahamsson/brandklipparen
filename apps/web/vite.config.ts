@@ -17,6 +17,12 @@ export default defineConfig({
   },
   preview: {
     port: 5173,
+    // Design review P0-7: a locked-down content policy on the preview
+    // server. Dev keeps none so HMR stays working.
+    headers: {
+      "Content-Security-Policy":
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    },
     proxy: {
       "/v1": { target: restOrigin, changeOrigin: false },
       "/health": { target: restOrigin, changeOrigin: false },

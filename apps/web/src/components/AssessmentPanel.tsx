@@ -1,31 +1,54 @@
 import type { JSX } from "react";
-import type { AssessmentState } from "../types.ts";
+import type { AssessmentState, ProviderInfo } from "../types.ts";
 
-// Contract assessment with Muse, in its own tab (K-305): free-text
-// assessment through the selected assessment provider, on explicit request
-// only. The panel never receives score, probability or evidence setters,
-// so assessment text cannot move the deterministic result (K-307).
+// Contract assessment in its own tab: free-text assessment through the
+// selected assessment provider, on explicit request only. The panel never
+// receives score, probability or evidence setters, so assessment text
+// cannot move the deterministic result. The provider label always comes
+// from GET /health via props (design review P0-3): the real
+// {provider, modelId}, or the disabled state when the REST API reports
+// none. After an assessment response, the ready label shows the provider
+// and model that answered.
 export function AssessmentPanel({
   state,
   score,
+  provider,
   onRequest,
 }: {
   readonly state: AssessmentState;
   readonly score: number;
+  readonly provider: ProviderInfo;
   readonly onRequest: () => void;
 }): JSX.Element {
   void score;
   return (
-    <section className="card" aria-label="Contract assessment with Muse">
-      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Contract assessment with Muse</h2>
-      <p className="assessment-label">
-        <span className="assessment-dot" aria-hidden="true" />
-        <span>Muse-generated, open weights by default: hosted-open-weights</span>
-      </p>
+    <section className="card" aria-label="Contract assessment">
+      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Contract assessment</h2>
+      {provider.status === "loading" ? (
+        <p className="assessment-label">
+          <span className="assessment-dot" aria-hidden="true" />
+          <span>Checking assessment provider…</span>
+        </p>
+      ) : null}
+      {provider.status === "disabled" ? (
+        <p className="assessment-label">
+          <span className="assessment-dot" aria-hidden="true" />
+          <span>Assessment is not configured: the REST API reports no assessment provider.</span>
+        </p>
+      ) : null}
+      {provider.status === "ready" && state.status !== "ready" ? (
+        <p className="assessment-label">
+          <span className="assessment-dot" aria-hidden="true" />
+          <span>
+            Assessment provider {provider.provider} · model {provider.modelId}
+          </span>
+        </p>
+      ) : null}
       {state.status === "idle" ? (
         <div>
           <p className="muted">
-            Request a free-text assessment of the closed evidence list. The score and evidence above never change.
+            Request a free-text assessment of the closed evidence list. The deterministic score, signals and
+            evidence stay unchanged.
           </p>
           <button type="button" className="button" onClick={onRequest}>
             Request assessment
@@ -39,8 +62,7 @@ export function AssessmentPanel({
             <strong>Assessment is not configured.</strong>
           </p>
           <p className="muted" style={{ marginTop: 0 }}>
-            Set an assessment provider (default intent: hosted open weights, model
-            meta-models/muse-spark-open-1026) with its API key to enable it.
+            The REST API reports no assessment provider. Set one with its API key to enable it.
           </p>
         </div>
       ) : null}
@@ -62,7 +84,7 @@ export function AssessmentPanel({
           <p className="assessment-label">
             <span className="assessment-dot" aria-hidden="true" />
             <span>
-              Muse-generated · provider {state.provider} · model {state.modelId}
+              Assessment provider {state.provider} · model {state.modelId}
             </span>
           </p>
           <p style={{ whiteSpace: "pre-wrap" }}>{state.text}</p>

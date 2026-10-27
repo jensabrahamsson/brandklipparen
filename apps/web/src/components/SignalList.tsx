@@ -2,37 +2,80 @@ import { useState, type JSX } from "react";
 import { signalTitle } from "../lib/signals.ts";
 import type { Signal } from "../types.ts";
 
-// Expandable signal and evidence list (K-021). Every contract-derived
-// string renders as React text only, so hostile content stays inert
-// (K-507): no HTML sinks anywhere in this view.
+// Expandable signal and evidence list. Every contract-derived string
+// renders as React text only, so hostile content stays inert: no HTML
+// sinks anywhere in this view.
+//
+// Expanded evidence slots (design review P0-5):
+// - decompiled snippet: the v1 REST schema carries no snippet field, so
+//   the slot is an honest placeholder, never faked content;
+// - copy evidence: JSON of address/codeHash/signal/evidence;
+// - open in bytecode: disabled with a reason, since this view has no
+//   bytecode pane;
+// - per-signal template line when an explanation claim links the signal.
+export function SignalList({
+  signals,
+  target,
+  codeHash,
+  deepening,
+  open,
+  onToggle,
+  templateLine,
+}: {
+  readonly signals: readonly Signal[];
+  readonly target: string;
+  readonly codeHash: string;
+  readonly deepening: "pending" | "ready" | "unavailable";
+  readonly open: ReadonlySet<string>;
+  readonly onToggle: (signalId: string) => void;
+  readonly templateLine: (signalId: string) => string | undefined;
+}): JSX.Element {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-export function SignalList({ signals }: { readonly signals: readonly Signal[] }): JSX.Element {
-  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(signals.slice(0, 1).map((signal) => signal.id)));
   if (signals.length === 0) {
     return <p className="muted">No signals: the bytecode shows none of the tracked risk patterns.</p>;
   }
-  const toggle = (id: string): void => {
-    setOpen((previous) => {
-      const next = new Set(previous);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
+
+  const copyEvidence = async (signal: Signal): Promise<void> => {
+    const payload = JSON.stringify(
+      { address: target, codeHash, signal: signal.id, evidence: signal.evidence },
+      null,
+      2,
+    );
+    try {
+      await navigator.clipboard.writeText(payload);
+      setCopiedId(signal.id);
+    } catch {
+      // Clipboard is a convenience only; the JSON stays readable in-view.
+    }
   };
+
+  const snippetText =
+    deepening === "pending"
+      ? "Snippet arrives with deepening: the analysis is still streaming."
+      : deepening === "ready"
+        ? "Deepening is ready, but this v1 response carries no decompiled snippet (REST contract gap: v1 has no snippet field)."
+        : "Deepening did not resolve; no snippet is available (REST contract gap: v1 has no snippet field).";
+
   return (
     <div>
+      <p aria-live="polite" className="quiet" style={{ position: "absolute", left: -9999 }}>
+        {copiedId === null ? "" : `Evidence for ${copiedId} copied.`}
+      </p>
       {signals.map((signal) => {
         const expanded = open.has(signal.id);
+        const line = templateLine(signal.id);
         return (
-          <article key={signal.id} className={signal.direction === "lowers" ? "signal signal-lowers" : "signal signal-raises"}>
+          <article
+            key={signal.id}
+            id={`signal-${signal.id}`}
+            className={signal.direction === "lowers" ? "signal signal-lowers" : "signal signal-raises"}
+          >
             <button
               type="button"
               className="button-ghost"
               aria-expanded={expanded}
-              onClick={() => toggle(signal.id)}
+              onClick={() => onToggle(signal.id)}
               style={{ border: "none", padding: 0, color: "var(--text)", fontSize: 16, fontWeight: 600 }}
             >
               {signalTitle(signal)} {expanded ? "▾" : "▸"}
@@ -40,6 +83,11 @@ export function SignalList({ signals }: { readonly signals: readonly Signal[] })
             <p className="quiet" style={{ margin: "4px 0 0" }}>
               {signal.risk} · {signal.direction ?? "raises"} · severity {signal.severity ?? "medium"}
             </p>
+            {line !== undefined ? (
+              <p className="muted" style={{ margin: "4px 0 0", fontSize: 14 }}>
+                Template: {line}
+              </p>
+            ) : null}
             {expanded ? (
               <div>
                 <h4 className="quiet">EVIDENCE IN BYTECODE</h4>
@@ -51,6 +99,24 @@ export function SignalList({ signals }: { readonly signals: readonly Signal[] })
                     </li>
                   ))}
                 </ul>
+                <h4 className="quiet">DECOMPILED SNIPPET</h4>
+                <p className="muted" style={{ fontSize: 13, margin: "0 0 8px" }}>
+                  {snippetText}
+                </p>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" className="button-ghost" onClick={() => void copyEvidence(signal)}>
+                    Copy evidence
+                  </button>
+                  <button
+                    type="button"
+                    className="button-ghost"
+                    disabled
+                    title="This view has no bytecode pane to open."
+                    aria-label={`Open ${signal.id} in bytecode (unavailable: this view has no bytecode pane)`}
+                  >
+                    Open in bytecode
+                  </button>
+                </div>
               </div>
             ) : null}
           </article>

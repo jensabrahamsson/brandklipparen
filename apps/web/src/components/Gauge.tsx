@@ -24,9 +24,6 @@ export function Gauge({
   const percent = Math.round(probability * 100);
   const band = riskBand(percent);
   const color = band.word === "Low" ? "var(--low)" : band.word === "Elevated" ? "var(--elevated)" : "var(--high)";
-  const radius = 52;
-  const half = Math.PI * radius;
-  const filled = probability * half;
   const signalWord = signalCount === 1 ? "signal" : "signals";
   return (
     <section className="card gauge" aria-label={`${TITLES[kind]} gauge: ${percent} percent`}>
@@ -42,7 +39,8 @@ export function Gauge({
           stroke={color}
           strokeWidth="12"
           strokeLinecap="round"
-          strokeDasharray={`${filled} ${half}`}
+          pathLength={100}
+          strokeDasharray={`${percent} 100`}
         />
         <text x="70" y="66" textAnchor="middle" fill="var(--text)" fontSize="26" fontWeight="600" className="numeric">
           {percent}%
