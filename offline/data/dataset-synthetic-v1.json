@@ -3,7 +3,7 @@
   "labelPolicyVersion": "1.0.0",
   "blockRange": {
     "from": 23100001,
-    "to": 23100004
+    "to": 23100006
   },
   "datapoints": [
     {
@@ -57,6 +57,32 @@
         "bot-pump": "positive",
         "rationale": "holder-cap-capability"
       }
+    },
+    {
+      "address": "0xc001c0ffee000000000000000000000000000001",
+      "bytecode": "0x6080604052336000351461001c57",
+      "blockNumber": 23100005,
+      "source": "synthetic",
+      "label": {
+        "rug-pull": "negative",
+        "honeypot": "negative",
+        "bot-pump": "negative",
+        "rationale": "noise-rule-launch-protection"
+      },
+      "codeHash": "0x87af1be2ff7e3b9bd060e62d537421eef29777e5b24a04dc71213659a8e9c16f"
+    },
+    {
+      "address": "0xc001c0ffee000000000000000000000000000002",
+      "bytecode": "0x6080604052336000351461002d57",
+      "blockNumber": 23100006,
+      "source": "synthetic",
+      "label": {
+        "rug-pull": "positive",
+        "honeypot": "negative",
+        "bot-pump": "negative",
+        "rationale": "owner-mint-capability"
+      },
+      "codeHash": "0x742b6fb144cea3da07aadbe493e3fa0ec6134593c2ebf0f3de5e3ae40d0a2324"
     }
   ]
 }

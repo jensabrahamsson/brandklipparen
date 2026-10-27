@@ -777,7 +777,8 @@ that each rule above has a visible place:
 src/
   domain/            # A-07–A-13, A-32, A-33: types.ts, proxy.ts, signals.ts,
                      # evidence.ts, risk.ts, cantTell.ts, explain.ts,
-                     # serialize.ts (K-010–K-012, K-017, K-301)
+                     # serialize.ts, metrics.ts, modelCard.ts
+                     # (K-010–K-012, K-017, K-205, K-206, K-208, K-301)
   application/       # A-02: analyzeToken.ts, resolveProxy.ts,
                      # listJustDeployed.ts (K-027)
   ports/             # A-05: rpc.ts, decompiler.ts, selectorTable.ts,

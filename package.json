@@ -8,6 +8,8 @@
   },
   "scripts": {
     "freeze-artifact": "node --experimental-strip-types scripts/freeze-artifact.ts",
+    "evaluate-metrics": "node --experimental-strip-types scripts/evaluate-metrics.ts",
+    "check": "npm run lint && npm run typecheck && npm test",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

@@ -1,7 +1,7 @@
 # Training dataset (K-201, S-017)
 
 `dataset-synthetic-v1.json` is the committed fixture dataset for the MVP
-path: four hand-assembled synthetic rows that satisfy the versioned dataset
+path: six hand-assembled synthetic rows that satisfy the versioned dataset
 schema validated by `src/domain/dataset.ts`. Every address, bytecode
 sequence and block number is invented for tests; no row links to a real
 contract and no number carries predictive meaning. Production rows arrive
