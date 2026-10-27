@@ -16,6 +16,7 @@ export type McpErrorCode =
   | "request-too-large"
   | "unknown-tool"
   | "assessment-not-configured"
+  | "investigation-not-configured"
   | "rate-limited"
   | "upstream-unavailable"
   | "service-unavailable"
@@ -86,6 +87,14 @@ export function assessmentNotConfigured(requestId: string): McpToolError {
   return mcpError(
     "assessment-not-configured",
     "Assessment is not configured: set an assessment provider to enable it.",
+    requestId,
+  );
+}
+
+export function investigationNotConfigured(requestId: string): McpToolError {
+  return mcpError(
+    "investigation-not-configured",
+    "Investigation is not configured: set the investigation provider key to enable it.",
     requestId,
   );
 }

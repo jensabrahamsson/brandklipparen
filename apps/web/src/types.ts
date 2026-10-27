@@ -104,6 +104,35 @@ export type AssessmentState =
   | { readonly status: "error"; readonly message: string }
   | AssessmentReady;
 
+// Investigation step in the visible trace (S-076, K-036): tool, rationale
+// as inert text and the collected evidence ids. Rationale is model text
+// and renders as text only, never as markup.
+export type InvestigationStep = {
+  readonly step: number;
+  readonly toolId: string;
+  readonly rationale: string;
+  readonly evidenceIds: readonly string[];
+};
+
+// Investigation panel state (S-076, K-036): live steps stream in under
+// loading; done carries the checked narrative with its drop count; limit
+// names the spent budget; failed carries the typed reason. Scores and
+// evidence never move with any of these states.
+export type InvestigationState =
+  | { readonly status: "idle" }
+  | { readonly status: "loading"; readonly steps: readonly InvestigationStep[] }
+  | { readonly status: "not-configured" }
+  | { readonly status: "limit"; readonly message: string; readonly steps: readonly InvestigationStep[] }
+  | { readonly status: "failed"; readonly message: string; readonly steps: readonly InvestigationStep[] }
+  | {
+      readonly status: "done";
+      readonly steps: readonly InvestigationStep[];
+      readonly narrative: string;
+      readonly droppedClaims: number;
+      readonly provider: string;
+      readonly modelId: string;
+    };
+
 // Provider label for the assessment panel (design review P0-3): the real
 // {provider, modelId} from GET /health, or disabled when the REST API
 // reports no assessment provider. Never hard-coded.

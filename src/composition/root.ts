@@ -16,6 +16,11 @@ import type {
 } from "../application/analyzeToken.ts";
 import { createAssessmentService } from "../application/assessmentService.ts";
 import type { AssessmentService } from "../application/assessmentService.ts";
+import { createInvestigationService } from "../application/investigationService.ts";
+import type { InvestigationService } from "../application/investigationService.ts";
+import { createhostedInvestigateAdapterFromConfig } from "../adapters/investigation/hostedInvestigateAdapter.ts";
+import type { hostedInvestigateTransport } from "../adapters/investigation/hostedInvestigateAdapter.ts";
+import { DEFAULT_INVESTIGATION_LIMITS } from "../application/investigateToken.ts";
 import { createMetaModelApiAdapterFromConfig } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
 import type { MetaModelApiTransport } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
 import { createhostedOpenWeightsAdapterFromConfig } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
@@ -304,6 +309,46 @@ export function createAssessmentServiceFromConfig(
       adapter: adapter.value,
       promptVersion: promptVersion.value,
       dailyCapPerKey,
+    }),
+  );
+}
+
+// Builds the investigation service from the validated configuration
+// (S-075, P-29): the hosted open-weights adapter when the key is set,
+// otherwise the not-configured adapter whose every call answers
+// `not-configured` with zero sends. Missing values never fail startup:
+// the loop is opt-in and disabled by default. Transports stay injectable
+// so tests replay recorded fixtures and never touch the network.
+export function createInvestigationServiceFromConfig(
+  config: AppConfig,
+  detectors: DetectorSet,
+  overrides: { readonly transport?: hostedInvestigateTransport | undefined } = {},
+): Result<InvestigationService, ConfigError> {
+  const built = createhostedInvestigateAdapterFromConfig(
+    {
+      investigatehostedBaseUrl: config.investigatehostedBaseUrl,
+      investigatehostedApiKey: config.investigatehostedApiKey,
+      investigatehostedModelId: config.investigatehostedModelId,
+      investigateDeadlineMs: config.investigateDeadlineMs,
+      investigateMaxInputBytes: config.investigateMaxInputBytes,
+      investigateMaxOutputBytes: config.investigateMaxOutputBytes,
+    },
+    overrides.transport,
+  );
+  if (!built.ok) {
+    return err(built.error);
+  }
+  return ok(
+    createInvestigationService({
+      adapter: built.value,
+      detectors,
+      docs: {},
+      limits: {
+        maxSteps: config.investigateMaxSteps ?? DEFAULT_INVESTIGATION_LIMITS.maxSteps,
+        maxTokens: config.investigateMaxTokens ?? DEFAULT_INVESTIGATION_LIMITS.maxTokens,
+        deadlineMs: config.investigateDeadlineMs ?? DEFAULT_INVESTIGATION_LIMITS.deadlineMs,
+        toolTimeoutMs: config.investigateToolTimeoutMs ?? DEFAULT_INVESTIGATION_LIMITS.toolTimeoutMs,
+      },
     }),
   );
 }

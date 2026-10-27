@@ -5,6 +5,7 @@
   "anyOf": [
     { "$ref": "#/definitions/assessed" },
     { "$ref": "#/definitions/assessedWithAssessment" },
+    { "$ref": "#/definitions/assessedWithInvestigation" },
     { "$ref": "#/definitions/noContract" },
     { "$ref": "#/definitions/health" },
     { "$ref": "#/definitions/error" },
@@ -206,6 +207,27 @@
               ]
             },
             "fromCache": { "type": "boolean" }
+          }
+        }
+      ]
+    },
+    "assessedWithInvestigation": {
+      "description": "Opt-in investigation loop (K-036, P-37): the assessed envelope byte for byte plus the separate investigation field with the trace, the citation-checked narrative and provider and model labelling. Scores and evidence never move.",
+      "allOf": [
+        { "$ref": "#/definitions/assessed" },
+        {
+          "type": "object",
+          "required": ["investigation", "investigationProvider", "investigationModel"],
+          "properties": {
+            "investigation": {
+              "type": "object",
+              "required": ["status"],
+              "properties": {
+                "status": { "enum": ["done", "failed", "not-configured"] }
+              }
+            },
+            "investigationProvider": { "const": "hosted-open-weights" },
+            "investigationModel": { "type": "string", "minLength": 1 }
           }
         }
       ]

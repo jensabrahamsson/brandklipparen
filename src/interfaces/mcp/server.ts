@@ -22,6 +22,8 @@ import { exposeRegistry, serializePluginDocs, serializePluginList } from "../../
 import type { PluginDocsMap, PluginWeightMapping } from "../../plugins/exposure.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
+import { serializeTokenInvestigation } from "../../application/investigationService.ts";
+import type { InvestigationService } from "../../application/investigationService.ts";
 import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import { canonicalSerialize } from "../../domain/serialize.ts";
@@ -34,6 +36,7 @@ import type { ApiKeyStore } from "../rest/apiKeys.ts";
 import {
   assessmentNotConfigured,
   invalidApiKey,
+  investigationNotConfigured,
   keyInToolArgs,
   missingApiKey,
   rateLimited,
@@ -48,6 +51,7 @@ import type { McpToolError } from "./errors.ts";
 import {
   ASSESS_TOKEN_TOOL,
   GET_PLUGIN_DOCS_TOOL,
+  INVESTIGATE_TOKEN_TOOL,
   LIST_PLUGINS_TOOL,
   REQUEST_ASSESSMENT_TOOL,
   TOOL_DEFINITIONS,
@@ -55,6 +59,7 @@ import {
   findTool,
   parseAssessTokenInput,
   parseGetPluginDocsInput,
+  parseInvestigateInput,
   parseListPluginsInput,
   parseRequestAssessmentInput,
 } from "./tools.ts";
@@ -92,6 +97,10 @@ export type McpServerOptions = {
   // Absent service means the assessment feature is disabled through
   // configuration (K-309): request_assessment answers assessment-not-configured.
   readonly assessmentService?: AssessmentService | undefined;
+  // Absent service means the investigation loop is disabled through
+  // configuration (P-29): investigate_token answers
+  // investigation-not-configured with zero model calls.
+  readonly investigationService?: InvestigationService | undefined;
   // Shared rate and quota limits with the REST adapter per M-08 (K-504);
   // absent limits disable the check, as in local development.
   readonly rateLimit?: RateLimitConfig | undefined;
@@ -329,6 +338,78 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     });
   }
 
+  // Opt-in investigation loop (S-075, K-036, P-37): the same gate as
+  // assess_token, then the deterministic analysis followed by the shared
+  // investigation service. Scores and evidence pass through untouched; the
+  // trace and the citation-checked narrative land in their own fields with
+  // provider and model id labelling. Read-only like every other tool.
+  async function runInvestigate(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const gated = gateToolArgs(args, parseInvestigateInput, requestId, callOptions);
+    if (!gated.ok) {
+      return err(gated.error);
+    }
+    const service = options.investigationService;
+    if (service === undefined) {
+      return err(investigationNotConfigured(requestId as string));
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return err({
+        code: "internal-error",
+        message: "Analysis failed; retry with the same request ID.",
+        requestId,
+      } satisfies McpToolError);
+    }
+    const analysed = await options.services.analyzeToken({
+      address: gated.value.input.address,
+      block: gated.value.input.block,
+      requestId,
+      deadline: deadline.value,
+      modelVersion: options.modelVersion,
+      indexVersion: options.indexVersion,
+      templateVersion: options.templateVersion,
+      catalogue: options.catalogue,
+    });
+    if (!analysed.ok) {
+      const mapped = toMcpError(analysed.error);
+      return err({ ...mapped, requestId });
+    }
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return ok({ content: Object.freeze([textBlock(body)]), isError: false });
+    }
+    const investigated = await service.investigateEnvelope(
+      analysed.value.envelope,
+      {
+        requestId,
+        deadline: deadline.value,
+        block: analysed.value.envelope.block,
+      },
+      { now: () => Date.now() },
+    );
+    return ok({
+      content: Object.freeze([
+        textBlock(
+          serializeTokenInvestigation(
+            analysed.value.envelope,
+            investigated,
+            service.provider(),
+            service.modelId(),
+          ),
+        ),
+      ]),
+      isError: false,
+    });
+  }
+
   // Registry exposure (S-046, K-031, P-10): the registry-derived reading
   // tool returns the same manifest list as GET /v1/plugins in a text
   // content block marked as data for the user (M-15). Findings keep riding
@@ -466,6 +547,9 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     }
     if (name === GET_PLUGIN_DOCS_TOOL) {
       return runGetPluginDocs(args, requestId, callOptions);
+    }
+    if (name === INVESTIGATE_TOKEN_TOOL) {
+      return runInvestigate(args, requestId, callOptions);
     }
     return err(unknownTool(name, requestId as string));
   }

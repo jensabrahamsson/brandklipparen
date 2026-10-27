@@ -25,7 +25,7 @@ const SECRET_LIKE = /key|token|secret|password|auth/i;
 // Closed tool list, versioned per tool (K-025, M-15). The MVP exposes
 // reading tools over the same service; the list grows solely through the
 // reviewed path in K-026.
-export const TOOL_LIST_VERSION = "1.1.0";
+export const TOOL_LIST_VERSION = "1.2.0";
 export const ASSESS_TOKEN_TOOL = "assess_token";
 export const ASSESS_TOKEN_VERSION = "1.0.0";
 // Registry exposure (S-046, K-031, P-10): one registry-derived reading
@@ -44,6 +44,12 @@ export const GET_PLUGIN_DOCS_VERSION = "1.0.0";
 // pass through untouched; the assessment lands in its own labelled field.
 export const REQUEST_ASSESSMENT_TOOL = "request_assessment";
 export const REQUEST_ASSESSMENT_VERSION = "1.0.0";
+// Opt-in investigation loop (S-075, K-036, P-37): a separate reading tool
+// over the shared investigation service. The deterministic analysis runs
+// first and freezes; the trace and the citation-checked narrative land in
+// their own fields and never move scores or evidence.
+export const INVESTIGATE_TOKEN_TOOL = "investigate_token";
+export const INVESTIGATE_TOKEN_VERSION = "1.0.0";
 
 export type JsonSchema = {
   readonly type: "object";
@@ -104,6 +110,11 @@ export const REQUEST_ASSESSMENT_INPUT_SCHEMA: JsonSchema = Object.freeze({
   }),
 });
 
+// Published input schema for investigate_token (S-075, K-026): the same
+// address and block gate as assess_token, so the investigation request
+// faces identical limits.
+export const INVESTIGATE_TOKEN_INPUT_SCHEMA: JsonSchema = REQUEST_ASSESSMENT_INPUT_SCHEMA;
+
 // Published input schema for list_plugins (S-046, K-026): no arguments.
 // Unknown or secret-like fields are turned away like any other tool input.
 export const LIST_PLUGINS_INPUT_SCHEMA: JsonSchema = Object.freeze({
@@ -144,6 +155,13 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       "Request the Muse contract assessment for a token: the same probabilities, score and evidence as assess_token plus a separate Muse-generated assessment field labelled with provider and model id. Runs solely on request. Read-only.",
     version: REQUEST_ASSESSMENT_VERSION,
     inputSchema: REQUEST_ASSESSMENT_INPUT_SCHEMA,
+  }),
+  Object.freeze({
+    name: INVESTIGATE_TOKEN_TOOL,
+    description:
+      "Run the opt-in investigation loop for a token: the same probabilities, score and evidence as assess_token plus the investigation trace and citation-checked narrative in their own fields, labelled with provider and model id. Runs solely on request. Read-only.",
+    version: INVESTIGATE_TOKEN_VERSION,
+    inputSchema: INVESTIGATE_TOKEN_INPUT_SCHEMA,
   }),
   Object.freeze({
     name: LIST_PLUGINS_TOOL,
@@ -248,6 +266,12 @@ export function parseAssessTokenInput(args: unknown): AssessInputError | { reado
 // Strict boundary check for request_assessment arguments: the same gate as
 // assess_token, so the assessment request faces identical limits (K-026).
 export function parseRequestAssessmentInput(args: unknown): AssessInputError | { readonly input: AssessTokenInput } {
+  return parseTokenAddressInput(args);
+}
+
+// Strict boundary check for investigate_token arguments: the same gate as
+// assess_token, so the investigation request faces identical limits (K-026).
+export function parseInvestigateInput(args: unknown): AssessInputError | { readonly input: AssessTokenInput } {
   return parseTokenAddressInput(args);
 }
 

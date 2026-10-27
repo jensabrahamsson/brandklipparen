@@ -814,6 +814,55 @@ the implementation.
   id. Verification: integration test
   `k033_plugin_docs_match_registry_in_rest_and_mcp`.
 
+### K-036 Investigate with Muse: opt-in runtime agent loop (MVP)
+
+The deterministic analysis computes first and freezes; only then, and
+only on an explicit opt-in request, the Muse Spark Open model
+(`meta-models/muse-spark-open-1026`) on hosted decides which
+deterministic registry-derived tools to run next, step by step, and
+drafts a narrative that cites the evidence it collected. Proposed in
+`docs/adr-investigate-with-muse.md` (P-29–P-38); this story enters the
+ID with the implementation. The loop never changes score,
+probabilities, signals, findings or evidence.
+
+- The investigation runs as an explicit typed state machine in the
+  application layer; the model returns one closed decision value
+  (`run-tool` or `conclude`) through `InvestigationModelPort`, and the
+  runner validates it against the current node, the allowlist and the
+  remaining budgets before any transition. A decision that does not fit
+  ends in typed `invalid-decision` with the partial trace preserved,
+  and every decision consumes one step. Verification: unit tests
+  `k520_runner_rejects_disallowed_tool_and_consumes_the_step`,
+  `k520_step_token_and_wallclock_limits_end_with_partial_trace` and
+  `investigation_state_rejects_transition_after_done_or_failed`.
+- Tools are read-only and derived from the registry: one
+  `detector.<pluginId>` per registered detector over frozen facts plus
+  the frozen-fact readers `evidence.list`, `analysis.summary` and
+  `docs.plugin`. Hard limits (max steps, max tokens, wall-clock
+  timeout, per-tool deadline) end the run with the partial trace
+  preserved. Verification: unit test
+  `k520_step_token_and_wallclock_limits_end_with_partial_trace`.
+- The narrative passes a deterministic sentence-level `[E:<id>]`
+  citation check: uncited or falsely cited sentences drop and count in
+  `droppedClaims`, never trusted. Verification: unit tests
+  `k520_citation_check_keeps_only_sentences_citing_collected_evidence`
+  and `k520_zero_surviving_sentences_yields_empty_narrative_with_drop_count`.
+- Without a hosted key the investigation answers the typed outcome
+  `investigation-not-configured` with zero provider calls and the
+  deterministic analysis standing. Verification: integration test
+  `k520_investigation_without_key_reports_not_configured_and_sends_nothing`
+  and `k520_investigation_service_without_key_reports_not_configured`.
+- REST (`POST /v1/investigate` plus the `GET
+  /v1/investigate/events` step stream) and the `investigate_token` MCP
+  tool return the same final trace and checked narrative for the same
+  code hash; the web UI renders the live graph with one node per step
+  and the checked narrative below it. Verification: integration tests
+  `k036_investigate_matches_across_rest_and_mcp_for_same_codehash`,
+  `k036_events_stream_emits_one_event_per_step_then_report`,
+  `k026_investigate_tool_leaves_state_unchanged` and Playwright
+  `k036_investigation_graph_renders_trace_steps_as_inert_text`,
+  `k036_investigation_shows_not_configured_limit_and_failure_states`.
+
 ## 7. Non-functional requirements (K-1xx)
 
 ### K-101 Response time: fast path and deepening (MVP)
@@ -1944,6 +1993,29 @@ implementation. Fulfilled by M-21 against H-15 in
   `k514_unregistered_plugin_never_runs`, which requires that an
   unregistered plugin id resolves to no plugin and no findings.
 
+### K-520 Investigation loop safety: one-way chain and validated citations (MVP)
+
+The investigation loop is an investigation aid, never an analysis
+input. Proposed in `docs/adr-investigate-with-muse.md` (P-33, P-35,
+P-38); this story enters the ID with the implementation.
+
+- The investigation reads a frozen copy of the analysis and writes
+  only its own envelope: score, probabilities, signals and evidence
+  stay bit-identical with the loop on, off, failed and absent.
+  Verification: property test
+  `k520_investigation_leaves_score_and_evidence_unchanged` and
+  `k520_recorded_investigation_replays_bit_identical` (replay through
+  the fake adapter, apart from `elapsedMs`).
+- A wrong provider or model id gives `provider-mismatch` with no
+  decision applied. Verification: `runInvestigationModelPortContract`
+  error branch `k513_investigation_provider_mismatch_rejected`.
+- All model input and output is untrusted data: on-chain strings and
+  plugin text travel quoted, tool calls are validated, and narrative
+  citations are re-checked deterministically with drops counted.
+  Verification: unit tests
+  `k520_citation_check_keeps_only_sentences_citing_collected_evidence`
+  and the redacted-logging pattern of the hosted adapters.
+
 ## 12. Traceability
 
 ### 12.1 Requirement to named test or measurement
@@ -1988,6 +2060,7 @@ the test per acceptance criterion.
 | K-030 | `runAssessmentModelPortContract` per registered assessment plugin (contract) |
 | K-032 | `k517_plugin_md_missing_or_mismatched_fails_deterministic_check` (unit) |
 | K-033 | `k033_plugin_docs_match_registry_in_rest_and_mcp` (integration) |
+| K-036 | `k036_investigate_matches_across_rest_and_mcp_for_same_codehash` (integration) |
 | K-517 | `k517_plugin_md_missing_or_mismatched_fails_deterministic_check` (unit) |
 | K-101 | `k101_fast_path_p95_within_5s` (timing) |
 | K-102 | `k102_golden_fixtures_bit_identical` (golden) |
@@ -2038,6 +2111,7 @@ the test per acceptance criterion.
 | K-512 | `k512_tampered_artifact_rejected_before_analysis` (integration) |
 | K-513 | `k513_tampered_or_oversize_provider_response_rejected` (integration) |
 | K-514 | `k514_registry_has_no_dynamic_loading` (CI check) |
+| K-520 | `k520_investigation_leaves_score_and_evidence_unchanged` (property) |
 
 ### 12.2 Security requirements to threats and countermeasures
 

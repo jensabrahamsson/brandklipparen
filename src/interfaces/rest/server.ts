@@ -24,6 +24,8 @@ import {
 import type { PluginDocsMap, PluginWeightMapping } from "../../plugins/exposure.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
+import { serializeTokenInvestigation } from "../../application/investigationService.ts";
+import type { InvestigationService } from "../../application/investigationService.ts";
 import {
   PLACEHOLDER_COST_UNIT,
   createRequestCounters,
@@ -44,6 +46,7 @@ import type { SecretString } from "../../ports/config.ts";
 import {
   assessmentNotConfigured,
   invalidApiKey,
+  investigationNotConfigured,
   keyInUrlOrBody,
   missingApiKey,
   notFound,
@@ -107,6 +110,10 @@ export type RestServerOptions = {
   // Absent service means the assessment feature is disabled through
   // configuration (K-309): /v1/assessment answers assessment-not-configured.
   readonly assessmentService?: AssessmentService | undefined;
+  // Absent service means the investigation loop is disabled through
+  // configuration (P-29): /v1/investigate answers
+  // investigation-not-configured with zero model calls.
+  readonly investigationService?: InvestigationService | undefined;
   // Absent limits mean the demo runs without rate limiting, as in local
   // development and in older suites; the demo configuration always sets
   // the versioned values per I-12 (K-504, M-08).
@@ -476,6 +483,189 @@ export function createRestServer(options: RestServerOptions): RestServer {
       .send(serializeTokenAssessment(requested.value));
   }
 
+  // Opt-in investigation loop (S-075, K-036, P-37): same gate as the
+  // analysis routes, then the deterministic analysis followed by the shared
+  // investigation service. Scores and evidence pass through untouched; the
+  // trace and the citation-checked narrative land in their own fields with
+  // provider and model id labelling. Without a service the route answers
+  // investigation-not-configured with zero model calls (P-29).
+  async function handleInvestigate(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const service = options.investigationService;
+    if (service === undefined) {
+      return sendError(reply, investigationNotConfigured(requestId));
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const counters = createRequestCounters();
+    const analysed = await options.services.analyzeToken(
+      {
+        address: gated.value.address,
+        block: gated.value.block,
+        requestId,
+        deadline: deadline.value,
+        modelVersion: options.modelVersion,
+        indexVersion: options.indexVersion,
+        templateVersion: options.templateVersion,
+        catalogue: options.catalogue,
+      },
+      counters,
+    );
+    if (!analysed.ok) {
+      const mapped = toHttpError(analysed.error);
+      return sendError(
+        reply,
+        requestError(mapped.status, mapped.code, mapped.message, requestId),
+      );
+    }
+    const usage = counters.snapshot();
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return reply
+        .code(200)
+        .header(REQUEST_ID_HEADER, requestId)
+        .header(DEEPENING_STATUS_HEADER, "pending")
+        .header(ASSESSMENT_CALLS_HEADER, String(usage.assessmentCalls))
+        .header(ASSESSMENT_COST_HEADER, String(usage.assessmentCostUnits))
+        .type("application/json")
+        .send(body);
+    }
+    const investigated = await service.investigateEnvelope(
+      analysed.value.envelope,
+      {
+        requestId,
+        deadline: deadline.value,
+        block: analysed.value.envelope.block,
+      },
+      { now: () => Date.now() },
+    );
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .header(DEEPENING_STATUS_HEADER, "pending")
+      .header(ASSESSMENT_CALLS_HEADER, String(usage.assessmentCalls))
+      .header(ASSESSMENT_COST_HEADER, String(usage.assessmentCostUnits))
+      .type("application/json")
+      .send(
+        serializeTokenInvestigation(
+          analysed.value.envelope,
+          investigated,
+          service.provider(),
+          service.modelId(),
+        ),
+      );
+  }
+
+  // Step-events stream for the investigation (S-075, K-036, P-37): the same
+  // gate and the same deterministic analysis, then one `step` event per
+  // recorded trace step in order, then a final `report` event. Rationale
+  // and narrative travel as JSON strings, so model text stays inert data.
+  // The deterministic analysis response is unchanged whether or not an
+  // investigation runs: the stream carries its own envelope copy.
+  async function handleInvestigateEvents(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, request.query, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const service = options.investigationService;
+    if (service === undefined) {
+      return sendError(reply, investigationNotConfigured(requestId));
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const counters = createRequestCounters();
+    const analysed = await options.services.analyzeToken(
+      {
+        address: gated.value.address,
+        block: gated.value.block,
+        requestId,
+        deadline: deadline.value,
+        modelVersion: options.modelVersion,
+        indexVersion: options.indexVersion,
+        templateVersion: options.templateVersion,
+        catalogue: options.catalogue,
+      },
+      counters,
+    );
+    if (!analysed.ok) {
+      const mapped = toHttpError(analysed.error);
+      return sendError(
+        reply,
+        requestError(mapped.status, mapped.code, mapped.message, requestId),
+      );
+    }
+    if (analysed.value.kind === "no-contract") {
+      return reply
+        .code(200)
+        .header(REQUEST_ID_HEADER, requestId)
+        .type("application/json")
+        .send(
+          canonicalSerialize({
+            kind: "no-contract",
+            target: analysed.value.target as string,
+            block: analysed.value.block as number,
+          }),
+        );
+    }
+    const envelope = analysed.value.envelope;
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+      [REQUEST_ID_HEADER]: requestId as string,
+      [CSP_HEADER]: CONTENT_SECURITY_POLICY,
+    });
+    const send = (payload: unknown): void => {
+      reply.raw.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+    try {
+      const investigated = await service.investigateEnvelope(
+        envelope,
+        {
+          requestId,
+          deadline: deadline.value,
+          block: envelope.block,
+        },
+        {
+          now: () => Date.now(),
+          onStep: (step) => {
+            send({
+              kind: "step",
+              step: step.step,
+              toolId: step.toolId,
+              rationale: step.rationale,
+              evidenceIds: step.evidenceIds.slice(),
+            });
+          },
+        },
+      );
+      send({
+        kind: "report",
+        investigation: investigated,
+        investigationProvider: service.provider(),
+        investigationModel: service.modelId(),
+      });
+    } catch {
+      send({ kind: "report", investigation: { status: "failed" } });
+    }
+    reply.raw.end();
+    return reply;
+  }
+
   // Registry exposure (S-046, P-09): the plugin list derives from the one
   // registry value, behind the same API-key gate as the analysis routes
   // (K-024). No route is hand-written per plugin; detector invocation rides
@@ -565,6 +755,18 @@ export function createRestServer(options: RestServerOptions): RestServer {
 
   app.post("/v1/assessment", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleAssessment(request, reply, request.body);
+  });
+
+  app.get("/v1/investigate", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleInvestigate(request, reply, request.query);
+  });
+
+  app.post("/v1/investigate", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleInvestigate(request, reply, request.body);
+  });
+
+  app.get("/v1/investigate/events", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleInvestigateEvents(request, reply);
   });
 
   return Object.freeze({

@@ -105,6 +105,18 @@ export type AppConfig = {
   readonly assessmenthostedModelId?: ModelId;
   readonly assessmenthostedBaseUrl?: string;
   readonly assessmenthostedDeploymentId?: string;
+  // Investigation loop on open weights (S-073, P-29, P-30, P-34): all
+  // optional in every setup. An absent key leaves the loop answering
+  // `not-configured` with zero provider calls instead of failing startup.
+  readonly investigatehostedBaseUrl?: string;
+  readonly investigatehostedApiKey?: SecretString;
+  readonly investigatehostedModelId?: ModelId;
+  readonly investigateDeadlineMs?: number;
+  readonly investigateMaxInputBytes?: number;
+  readonly investigateMaxOutputBytes?: number;
+  readonly investigateMaxSteps?: number;
+  readonly investigateMaxTokens?: number;
+  readonly investigateToolTimeoutMs?: number;
 };
 
 // Kept for traceability: docs/architecture.md (A-05) names this value DriftConfig.

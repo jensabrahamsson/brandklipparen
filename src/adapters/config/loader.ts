@@ -262,6 +262,15 @@ const V = {
   assessmenthostedModelId: "BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID",
   assessmenthostedBaseUrl: "BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL",
   assessmenthostedDeploymentId: "BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID",
+  investigatehostedBaseUrl: "BRANDKLIPPAREN_INVESTIGATE_hosted_BASE_URL",
+  investigatehostedApiKey: "BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY",
+  investigatehostedModelId: "BRANDKLIPPAREN_INVESTIGATE_hosted_MODEL_ID",
+  investigateDeadlineMs: "BRANDKLIPPAREN_INVESTIGATE_DEADLINE_MS",
+  investigateMaxInputBytes: "BRANDKLIPPAREN_INVESTIGATE_MAX_INPUT_BYTES",
+  investigateMaxOutputBytes: "BRANDKLIPPAREN_INVESTIGATE_MAX_OUTPUT_BYTES",
+  investigateMaxSteps: "BRANDKLIPPAREN_INVESTIGATE_MAX_STEPS",
+  investigateMaxTokens: "BRANDKLIPPAREN_INVESTIGATE_MAX_TOKENS",
+  investigateToolTimeoutMs: "BRANDKLIPPAREN_INVESTIGATE_TOOL_TIMEOUT_MS",
 } as const;
 
 const parseEnvName = (raw: string): Result<EnvironmentName, ConfigError> =>
@@ -605,6 +614,67 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!assessmenthostedDeploymentId.ok) {
     return assessmenthostedDeploymentId;
   }
+  // Investigation loop settings (S-073, P-29, P-34): optional in every
+  // setup, so local and CI runs stay key-free with the loop answering
+  // `not-configured`. The demo sets the key alongside the assessment keys.
+  const investigatehostedBaseUrl = optionalField(env, V.investigatehostedBaseUrl, (raw) =>
+    parseHttpsUrl(V.investigatehostedBaseUrl, raw),
+  );
+  if (!investigatehostedBaseUrl.ok) {
+    return investigatehostedBaseUrl;
+  }
+  const investigatehostedApiKey = optionalField(env, V.investigatehostedApiKey, (raw) =>
+    parseSecret(V.investigatehostedApiKey, raw),
+  );
+  if (!investigatehostedApiKey.ok) {
+    return investigatehostedApiKey;
+  }
+  const investigatehostedModelId = optionalField(env, V.investigatehostedModelId, (raw) =>
+    mapDomain(
+      V.investigatehostedModelId,
+      "must be a 1-256 character model identifier",
+      ModelId.parse(raw),
+    ),
+  );
+  if (!investigatehostedModelId.ok) {
+    return investigatehostedModelId;
+  }
+  const investigateDeadlineMs = optionalField(env, V.investigateDeadlineMs, (raw) =>
+    parseInteger(V.investigateDeadlineMs, raw, 1, 3600000),
+  );
+  if (!investigateDeadlineMs.ok) {
+    return investigateDeadlineMs;
+  }
+  const investigateMaxInputBytes = optionalField(env, V.investigateMaxInputBytes, (raw) =>
+    parseInteger(V.investigateMaxInputBytes, raw, 1, 1073741824),
+  );
+  if (!investigateMaxInputBytes.ok) {
+    return investigateMaxInputBytes;
+  }
+  const investigateMaxOutputBytes = optionalField(env, V.investigateMaxOutputBytes, (raw) =>
+    parseInteger(V.investigateMaxOutputBytes, raw, 1, 1073741824),
+  );
+  if (!investigateMaxOutputBytes.ok) {
+    return investigateMaxOutputBytes;
+  }
+  const investigateMaxSteps = optionalField(env, V.investigateMaxSteps, (raw) =>
+    parseInteger(V.investigateMaxSteps, raw, 1, 64),
+  );
+  if (!investigateMaxSteps.ok) {
+    return investigateMaxSteps;
+  }
+  const investigateMaxTokens = optionalField(env, V.investigateMaxTokens, (raw) =>
+    parseInteger(V.investigateMaxTokens, raw, 1, 1000000),
+  );
+  if (!investigateMaxTokens.ok) {
+    return investigateMaxTokens;
+  }
+  const investigateToolTimeoutMs = optionalField(env, V.investigateToolTimeoutMs, (raw) =>
+    parseInteger(V.investigateToolTimeoutMs, raw, 1, 3600000),
+  );
+  if (!investigateToolTimeoutMs.ok) {
+    return investigateToolTimeoutMs;
+  }
 
   const config: AppConfig = {
     env: envName,
@@ -706,6 +776,31 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(assessmenthostedDeploymentId.value === undefined
       ? {}
       : { assessmenthostedDeploymentId: assessmenthostedDeploymentId.value }),
+    ...(investigatehostedBaseUrl.value === undefined
+      ? {}
+      : { investigatehostedBaseUrl: investigatehostedBaseUrl.value }),
+    ...(investigatehostedApiKey.value === undefined
+      ? {}
+      : { investigatehostedApiKey: investigatehostedApiKey.value }),
+    ...(investigatehostedModelId.value === undefined
+      ? {}
+      : { investigatehostedModelId: investigatehostedModelId.value }),
+    ...(investigateDeadlineMs.value === undefined
+      ? {}
+      : { investigateDeadlineMs: investigateDeadlineMs.value }),
+    ...(investigateMaxInputBytes.value === undefined
+      ? {}
+      : { investigateMaxInputBytes: investigateMaxInputBytes.value }),
+    ...(investigateMaxOutputBytes.value === undefined
+      ? {}
+      : { investigateMaxOutputBytes: investigateMaxOutputBytes.value }),
+    ...(investigateMaxSteps.value === undefined ? {} : { investigateMaxSteps: investigateMaxSteps.value }),
+    ...(investigateMaxTokens.value === undefined
+      ? {}
+      : { investigateMaxTokens: investigateMaxTokens.value }),
+    ...(investigateToolTimeoutMs.value === undefined
+      ? {}
+      : { investigateToolTimeoutMs: investigateToolTimeoutMs.value }),
   };
 
   if (config.rpcUrls !== undefined) {

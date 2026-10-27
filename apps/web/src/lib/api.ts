@@ -2,7 +2,14 @@
 // values travel as inert JSON text and are rendered as text only (K-507):
 // no HTML parsing, no eval, no script injection surface.
 
-import type { AnalyzeResult, AnalyzeSuccess, AssessmentState, HealthState } from "../types.ts";
+import type {
+  AnalyzeResult,
+  AnalyzeSuccess,
+  AssessmentState,
+  HealthState,
+  InvestigationState,
+  InvestigationStep,
+} from "../types.ts";
 
 export class ApiError extends Error {
   readonly code: string;
@@ -99,4 +106,177 @@ export async function fetchHealth(): Promise<HealthState> {
     throw await readError(response, "request-failed");
   }
   return (await response.json()) as HealthState;
+}
+
+function investigateUrl(address: string): string {
+  return `/v1/investigate?address=${encodeURIComponent(address)}`;
+}
+
+function investigateEventsUrl(address: string): string {
+  return `/v1/investigate/events?address=${encodeURIComponent(address)}`;
+}
+
+type RawStep = {
+  readonly step?: unknown;
+  readonly toolId?: unknown;
+  readonly rationale?: unknown;
+  readonly evidenceIds?: unknown;
+};
+
+function toStep(raw: RawStep): InvestigationStep | null {
+  if (
+    typeof raw.step !== "number" ||
+    typeof raw.toolId !== "string" ||
+    typeof raw.rationale !== "string" ||
+    !Array.isArray(raw.evidenceIds) ||
+    !raw.evidenceIds.every((entry) => typeof entry === "string")
+  ) {
+    return null;
+  }
+  return { step: raw.step, toolId: raw.toolId, rationale: raw.rationale, evidenceIds: raw.evidenceIds };
+}
+
+function toInvestigationState(body: unknown): InvestigationState {
+  const record = body as Record<string, unknown>;
+  const envelope = record["investigation"] as
+    | { status?: unknown; report?: unknown; reason?: unknown; partial?: unknown }
+    | undefined;
+  const provider = typeof record["investigationProvider"] === "string" ? record["investigationProvider"] : "unknown";
+  const modelId = typeof record["investigationModel"] === "string" ? record["investigationModel"] : "unknown";
+  if (envelope === null || envelope === undefined || typeof envelope !== "object") {
+    return { status: "failed", message: "Investigation failed.", steps: [] };
+  }
+  if (envelope.status === "not-configured") {
+    return { status: "not-configured" };
+  }
+  if (envelope.status === "done") {
+    const report = (envelope.report ?? {}) as {
+      narrative?: unknown;
+      droppedClaims?: unknown;
+      steps?: unknown;
+    };
+    const steps = Array.isArray(report.steps)
+      ? report.steps.map((entry) => toStep(entry as RawStep)).filter((entry) => entry !== null)
+      : [];
+    return {
+      status: "done",
+      steps,
+      narrative: typeof report.narrative === "string" ? report.narrative : "",
+      droppedClaims: typeof report.droppedClaims === "number" ? report.droppedClaims : 0,
+      provider,
+      modelId,
+    };
+  }
+  const reason = (envelope.reason ?? {}) as { kind?: unknown; message?: unknown };
+  const kind = typeof reason.kind === "string" ? reason.kind : "unknown";
+  const message = typeof reason.message === "string" ? reason.message : "Investigation failed.";
+  const partial = Array.isArray(envelope.partial)
+    ? envelope.partial.map((entry) => toStep(entry as RawStep)).filter((entry) => entry !== null)
+    : [];
+  if (kind === "step-limit" || kind === "token-limit" || kind === "deadline") {
+    return { status: "limit", message, steps: partial };
+  }
+  return { status: "failed", message, steps: partial };
+}
+
+// Completed-report path (S-076 fallback): POST-equivalent GET of the final
+// envelope renders the same trace when the events transport is absent.
+export async function fetchInvestigation(address: string, apiKey: string | null): Promise<InvestigationState> {
+  const response = await fetch(investigateUrl(address), { headers: apiHeaders(apiKey) });
+  if (!response.ok) {
+    const failure = await readError(response, "request-failed");
+    if (failure.code === "investigation-not-configured" || response.status === 501) {
+      return { status: "not-configured" };
+    }
+    throw failure;
+  }
+  return toInvestigationState(await response.json());
+}
+
+// Step-events stream (S-076, K-036, P-37): one event per trace step in
+// order, then the final report. Every event payload renders as inert text.
+// Any transport failure throws, and the caller falls back to the
+// completed-report path above.
+export async function streamInvestigationEvents(
+  address: string,
+  apiKey: string | null,
+  onStep: (step: InvestigationStep) => void,
+): Promise<InvestigationState> {
+  const response = await fetch(investigateEventsUrl(address), { headers: apiHeaders(apiKey) });
+  if (!response.ok) {
+    const failure = await readError(response, "request-failed");
+    if (failure.code === "investigation-not-configured" || response.status === 501) {
+      return { status: "not-configured" };
+    }
+    throw failure;
+  }
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/event-stream")) {
+    throw new Error("Investigation stream is unavailable.");
+  }
+  if (response.body === null) {
+    throw new Error("Investigation stream is unavailable.");
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let final: InvestigationState | null = null;
+  for (;;) {
+    const chunk = await reader.read();
+    buffer += decoder.decode(chunk.value ?? new Uint8Array(), { stream: !chunk.done });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const line = frame.split("\n").find((entry) => entry.startsWith("data:"));
+      if (line === undefined) {
+        continue;
+      }
+      const payload = JSON.parse(line.slice("data:".length).trim()) as { kind?: unknown };
+      if (payload.kind === "step") {
+        const step = toStep(payload as RawStep);
+        if (step !== null) {
+          onStep(step);
+        }
+      } else if (payload.kind === "report") {
+        final = toInvestigationState(payload);
+      }
+    }
+    if (chunk.done) {
+      break;
+    }
+  }
+  if (final === null) {
+    throw new Error("Investigation stream ended without a report.");
+  }
+  // Streamed steps already reached the panel through onStep; the report
+  // carries the same steps for readers without the stream.
+  return final;
+}
+
+// Opt-in investigation with streaming and POST fallback (S-076): the
+// events transport renders live steps; when it is absent or fails, the
+// completed report renders the same trace.
+export async function requestInvestigation(
+  address: string,
+  apiKey: string | null,
+  onStep: (step: InvestigationStep) => void,
+): Promise<{ state: InvestigationState; streamed: InvestigationStep[] }> {
+  const streamed: InvestigationStep[] = [];
+  const collect = (step: InvestigationStep): void => {
+    streamed.push(step);
+    onStep(step);
+  };
+  try {
+    const state = await streamInvestigationEvents(address, apiKey, collect);
+    if (state.status === "done") {
+      return { state: { ...state, steps: streamed.length > 0 ? streamed : state.steps }, streamed };
+    }
+    if ((state.status === "limit" || state.status === "failed") && streamed.length > 0) {
+      return { state: { ...state, steps: streamed }, streamed };
+    }
+    return { state, streamed };
+  } catch {
+    const state = await fetchInvestigation(address, apiKey);
+    return { state, streamed };
+  }
 }

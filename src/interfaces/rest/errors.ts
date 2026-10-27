@@ -15,6 +15,7 @@ export type HttpErrorCode =
   | "request-too-large"
   | "not-found"
   | "assessment-not-configured"
+  | "investigation-not-configured"
   | "rate-limited"
   | "upstream-unavailable"
   | "service-unavailable"
@@ -90,6 +91,15 @@ export function assessmentNotConfigured(requestId: string): HttpError {
     501,
     "assessment-not-configured",
     "Assessment is not configured: set an assessment provider to enable it.",
+    requestId,
+  );
+}
+
+export function investigationNotConfigured(requestId: string): HttpError {
+  return requestError(
+    501,
+    "investigation-not-configured",
+    "Investigation is not configured: set the investigation provider key to enable it.",
     requestId,
   );
 }

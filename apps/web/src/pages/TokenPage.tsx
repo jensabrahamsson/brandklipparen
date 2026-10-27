@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
-import { ApiError, analyzeToken, fetchAssessment, fetchHealth } from "../lib/api.ts";
+import { ApiError, analyzeToken, fetchAssessment, fetchHealth, requestInvestigation } from "../lib/api.ts";
 import { isValidAddress } from "../lib/validate.ts";
 import { riskWord } from "../lib/risk.ts";
 import { combinedScoreLine, emptyGaugeReason, plainReason, signalTitle, sortByImpact, strongestSignal } from "../lib/signals.ts";
 import { AssessmentPanel } from "../components/AssessmentPanel.tsx";
+import { InvestigationPanel } from "../components/InvestigationPanel.tsx";
 import { CantTellPanel } from "../components/CantTellPanel.tsx";
 import { ExplanationList } from "../components/ExplanationList.tsx";
 import { Gauge } from "../components/Gauge.tsx";
@@ -11,7 +12,7 @@ import { ScoreRing } from "../components/ScoreRing.tsx";
 import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
 import { Sidebar } from "../components/Sidebar.tsx";
 import { SignalList } from "../components/SignalList.tsx";
-import type { AnalyzeResult, AssessmentState, ProviderInfo, RiskKind } from "../types.ts";
+import type { AnalyzeResult, AssessmentState, InvestigationState, InvestigationStep, ProviderInfo, RiskKind } from "../types.ts";
 
 const RISKS: readonly RiskKind[] = ["rug-pull", "honeypot", "bot-pump"];
 const RISK_SHORT: Record<RiskKind, string> = { "rug-pull": "Rug", honeypot: "Honey", "bot-pump": "Bot" };
@@ -20,7 +21,7 @@ const RISK_SHORT: Record<RiskKind, string> = { "rug-pull": "Rug", honeypot: "Hon
 const DEEPEN_POLL_MS = 1500;
 const DEEPEN_POLL_MAX = 10;
 
-type Tab = "overview" | "assessment";
+type Tab = "overview" | "assessment" | "investigate";
 
 // Token page: combined score ring with a meaning sentence, three gauges,
 // full template explanation, expandable evidence, Can't-tell panel and
@@ -41,6 +42,7 @@ export function TokenPage({
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [loadError, setLoadError] = useState<{ title: string; detail: string } | null>(null);
   const [assessment, setAssessment] = useState<AssessmentState>({ status: "idle" });
+  const [investigation, setInvestigation] = useState<InvestigationState>({ status: "idle" });
   const [provider, setProvider] = useState<ProviderInfo>({ status: "loading" });
   const [tab, setTab] = useState<Tab>("overview");
   const [attempt, setAttempt] = useState(0);
@@ -54,6 +56,7 @@ export function TokenPage({
     setLoadError(null);
     setElapsed(null);
     setAssessment({ status: "idle" });
+    setInvestigation({ status: "idle" });
     deepeningPolls.current = 0;
     const started = performance.now();
     const key = apiKey.length === 0 ? null : apiKey;
@@ -171,6 +174,29 @@ export function TokenPage({
       });
   }, [address, apiKey]);
 
+  const runInvestigation = useCallback(() => {
+    setInvestigation({ status: "loading", steps: [] });
+    const key = apiKey.length === 0 ? null : apiKey;
+    const onStep = (step: InvestigationStep): void => {
+      setInvestigation((previous) => {
+        if (previous.status !== "loading") {
+          return previous;
+        }
+        return { status: "loading", steps: [...previous.steps, step] };
+      });
+    };
+    requestInvestigation(address, key, onStep).then(
+      ({ state }) => setInvestigation(state),
+      (reason: unknown) => {
+        setInvestigation({
+          status: "failed",
+          message: reason instanceof Error ? reason.message : "Investigation failed.",
+          steps: [],
+        });
+      },
+    );
+  }, [address, apiKey]);
+
   const toggleSignal = useCallback((signalId: string) => {
     setOpenSignals((previous) => {
       const next = new Set(previous);
@@ -196,7 +222,7 @@ export function TokenPage({
 
   const onTabKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
-      const order: Tab[] = ["overview", "assessment"];
+      const order: Tab[] = ["overview", "assessment", "investigate"];
       const current = order.indexOf(tab);
       let next: number | null = null;
       if (event.key === "ArrowRight") {
@@ -276,6 +302,8 @@ export function TokenPage({
           assessment={assessment}
           provider={provider}
           onRequestAssessment={requestAssessment}
+          investigation={investigation}
+          onRunInvestigation={runInvestigation}
           openSignals={openSignals}
           onToggleSignal={toggleSignal}
           onSignalLink={jumpToSignal}
@@ -294,6 +322,8 @@ function AssessedView({
   assessment,
   provider,
   onRequestAssessment,
+  investigation,
+  onRunInvestigation,
   openSignals,
   onToggleSignal,
   onSignalLink,
@@ -306,6 +336,8 @@ function AssessedView({
   readonly assessment: AssessmentState;
   readonly provider: ProviderInfo;
   readonly onRequestAssessment: () => void;
+  readonly investigation: InvestigationState;
+  readonly onRunInvestigation: () => void;
   readonly openSignals: ReadonlySet<string>;
   readonly onToggleSignal: (signalId: string) => void;
   readonly onSignalLink: (signalId: string) => void;
@@ -327,7 +359,7 @@ function AssessedView({
   // remount the Overview panel.
   const ringRef = useRef<HTMLElement | null>(null);
   const ringGone = useRingOutOfView(ringRef, tab);
-  const stripVisible = tab === "assessment" || ringGone;
+  const stripVisible = tab === "assessment" || tab === "investigate" || ringGone;
   return (
     <div>
       {stripVisible ? (
@@ -367,6 +399,18 @@ function AssessedView({
           onClick={() => onTab("assessment")}
         >
           Contract assessment
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="tab-investigate"
+          aria-controls="panel-investigate"
+          aria-selected={tab === "investigate"}
+          tabIndex={tab === "investigate" ? 0 : -1}
+          className="tab"
+          onClick={() => onTab("investigate")}
+        >
+          Investigate
         </button>
       </div>
       <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" hidden={tab !== "overview"}>
@@ -446,6 +490,11 @@ function AssessedView({
       <div role="tabpanel" id="panel-assessment" aria-labelledby="tab-assessment" hidden={tab !== "assessment"}>
         {tab === "assessment" ? (
           <AssessmentPanel state={assessment} score={result.score} provider={provider} onRequest={onRequestAssessment} />
+        ) : null}
+      </div>
+      <div role="tabpanel" id="panel-investigate" aria-labelledby="tab-investigate" hidden={tab !== "investigate"}>
+        {tab === "investigate" ? (
+          <InvestigationPanel state={investigation} score={result.score} onRequest={onRunInvestigation} />
         ) : null}
       </div>
     </div>

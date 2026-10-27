@@ -24,7 +24,7 @@ code them now.
 
 | Parked group | Stories | Note |
 |---|---|---|
-| E-09 Investigate with Muse | S-072–S-077 | Design exists in `docs/adr-investigate-with-muse.md`; do not code |
+| E-09 Investigate with Muse | S-072–S-077 | S-072–S-076 shipped (K-036, K-520 in `docs/requirements.md`); S-077 recorded-trace library still parked |
 | E-10 own EVM decompiler | S-078–S-085 | Design exists in `docs/adr-evm-decompiler.md`; do not code |
 | Adaptive web UI | S-059–S-064 | After plugin core; not started |
 | User-priority personalization | S-065–S-070 | Demo headline candidate; S-065 frontmatter leftovers included if unused |

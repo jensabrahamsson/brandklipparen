@@ -110,6 +110,7 @@ its port. The ports are:
 | `CloneIndexPort` | `src/ports/cloneIndex.ts` | Code-hash and skeleton-hash matching against known templates | K-017 |
 | `CachePort` | `src/ports/cache.ts` | Reading and writing of analysis results per code hash and model version, and assessment text per code hash, prompt version, provider and model id | K-013, K-305, K-309, K-511 |
 | `AssessmentModelPort` | `src/ports/assessmentModel.ts` | Muse contract assessment with structured evidence through the selected provider, server-side only (I-13): Meta Model API (Muse Spark) or hosted open weights (Muse Spark Open, `meta-models/muse-spark-open-1026`) | K-305, K-309, K-302, K-307, K-502, K-513 |
+| `InvestigationModelPort` | `src/ports/investigationModel.ts` | Opt-in investigation loop proposing the next registry-derived check through hosted open weights (Muse Spark Open, `meta-models/muse-spark-open-1026`), server-side only (I-13); `not-configured` without a key | K-036, K-520, K-307, K-502, K-513 |
 | `ModelArtifactPort` | `src/ports/modelArtifact.ts` | Loading and checksum verification of the model artifact | K-011, K-210, K-211 |
 | `DeploymentFeedPort` | `src/ports/deploymentFeed.ts` | Recently deployed tokens for the Just-deployed flow | K-014, K-015 |
 | `ClockPort` | `src/ports/clock.ts` | Current time as a value to the core | K-102, K-104 |
@@ -326,6 +327,24 @@ rate limit, invalid output, oversize output and unavailable provider.
 Running the hosted adapter qualifies the project for the bonus prize
 "Best Build on Meta Open Weight Models" per K-309. (K-305, K-309,
 K-513, A-03, A-22, A-23)
+
+**A-35 Opt-in investigation loop behind `InvestigationModelPort`.**
+`InvestigationModelPort` in `src/ports/investigationModel.ts` is the
+single port for the Investigate with Muse loop. One adapter implements
+the port: `adapters/investigation/hostedInvestigateAdapter` calls Muse
+Spark Open served on hosted with model id
+`meta-models/muse-spark-open-1026`, plus a fake adapter in
+`tests/fakes/` and a not-configured adapter bound when the key is
+absent. The graph runner in `src/application/investigateToken.ts`
+owns the typed state machine, the registry-derived read-only tool
+catalogue and the hard limits; the model only proposes the next step.
+`src/application/investigationService.ts` freezes the deterministic
+result first and exposes the loop to REST (`POST /v1/investigate` plus
+the `GET /v1/investigate/events` step stream), the `investigate_token`
+MCP tool and the web UI graph. The loop never moves scores or evidence
+(K-307): verified by
+`k520_investigation_leaves_score_and_evidence_unchanged`. (K-036,
+K-520, K-307, K-102, A-03, A-22, A-23)
 
 ## 4. Strongly typed domain
 
