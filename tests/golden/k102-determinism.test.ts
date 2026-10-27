@@ -17,6 +17,13 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const runnerPath = join(here, "..", "helpers", "k102-run-canonical.ts");
 
+// Process-spawning tests carry an explicit timeout well above the default
+// 5000 ms: CI runners are slower (cold cache, shared CPU) and each fixture
+// spawns two child processes here, so the total grows with the fixture
+// count. 30 s matches the gate tests in tests/unit/ci-gate.test.ts and
+// keeps the check green on slow runners without hiding a hung child.
+const CHILD_PROCESS_TIMEOUT_MS = 30_000;
+
 function runCoreInChildProcess(inputName: string): Buffer {
   return execFileSync(
     process.execPath,
@@ -44,5 +51,5 @@ describe("k102 deterministic core", () => {
       expect(first.equals(second), `fixture ${name} differs across processes`).toBe(true);
       expect(first.equals(readGoldenExpected(name)), `fixture ${name} differs`).toBe(true);
     }
-  });
+  }, CHILD_PROCESS_TIMEOUT_MS);
 });

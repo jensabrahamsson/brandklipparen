@@ -1,0 +1,20 @@
+{
+  // Minimal clean fixture config for k106_typecheck_blocks_on_error.
+  // Mirrors the strict flags of the root tsconfig.json but includes only
+  // the small clean fixture, so the gate test stays fast as the project
+  // grows instead of type-checking the whole repo.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["clean.ts"]
+}

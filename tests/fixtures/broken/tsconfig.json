@@ -1,0 +1,20 @@
+{
+  // Minimal broken fixture config for k106_typecheck_blocks_on_error.
+  // Mirrors the strict flags of the root tsconfig.json but includes only
+  // the deliberately broken fixture, so the gate test proves tsc blocks
+  // on a type error without type-checking the whole repo.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["type-error.ts"]
+}
