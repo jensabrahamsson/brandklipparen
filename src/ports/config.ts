@@ -72,6 +72,7 @@ export type AppConfig = {
   readonly chainId?: ChainId;
   readonly rpcUrls?: readonly SecretString[];
   readonly extdecompMaxConcurrency?: number;
+  readonly extdecompBinaryPath?: string;
   readonly rpcDeadlineMs?: number;
   readonly rpcMaxConcurrency?: number;
   readonly rpcRetryBudget?: number;

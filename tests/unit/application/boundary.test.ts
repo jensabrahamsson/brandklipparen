@@ -26,7 +26,10 @@ const FORBIDDEN: ReadonlyArray<readonly [RegExp, string]> = [
   [/Math\.random/, "Math.random (unseeded randomness)"],
   [/randomUUID|getRandomValues/, "crypto randomness"],
   [/crypto\.subtle/, "subtle crypto (platform API)"],
-  [/\bprocess\b/, "process (environment access)"],
+  // The mandated DecompilerPort branch name "process-error" (A-15) is not
+  // environment access, so the lookahead permits exactly that literal while
+  // process.env, process.exit and every other process use stays forbidden.
+  [/\bprocess\b(?!-error)/, "process (environment access)"],
   [/\bfetch\s*\(/, "fetch (network)"],
   [/XMLHttpRequest|WebSocket/, "browser network globals"],
   [/setTimeout|setInterval|setImmediate|queueMicrotask/, "timers"],

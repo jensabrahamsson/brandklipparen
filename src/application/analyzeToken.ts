@@ -28,6 +28,7 @@ import type {
   Address as AddressType,
   ArtifactChecksum as ArtifactChecksumType,
   BlockNumber as BlockNumberType,
+  Bytecode as BytecodeType,
   CodeHash as CodeHashType,
   DomainError,
   IndexVersion as IndexVersionType,
@@ -37,25 +38,37 @@ import type {
   TemplateVersion as TemplateVersionType,
   Timestamp as TimestampType,
 } from "../domain/types.ts";
-import { detectCapabilities } from "../domain/signals.ts";
+import { Signal, detectCapabilities } from "../domain/signals.ts";
 import type {
   CapabilityCatalogue,
+  HardToAnalyzeCause,
   RiskType,
-  Signal,
   Temporality,
 } from "../domain/signals.ts";
+import { Evidence } from "../domain/evidence.ts";
+import type { CodeSnippet as CodeSnippetType } from "../domain/evidence.ts";
+import { extractSelectors } from "../domain/selectors.ts";
 import type { Probability as ProbabilityType } from "../domain/types.ts";
 import type { ClockPort } from "../ports/clock.ts";
 import type { ModelArtifactError } from "../ports/modelArtifact.ts";
 import type { ModelArtifactPort } from "../ports/modelArtifact.ts";
 import type { CallContext, RpcError, RpcPort } from "../ports/rpc.ts";
+import type {
+  DecompiledContract,
+  DecompilerError,
+  DecompilerPort,
+} from "../ports/decompiler.ts";
 
 // Ports behind the service. Each driving adapter receives the bound service,
-// never these ports directly (A-03).
+// never these ports directly (A-03). The decompiler stays optional so the
+// fast path runs unchanged where no worker is bound; where it is bound, the
+// deepening enriches evidence with snippets and maps every failure branch
+// to the hard-to-analyze signal (K-008).
 export type AnalyzeTokenPorts = {
   readonly rpc: RpcPort;
   readonly modelArtifacts: ModelArtifactPort;
   readonly clock: ClockPort;
+  readonly decompiler?: DecompilerPort | undefined;
 };
 
 // Typed input: every adapter validates raw input to these domain values at
@@ -119,6 +132,126 @@ export type ApplicationError =
       readonly error: DomainError | ExplainError;
     };
 
+// Error branch to signal cause per A-15: every decompiler failure branch
+// yields the hard-to-analyze signal in the deepening while the fast path's
+// response stands (K-008, M-02).
+function causeOfDecompilerError(error: DecompilerError): HardToAnalyzeCause {
+  switch (error.kind) {
+    case "timeout":
+      return "timeout";
+    case "resource-limit":
+      return "resource-limit";
+    case "process-error":
+      return "decompiler-error";
+    case "invalid-output":
+      return "decompiler-error";
+    case "output-too-large":
+      return "resource-limit";
+  }
+}
+
+// Placeholder risk bucket for unanalyzable code (K-210): the mapping from
+// decompilation failure to risk steering belongs in the versioned model
+// artifact once calibrated; until then the deepening reports the single
+// frozen placeholder below and the artifact's cause weights steer scoring.
+const UNANALYZABLE_RISK: RiskType = "rug-pull";
+
+// Fallback signal for a failed decompilation (K-008): the signal carries
+// the first dispatcher selector as evidence, so it links to the analysed
+// bytecode. Bytecode without selectors yields no signal, since a signal
+// without evidence is unrepresentable per A-13.
+function fallbackSignal(
+  bytecode: BytecodeType,
+  codeHash: CodeHashType,
+  error: DecompilerError,
+): Signal | null {
+  const first = extractSelectors(bytecode)[0];
+  if (first === undefined) {
+    return null;
+  }
+  const evidence = Evidence.create({ selector: first.selector });
+  if (!evidence.ok) {
+    return null;
+  }
+  const signal = Signal.createHardToAnalyze({
+    codeHash,
+    risk: UNANALYZABLE_RISK,
+    cause: causeOfDecompilerError(error),
+    evidence: [evidence.value],
+  });
+  if (!signal.ok) {
+    return null;
+  }
+  return signal.value;
+}
+
+// Snippet enrichment for a successful decompilation (K-008): each evidence
+// entry whose selector the worker decompiled gains its snippet, keeping
+// every other field bit-identical. Entries without a matching function and
+// functions without a matching signal pass through untouched.
+function attachSnippets(
+  signals: readonly Signal[],
+  codeHash: CodeHashType,
+  decompiled: DecompiledContract,
+): readonly Signal[] {
+  const bySelector = new Map<string, CodeSnippetType>();
+  for (const fn of decompiled.functions) {
+    bySelector.set(fn.selector as string, fn.snippet);
+  }
+  if (bySelector.size === 0) {
+    return signals;
+  }
+  const out: Signal[] = [];
+  for (const signal of signals) {
+    if (signal.kind !== "capability" && signal.kind !== "clone-match") {
+      out.push(signal);
+      continue;
+    }
+    let changed = false;
+    const evidence = signal.evidence.map((entry) => {
+      const snippet = bySelector.get(entry.selector as string);
+      if (snippet === undefined || entry.snippet !== undefined) {
+        return entry;
+      }
+      const rebuilt =
+        entry.offset === undefined
+          ? Evidence.create({ selector: entry.selector, snippet })
+          : Evidence.create({ selector: entry.selector, offset: entry.offset, snippet });
+      if (!rebuilt.ok) {
+        return entry;
+      }
+      changed = true;
+      return rebuilt.value;
+    });
+    if (!changed) {
+      out.push(signal);
+      continue;
+    }
+    const rebuiltSignal =
+      signal.kind === "capability"
+        ? Signal.createCapability({
+            codeHash,
+            risk: signal.risk,
+            direction: signal.direction,
+            severity: signal.severity,
+            temporality: signal.temporality,
+            evidence,
+          })
+        : Signal.createCloneMatch({
+            codeHash,
+            risk: signal.risk,
+            direction: signal.direction,
+            severity: signal.severity,
+            similarity: signal.similarity,
+            group: signal.group,
+            priorCount: signal.priorCount,
+            evidence,
+          });
+    out.push(rebuiltSignal.ok ? rebuiltSignal.value : signal);
+  }
+  return Object.freeze(out);
+}
+
 // Numbers first, text second: scoring and the template render run before the
 // envelope is frozen, so an assessment added later leaves them unchanged.
 export async function analyzeToken(
@@ -162,7 +295,32 @@ export async function analyzeToken(
     return err({ kind: "model-artifact-error", requestId: input.requestId, error: loaded.error });
   }
   const observed: Temporality = { kind: "can-change", changer: input.address };
-  const signals = detectCapabilities(fetched.value.bytecode, codeHash.value, input.catalogue, observed);
+  const fastPath = detectCapabilities(
+    fetched.value.bytecode,
+    codeHash.value,
+    input.catalogue,
+    observed,
+  );
+  // Deepening through DecompilerPort (K-008): a successful run links
+  // snippets to the fast-path evidence, while every failure branch yields
+  // the hard-to-analyze signal and the fast path's response stands, so
+  // scoring still runs on the frozen artifact either way.
+  let signals: readonly Signal[] = fastPath;
+  if (ports.decompiler !== undefined) {
+    const decompiled = await ports.decompiler.decompile(
+      fetched.value.bytecode,
+      codeHash.value,
+      blockCtx,
+    );
+    if (decompiled.ok) {
+      signals = attachSnippets(signals, codeHash.value, decompiled.value);
+    } else {
+      const fallback = fallbackSignal(fetched.value.bytecode, codeHash.value, decompiled.error);
+      if (fallback !== null) {
+        signals = Object.freeze([...signals, fallback]);
+      }
+    }
+  }
   const risk = score(signals, loaded.value.artifact);
   const rendered = renderExplanation({ signals, templateVersion: input.templateVersion, observed });
   if (!rendered.ok) {

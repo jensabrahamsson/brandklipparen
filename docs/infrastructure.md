@@ -217,6 +217,7 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_extdecomp_MAX_MEMORY_MB` | Memory limit per extdecomp worker under A-17 and I-11 | No | All |
 | `BRANDKLIPPAREN_extdecomp_MAX_OUTPUT_BYTES` | Size limit for decompiled output under A-17 and I-11 | No | All |
 | `BRANDKLIPPAREN_extdecomp_MAX_CONCURRENCY` | Number of parallel extdecomp workers under A-17 | No | Demo |
+| `BRANDKLIPPAREN_extdecomp_BINARY_PATH` | Path to the decompiler executable: the pinned extdecomp binary in the demo per I-05, the fake worker script in tests | No | Local, demo |
 | `BRANDKLIPPAREN_RPC_DEADLINE_MS` | Time limit per RPC call under A-17 | No | Demo |
 | `BRANDKLIPPAREN_RPC_MAX_CONCURRENCY` | Parallel RPC calls under A-17 | No | Demo |
 | `BRANDKLIPPAREN_RPC_RETRY_BUDGET` | Retries with backoff rate per RPC call under A-17 | No | Demo |

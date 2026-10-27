@@ -226,6 +226,7 @@ const V = {
   extdecompMaxMemoryMb: "BRANDKLIPPAREN_extdecomp_MAX_MEMORY_MB",
   extdecompMaxOutputBytes: "BRANDKLIPPAREN_extdecomp_MAX_OUTPUT_BYTES",
   extdecompMaxConcurrency: "BRANDKLIPPAREN_extdecomp_MAX_CONCURRENCY",
+  extdecompBinaryPath: "BRANDKLIPPAREN_extdecomp_BINARY_PATH",
   rpcDeadlineMs: "BRANDKLIPPAREN_RPC_DEADLINE_MS",
   rpcMaxConcurrency: "BRANDKLIPPAREN_RPC_MAX_CONCURRENCY",
   rpcRetryBudget: "BRANDKLIPPAREN_RPC_RETRY_BUDGET",
@@ -368,6 +369,16 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   );
   if (!extdecompMaxConcurrency.ok) {
     return extdecompMaxConcurrency;
+  }
+  // Path to the decompiler executable (the pinned extdecomp binary in the
+  // demo per I-05, the fake worker script in tests). Optional in every
+  // setup: the adapter factory reports the missing variable when a worker
+  // is bound without it.
+  const extdecompBinaryPath = optionalField(env, V.extdecompBinaryPath, (raw) =>
+    parseNonEmpty(V.extdecompBinaryPath, raw, "a non-empty binary path"),
+  );
+  if (!extdecompBinaryPath.ok) {
+    return extdecompBinaryPath;
   }
   const rpcDeadlineMs = requiredWhen(env, V.rpcDeadlineMs, isDemo, (raw) =>
     parseInteger(V.rpcDeadlineMs, raw, 1, 3600000),
@@ -612,6 +623,9 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(extdecompMaxConcurrency.value === undefined
       ? {}
       : { extdecompMaxConcurrency: extdecompMaxConcurrency.value }),
+    ...(extdecompBinaryPath.value === undefined
+      ? {}
+      : { extdecompBinaryPath: extdecompBinaryPath.value }),
     ...(rpcDeadlineMs.value === undefined ? {} : { rpcDeadlineMs: rpcDeadlineMs.value }),
     ...(rpcMaxConcurrency.value === undefined ? {} : { rpcMaxConcurrency: rpcMaxConcurrency.value }),
     ...(rpcRetryBudget.value === undefined ? {} : { rpcRetryBudget: rpcRetryBudget.value }),
