@@ -23,12 +23,13 @@ import type { Explanation, ExplainError } from "../domain/explain.ts";
 import { score } from "../domain/risk.ts";
 import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
-import { CodeHash } from "../domain/types.ts";
+import { CacheKey, CodeHash } from "../domain/types.ts";
 import type {
   Address as AddressType,
   ArtifactChecksum as ArtifactChecksumType,
   BlockNumber as BlockNumberType,
   Bytecode as BytecodeType,
+  CacheKey as CacheKeyType,
   CodeHash as CodeHashType,
   DomainError,
   IndexVersion as IndexVersionType,
@@ -49,6 +50,7 @@ import { Evidence } from "../domain/evidence.ts";
 import type { CodeSnippet as CodeSnippetType } from "../domain/evidence.ts";
 import { extractSelectors } from "../domain/selectors.ts";
 import type { Probability as ProbabilityType } from "../domain/types.ts";
+import type { CachePort } from "../ports/cache.ts";
 import type { ClockPort } from "../ports/clock.ts";
 import type { ModelArtifactError } from "../ports/modelArtifact.ts";
 import type { ModelArtifactPort } from "../ports/modelArtifact.ts";
@@ -63,12 +65,16 @@ import type {
 // never these ports directly (A-03). The decompiler stays optional so the
 // fast path runs unchanged where no worker is bound; where it is bound, the
 // deepening enriches evidence with snippets and maps every failure branch
-// to the hard-to-analyze signal (K-008).
+// to the hard-to-analyze signal (K-008). The cache stays optional so the
+// service runs unchanged where no store is bound; where it is bound, a hit
+// returns the stored assessment with zero external calls and a miss stores
+// the fresh envelope under the code hash and model version (K-013).
 export type AnalyzeTokenPorts = {
   readonly rpc: RpcPort;
   readonly modelArtifacts: ModelArtifactPort;
   readonly clock: ClockPort;
   readonly decompiler?: DecompilerPort | undefined;
+  readonly cache?: CachePort | undefined;
 };
 
 // Typed input: every adapter validates raw input to these domain values at
@@ -252,12 +258,37 @@ function attachSnippets(
   return Object.freeze(out);
 }
 
+// Address index for the cache fast path (K-013): repeat requests for an
+// explicitly pinned block reuse the stored assessment without fetching
+// bytecode. Code at an address is immutable, and the stored key still binds
+// code hash and model version, so a changed artifact misses. Requests at
+// "latest" skip the index and always resolve the head block first, so a
+// new head is never hidden behind a memo entry.
+function memoKeyOf(input: AnalyzeTokenInput): string {
+  return `${input.address as string}|${input.block as number}|${input.modelVersion as string}`;
+}
+
 // Numbers first, text second: scoring and the template render run before the
 // envelope is frozen, so an assessment added later leaves them unchanged.
 export async function analyzeToken(
   ports: AnalyzeTokenPorts,
   input: AnalyzeTokenInput,
+  addressIndex: Map<string, CacheKeyType> = new Map(),
 ): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> {
+  // Cache lookup before any external call (I-14): a remembered key gives a
+  // hit with zero RPC, decompiler and model calls. A miss, a rejected entry
+  // or an unreachable store falls through to the fresh path below (A-15).
+  if (ports.cache !== undefined && input.block !== "latest") {
+    const memoKey = memoKeyOf(input);
+    const remembered = addressIndex.get(memoKey);
+    if (remembered !== undefined) {
+      const hit = await ports.cache.get(remembered);
+      if (hit.ok && hit.value !== null) {
+        return ok({ kind: "assessed", envelope: hit.value });
+      }
+      addressIndex.delete(memoKey);
+    }
+  }
   const ctx: CallContext = { requestId: input.requestId, deadline: input.deadline, block: input.block };
   const resolvedBlock = await resolveBlock(ports.rpc, input, ctx);
   if (!resolvedBlock.ok) {
@@ -275,6 +306,22 @@ export async function analyzeToken(
   const codeHash = CodeHash.of(fetched.value.bytecode);
   if (!codeHash.ok) {
     return err({ kind: "domain-error", requestId: input.requestId, error: codeHash.error });
+  }
+  const cacheKey = CacheKey.of(codeHash.value, input.modelVersion);
+  if (!cacheKey.ok) {
+    return err({ kind: "domain-error", requestId: input.requestId, error: cacheKey.error });
+  }
+  // Second lookup on the code-hash key: a new address with known code and a
+  // request without a memo entry still skip proxy resolution, decompilation
+  // and the model load (K-013).
+  if (ports.cache !== undefined) {
+    const hit = await ports.cache.get(cacheKey.value);
+    if (hit.ok && hit.value !== null) {
+      if (input.block !== "latest") {
+        addressIndex.set(memoKeyOf(input), cacheKey.value);
+      }
+      return ok({ kind: "assessed", envelope: hit.value });
+    }
   }
   // Proxy resolution runs on the pinned block through RpcPort; a typed
   // port failure degrades to no proxy info so the deterministic analysis
@@ -343,6 +390,15 @@ export async function analyzeToken(
     explanation: rendered.value,
     cantTell: standardCantTell(),
   });
+  // Store the fresh envelope under the code-hash key (K-013): best effort,
+  // so a rejected write still returns the analysis. A new model version
+  // keys new entries, so older entries stay unused beside the new one.
+  if (ports.cache !== undefined) {
+    await ports.cache.put(cacheKey.value, envelope);
+    if (input.block !== "latest") {
+      addressIndex.set(memoKeyOf(input), cacheKey.value);
+    }
+  }
   return ok({ kind: "assessed", envelope });
 }
 
@@ -442,9 +498,13 @@ export type AppServices = {
 };
 
 export function createAppServices(ports: AnalyzeTokenPorts): AppServices {
+  // Address index for the cache fast path, shared by every call through
+  // this service (K-013). The index maps address, block and model version
+  // to the cache key and is re-verified through the cache on every use.
+  const addressIndex = new Map<string, CacheKeyType>();
   return Object.freeze({
     analyzeToken: (input: AnalyzeTokenInput): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> =>
-      analyzeToken(ports, input),
+      analyzeToken(ports, input, addressIndex),
     resolveProxy: async (
       input: ResolveProxyInput,
     ): Promise<Result<ResolveProxySuccess, ApplicationError>> => {
