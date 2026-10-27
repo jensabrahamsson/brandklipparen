@@ -10,7 +10,10 @@ import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
 import { PLUGIN_API_VERSION, isSupportedApiVersion } from "./api.ts";
 import type { PluginId, PluginManifest } from "./api.ts";
+import type { AssessmentPlugin } from "./assessment.ts";
 import type { DetectorPlugin } from "./detector.ts";
+import { hostedOpenWeightsAssessmentPlugin } from "./assessments/hosted-open-weights/index.ts";
+import { metaModelApiAssessmentPlugin } from "./assessments/meta-model-api/index.ts";
 import { capabilityDetectorPlugin } from "./detectors/capability/index.ts";
 import { cloneMatchDetectorPlugin } from "./detectors/clone-match/index.ts";
 import { hardToAnalyzeDetectorPlugin } from "./detectors/hard-to-analyze/index.ts";
@@ -96,6 +99,26 @@ export function getPlugin(
   id: string,
 ): PluginManifest | undefined {
   return registry.plugins.find((manifest) => manifest.id === id);
+}
+
+// First-party assessment set (S-045, P-12 step 3): the Meta Model API
+// adapter and the hosted open-weights adapter register as assessment
+// plugins wrapping their existing AssessmentModelPort implementations.
+// The list is a frozen static value; configuration selects exactly one of
+// them as the active plugin by plugin id and never names code to load
+// (P-07). Assessment manifests live in this separate list beside the
+// detector registry value, so the detector execution path is unchanged.
+export const ASSESSMENT_PLUGINS: readonly AssessmentPlugin[] = Object.freeze([
+  metaModelApiAssessmentPlugin,
+  hostedOpenWeightsAssessmentPlugin,
+]);
+
+// The validated assessment registry: built through the same startup
+// builder, so a bad assessment manifest fails fast with its typed error
+// instead of reaching any selection. The composition root maps a builder
+// failure to a typed startup error; nothing here throws at module load.
+export function buildDefaultAssessmentRegistry(): Result<PluginRegistry, PluginRegistryError> {
+  return buildPluginRegistry(ASSESSMENT_PLUGINS.map((plugin) => plugin.manifest));
 }
 
 export function registeredPluginIds(registry: PluginRegistry): readonly PluginId[] {

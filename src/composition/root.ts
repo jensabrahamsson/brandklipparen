@@ -22,9 +22,21 @@ import { createhostedOpenWeightsAdapterFromConfig } from "../adapters/assessment
 import { hosted_OPEN_WEIGHTS_MODEL_ID } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 import type { hostedOpenWeightsTransport } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 import { PromptVersion } from "../domain/types.ts";
-import { createEmptyPluginRegistry } from "../plugins/registry.ts";
+import {
+  assessmentPluginIdForProvider,
+  assessmentPluginTable,
+} from "../plugins/assessment.ts";
+import type { AssessmentPlugin } from "../plugins/assessment.ts";
+import {
+  ASSESSMENT_PLUGINS,
+  buildDefaultAssessmentRegistry,
+  createEmptyPluginRegistry,
+} from "../plugins/registry.ts";
 import type { PluginRegistry } from "../plugins/registry.ts";
+import type { PluginId } from "../plugins/api.ts";
 import type { AppConfig, ConfigError } from "../ports/config.ts";
+import type { MetaModelApiAdapter } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
+import type { hostedOpenWeightsAdapter } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 
 // S-043 (ADR P-12 step 1): the default detector set carries the validated
 // plugin registry beside the executable detector lookup, and the shared
@@ -48,7 +60,12 @@ export function wireAppServices(
 
 export type AssessmentBinding =
   | { readonly kind: "disabled" }
-  | { readonly kind: "enabled"; readonly provider: AssessmentProvider; readonly modelId: ModelId };
+  | {
+      readonly kind: "enabled";
+      readonly provider: AssessmentProvider;
+      readonly modelId: ModelId;
+      readonly pluginId: PluginId;
+    };
 
 export type AssessmentHealthStatus =
   | { readonly provider: AssessmentProvider; readonly modelId: ModelId }
@@ -80,10 +97,11 @@ function hasProviderCredentials(config: AppConfig): boolean {
   );
 }
 
-// Exactly one adapter is selected from the validated configuration: none
-// when the provider is unset, otherwise the single configured provider with
-// its model id. Real adapter classes bind to this selection in later
-// stories; the shape already guarantees at most one provider.
+// Exactly one assessment plugin is active at a time, selected by plugin
+// id from the validated configuration (S-045, P-04, A-34): none when the
+// provider is unset, otherwise the single registered plugin for the
+// configured provider with its model id. Configuration selects among
+// already-registered plugins only and never names code to load (P-07).
 export function selectAssessmentBinding(config: AppConfig): Result<AssessmentBinding, ConfigError> {
   const provider = config.assessmentProvider;
   if (provider === undefined) {
@@ -96,16 +114,27 @@ export function selectAssessmentBinding(config: AppConfig): Result<AssessmentBin
     }
     return ok({ kind: "disabled" });
   }
+  const pluginId = assessmentPluginIdForProvider(provider);
   if (provider === "meta-model-api") {
     if (config.assessmentMetaModelId === undefined) {
       return err({ kind: "missing-variable", variable: META_MODEL_VARIABLE });
     }
-    return ok({ kind: "enabled", provider, modelId: config.assessmentMetaModelId });
+    return ok({ kind: "enabled", provider, modelId: config.assessmentMetaModelId, pluginId });
   }
   if (config.assessmenthostedModelId === undefined) {
     return err({ kind: "missing-variable", variable: hosted_MODEL_VARIABLE });
   }
-  return ok({ kind: "enabled", provider, modelId: config.assessmenthostedModelId });
+  return ok({ kind: "enabled", provider, modelId: config.assessmenthostedModelId, pluginId });
+}
+
+// The single active assessment plugin id for an enabled binding, or null
+// when the assessment is disabled. The registry lists every registered
+// assessment plugin; this value marks the active one (P-08).
+export function activeAssessmentPluginId(binding: AssessmentBinding): PluginId | null {
+  if (binding.kind === "disabled") {
+    return null;
+  }
+  return binding.pluginId;
 }
 
 // Provider and model id for the health response (K-104, K-309).
@@ -148,6 +177,67 @@ export type AssessmentTransportOverrides = {
   readonly hostedTransport?: hostedOpenWeightsTransport | undefined;
 };
 
+// Static lookup of registered assessment plugins: the composition root
+// resolves the single active plugin through this table, so an
+// unregistered plugin never runs.
+const ASSESSMENT_PLUGIN_TABLE: ReadonlyMap<PluginId, AssessmentPlugin> =
+  assessmentPluginTable(ASSESSMENT_PLUGINS);
+
+// Builds the single active adapter from the registered assessment plugin
+// entry (S-045, P-04): the configured plugin id resolves through the
+// validated registry first, and the entry's provider selects the existing
+// AssessmentModelPort implementation. Selection by configured plugin id
+// replaces the former provider branches that named concrete adapters
+// outside the registry registration (P-12 step 3).
+export function createAssessmentAdapterForPlugin(
+  pluginId: PluginId,
+  config: AppConfig,
+  overrides: AssessmentTransportOverrides = {},
+): Result<MetaModelApiAdapter | hostedOpenWeightsAdapter, ConfigError> {
+  const assessed = buildDefaultAssessmentRegistry();
+  if (!assessed.ok) {
+    return err({
+      kind: "invalid-value",
+      variable: PROVIDER_VARIABLE,
+      reason: `assessment plugin registry failed validation: ${assessed.error.kind}`,
+    });
+  }
+  const plugin = ASSESSMENT_PLUGIN_TABLE.get(pluginId);
+  const registered = assessed.value.plugins.some((entry) => entry.id === pluginId);
+  if (plugin === undefined || !registered) {
+    return err({
+      kind: "invalid-value",
+      variable: PROVIDER_VARIABLE,
+      reason: "assessment plugin id is not registered",
+    });
+  }
+  if (plugin.provider === "meta-model-api") {
+    return createMetaModelApiAdapterFromConfig(
+      {
+        assessmentMetaBaseUrl: config.assessmentMetaBaseUrl,
+        assessmentMetaApiKey: config.assessmentMetaApiKey,
+        assessmentMetaModelId: config.assessmentMetaModelId,
+        assessmentDeadlineMs: config.assessmentDeadlineMs,
+        assessmentMaxInputBytes: config.assessmentMaxInputBytes,
+        assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
+      },
+      overrides.metaTransport,
+    );
+  }
+  return createhostedOpenWeightsAdapterFromConfig(
+    {
+      assessmenthostedBaseUrl: config.assessmenthostedBaseUrl,
+      assessmenthostedApiKey: config.assessmenthostedApiKey,
+      assessmenthostedModelId: config.assessmenthostedModelId,
+      assessmentDeadlineMs: config.assessmentDeadlineMs,
+      assessmentMaxInputBytes: config.assessmentMaxInputBytes,
+      assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
+    },
+    overrides.hostedTransport,
+  );
+}
+
+
 // Builds the assessment service from the validated configuration (S-038,
 // K-309): exactly one provider adapter when the configuration selects one,
 // otherwise a disabled service that answers assessment-not-configured with
@@ -187,46 +277,11 @@ export function createAssessmentServiceFromConfig(
   if (isPlaceholderModelId(binding.value.modelId as string)) {
     return disabled;
   }
-  if (binding.value.provider === "meta-model-api") {
-    const adapter = createMetaModelApiAdapterFromConfig(
-      {
-        assessmentMetaBaseUrl: config.assessmentMetaBaseUrl,
-        assessmentMetaApiKey: config.assessmentMetaApiKey,
-        assessmentMetaModelId: config.assessmentMetaModelId,
-        assessmentDeadlineMs: config.assessmentDeadlineMs,
-        assessmentMaxInputBytes: config.assessmentMaxInputBytes,
-        assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
-      },
-      overrides.metaTransport,
-    );
-    if (!adapter.ok) {
-      if (adapter.error.kind === "missing-variable") {
-        return disabled;
-      }
-      return err(adapter.error);
-    }
-    return ok(
-      createAssessmentService({
-        analyze: services.analyzeToken,
-        adapter: adapter.value,
-        promptVersion: promptVersion.value,
-        dailyCapPerKey,
-      }),
-    );
-  }
-  const adapter = createhostedOpenWeightsAdapterFromConfig(
-    {
-      assessmenthostedBaseUrl: config.assessmenthostedBaseUrl,
-      assessmenthostedApiKey: config.assessmenthostedApiKey,
-      assessmenthostedModelId: config.assessmenthostedModelId,
-      assessmentDeadlineMs: config.assessmentDeadlineMs,
-      assessmentMaxInputBytes: config.assessmentMaxInputBytes,
-      assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
-    },
-    overrides.hostedTransport,
-  );
+  // The single active adapter builds from the registered assessment
+  // plugin entry for the configured plugin id (S-045, P-12 step 3).
+  const adapter = createAssessmentAdapterForPlugin(binding.value.pluginId, config, overrides);
   if (!adapter.ok) {
-    // A selected provider without its credentials or endpoint is not
+    // A selected plugin without its credentials or endpoint is not
     // configured (S-029): stay disabled with zero provider calls so health
     // reports disabled and the API answers assessment-not-configured.
     // Malformed values stay startup errors.

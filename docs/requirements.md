@@ -206,6 +206,7 @@ resolution, timeline, current storage values and baseline comparison.
 | K-026 MCP server read-only | MVP | Same adapter and schema work as K-025 |
 | K-027 Shared application service | MVP | One service gives equal responses in three interfaces |
 | K-028 Typed plugin manifest and static registry | MVP | One typed manifest per plugin and one validated static registry; M-21 |
+| K-030 Assessment plugins behind AssessmentModelPort | MVP | Both assessment adapters registered as assessment plugins with exactly one active; selection by plugin id |
 | K-101 Response time: fast path and deepening | MVP | The demo promises a risk profile in a few seconds |
 | K-102 Deterministic analysis | MVP | Reproducibility is the product promise |
 | K-103 Accessibility WCAG AA | MVP | Built-in accessibility from the first view |
@@ -559,6 +560,36 @@ migration.
   only: no dynamic loading and no unregistered plugin ever runs.
   Verification: unit tests `k514_registry_has_no_dynamic_loading` and
   `k514_unregistered_plugin_never_runs`.
+
+### K-030 Assessment plugins behind AssessmentModelPort (MVP)
+
+Both assessment adapters register as assessment plugins with kind
+`assessment`, wrapping their existing `AssessmentModelPort`
+implementations. Proposed in `docs/adr-plugin-architecture.md` (P-04);
+this story enters the ID with the implementation. The port, its error
+union, its limits and the exactly-one rule (A-34) stay as they are.
+
+- The Meta Model API adapter registers as
+  `dev.brandklipparen.assessment.meta-model-api` and the hosted
+  open-weights adapter as
+  `dev.brandklipparen.assessment.hosted-open-weights`. Each manifest
+  declares no detector inputs and assessment defaults for capabilities
+  and limits. Verification: unit test
+  `exactly_two_assessment_plugins_registered_with_fixed_ids`.
+- Every registered assessment plugin resolves to an implementation that
+  passes the shared contract suite over a recorded transport, and the
+  fake passes the same suite. Verification: contract test
+  `tests/contract/assessmentPlugins.contract.test.ts` with
+  `runAssessmentModelPortContract` per registered plugin id.
+- Validated configuration selects exactly one assessment plugin by
+  plugin id; the binding carries the active plugin id and the
+  composition root builds the single active adapter from the registered
+  entry. Verification: integration tests
+  `k309_config_selects_exactly_one_assessment_adapter` and
+  `k309_config_selects_exactly_one_assessment_plugin_by_plugin_id`.
+- Scores and evidence stay bit-identical with and without the
+  assessment. Verification: `k307_scores_and_evidence_identical_with_and_without_adapter`
+  stays green.
 
 ## 6. Interfaces (K-0xx, continued)
 
@@ -1907,6 +1938,7 @@ the test per acceptance criterion.
 | K-026 | `k026_tools_leave_state_unchanged` (unit) |
 | K-027 | `k027_same_inputs_same_outputs_across_interfaces` (property) |
 | K-028 | `registry_rejects_duplicate_ids_and_unsupported_api_versions` (unit) |
+| K-030 | `runAssessmentModelPortContract` per registered assessment plugin (contract) |
 | K-101 | `k101_fast_path_p95_within_5s` (timing) |
 | K-102 | `k102_golden_fixtures_bit_identical` (golden) |
 | K-103 | `k103_wcag_aa_checklist_per_release` (review) |

@@ -8,11 +8,14 @@ import { SecretString, formatConfigError } from "../../src/ports/config.ts";
 import type { AppConfig } from "../../src/ports/config.ts";
 import {
   assessmentHealthStatus,
+  activeAssessmentPluginId,
   createAssessmentServiceFromConfig,
   DEFAULT_ASSESSMENT_PROVIDER,
   DEFAULT_hosted_MODEL_ID,
   selectAssessmentBinding,
 } from "../../src/composition/root.ts";
+import { assessmentPluginTable, getAssessmentPlugin } from "../../src/plugins/assessment.ts";
+import { ASSESSMENT_PLUGINS } from "../../src/plugins/registry.ts";
 import { IndexVersion, ModelId, ModelVersion } from "../../src/domain/types.ts";
 import type { AppServices } from "../../src/application/analyzeToken.ts";
 import type { Result } from "../../src/domain/result.ts";
@@ -113,14 +116,16 @@ describe("composition-root assessment provider selection (K-309)", () => {
         env: demoMetaEnv(),
         provider: "meta-model-api",
         modelId: "fake-meta-spark-1",
+        pluginId: "dev.brandklipparen.assessment.meta-model-api",
       },
       {
         env: demohostedEnv(),
         provider: "hosted-open-weights",
         modelId: "fake-open-weights-1",
+        pluginId: "dev.brandklipparen.assessment.hosted-open-weights",
       },
     ] as const;
-    for (const { env, provider, modelId } of cases) {
+    for (const { env, provider, modelId, pluginId } of cases) {
       const loaded = loadConfig(env);
       expect(loaded.ok).toBe(true);
       if (!loaded.ok) {
@@ -137,8 +142,48 @@ describe("composition-root assessment provider selection (K-309)", () => {
       }
       expect(binding.value.provider).toBe(provider);
       expect(binding.value.modelId).toBe(modelId);
+      expect(binding.value.pluginId).toBe(pluginId);
       expect(assessmentHealthStatus(binding.value)).toEqual({ provider, modelId });
     }
+  });
+
+  test("k309_config_selects_exactly_one_assessment_plugin_by_plugin_id", () => {
+    const cases = [
+      {
+        env: demoMetaEnv(),
+        pluginId: "dev.brandklipparen.assessment.meta-model-api",
+        otherId: "dev.brandklipparen.assessment.hosted-open-weights",
+      },
+      {
+        env: demohostedEnv(),
+        pluginId: "dev.brandklipparen.assessment.hosted-open-weights",
+        otherId: "dev.brandklipparen.assessment.meta-model-api",
+      },
+    ] as const;
+    for (const { env, pluginId, otherId } of cases) {
+      const loaded = loadConfig(env);
+      expect(loaded.ok).toBe(true);
+      if (!loaded.ok) {
+        continue;
+      }
+      const binding = selectAssessmentBinding(loaded.value);
+      expect(binding.ok).toBe(true);
+      if (!binding.ok) {
+        continue;
+      }
+      expect(binding.value.kind).toBe("enabled");
+      if (binding.value.kind !== "enabled") {
+        continue;
+      }
+      expect(activeAssessmentPluginId(binding.value)).toBe(pluginId);
+      const table = assessmentPluginTable(ASSESSMENT_PLUGINS);
+      const active = getAssessmentPlugin(table, pluginId);
+      expect(active?.manifest.id).toBe(pluginId);
+      expect(active?.manifest.kind).toBe("assessment");
+      expect(ASSESSMENT_PLUGINS.some((entry) => entry.manifest.id === pluginId)).toBe(true);
+      expect(activeAssessmentPluginId(binding.value)).not.toBe(otherId);
+    }
+    expect(ASSESSMENT_PLUGINS.length).toBe(2);
   });
 
   test("k309_no_provider_disables_assessment", () => {
