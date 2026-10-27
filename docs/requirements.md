@@ -862,6 +862,16 @@ probabilities, signals, findings or evidence.
   `k026_investigate_tool_leaves_state_unchanged` and Playwright
   `k036_investigation_graph_renders_trace_steps_as_inert_text`,
   `k036_investigation_shows_not_configured_limit_and_failure_states`.
+- A recorded-trace library covers each graph outcome (`done`,
+  `step-limit`, `token-limit`, `tool-timeout`, `invalid-decision`) and
+  replays bit-identical apart from `elapsedMs`. Investigation reports
+  cache per code hash, prompt version, provider and model id: a cache
+  hit makes zero new model calls, and an over-cap key ends with the
+  typed `budget-exhausted` outcome with the deterministic analysis
+  standing. Verification: integration tests
+  `k036_recorded_trace_library_covers_each_graph_outcome`,
+  `k036_investigation_cached_per_codehash_prompt_provider_and_model`
+  and `k036_investigation_capped_key_makes_zero_calls`.
 
 ## 7. Non-functional requirements (K-1xx)
 
@@ -1993,6 +2003,48 @@ implementation. Fulfilled by M-21 against H-15 in
   `k514_unregistered_plugin_never_runs`, which requires that an
   unregistered plugin id resolves to no plugin and no findings.
 
+### K-516 Plugin audit: deterministic gate plus advisory AI review (MVP)
+
+Every plugin passes a deterministic static audit before any advisory
+AI review; acceptance requires the deterministic pass plus a recorded
+human review. Proposed in `docs/adr-plugin-architecture.md` (P-13,
+P-14) and `docs/threat-model.md` (H-17–H-20, M-23–M-26); this story
+enters the ID with the implementation. The audit is a CLI and CI step,
+not an analysis-path feature, and never affects scores or evidence.
+
+- The deterministic phase checks forbidden imports, capability
+  mismatches against the manifest, determinism lint, manifest limits
+  and the `PLUGIN.md` checks, with one named failure per cause; any
+  failure ends the audit with the AI phase not run and zero model
+  calls, and blocks the CI gate. Verification: unit test
+  `k516_deterministic_audit_fails_forbidden_import_and_capability_mismatch`,
+  integration test `k516_deterministic_failure_runs_zero_model_calls`,
+  and the CI step `npm run audit:plugins`.
+- The optional AI phase sends the plugin source, manifest and
+  `PLUGIN.md` solely as quoted data through `PluginAuditModelPort`
+  to Muse Spark Open (`meta-models/muse-spark-open-1026`) on hosted,
+  and validates every response with `parsePluginAuditReport` before
+  any human sees it as findings. Without a key it reports
+  `not-configured` with zero sends. Verification: contract suite
+  `runPluginAuditModelPortContract` against the fake and the hosted
+  adapter over a recorded transport, unit tests
+  `k516_audit_without_key_reports_not_configured_and_sends_nothing`,
+  `k516_injection_in_source_or_docs_stays_quoted_data`,
+  `k517_schema_invalid_audit_output_discarded` and integration test
+  `k516_audit_sends_only_listed_plugin_files`.
+- The report states the three states separately (`deterministic`,
+  `ai: advisory`, `human-review`) with provider and model id, and
+  carries no field the registry, scoring or analysis path reads.
+  Verification: unit test
+  `k516_audit_report_states_deterministic_ai_and_human_states` and
+  property test
+  `k516_ai_findings_leave_scores_signals_and_evidence_unchanged`.
+- Documented inputs, version and backticked output fields are checked
+  against the manifest deterministically, and semantic drift surfaces
+  as advisory `docs-drift` findings. Verification: unit tests
+  `k517_documented_inputs_and_version_checked_against_manifest` and
+  `k517_docs_drift_reported_as_advisory_finding`.
+
 ### K-520 Investigation loop safety: one-way chain and validated citations (MVP)
 
 The investigation loop is an investigation aid, never an analysis
@@ -2111,6 +2163,7 @@ the test per acceptance criterion.
 | K-512 | `k512_tampered_artifact_rejected_before_analysis` (integration) |
 | K-513 | `k513_tampered_or_oversize_provider_response_rejected` (integration) |
 | K-514 | `k514_registry_has_no_dynamic_loading` (CI check) |
+| K-516 | `k516_deterministic_audit_fails_forbidden_import_and_capability_mismatch` (unit) |
 | K-520 | `k520_investigation_leaves_score_and_evidence_unchanged` (property) |
 
 ### 12.2 Security requirements to threats and countermeasures

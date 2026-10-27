@@ -141,7 +141,7 @@ export function transitionInvestigation(
 
 // Citation marker `[E:<id>]`: the id carries word characters, dashes and
 // dots so runner-minted ids match without quoting surprises.
-const CITATION_PATTERN = /\[E:([A-Za-z0-9_.-]+)\]/g;
+const CITATION_PATTERN = /\[E:([A-Za-z0-9_.:-]+)\]/g;
 
 function citedIds(sentence: string): string[] {
   const found: string[] = [];
@@ -186,7 +186,7 @@ function splitSentences(draft: string): string[] {
   // cite as `claim. [E:id] next claim`, so the split leaves `[E:id]` at
   // the head of the following segment. Move those markers back.
   const sentences: string[] = [];
-  const leadingMarkers = /^(\[E:[A-Za-z0-9_.-]+\]\s*)+/;
+  const leadingMarkers = /^(\[E:[A-Za-z0-9_.:-]+\]\s*)+/;
   for (const segment of raw) {
     const markers = segment.match(leadingMarkers)?.[0] ?? "";
     const rest = markers.length > 0 ? segment.slice(markers.length).trim() : segment;

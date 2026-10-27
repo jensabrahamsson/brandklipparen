@@ -126,6 +126,23 @@ function freshInvestigation(detectors: ReturnType<typeof mustDefaultDetectorSet>
   });
 }
 
+async function startRestServer(): Promise<{ server: RestServer; url: string }> {
+  const detectors = mustDefaultDetectorSet();
+  const server = createRestServer({
+    services,
+    apiKeys: [new SecretString(TEST_API_KEY)],
+    apiKeyPepper: new SecretString(TEST_PEPPER),
+    modelVersion: mustOk(ModelVersion.parse("0.1.0")),
+    indexVersion: mustOk(IndexVersion.parse("1.0.0")),
+    templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
+    catalogue: TEST_CATALOGUE,
+    detectors,
+    investigationService: freshInvestigation(detectors),
+  });
+  const url = await server.listen("127.0.0.1", 0);
+  return { server, url };
+}
+
 beforeAll(async () => {
   const codes = new Map<string, string>([[mustOk(Address.parse(TEST_ADDRESS)) as string, TEST_BYTECODE]]);
   const rpcFake = new FakeRpcAdapter(codes, mustOk(BlockNumber.of(TEST_BLOCK)));
@@ -138,18 +155,9 @@ beforeAll(async () => {
     mustDefaultDetectorSet(),
   );
   const detectors = mustDefaultDetectorSet();
-  rest = createRestServer({
-    services,
-    apiKeys: [new SecretString(TEST_API_KEY)],
-    apiKeyPepper: new SecretString(TEST_PEPPER),
-    modelVersion: mustOk(ModelVersion.parse("0.1.0")),
-    indexVersion: mustOk(IndexVersion.parse("1.0.0")),
-    templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
-    catalogue: TEST_CATALOGUE,
-    detectors,
-    investigationService: freshInvestigation(detectors),
-  });
-  baseUrl = await rest.listen("127.0.0.1", 0);
+  const started = await startRestServer();
+  rest = started.server;
+  baseUrl = started.url;
   mcp = createMcpServer({
     services,
     apiKeys: [new SecretString(TEST_API_KEY)],
@@ -203,33 +211,41 @@ describe("investigate exposure", () => {
   });
 
   test("k036_events_stream_emits_one_event_per_step_then_report", async () => {
-    const before = await (
-      await fetch(`${baseUrl}/v1/analyze?address=${TEST_ADDRESS}`, {
+    // A fresh server per stream test: the stream proves the S-075 fresh-run
+    // shape (one event per step, then the report) independent of any
+    // report caching a later story adds.
+    const fresh = await startRestServer();
+    try {
+      const before = await (
+        await fetch(`${fresh.url}/v1/analyze?address=${TEST_ADDRESS}`, {
+          headers: { "x-api-key": TEST_API_KEY },
+        })
+      ).json();
+      const response = await fetch(`${fresh.url}/v1/investigate/events?address=${TEST_ADDRESS}`, {
         headers: { "x-api-key": TEST_API_KEY },
-      })
-    ).json();
-    const response = await fetch(`${baseUrl}/v1/investigate/events?address=${TEST_ADDRESS}`, {
-      headers: { "x-api-key": TEST_API_KEY },
-    });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toContain("text/event-stream");
-    const text = await response.text();
-    const events = text.split("\n\n").filter((chunk) => chunk.includes("data:"));
-    expect(events.length).toBeGreaterThanOrEqual(2);
-    const kinds = events.map((chunk) => {
-      const line = chunk.split("\n").find((entry) => entry.startsWith("data:")) ?? "";
-      return (JSON.parse(line.slice("data:".length).trim()) as { kind: string }).kind;
-    });
-    for (let index = 0; index < kinds.length - 1; index += 1) {
-      expect(kinds[index]).toBe("step");
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("text/event-stream");
+      const text = await response.text();
+      const events = text.split("\n\n").filter((chunk) => chunk.includes("data:"));
+      expect(events.length).toBeGreaterThanOrEqual(2);
+      const kinds = events.map((chunk) => {
+        const line = chunk.split("\n").find((entry) => entry.startsWith("data:")) ?? "";
+        return (JSON.parse(line.slice("data:".length).trim()) as { kind: string }).kind;
+      });
+      for (let index = 0; index < kinds.length - 1; index += 1) {
+        expect(kinds[index]).toBe("step");
+      }
+      expect(kinds[kinds.length - 1]).toBe("report");
+      const after = await (
+        await fetch(`${fresh.url}/v1/analyze?address=${TEST_ADDRESS}`, {
+          headers: { "x-api-key": TEST_API_KEY },
+        })
+      ).json();
+      expect(after).toEqual(before);
+    } finally {
+      await fresh.server.close();
     }
-    expect(kinds[kinds.length - 1]).toBe("report");
-    const after = await (
-      await fetch(`${baseUrl}/v1/analyze?address=${TEST_ADDRESS}`, {
-        headers: { "x-api-key": TEST_API_KEY },
-      })
-    ).json();
-    expect(after).toEqual(before);
   });
 
   test("k024_missing_or_invalid_key_rejected_before_investigation", async () => {

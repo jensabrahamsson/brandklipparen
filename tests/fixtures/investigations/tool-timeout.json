@@ -1,0 +1,21 @@
+{
+  "name": "tool-timeout",
+  "catalogue": "with-hang",
+  "limits": { "maxSteps": 8, "maxTokens": 8000, "deadlineMs": 60000, "toolTimeoutMs": 5 },
+  "clockStepMs": 100,
+  "decisions": [
+    {
+      "kind": "run-tool",
+      "toolId": "hang.forever",
+      "args": {},
+      "rationale": "Probe the hanging tool."
+    }
+  ],
+  "expected": {
+    "status": "failed",
+    "reasonKind": "tool-timeout",
+    "reasonToolId": "hang.forever",
+    "partial": [],
+    "collectedEvidenceIds": []
+  }
+}

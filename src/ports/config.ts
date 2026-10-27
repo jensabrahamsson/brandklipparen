@@ -117,6 +117,8 @@ export type AppConfig = {
   readonly investigateMaxSteps?: number;
   readonly investigateMaxTokens?: number;
   readonly investigateToolTimeoutMs?: number;
+  readonly investigatePromptVersion?: PromptVersion;
+  readonly investigateDailyCapPerKey?: number;
 };
 
 // Kept for traceability: docs/architecture.md (A-05) names this value DriftConfig.

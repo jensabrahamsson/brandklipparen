@@ -1,0 +1,32 @@
+{
+  "name": "done",
+  "catalogue": "standard",
+  "limits": { "maxSteps": 8, "maxTokens": 8000, "deadlineMs": 60000, "toolTimeoutMs": 50 },
+  "decisions": [
+    {
+      "kind": "run-tool",
+      "toolId": "evidence.list",
+      "args": {},
+      "rationale": "List the frozen evidence first."
+    },
+    {
+      "kind": "conclude",
+      "narrativeDraft": "The owner can block sales. [E:signal:owner-blacklist]"
+    }
+  ],
+  "expected": {
+    "status": "done",
+    "steps": [
+      {
+        "step": 1,
+        "toolId": "evidence.list",
+        "rationale": "List the frozen evidence first.",
+        "evidenceIds": ["signal:owner-blacklist", "signal:fee-cap"],
+        "elapsedMs": 0
+      }
+    ],
+    "collectedEvidenceIds": ["signal:owner-blacklist", "signal:fee-cap"],
+    "narrative": "The owner can block sales. [E:signal:owner-blacklist]",
+    "droppedClaims": 0
+  }
+}

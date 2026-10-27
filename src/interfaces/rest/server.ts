@@ -540,6 +540,9 @@ export function createRestServer(options: RestServerOptions): RestServer {
         .type("application/json")
         .send(body);
     }
+    // Quota identity for the investigation cost meter (S-077, I-14): the
+    // stable key id and the current day travel with the request, so an
+    // over-cap key ends capped with zero new model calls.
     const investigated = await service.investigateEnvelope(
       analysed.value.envelope,
       {
@@ -548,6 +551,10 @@ export function createRestServer(options: RestServerOptions): RestServer {
         block: analysed.value.envelope.block,
       },
       { now: () => Date.now() },
+      {
+        apiKeyId: store.keyId(gated.value.apiKey) ?? "unknown-key",
+        day: currentDay(),
+      },
     );
     return reply
       .code(200)
@@ -651,6 +658,10 @@ export function createRestServer(options: RestServerOptions): RestServer {
               evidenceIds: step.evidenceIds.slice(),
             });
           },
+        },
+        {
+          apiKeyId: store.keyId(gated.value.apiKey) ?? "unknown-key",
+          day: currentDay(),
         },
       );
       send({

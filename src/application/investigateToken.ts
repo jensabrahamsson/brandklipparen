@@ -280,7 +280,10 @@ export type InvestigationEnvelope =
     }
   | {
       readonly status: "failed";
-      readonly reason: InvestigationFailure | { kind: "provider-error"; message: string };
+      readonly reason:
+        | InvestigationFailure
+        | { kind: "provider-error"; message: string }
+        | { kind: "budget-exhausted"; message: string };
       readonly partial: InvestigationTrace;
       readonly collectedEvidenceIds: readonly EvidenceRef[];
       readonly limits: InvestigationLimits;

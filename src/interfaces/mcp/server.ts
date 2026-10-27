@@ -394,6 +394,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
         block: analysed.value.envelope.block,
       },
       { now: () => Date.now() },
+      { apiKeyId: gated.value.apiKeyId, day: currentDay() },
     );
     return ok({
       content: Object.freeze([

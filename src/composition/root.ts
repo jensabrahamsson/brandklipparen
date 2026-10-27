@@ -16,7 +16,11 @@ import type {
 } from "../application/analyzeToken.ts";
 import { createAssessmentService } from "../application/assessmentService.ts";
 import type { AssessmentService } from "../application/assessmentService.ts";
-import { createInvestigationService } from "../application/investigationService.ts";
+import {
+  PLACEHOLDER_INVESTIGATION_DAILY_CAP_PER_KEY,
+  PLACEHOLDER_INVESTIGATION_PROMPT_VERSION,
+  createInvestigationService,
+} from "../application/investigationService.ts";
 import type { InvestigationService } from "../application/investigationService.ts";
 import { createhostedInvestigateAdapterFromConfig } from "../adapters/investigation/hostedInvestigateAdapter.ts";
 import type { hostedInvestigateTransport } from "../adapters/investigation/hostedInvestigateAdapter.ts";
@@ -349,6 +353,11 @@ export function createInvestigationServiceFromConfig(
         deadlineMs: config.investigateDeadlineMs ?? DEFAULT_INVESTIGATION_LIMITS.deadlineMs,
         toolTimeoutMs: config.investigateToolTimeoutMs ?? DEFAULT_INVESTIGATION_LIMITS.toolTimeoutMs,
       },
+      promptVersion:
+        config.investigatePromptVersion === undefined
+          ? PLACEHOLDER_INVESTIGATION_PROMPT_VERSION
+          : (config.investigatePromptVersion as string),
+      dailyCapPerKey: config.investigateDailyCapPerKey ?? PLACEHOLDER_INVESTIGATION_DAILY_CAP_PER_KEY,
     }),
   );
 }

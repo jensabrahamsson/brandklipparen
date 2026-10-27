@@ -251,6 +251,17 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID` | Model id for the hosted provider: `meta-models/muse-spark-open-1026` per K-309 | No | Demo with the hosted provider selected |
 | `BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL` | Allowlisted endpoint for the hosted deployment, validated at startup under K-503 and I-18 | No | Demo with the hosted provider selected |
 | `BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID` | Deployment identifier for the hosted open-weights serving under I-18 | No | Demo with the hosted provider selected |
+| `BRANDKLIPPAREN_INVESTIGATE_hosted_BASE_URL` | Allowlisted endpoint for the investigation deployment, validated at startup under K-503; unset leaves the loop answering not-configured | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY` | Key for the investigation deployment (Muse Spark Open), server-side only under K-505 | Yes | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_hosted_MODEL_ID` | Model id for the investigation loop: `meta-models/muse-spark-open-1026` per K-036 | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_DEADLINE_MS` | Wall-clock budget per investigation under A-17 | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_MAX_INPUT_BYTES` | Input size budget per investigation call under A-17 | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_MAX_OUTPUT_BYTES` | Output size budget per investigation call under A-17 | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_MAX_STEPS` | Step budget per investigation under A-17 | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_MAX_TOKENS` | Token budget per investigation under A-17 | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_TOOL_TIMEOUT_MS` | Per-tool deadline per investigation under A-17 | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_PROMPT_VERSION` | Prompt version for the investigation cache key per K-036 | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_DAILY_CAP_PER_KEY` | Daily cap for investigations per API key under I-14 | No | Demo with the investigation loop enabled |
 
 The selected provider's variables are required in the demo per the
 table; the other provider's key stays in the secret store for a
@@ -596,6 +607,8 @@ zero paid calls under I-07. (K-013, K-107, K-504, K-513, M-08, M-09)
 | Daily cap for Meta assessment calls and cost | `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_META`, `BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_META` | Meta Model API provider | Per-provider measurement; alarm before the cap; assessment calls close at the cap |
 | Daily cap for hosted assessment calls and cost | `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_hosted`, `BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_hosted` | hosted open-weights provider per I-18 | Per-provider measurement; alarm before the cap; assessment calls close at the cap |
 | Daily cap for assessment calls per key | `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` | Each API key, both providers | Consumption measurement per key, provider and day; the key's assessment steps close at the ceiling |
+| At most one investigation per uncached request | Fixed rule in the investigation path per K-036 | Each investigation request | Caching per code hash, prompt version, provider and model id, with the trace replayed from the recorded-trace library |
+| Daily cap for investigations per key | `BRANDKLIPPAREN_INVESTIGATE_DAILY_CAP_PER_KEY` | Each API key | Consumption measurement per key and day; the key's investigation steps close at the ceiling with a typed `budget-exhausted` outcome and the deterministic analysis standing |
 | Alarm levels before the ceiling | `BRANDKLIPPAREN_ALARM_LEVELS_PERCENT` | Each daily cap above, for RPC and both assessment providers | Alarm to the operator at each passed level, with key ID, provider, consumption and remaining share in the alarm |
 
 Costs for Modal, hosted, the RPC provider and the Meta Model API are

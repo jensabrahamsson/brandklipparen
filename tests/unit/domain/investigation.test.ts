@@ -40,6 +40,21 @@ describe("investigation citation checker", () => {
     expect(checked.droppedClaims).toBe(2);
   });
 
+  test("k520_citation_check_accepts_runner_prefixed_evidence_ids", () => {
+    // Runner-minted ids carry a `signal:` or `doc:` prefix with a colon;
+    // the citation marker must match them exactly.
+    const draft = [
+      "The owner can block sales. [E:signal:owner-blacklist]",
+      "The docs describe the guard. [E:doc:fee-capability]",
+      "Unrelated chatter without a marker.",
+    ].join(" ");
+    const checked = checkCitations(draft, ["signal:owner-blacklist", "doc:fee-capability"]);
+    expect(checked.narrative).toBe(
+      "The owner can block sales. [E:signal:owner-blacklist] The docs describe the guard. [E:doc:fee-capability]",
+    );
+    expect(checked.droppedClaims).toBe(1);
+  });
+
   test("k520_zero_surviving_sentences_yields_empty_narrative_with_drop_count", () => {
     // The trailing marker attaches to the sentence it trails, so the
     // draft holds two sentences and both drop: no repaired substitute.

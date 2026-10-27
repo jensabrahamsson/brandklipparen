@@ -24,11 +24,11 @@ code them now.
 
 | Parked group | Stories | Note |
 |---|---|---|
-| E-09 Investigate with Muse | S-072–S-077 | S-072–S-076 shipped (K-036, K-520 in `docs/requirements.md`); S-077 recorded-trace library still parked |
+| E-09 Investigate with Muse | S-072–S-077 | S-072–S-077 shipped (K-036, K-520 in `docs/requirements.md`); S-077 recorded-trace library and per-codehash cache with caps included |
 | E-10 own EVM decompiler | S-078–S-085 | Design exists in `docs/adr-evm-decompiler.md`; do not code |
 | Adaptive web UI | S-059–S-064 | After plugin core; not started |
 | User-priority personalization | S-065–S-070 | Demo headline candidate; S-065 frontmatter leftovers included if unused |
-| Plugin audit | S-053–S-055, S-058 | Deterministic CLI, advisory AI review, last-report read view |
+| Plugin audit | S-053–S-055, S-058 | S-053–S-055 shipped (K-516 in `docs/requirements.md`); S-058 read view still parked |
 | Registry leftovers | S-048–S-050 | Per-plugin MCP tools, signed allowlist, worker isolation, if unused |
 | Later ideas | — | AI explain/chat/rug, just-deployed feed, REST streaming/snippet/calibration/deploy-time checks, duplicate package.json check, UI P2 |
 

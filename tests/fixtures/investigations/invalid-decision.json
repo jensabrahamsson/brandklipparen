@@ -1,0 +1,19 @@
+{
+  "name": "invalid-decision",
+  "catalogue": "standard",
+  "limits": { "maxSteps": 8, "maxTokens": 8000, "deadlineMs": 60000, "toolTimeoutMs": 50 },
+  "decisions": [
+    {
+      "kind": "run-tool",
+      "toolId": "nope.missing",
+      "args": {},
+      "rationale": "Call a tool outside the catalogue."
+    }
+  ],
+  "expected": {
+    "status": "failed",
+    "reasonKind": "invalid-decision",
+    "partial": [],
+    "collectedEvidenceIds": []
+  }
+}

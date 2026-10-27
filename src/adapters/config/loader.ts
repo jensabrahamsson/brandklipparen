@@ -269,6 +269,8 @@ const V = {
   investigateMaxInputBytes: "BRANDKLIPPAREN_INVESTIGATE_MAX_INPUT_BYTES",
   investigateMaxOutputBytes: "BRANDKLIPPAREN_INVESTIGATE_MAX_OUTPUT_BYTES",
   investigateMaxSteps: "BRANDKLIPPAREN_INVESTIGATE_MAX_STEPS",
+  investigatePromptVersion: "BRANDKLIPPAREN_INVESTIGATE_PROMPT_VERSION",
+  investigateDailyCapPerKey: "BRANDKLIPPAREN_INVESTIGATE_DAILY_CAP_PER_KEY",
   investigateMaxTokens: "BRANDKLIPPAREN_INVESTIGATE_MAX_TOKENS",
   investigateToolTimeoutMs: "BRANDKLIPPAREN_INVESTIGATE_TOOL_TIMEOUT_MS",
 } as const;
@@ -675,6 +677,18 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!investigateToolTimeoutMs.ok) {
     return investigateToolTimeoutMs;
   }
+  const investigatePromptVersion = optionalField(env, V.investigatePromptVersion, (raw) =>
+    mapDomain(V.investigatePromptVersion, "must be semver MAJOR.MINOR.PATCH", PromptVersion.parse(raw)),
+  );
+  if (!investigatePromptVersion.ok) {
+    return investigatePromptVersion;
+  }
+  const investigateDailyCapPerKey = optionalField(env, V.investigateDailyCapPerKey, (raw) =>
+    parseInteger(V.investigateDailyCapPerKey, raw, 1, 1000000000),
+  );
+  if (!investigateDailyCapPerKey.ok) {
+    return investigateDailyCapPerKey;
+  }
 
   const config: AppConfig = {
     env: envName,
@@ -801,6 +815,12 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(investigateToolTimeoutMs.value === undefined
       ? {}
       : { investigateToolTimeoutMs: investigateToolTimeoutMs.value }),
+    ...(investigatePromptVersion.value === undefined
+      ? {}
+      : { investigatePromptVersion: investigatePromptVersion.value }),
+    ...(investigateDailyCapPerKey.value === undefined
+      ? {}
+      : { investigateDailyCapPerKey: investigateDailyCapPerKey.value }),
   };
 
   if (config.rpcUrls !== undefined) {
