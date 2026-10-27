@@ -11,6 +11,7 @@ import type { CantTellItem } from "../domain/cantTell.ts";
 import type { Explanation } from "../domain/explain.ts";
 import type { ProxyResolution } from "../domain/proxy.ts";
 import type { RiskType, Signal } from "../domain/signals.ts";
+import type { PluginResultEntry } from "../plugins/detector.ts";
 import type {
   Address as AddressType,
   ArtifactChecksum as ArtifactChecksumType,
@@ -30,6 +31,8 @@ import type {
 // unchanged and serves a hit byte-identical to the original analysis
 // (K-013, A-32). The key binds code hash and model version; the entry
 // repeats both values so a read can reject an impersonating entry (M-14).
+// Plugin findings travel in the additive `pluginResults` field beside the
+// calibrated signals (S-043, P-11).
 export type CachedAssessment = {
   readonly kind: "assessed";
   readonly target: AddressType;
@@ -44,6 +47,7 @@ export type CachedAssessment = {
   readonly probabilities: Readonly<Record<RiskType, ProbabilityType>>;
   readonly score: RiskScoreType;
   readonly signals: readonly Signal[];
+  readonly pluginResults: readonly PluginResultEntry[];
   readonly explanation: Explanation;
   readonly cantTell: readonly CantTellItem[];
 };

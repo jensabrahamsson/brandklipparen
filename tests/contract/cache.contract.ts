@@ -86,6 +86,7 @@ export function makeContractEntry(
     }),
     score: mustOk(RiskScore.of(score)),
     signals: Object.freeze([signal]),
+    pluginResults: Object.freeze([]),
     explanation,
     cantTell: standardCantTell(),
   });

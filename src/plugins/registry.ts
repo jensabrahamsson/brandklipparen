@@ -3,13 +3,15 @@
 // to the composition root, which stays the single module that knows
 // concrete plugin modules (A-03). No computed module path, no directory
 // scan and no configuration-named code path exists in the registry path:
-// configuration selects among already-registered plugins only. In S-042
-// the registry starts empty beside the existing path (ADR P-12 step 0),
-// so analysis output stays unchanged until the S-043 migration.
+// configuration selects among already-registered plugins only. Since S-043
+// the default registry holds the first-party capability detector (ADR P-12
+// step 1); the empty S-042 registry builder stays for startup tests.
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
 import { PLUGIN_API_VERSION, isSupportedApiVersion } from "./api.ts";
 import type { PluginId, PluginManifest } from "./api.ts";
+import type { DetectorPlugin } from "./detector.ts";
+import { capabilityDetectorPlugin } from "./detectors/capability/index.ts";
 
 // Typed startup errors (P-02, P-08). Each error names the plugin id, and
 // the version error names both versions, with values kept outside the
@@ -97,3 +99,39 @@ export function getPlugin(
 export function registeredPluginIds(registry: PluginRegistry): readonly PluginId[] {
   return registry.plugins.map((manifest) => manifest.id);
 }
+
+// First-party detector set (S-043, P-12 step 1): the capability detector is
+// the first registered detector plugin. The list is a frozen static value;
+// configuration selects among registered plugins only and never names code
+// to load (P-07).
+export const DEFAULT_DETECTOR_PLUGINS: readonly DetectorPlugin[] = Object.freeze([
+  capabilityDetectorPlugin,
+]);
+
+// Executable lookup beside the validated manifest registry: the application
+// service runs solely plugins named by the registry value (P-08), so an
+// unregistered plugin never runs.
+export function detectorPluginTable(
+  plugins: readonly DetectorPlugin[],
+): ReadonlyMap<string, DetectorPlugin> {
+  const table = new Map<string, DetectorPlugin>();
+  for (const plugin of plugins) {
+    table.set(plugin.manifest.id, plugin);
+  }
+  return table;
+}
+
+// The default validated registry: built through the same startup builder,
+// so a bad first-party manifest fails fast with its typed error instead of
+// reaching any analysis.
+export function buildDefaultPluginRegistry(): Result<PluginRegistry, PluginRegistryError> {
+  return buildPluginRegistry(DEFAULT_DETECTOR_PLUGINS.map((plugin) => plugin.manifest));
+}
+
+export const DEFAULT_PLUGIN_REGISTRY: PluginRegistry = (() => {
+  const built = buildDefaultPluginRegistry();
+  if (!built.ok) {
+    throw new Error(`default plugin registry failed validation: ${built.error.kind}`);
+  }
+  return built.value;
+})();

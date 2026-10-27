@@ -198,6 +198,39 @@ function checkProxy(value: unknown): boolean {
   return typeof kind === "string" && PROXY_KINDS.includes(kind);
 }
 
+const PLUGIN_OUTCOMES: readonly string[] = Object.freeze([
+  "ok",
+  "invalid-output",
+  "threw",
+  "input-unavailable",
+]);
+
+function checkPluginFinding(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (!checkString(value, "id") || !checkString(value, "pluginId") || !checkString(value, "title")) {
+    return false;
+  }
+  const evidence = field(value, "evidence");
+  return Array.isArray(evidence) && evidence.length > 0 && evidence.every(checkEvidenceEntry);
+}
+
+function checkPluginResult(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (!checkString(value, "pluginId") || !checkString(value, "pluginVersion")) {
+    return false;
+  }
+  const outcome = field(value, "outcome");
+  if (typeof outcome !== "string" || !PLUGIN_OUTCOMES.includes(outcome)) {
+    return false;
+  }
+  const findings = field(value, "findings");
+  return Array.isArray(findings) && findings.every(checkPluginFinding);
+}
+
 function checkCantTell(value: unknown): boolean {
   if (!Array.isArray(value)) {
     return false;
@@ -252,6 +285,12 @@ export function validateCacheEntry(
   }
   if (!checkCantTell(field(raw, "cantTell"))) {
     return corrupt("cache entry must carry a cant-tell list with data sources");
+  }
+  // Additive plugin results (S-043, P-11): the entry carries one outcome
+  // record per registered detector plugin beside the calibrated signals.
+  const pluginResults = field(raw, "pluginResults");
+  if (!Array.isArray(pluginResults) || !pluginResults.every(checkPluginResult)) {
+    return corrupt("cache entry must carry a plugin result list with plugin outcomes");
   }
   // Key binding (M-14): the entry repeats its key, so an entry stored
   // under another code hash or model version is rejected as corrupt.

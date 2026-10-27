@@ -4,10 +4,11 @@
 // give equal probabilities, scores and signals in every interface. The service
 // depends solely on ports (A-04): bytecode arrives through RpcPort, the risk
 // values arrive through ModelArtifactPort and the observation time arrives
-// through ClockPort. Detection lives in the domain core; the adapters own only
-// validation at their boundary and response formatting. This module performs
-// no I/O of its own; every external call goes through a port, and the module
-// imports solely domain and ports. Resolution of proxy contracts, just-deployed
+// through ClockPort. Detection runs through the detector plugin registry;
+// the adapters own only validation at their boundary and response formatting.
+// This module performs no I/O of its own; every external call goes through
+// a port, and the module imports solely domain, ports and the plugin
+// registry. Resolution of proxy contracts, just-deployed
 // listing and on-request assessment arrive in later stories; the deterministic
 // analysis path here carries zero assessment calls (A-33).
 import { err, ok } from "../domain/result.ts";
@@ -41,13 +42,30 @@ import type {
 } from "../domain/types.ts";
 import { withCountedRpc } from "./observability.ts";
 import type { RequestCounterSink } from "./observability.ts";
-import { Signal, detectCapabilities } from "../domain/signals.ts";
+import { CAPABILITY_KEYS, Signal } from "../domain/signals.ts";
 import type {
   CapabilityCatalogue,
+  CapabilityKey,
   HardToAnalyzeCause,
   RiskType,
   Temporality,
 } from "../domain/signals.ts";
+import {
+  DEFAULT_DETECTOR_PLUGINS,
+  DEFAULT_PLUGIN_REGISTRY,
+  detectorPluginTable,
+} from "../plugins/registry.ts";
+import type { PluginRegistry } from "../plugins/registry.ts";
+import {
+  createDetectorInput,
+  pluginResultToCanonical,
+  runRegisteredDetectors,
+} from "../plugins/detector.ts";
+import type {
+  DetectorPlugin,
+  PluginFinding,
+  PluginResultEntry,
+} from "../plugins/detector.ts";
 import { cloneMatchSignal } from "../domain/clones.ts";
 import type { CloneMapping } from "../domain/clones.ts";
 import { SkeletonHash } from "../domain/types.ts";
@@ -104,11 +122,30 @@ export type AnalyzeTokenInput = {
   readonly proxyMaxDepth?: number | undefined;
 };
 
+// Detector set handed to the application service (S-043, P-08): the
+// validated manifest registry beside the executable lookup. The service runs
+// solely plugins named by the registry value, so an unregistered plugin
+// never runs. The composition root owns the default value; tests pass their
+// own set to select among already-registered plugins.
+export type DetectorSet = {
+  readonly registry: PluginRegistry;
+  readonly plugins: ReadonlyMap<string, DetectorPlugin>;
+};
+
+export const DEFAULT_DETECTOR_SET: DetectorSet = Object.freeze({
+  registry: DEFAULT_PLUGIN_REGISTRY,
+  plugins: detectorPluginTable(DEFAULT_DETECTOR_PLUGINS),
+});
+
 // Canonical assessment envelope: the same input triple of bytecode, block
 // number and artifact version gives a bit-identical serialisation on every
 // run, in every runtime and on every machine (K-102, A-32). The envelope
 // carries the reproduction fields per A-32 point 7: block number, code hash,
 // model version, artifact checksum, index version and template version.
+// Plugin findings travel in the additive `pluginResults` field (P-11),
+// sorted by plugin id and reported at weight 0: probabilities, score,
+// signals, evidence, explanation and can't-tell bytes stay identical with
+// and without the field's contents, and scoring never reads it (P-05).
 export type AssessmentEnvelope = {
   readonly kind: "assessed";
   readonly target: AddressType;
@@ -123,6 +160,7 @@ export type AssessmentEnvelope = {
   readonly probabilities: Readonly<Record<RiskType, ProbabilityType>>;
   readonly score: RiskScoreType;
   readonly signals: readonly Signal[];
+  readonly pluginResults: readonly PluginResultEntry[];
   readonly explanation: Explanation;
   readonly cantTell: readonly CantTellItem[];
 };
@@ -278,6 +316,91 @@ function memoKeyOf(input: AnalyzeTokenInput): string {
   return `${input.address as string}|${input.block as number}|${input.modelVersion as string}`;
 }
 
+// Capability key read from a plugin finding payload: the closed catalogue
+// key the plugin reported, or null when the payload carries anything else,
+// in which case the finding stays a weight-0 display record and never
+// reaches scoring.
+function capabilityKeyOf(finding: PluginFinding): CapabilityKey | null {
+  const payload: unknown = finding.payload;
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return null;
+  }
+  const key: unknown = (payload as { readonly [field: string]: unknown })["capability"];
+  if (typeof key !== "string") {
+    return null;
+  }
+  return (CAPABILITY_KEYS as readonly string[]).includes(key) ? (key as CapabilityKey) : null;
+}
+
+// Host conversion of capability findings to today's Signal values through
+// the existing catalogue path (S-043, P-12 step 1): risk, direction and
+// severity come from the injected catalogue, never from the finding, so
+// scores stay bit-identical until calibration names the findings (P-05).
+// Findings with unknown payloads or failed construction are skipped; the
+// plugin record in `pluginResults` still carries them.
+function signalsFromCapabilityFindings(
+  results: readonly PluginResultEntry[],
+  codeHash: CodeHashType,
+  catalogue: CapabilityCatalogue,
+  temporality: Temporality,
+): readonly Signal[] {
+  // Conversion order follows the fixed capability key order, matching the
+  // legacy sweep: signals sharing one SignalId keep a stable, deterministic
+  // order through the final id sort below.
+  const keyOrder = new Map<CapabilityKey, number>(
+    CAPABILITY_KEYS.map((key, index) => [key, index] as const),
+  );
+  const ordered: PluginFinding[] = [];
+  for (const entry of results) {
+    if (entry.outcome !== "ok") {
+      continue;
+    }
+    const ranked = entry.findings
+      .map((finding, index) => ({ finding, index }))
+      .filter(({ finding }) => capabilityKeyOf(finding) !== null)
+      .sort((left, right) => {
+        const leftKey = capabilityKeyOf(left.finding) as CapabilityKey;
+        const rightKey = capabilityKeyOf(right.finding) as CapabilityKey;
+        const byKey =
+          (keyOrder.get(leftKey) ?? left.index) - (keyOrder.get(rightKey) ?? right.index);
+        return byKey === 0 ? left.index - right.index : byKey;
+      })
+      .map(({ finding }) => finding);
+    ordered.push(...ranked);
+  }
+  const out: Signal[] = [];
+  for (const finding of ordered) {
+    const key = capabilityKeyOf(finding);
+    if (key === null) {
+      continue;
+    }
+    const mapping = catalogue[key];
+    const signal = Signal.createCapability({
+      codeHash,
+      risk: mapping.risk,
+      direction: mapping.direction,
+      severity: mapping.severity,
+      temporality,
+      evidence: finding.evidence,
+    });
+    if (signal.ok) {
+      out.push(signal.value);
+    }
+  }
+  out.sort((left, right) => {
+    const leftId = left.id as string;
+    const rightId = right.id as string;
+    if (leftId < rightId) {
+      return -1;
+    }
+    if (leftId > rightId) {
+      return 1;
+    }
+    return 0;
+  });
+  return Object.freeze(out);
+}
+
 // Numbers first, text second: scoring and the template render run before the
 // envelope is frozen, so an assessment added later leaves them unchanged.
 // An optional request-scoped sink counts each RPC call in this run (K-107);
@@ -287,6 +410,7 @@ export async function analyzeToken(
   input: AnalyzeTokenInput,
   addressIndex: Map<string, CacheKeyType> = new Map(),
   counters?: RequestCounterSink | undefined,
+  detectors: DetectorSet = DEFAULT_DETECTOR_SET,
 ): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> {
   const rpc = counters === undefined ? ports.rpc : withCountedRpc(ports.rpc, counters);
   const countedPorts = counters === undefined ? ports : { ...ports, rpc };
@@ -357,8 +481,18 @@ export async function analyzeToken(
     return err({ kind: "model-artifact-error", requestId: input.requestId, error: loaded.error });
   }
   const observed: Temporality = { kind: "can-change", changer: input.address };
-  const fastPath = detectCapabilities(
-    fetched.value.bytecode,
+  // Fast path through the detector registry (S-043, P-12 step 1): the
+  // capability plugin runs behind the registry boundary and its findings
+  // convert to today's Signal values through the existing catalogue path.
+  // The legacy direct detectCapabilities call is deleted; the service reads
+  // detector output solely through the registry/detect path.
+  const pluginResults = runRegisteredDetectors(
+    detectors.registry,
+    detectors.plugins,
+    createDetectorInput(fetched.value.bytecode, codeHash.value),
+  );
+  const fastPath = signalsFromCapabilityFindings(
+    pluginResults,
     codeHash.value,
     input.catalogue,
     observed,
@@ -428,6 +562,7 @@ export async function analyzeToken(
     probabilities: risk.probabilities,
     score: risk.score,
     signals,
+    pluginResults,
     explanation: rendered.value,
     cantTell: standardCantTell(),
   });
@@ -480,6 +615,7 @@ export function assessmentToCanonical(envelope: AssessmentEnvelope): CanonicalVa
     },
     score: envelope.score as number,
     signals: envelope.signals.map(signalToCanonical),
+    pluginResults: envelope.pluginResults.map(pluginResultToCanonical),
     explanation: explanationToCanonical(envelope.explanation),
     cantTell: envelope.cantTell.map((item) => ({
       question: item.question,
@@ -540,7 +676,10 @@ export type AppServices = {
   ) => Promise<Result<ResolveProxySuccess, ApplicationError>>;
 };
 
-export function createAppServices(ports: AnalyzeTokenPorts): AppServices {
+export function createAppServices(
+  ports: AnalyzeTokenPorts,
+  detectors: DetectorSet = DEFAULT_DETECTOR_SET,
+): AppServices {
   // Address index for the cache fast path, shared by every call through
   // this service (K-013). The index maps address, block and model version
   // to the cache key and is re-verified through the cache on every use.
@@ -550,7 +689,7 @@ export function createAppServices(ports: AnalyzeTokenPorts): AppServices {
       input: AnalyzeTokenInput,
       counters?: RequestCounterSink | undefined,
     ): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> =>
-      analyzeToken(ports, input, addressIndex, counters),
+      analyzeToken(ports, input, addressIndex, counters, detectors),
     resolveProxy: async (
       input: ResolveProxyInput,
     ): Promise<Result<ResolveProxySuccess, ApplicationError>> => {

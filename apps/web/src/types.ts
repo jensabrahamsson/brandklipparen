@@ -66,6 +66,10 @@ export type AnalyzeSuccess = {
   readonly probabilities: Probabilities;
   readonly score: number;
   readonly signals: readonly Signal[];
+  // Additive detector plugin results (S-043, P-11): present in REST
+  // responses beside the calibrated signals. The generic Plugins panel
+  // renders them in S-046; until then the UI ignores this field.
+  readonly pluginResults?: readonly unknown[] | undefined;
   readonly explanation: {
     readonly kind: "template";
     readonly templateVersion: string;

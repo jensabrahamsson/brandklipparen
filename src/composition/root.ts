@@ -8,8 +8,12 @@
 // the error text (A-15, K-505).
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
-import { createAppServices } from "../application/analyzeToken.ts";
-import type { AnalyzeTokenPorts, AppServices } from "../application/analyzeToken.ts";
+import { DEFAULT_DETECTOR_SET, createAppServices } from "../application/analyzeToken.ts";
+import type {
+  AnalyzeTokenPorts,
+  AppServices,
+  DetectorSet,
+} from "../application/analyzeToken.ts";
 import { createAssessmentService } from "../application/assessmentService.ts";
 import type { AssessmentService } from "../application/assessmentService.ts";
 import { createMetaModelApiAdapterFromConfig } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
@@ -22,10 +26,10 @@ import { createEmptyPluginRegistry } from "../plugins/registry.ts";
 import type { PluginRegistry } from "../plugins/registry.ts";
 import type { AppConfig, ConfigError } from "../ports/config.ts";
 
-// S-042 (ADR P-12 step 0): the static plugin registry starts empty beside
-// the existing path. The value is validated through the registry builder
-// at startup; S-043 threads it into the application service when the
-// first detector migrates, leaving analysis output unchanged until then.
+// S-043 (ADR P-12 step 1): the default detector set carries the validated
+// plugin registry beside the executable detector lookup, and the shared
+// application service runs detection solely through it. The empty S-042
+// registry stays for startup tests.
 export const EMPTY_PLUGIN_REGISTRY: PluginRegistry = createEmptyPluginRegistry();
 import type { ModelId } from "../domain/types.ts";
 import type { AssessmentProvider } from "../ports/assessmentModel.ts";
@@ -35,8 +39,11 @@ import type { AssessmentProvider } from "../ports/assessmentModel.ts";
 // AppServices structure to the driving adapters (REST, MCP, web UI) through
 // constructor injection. Proxy resolution (S-006) is wired through the same
 // structure; just-deployed listing joins it in a later story.
-export function wireAppServices(ports: AnalyzeTokenPorts): AppServices {
-  return createAppServices(ports);
+export function wireAppServices(
+  ports: AnalyzeTokenPorts,
+  detectors: DetectorSet = DEFAULT_DETECTOR_SET,
+): AppServices {
+  return createAppServices(ports, detectors);
 }
 
 export type AssessmentBinding =
