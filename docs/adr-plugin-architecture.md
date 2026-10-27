@@ -1,9 +1,10 @@
 # ADR: Plugin architecture for Brandklipparen
 
 Author: Jens Abrahamsson.
-Status: proposed. This document is the design decision for a typed plugin
-architecture. Implementation follows the stories in `backlog.md` (E-08)
-test-first per A-21. No plugin code ships on the basis of this ADR alone.
+Status: proposed, critically reviewed (see section 0). This document is
+the design decision for a typed plugin architecture. Implementation
+follows the stories in `backlog.md` (E-08) test-first per A-21. No plugin
+code ships on the basis of this ADR alone.
 Reading guide: requirements (K-IDs) are owned by `docs/requirements.md`,
 architecture rules (A-xx) by `docs/architecture.md`, infrastructure rules
 (I-xx) by `docs/infrastructure.md`, and threats with countermeasures
@@ -12,6 +13,198 @@ architecture rules (A-xx) by `docs/architecture.md`, infrastructure rules
 or extends. Proposed new K-IDs are listed in section 10; they enter
 `docs/requirements.md` in the first implementation story, in the same
 change, per the cross-document check in section 12.3 there.
+
+## 0. Architecture review (critical review outcome)
+
+This section records a critical review against the product owner's bar
+— perfect, smart, innovative — and the decisions it locked. The body
+below is the reviewed design; where this section and an older paragraph
+disagreed during the review, the body now carries the reviewed wording
+and this section says what changed and why. No application code changed
+in the review.
+
+**Verdict: the design is ready for full implementation once the
+follow-up stories in section 0.3 are scheduled.** Nothing in sections
+1–14 blocks starting S-045 onward. The review found no reason to reopen
+the core bets (static registration, weight 0, one registry, local-only
+priorities). It found over-claimed invariants, one ghost type, two
+ports too many, and a headline feature (P-25/P-26) that was not yet
+implementable as written. All four are fixed in the body.
+
+### 0.1 What the review cut (subtract before adding)
+
+1. **Two AI presentation ports become one.** `PluginLayoutModelPort`,
+   `LayoutSpec`, and `POST /v1/layout` are retired before implementation
+   and folded into the single `PluginPersonalizeModelPort` /
+   `PersonalizeSpec` / `POST /v1/personalize` (P-27, decided; former
+   open decision 12 is closed). The deterministic layout (P-19, P-20)
+   and the schema-driven panel (P-18) are untouched. Shipping a
+   layout-only AI spec first and a ranking-plus-layout spec second
+   would have meant two contracts, two contract suites, two caches,
+   and a toggle migration for a throwaway shape. One spec was always
+   the stated end state (P-27); the review deletes the intermediate.
+2. **The detector input catalogue shrinks from seven facts to three**
+   (section 3.2). The host today supplies `bytecode` (with `codeHash`),
+   `cloneMatch`, and `decompilerCause`. Detectors derive selectors and
+   disassembly deterministically from bytecode with the shared domain
+   helpers — exactly as the landed detectors do. `selectors`,
+   `disassembly`, `proxy`, `snippets`, and `measuredValues` leave the
+   v1 catalogue: the host either does not compute them as detector
+   facts (`proxy` shapes the analysed bytecode before detection;
+   `snippets` belong to the deepening explanation) or the detector
+   derives them purely (`selectors`, `disassembly`). A fact re-enters
+   the catalogue only by ADR amendment with a host computation and a
+   determinism proof. Fewer facts, fewer host–plugin mismatches.
+3. **The invented severity scale goes.** `info` and `critical` in the
+   P-15 frontmatter enum and in P-26 matched no domain type (`Severity`
+   in A-12 is `low | medium | high`). The frontmatter range and the
+   severity floor now use the domain scale only (floor: `high`). No
+   exhaustive `switch` over `Severity` gains a branch by accident.
+4. **Advisory severity on findings goes.** Section 4.1 promised an
+   optional advisory severity/direction on `PluginFinding`; the landed
+   type has neither, and nothing consumed them. They stay out. Display
+   emphasis comes from the calibrated signal where one exists and from
+   the plugin's declared frontmatter range otherwise (P-26). One fewer
+   self-grading channel for a plugin to game (P-05).
+5. **The repeated no-zod rationale is stated once** (section 3.3).
+   P-14 and the former P-22/P-28 each re-argued it; they now point
+   back. Same decision, a third of the text, no drift between copies.
+6. **`docs.version` goes.** The manifest `docs` reference carried a
+   document version that had to equal the manifest `version` — a stored
+   duplicate whose only job was to be checked against its twin. The
+   reference is now the fixed file name alone; the version lives in
+   exactly two checked places (manifest `version`, frontmatter
+   `version` plus changelog line, P-17). One less state to keep equal.
+
+### 0.2 What the review tightened (illegal states, boundaries)
+
+1. **Manifests are discriminated by kind** (section 3.1): detector and
+   assessment manifests are different types with different `inputs`,
+   `limits`, and `capabilities` shapes, so a detector carrying a
+   deadline or an assessment declaring detector inputs is a type
+   error, not a runtime surprise. Detector-forbidden capabilities
+   (`needsNetwork`, `needsSecrets`) fail in the manifest smart
+   constructor itself, not later in the registry.
+2. **The registry holds entries, not two parallel structures**
+   (section 6): one entry per plugin carrying its manifest and, for
+   detectors, its `detect` function. A registered manifest without an
+   implementation is unrepresentable; startup validates the entry set
+   once. The landed split (manifest registry beside a separate
+   executable map, with a per-analysis `invalid-output` for a missing
+   implementation) is migration debt with an exit story (section 0.3).
+3. **The host projects declared inputs** (section 3.2): a detector
+   receives a frozen input holding only facts it declared; an
+   undeclared fact is absent, so reading one is a defect the contract
+   suite catches by running each detector on its projection alone.
+   The landed single superset input (every detector sees
+   `cloneMatch` and `decompilerCause`) is migration debt (section 0.3).
+4. **Finding identity and evidence are re-proven at the boundary**
+   (section 4.1): the registry checks the `<pluginId>:` prefix on every
+   finding id, that `finding.pluginId` equals the manifest id, and
+   re-parses each evidence entry through the domain `Evidence` smart
+   constructor. A selector-shaped string is not evidence until the
+   domain constructor accepts it (A-13). The landed boundary check
+   (string presence only) is migration debt (section 0.3).
+5. **Weight 0 is stated as three scoped invariants** (section 5.2)
+   instead of one blanket claim. The blanket claim ("enabling a plugin
+   changes no score") is false for the three built-in detectors today:
+   they affect the score through host-owned converters, by design, to
+   keep legacy scores bit-identical. The invariants now separate
+   non-promoted plugins (true weight 0, property-tested), built-in
+   converters (interim, host-owned, exit in S-047), and promotion
+   (one artifact mapping after S-047).
+6. **The audit report is a discriminated union** (section 12.1): a
+   deterministic failure carries `ai: not-run` by construction, so the
+   impossible report ("deterministic failed, AI advisory attached")
+   cannot be built. Acceptance is a derived predicate (deterministic
+   pass and recorded human review), never a stored flag an AI result
+   could sit beside.
+7. **`PersonalizeSpec` validation takes its request context**
+   (section 14.5): "ranking names an absent plugin" is checkable only
+   against the ids the request actually offered, so
+   `parsePersonalizeSpec` receives the present section ids, present
+   plugin ids, and the floored sets. Ranking and placements operate
+   at two levels that cannot conflict (cards inside one section;
+   sections on the page), and the renderer's apply algorithm is
+   written out step by step (section 14.5). The headline is now
+   implementable without inventing semantics mid-story.
+8. **Frontmatter is first-class registry data** (sections 12.2, 12.3):
+   the parsed, validated frontmatter travels in the registry record,
+   and the P-25 matcher consumes that typed value — never raw
+   markdown. The former "content or hash, decided in S-056" deferral
+   is decided: frontmatter, section index, and capped markdown text.
+9. **One registry view model, owned once** (section 6): a pure
+   derivation in `src/plugins` produces the exposed plugin shape;
+   REST serialises it, MCP wraps the same canonical bytes, and the web
+   UI reads it only through REST. `enabled` and `active` are data
+   supplied by the composition root, never literal types baked into
+   the view (the in-flight exposure draft's `enabled: true` /
+   `active: false` literals must not freeze; section 6 states the
+   requirement, the code fix belongs to its owning slice).
+
+### 0.3 Reality check against landed S-042–S-044, and follow-ups
+
+Landed code was read, not changed. Agreements worth keeping: the
+manifest smart constructor style (A-11), the closed schema keyword
+subset with recursive validation, detector purity lint
+(`src/plugins/**` under the `node:*`/globals ESLint block; the
+dependency-cruiser rules `boundary-detector-plugins-pure` and
+`boundary-plugins-via-registry` exist, scoped to `src/plugins` rather
+than the `detectors/<name>/` path section 5.1 originally described),
+static registration, and the three built-in detectors behind the
+registry with host conversion to legacy signals.
+
+Deliberate deviations, each with one follow-up story (backlog S-071):
+
+| # | Deviation in landed code | Normative end state (this ADR) |
+|---|---|---|
+| D-1 | `DetectorInput` is one superset; every detector sees all facts; hard-to-analyze declares only `bytecode` but reads `decompilerCause` | Projection per declared inputs (3.2); `decompilerCause` joins the catalogue and the hard-to-analyze manifest declares it |
+| D-2 | Flat `PluginManifest`/`PluginLimits`; detector-forbidden capabilities rejected only by the registry | Discriminated manifests; rejection in the smart constructor (3.1, 3.4) |
+| D-3 | Manifest has no `docs` field; `PLUGIN.md` files carry pre-refinement headings and no frontmatter | `docs` reference (3.1) plus the refined P-15 contract, delivered by S-052/S-065 as already planned |
+| D-4 | Boundary evidence check accepts any selector-shaped string; finding id prefix unchecked | Boundary re-parse through `Evidence`, prefix and plugin-id checks (4.1) |
+| D-5 | Registry is manifests only; executable map is separate; missing implementation degrades per analysis; `DEFAULT_PLUGIN_REGISTRY` throws at module load; `wireAppServices` defaults the detector set | Registry entries (6); composition builds the registry and maps failure to a typed startup error; no load-time throw, no defaulted detector set |
+| D-6 | Built-in findings reach the score through three host converters (catalogue, clone mapping, placeholder risk) | One artifact mapping in S-047 as already planned; converters labelled interim until then (5.2) |
+
+### 0.4 Remaining risks (accepted, named)
+
+- **In-process detectors stay trusted code** (section 5.4). Purity is
+  enforced by types, lint, and contract tests, not by a sandbox. A
+  malicious first-party detector is a code-review failure, not a
+  contained runtime event. Worker isolation (S-050) remains the hard
+  precondition for any unreviewed detector; the demo registers only
+  reviewed detectors.
+- **The keyword matcher will miss paraphrases** (P-25). That is the
+  price of a deterministic, offline, explainable headline, and the
+  page says so when nothing matches. The AI personalize mode is the
+  pressure valve, Stretch and off by default.
+- **The conservative card floor can over-promote** (P-26): a plugin
+  whose declared range reaches `high` keeps its card floored even for
+  a mild finding. Accepted: burial of critical evidence is the worse
+  failure for this product, and the floor never hides anything.
+- **Frontmatter honesty is partly human** (P-17). Deterministic checks
+  catch structural drift; semantic drift relies on the advisory review
+  plus human acceptance. A plugin that declares `honeypot` tags and
+  detects nothing is caught by reviewers, not by types. The demo's
+  plugins are first-party, so the exposure is small and stated.
+
+### 0.5 Verdict
+
+**READY FOR FULL IMPLEMENTATION.** Sections 1–14 as reviewed, with
+the reconciliation story S-071 scheduled (section 0.3, D-1–D-6) and
+the follow-on extensions in sections 12–14, may proceed to
+implementation in backlog order. No open decision in section 11
+blocks S-045 onward; decisions 5–12 keep their stated defaults until
+Jens rules otherwise at the named checkpoints. This verdict does not
+reopen the cuts in section 0.1: the retired layout-only port stays
+retired (personalize-only, P-27), the detector catalogue stays at
+three facts (section 3.2), and severity stays on the domain scale
+(section 0.1). The sibling design for the runtime investigation loop
+is `docs/adr-investigate-with-muse.md` (P-29 onward); its readiness
+is stated there and does not change this verdict. The sibling design
+for the own ERC-20-scoped EVM decompiler is
+`docs/adr-evm-decompiler.md` (D-01 onward, a separate rule namespace);
+it consumes this registry as a detector plugin and does not change
+this verdict either.
 
 ## 1. Context
 
@@ -55,10 +248,10 @@ holds by construction and by CI enforcement, not by convention.
 | Score influence | Plugin findings are reported with weight 0. A finding enters the score only after calibration names it in the versioned model artifact (P-05). |
 | Registry exposure | One registry drives the REST plugin list and analysis output, the MCP tool surface, and the generic web UI panel (P-08–P-10). |
 | Isolation | Detector plugins run in-process as trusted, pure, size-bounded functions in v1. Worker isolation is a precondition for any untrusted detector code (P-06). Assessment plugins keep the existing port limits, deadline, and cost caps. |
-| Plugin audit | Deterministic static checks first, then an optional advisory AI review through the existing hosted open-weights assessment path. The AI result never approves a plugin and never affects scores or evidence (P-13, P-14). |
-| Plugin documentation | Every plugin ships a required `PLUGIN.md` with a strict YAML frontmatter (`id`, `kind`, `version`, controlled-vocabulary `tags`, `audience`, severity range) and fixed plain-English sections, validated deterministically in CI and exposed read-only through REST, MCP, and the web UI with sanitized rendering (P-15 refined, P-16). The audit checks documented claims against the code (P-17). |
+| Plugin audit | Deterministic static checks first, then an optional advisory AI review through a dedicated audit port on the existing hosted open-weights transport. The AI result never approves a plugin and never affects scores or evidence (P-13, P-14). |
+| Plugin documentation | Every plugin ships a required `PLUGIN.md` with a strict YAML frontmatter (`id`, `kind`, `version`, controlled-vocabulary `tags`, `audience`, severity range on the domain `low \| medium \| high` scale) and fixed plain-English sections, validated deterministically in CI and exposed read-only through REST, MCP, and the web UI with sanitized rendering (P-15 refined, P-16). The audit checks documented claims against the code (P-17). |
 | Adaptive web UI (after plugin core) | Schema-driven rendering from each plugin's `outputSchema` through a fixed component library, a deterministic risk-adaptive layout, and a Simple / Expert toggle persisted locally (P-18–P-20). No per-plugin UI code. |
-| Experimental AI layout | Off by default. Muse Spark Open returns a declarative layout spec in JSON that only chooses, orders, and emphasises whitelisted components. It never emits HTML, code, URLs, or styles and never changes scores, evidence, or finding text. Invalid or missing spec falls back to the deterministic layout (P-21–P-23). Section 14 unifies this mode with AI personalization: one experimental toggle, one spec family, one fallback (P-27). |
+| Experimental AI presentation | One mode only: AI personalize (P-27). Off by default. Muse Spark Open returns one declarative ranking-plus-layout spec that only chooses, orders, and emphasises whitelisted sections and plugin cards. It never emits HTML, code, URLs, or styles and never changes scores, evidence, or finding text. Invalid or missing spec falls back to the deterministic baseline (P-25), then to the deterministic layout (P-19). The former separate AI layout mode is retired before implementation (section 0.1). |
 | User-priority personalization — **demo headline innovation** | The UI shows what the **user** says matters to them. Priorities are free text stored locally only, matched deterministically to plugin frontmatter tags (no network), and only ever sent to a model when the user explicitly opts in to the single experimental AI personalize mode for that mapping call. Critical findings are never hidden and scores, evidence, and finding text never change (section 14, P-24–P-28). |
 
 Note on status: story S-042 (plugin API, manifest validation, and the
@@ -82,6 +275,47 @@ K-028–K-034, or K-514–K-518, and adds its stories after S-064
 demo; the unified AI personalize mode (P-27, P-28) is experimental,
 off by default, and Stretch.
 
+Note on status (investigation): the runtime agent loop
+"Investigate with Muse" is designed in the sibling ADR
+`docs/adr-investigate-with-muse.md` (P-29 onward), linked here so
+the plugin rules stay in one numbering. It consumes this registry;
+it adds no plugin kind and no second registry.
+
+Note on status (own decompiler): the ERC-20-scoped EVM decompiler
+is designed in the sibling ADR `docs/adr-evm-decompiler.md` (D-01
+onward, a separate rule namespace from P-xx). It ships as a
+detector plugin through this registry; it adds no plugin kind, no
+second registry, and no runtime dependency.
+
+Note on status (critical review): section 0 records the review. It
+closes former open decision 12 (one personalize port, decided),
+retires the separate AI layout deliverables in P-21–P-23 before
+implementation (the deterministic P-18–P-20 stand), narrows the
+detector input catalogue (section 3.2), aligns severity to the domain
+scale (P-15, P-26), and adds one reconciliation story (S-071) for the
+landed-code deviations D-1–D-6. It renumbers no P-rule, story, or K-ID.
+
+### 2.1 Alternatives for the load-bearing decisions
+
+One serious alternative per major decision, why it loses today, and
+what evidence would reopen it. Per-update alternative lists in
+sections 10, 12.5, 13.6, and 14.7 stay as the detailed record; this
+table is the load-bearing summary the review asked for.
+
+| Decision (rule) | Serious alternative | Why rejected today | Reopen when |
+|---|---|---|---|
+| Two kinds: detector + assessment (4.1, 4.2) | A data-source kind (RPC/feed/chain plugins) beside them | Ports already are that extension point, each with its error union, limits, and threat rows; a manifest kind adds a weaker second contract and lets a manifest widen outbound flows (4.3) | Two or more shipped sources repeat the same shape behind different ports |
+| Static compile-time registration (P-07) | Signed packages loaded at build or run time from an allowlist | Run-time loading breaks the locked supply chain and admits unreviewed code to a deterministic analyzer; build-time signed loading (S-049) keeps the chain but buys nothing while all plugins are first-party | A real external author needs to ship without a repo change |
+| Detector weight 0 until artifact promotion (P-05) | Let a manifest declare a capped weight (for example max 5 points) so useful detectors score immediately | A plugin grading its own findings breaks the calibration separation (K-210); caps still need evaluation data to set, so the saving is illusory and the gaming channel is real | Never for self-declared weights; promotion speed is an offline-chain problem, not a manifest field |
+| Static registration trust: in-process detectors (P-06) | Worker-isolate every detector from day one (extdecomp style) | Correct for untrusted code, costly for three reviewed first-party functions: process hops, serialisation of bytecode per detector, deadline tuning before any evidence a detector misbehaves | The first unreviewed detector registers (then it is a precondition, S-050, not a choice) |
+| TS types + JSON Schema descriptor, no schema library (3.3) | zod (or similar) as single source of truth, deriving types and JSON Schema | New runtime dependency under K-506/I-04 plus a second idiom beside the repo's smart constructors; the closed shapes here are small and the dual representations are contract-tested against each other | A plugin shape outgrows plain checks (deep recursion, cross-field rules) in a shipped story |
+| Separate audit port, shared transport (P-14) | Reuse `AssessmentModelPort` for audit calls | Inputs differ in kind (whole source files vs the closed K-302 evidence list), lifecycle differs (CI/operator vs on-request), and reuse would force source-file branches into the assessment contract suite and muddy the K-307 freeze proof. Sharing the hosted transport helper keeps the saving without the leak | The audit port's second method ever mirrors an assessment call shape-for-shape |
+| One unified AI personalize mode (P-27) | Ship AI layout first, add a separate ranking mode later with a precedence rule | Two specs can disagree (ranking says A first, layout buries A), so the precedence rule becomes a third design; two ports, suites, caches, and toggles for one presentation concern | A caller needs layout with no priorities concept at all (none exists; the web UI is the only caller) |
+| Local-only priorities (P-24) | Server profile per API key, synced across devices | Priorities are PII-ish free text; a profile adds storage, retention, log-scrubbing, and consent surface to save the user retyping one sentence. Local-only makes "never leaves the device" true by architecture (H-26) | The product gains accounts for an unrelated reason and users ask for sync |
+| Deterministic matcher before any AI (P-25 before P-27) | AI-first mapping (model reads priorities, matcher as fallback) | The demo headline must work offline, free, and explainably ("Matched: honeypot, fees"); an AI-first headline fails closed to a worse demo without a key and cannot be golden-tested | The deterministic matcher measurably misses on real demo phrasings and the AI mode has shipped and proven stable |
+| Severity floor by rule, not by user setting (P-26) | Let users collapse anything, with a warning banner | A warning is convention; a floor is construction. For a rug-pull tool, a buried `high` finding behind an unrelated priority is the failure the product exists to prevent | User research on the shipped demo shows the floor actively harming comprehension (then narrow the floor, never remove it) |
+| `PLUGIN.md` in the plugin directory (P-15) | Registry metadata only (manifest fields, no document) | The doc carries the plain-English "why it matters to you" and the limitations a manifest cannot; frontmatter gives the matcher its closed, validated surface. Metadata-only would push prose into manifest strings with no claim checks (P-17) | A plugin kind appears whose honest doc fits in the manifest (none in v1) |
+
 ## 3. Typed plugin contract and manifest
 
 ### 3.1 The manifest
@@ -90,7 +324,14 @@ off by default, and Stretch.
 value, validated at startup by a smart constructor in the same style as
 A-10 and A-11. A manifest that fails validation is a typed startup error
 naming the plugin id and the failed field, with values kept outside the
-error text where they could carry secrets (K-505). The manifest fields
+error text where they could carry secrets (K-505). The manifest is a
+discriminated union on `kind` (A-12): the shared fields below come
+first, then the kind-specific shapes for `inputs`, `limits`, and
+`capabilities` in sections 3.2–3.4, so a state that mixes kinds (a
+detector with a provider deadline, an assessment declaring detector
+inputs) fails to typecheck instead of failing at run time. The landed
+flat `PluginManifest`/`PluginLimits` type is deviation D-2 (section
+0.3); the union below is the normative end state. The manifest fields
 are normative:
 
 | Field | Type | Invariant |
@@ -105,7 +346,7 @@ are normative:
 | `outputSchema` | `JsonSchema` | JSON Schema descriptor for the plugin output, per section 3.3. Validated at startup and used for boundary validation and generic rendering. |
 | `capabilities` | `PluginCapabilities` | Closed capability flags per section 3.4. Every capability the plugin needs is declared; undeclared capabilities are unrepresentable in the host call. |
 | `limits` | `PluginLimits` | Per-plugin bounds: `maxFindings`, `maxEvidencePerFinding`, `maxOutputBytes`, and for assessment plugins `deadlineMs`, `maxBytesIn`, `maxBytesOut`, `maxConcurrency` mirroring A-17. Values arrive through typed configuration (I-08), never from the plugin at run time. |
-| `docs` | `PluginDocsRef` | Reference to the required `PLUGIN.md` for this plugin (P-15): the fixed relative file name `PLUGIN.md` beside the manifest, plus the document version, which equals the manifest `version`. No absolute path and no path outside the plugin directory is representable. Presence and content are validated deterministically (section 12.2); the registry itself stays free of filesystem access. |
+| `docs` | `PluginDocsRef` (`{ file: "PLUGIN.md" }`) | Reference to the required `PLUGIN.md` for this plugin (P-15): the fixed relative file name `PLUGIN.md` beside the manifest, and nothing else. The document version is the manifest `version` by definition, so no second version value exists to drift (review cut, section 0.1). No absolute path and no path outside the plugin directory is representable. Presence and content are validated deterministically by the docs validator (section 12.2); the registry itself stays free of filesystem access and receives the validated result as a value (section 6). |
 
 **P-02 Versioned plugin API.** The core exports one constant,
 `PLUGIN_API_VERSION`, starting at `1.0.0`. Compatibility follows semver
@@ -121,33 +362,50 @@ on the API, separately from any plugin's own `version`:
 - The registry records `apiVersion` per plugin in the plugin list
   (section 6), so a mixed registry is visible before the first analysis.
 
-### 3.2 Declared inputs: a closed catalogue
+### 3.2 Declared inputs: a closed catalogue of three host facts
 
 A detector plugin declares its inputs from a closed catalogue of facts
-the host has already computed deterministically. The catalogue is a
-discriminated union owned by the plugin API; a plugin receives one frozen
-`DetectorInput` value holding exactly its declared facts:
+the host has already computed deterministically. The catalogue is
+deliberately small (review cut, section 0.1): every fact the host
+supplies is a fact the detector cannot derive purely itself.
 
-| Input name | Value | Source today |
+| Input name | Value in `DetectorInput` | Source today |
 |---|---|---|
-| `bytecode` | `Bytecode` with `CodeHash` | RPC fetch in `analyzeToken` (K-001) |
-| `selectors` | Extracted selectors with name suggestions | `extractSelectors` in `src/domain/selectors.ts` (K-009) |
-| `disassembly` | Linear opcode disassembly with PC offsets | `disassemble` in `src/domain/selectors.ts` |
-| `proxy` | `ProxyResolution` | `resolveProxy` (K-002–K-007) |
-| `cloneMatch` | `CloneMatch \| null` with index version | `CloneIndexPort` (K-017) |
-| `snippets` | Decompiled snippets linked per selector, where the deepening produced them | `DecompilerPort` deepening (K-008) |
-| `measuredValues` | Current storage values with slot, block, and time | K-016 readings, where they exist |
+| `bytecode` | `Bytecode` together with its `CodeHash` (`codeHash` field) | RPC fetch in `analyzeToken` (K-001) |
+| `cloneMatch` | `CloneHit \| null` (null on a miss or an index failure) | Host lookup through `CloneIndexPort` (K-017) |
+| `decompilerCause` | `HardToAnalyzeCause \| null` (null when decompilation succeeded or no worker is bound) | Host mapping of the `DecompilerPort` error union (K-008) |
 
-Facts arrive as parameters, frozen, exactly as shared read data does
-today under A-08. A fact the registry cannot supply for a given analysis
-(for example `snippets` before the deepening) is absent from the input
-value; the plugin returns its findings from the facts present or returns
-an empty list. Requesting an input outside the catalogue is
-unrepresentable: the manifest type admits only catalogue names.
+Selectors and disassembly are not host facts: a detector derives them
+from `bytecode` with the pure domain helpers (`extractSelectors`,
+`disassemble` in `src/domain/selectors.ts`), exactly as the landed
+detectors do, so the derivation is covered by the detector's own
+determinism proof instead of a host–plugin agreement. `proxy` never
+reaches a detector (proxy resolution shapes which bytecode is analysed,
+section 7), `snippets` feed explanations, not findings, and
+`measuredValues` has no detector consumer in v1. A fact re-enters this
+catalogue only by ADR amendment naming its host computation, its
+absence semantics, and its determinism proof.
 
-An assessment plugin declares no detector inputs. Its sole input is the
-closed evidence list per K-302, delivered through the existing assessment
-path (section 4.2).
+Projection is normative: the host builds one frozen `DetectorInput`
+per detector holding exactly the facts that detector declared. An
+undeclared fact is absent (the field is missing, not nulled), so a
+detector that reads one reads `undefined` and the registry contract
+suite catches it by running each detector on its projection alone and
+requiring the declared-input run and the full-fact run to agree where
+they overlap (the detector must not secretly depend on a fact it did
+not declare). A declared fact the host cannot supply for a given
+analysis arrives as its stated null (`cloneMatch`, `decompilerCause`);
+the plugin returns findings from the facts present or an empty list.
+Requesting an input outside the catalogue is unrepresentable: the
+manifest type admits only catalogue names. The landed single superset
+input — every detector receives every fact, and the hard-to-analyze
+detector reads `decompilerCause` while declaring only `bytecode` — is
+deviation D-1 (section 0.3); its manifest declaration is corrected with
+the projection.
+
+An assessment plugin declares no detector inputs (`inputs: []` in its
+manifest branch). Its sole input is the closed evidence list per K-302,
+delivered through the existing assessment path (section 4.2).
 
 ### 3.3 Output schema: TypeScript types plus JSON Schema, no new library
 
@@ -178,9 +436,17 @@ The plugin contract therefore follows the existing typed domain:
    over the closed keyword subset the registry documents (`type`,
    `required`, `properties`, `items`, `enum`, `const`, `minimum`,
    `maximum`, `minItems`, `maxItems`, `minLength`, `maxLength`,
-   `additionalProperties: false`). Output outside the subset or outside
-   the schema gives the typed outcome `invalid-output` for that plugin
-   (section 5.4) and leaves the rest of the analysis standing.
+   `additionalProperties: false`). Two honesty notes keep this from
+   over-claiming: the `JsonSchema` type is a descriptor bag (any string
+   key typechecks), so subset validity is a parse-time proof from the
+   manifest smart constructor, not a compile-time one — a schema value
+   that never passed `PluginManifest.parse` is not a schema; and every
+   object subschema in a detector's finding schema must set
+   `additionalProperties: false`, so an undeclared payload field is
+   invalid output rather than ignored data. Output outside the subset
+   or outside the schema gives the typed outcome `invalid-output` for
+   that plugin (section 5.4) and leaves the rest of the analysis
+   standing.
 4. A contract test per plugin checks that the typed output and the
    `outputSchema` agree on frozen examples in both directions (valid
    output passes, each schema field removed or mistyped fails), so the
@@ -189,10 +455,17 @@ The plugin contract therefore follows the existing typed domain:
 
 ### 3.4 Capabilities
 
-`PluginCapabilities` is a closed record of booleans with a stated default
-per kind. Capabilities gate what the host offers the plugin; they never
-widen what the plugin can reach, because the plugin receives only values
-(section 5.1).
+Capabilities are part of the discriminated manifest (section 3.1), not
+one flat record: each kind's manifest branch carries only the flags
+that kind can meaningfully hold, with the stated default. Capabilities
+gate what the host offers the plugin; they never widen what the plugin
+can reach, because the plugin receives only values (section 5.1).
+Detector-forbidden values fail in the manifest smart constructor
+itself (deviation D-2 moves that check from the registry into the
+constructor), so a detector manifest carrying `needsNetwork: true`
+cannot be constructed, let alone registered. The registry re-checks
+the same invariant as defence in depth over entries it did not parse
+itself (section 6).
 
 | Capability | Detector default | Assessment default | Meaning |
 |---|---|---|---|
@@ -217,12 +490,23 @@ type DetectorPlugin = {
 ```
 
 A finding carries: the namespaced finding id (`<pluginId>:<localId>`),
-a short English title, an optional advisory severity and direction, at
-least one evidence entry, and a kind-specific payload validated against
-`outputSchema`. Evidence follows A-13: each finding requires a
-`NonEmpty<Evidence>` where each entry carries a selector and a PC offset
-where the offset is derivable (K-010). A finding without evidence fails
-construction, exactly as a signal without evidence does today.
+the emitting plugin's id, a short English title, at least one evidence
+entry, and a kind-specific payload validated against `outputSchema`.
+A finding carries no severity and no direction (review cut, section
+0.1): emphasis comes from the host-converted calibrated signal where
+one exists and from the plugin's declared frontmatter range otherwise
+(P-26), never from a value the plugin grades itself with (P-05).
+Evidence follows A-13: each finding requires a `NonEmpty<Evidence>`
+where each entry carries a selector and a PC offset where the offset
+is derivable (K-010). A finding without evidence fails construction,
+exactly as a signal without evidence does today. The registry boundary
+re-proves identity and evidence on every returned finding (deviation
+D-4 closes the landed string-presence check): the id starts with
+`<manifest.id>:`, `finding.pluginId` equals the manifest id, and each
+evidence entry is re-parsed through the domain `Evidence` smart
+constructor. Any failure is the typed outcome `invalid-output` for
+that plugin (section 5.4); unproven evidence never reaches scoring,
+serialisation, or rendering.
 
 Detector plugins hold no port, no clock, no randomness, and no ambient
 state. The host supplies time, block, and model values as input fields,
@@ -330,20 +614,37 @@ of `docs/threat-model.md`).
 function `score(signals, artifact)` in `src/domain/risk.ts` keeps its
 current signature and its current input: calibrated `Signal` values and
 the frozen artifact (A-19, K-210, K-211). Plugin findings travel in a
-separate envelope field (section 6) and never enter that call. Three
-consequences hold by construction:
+separate envelope field (section 6) and never enter that call. The
+review splits the weight-0 claim into three scoped invariants, because
+the blanket form ("enabling any plugin changes no score") is false for
+the built-in detectors today and a test written against it would fail
+honest code:
 
-1. A newly registered detector plugin changes no probability and no
-   score on any input. The property test
-   `plugin_findings_leave_probabilities_and_score_unchanged` compares
-   the frozen analysis with each plugin enabled and disabled and
-   requires bit-identical probabilities, score, and signals.
-2. A plugin cannot raise its own influence. Advisory severity and
-   direction in a finding are display values. The mapping from a plugin
-   finding to risk, direction, and severity for scoring is read from the
-   model artifact at promotion time, never from the manifest or the
-   finding.
-3. Promotion is a calibration event, not a code change alone. When
+1. **Non-promoted plugins: true weight 0.** A registered detector the
+   artifact does not name changes no probability and no score on any
+   input. The property test
+   `plugin_findings_leave_probabilities_and_score_unchanged` is scoped
+   to such plugins: it compares the frozen analysis with the plugin
+   enabled and disabled and requires bit-identical probabilities,
+   score, and signals. Every new example or third-party-style detector
+   ships under this invariant (S-051).
+2. **Built-in detectors: interim host conversion (deviation D-6).**
+   The three first-party detectors (capability, clone-match,
+   hard-to-analyze) do affect today's score — through host-owned
+   converters in `analyzeToken` (injected catalogue, clone mapping,
+   placeholder risk) that reproduce the legacy signals bit-for-bit.
+   The converters read calibration values only from host-injected
+   artifact data and use the finding solely as an identity key
+   (capability key, clone group, decompiler cause); no payload number,
+   title, or plugin-declared value steers risk, direction, or severity.
+   This is the one deliberate exception to invariant 1, it exists only
+   to keep pre-plugin scores bit-identical during migration, and its
+   exit is S-047: one artifact mapping replaces all three converters,
+   after which invariant 1 covers every non-promoted plugin and
+   invariant 3 covers the rest. Detector `PLUGIN.md` text that says
+   findings "map to calibrated signals" describes this interim state
+   and is corrected when S-047 lands.
+3. **Promotion is a calibration event, not a code change alone.** When
    evaluation per K-205 and K-206 supports a finding, the offline chain
    adds a calibrated entry naming the plugin id and finding shape to a
    new artifact version. The host then converts matching findings to
@@ -351,7 +652,10 @@ consequences hold by construction:
    the artifact checksum and model version stated in the response as
    today (K-102). The plugin's `affectsScore` capability display flips
    only because the artifact names it; the artifact stays the sole
-   source the code reads (K-210).
+   source the code reads (K-210). A plugin cannot raise its own
+   influence at any stage: findings carry no severity or direction
+   (section 4.1), and the mapping is read from the artifact, never
+   from the manifest or the finding.
 
 ### 5.3 No dynamic loading of arbitrary code
 
@@ -437,29 +741,64 @@ model version.
 
 ## 6. Registry and automatic exposure
 
-**P-08 One registry, validated at startup.** `src/plugins/registry.ts`
-exports a frozen `PluginRegistry` built once in the composition root:
+**P-08 One registry, validated at startup.** The registry is a set of
+entries, not a manifest list beside a separate executable map
+(deviation D-5). One entry per plugin:
 
-1. Each manifest passes its smart constructor (P-01) and the API range
-   check (P-02).
-2. Duplicate plugin ids give a typed startup error naming the id.
-3. Each `outputSchema` is checked against the supported keyword subset
-   (section 3.3).
-4. Detector capabilities are checked against the kind defaults
-   (section 3.4); a detector declaring network or secrets is a startup
-   error.
-5. The validated registry is handed to the application service and to
-   both driving adapters through `AppServices` construction (A-02, A-03),
-   so REST, MCP, and the web UI read the same registry value.
+```ts
+type PluginRegistryEntry =
+  | { manifest: DetectorManifest; detect: DetectorFn; docs: ValidatedPluginDocs }
+  | { manifest: AssessmentManifest; docs: ValidatedPluginDocs };
+type PluginRegistry = { entries: readonly PluginRegistryEntry[] }; // frozen, sorted by plugin id
+```
 
-The startup test in the style of
-`a03_each_port_bound_to_exactly_one_adapter` gains a sibling:
+A registered detector without its `detect` function is therefore
+unrepresentable, and no per-analysis outcome exists for a missing
+implementation: wiring mistakes fail at startup, where they belong.
+Ownership is stated once here and nowhere contradicted:
+
+| Concern | Owner | Never does |
+|---|---|---|
+| Manifest validity (fields, schema subset, kind shapes) | `PluginManifest.parse` smart constructor (P-01) | Read the filesystem; know other plugins |
+| `PLUGIN.md` validity (frontmatter, sections, claim checks) | The docs validator module (P-15, P-17), run in CI and by the audit | Run inside the registry; serve unvalidated docs |
+| Entry-set validity (unique ids, API range P-02, entry completeness) | `buildPluginRegistry(entries)` in `src/plugins/registry.ts`, returning `Result<PluginRegistry, PluginRegistryError>` | Import concrete plugin modules; execute at module load |
+| Static catalogue (which plugins exist) | The frozen entry array literal assembled from static imports (P-07) | Read configuration, environment, or a directory |
+| Enable/disable set, active assessment plugin | The composition root, from validated configuration (A-03), supplied to the view derivation below | Name code to load (P-07) |
+| Exposed shape for REST/MCP/web | One pure view derivation in `src/plugins` from registry + composition-supplied `enabled`/`active`/`weight` data (P-09, P-10) | Read the scoring artifact per request; hold interface-specific variants |
+
+`buildPluginRegistry` is called once by the composition root, which
+maps its error to a typed startup error (A-15). Nothing in
+`src/plugins` builds a registry at module load: the landed
+`DEFAULT_PLUGIN_REGISTRY` load-time throw and the defaulted detector
+set in `wireAppServices` are deviation D-5, because an import must
+never fail a process the composition root has not yet validated, and a
+defaulted parameter lets a caller forget to wire the real set. Tests
+construct registries through the same builder with fixture entries.
+
+The validated registry is handed to the application service and to
+both driving adapters through `AppServices` construction (A-02, A-03),
+so REST, MCP, and the web UI read the same registry value. The startup
+test in the style of `a03_each_port_bound_to_exactly_one_adapter`
+gains a sibling:
 `registry_rejects_duplicate_ids_and_unsupported_api_versions` runs the
 builder against duplicate, out-of-range, and capability-violating
-manifests and requires a typed startup error per case.
+entries and requires a typed startup error per case.
 
-**P-09 REST exposure.** The REST adapter derives its plugin surface from
-the registry at startup; no route is hand-written per plugin:
+**P-09 REST exposure.** One registry view model serves every surface.
+The view derivation (owner table in P-08) maps each registry entry
+plus the composition-supplied selection data to one exposed shape:
+`enabled` is a boolean computed from configuration, `active` (assessment
+plugins) is a boolean computed from the composition selection, and
+`weight` (detectors) is `0` until the current artifact names the plugin
+(read once at startup from the loaded artifact, never per request).
+None of the three is a literal type: a view that can only say
+`enabled: true` or `active: false` has frozen today's empty selection
+into the contract, and the S-046 exposure work must keep them data.
+REST serialises the view, MCP wraps the same canonical bytes (P-10),
+and the web UI consumes the REST JSON only — no interface imports the
+registry, a detector module, or another interface's shape (K-027).
+The REST adapter derives its plugin surface from the view at startup;
+no route is hand-written per plugin:
 
 - `GET /v1/plugins` lists each registered plugin: id, version,
   apiVersion, kind, display name, description, declared inputs,
@@ -770,10 +1109,27 @@ phases, and the second phase never runs when the first fails:
    alone. The AI phase is never required for a deterministic pass.
 
 Acceptance of a plugin is therefore: deterministic audit pass **plus**
-a recorded human review. The audit tool states both halves in its
-report (`deterministic: pass|fail`, `ai: advisory|not-run|not
-configured`, `human-review: recorded|missing`) so no single line can
-be read as an approval on its own.
+a recorded human review. The report type makes the illegal
+combinations unrepresentable instead of merely unlikely:
+
+```ts
+type PluginAuditReport =
+  | { deterministic: { kind: "fail"; failures: readonly AuditFailure[] };
+      ai: { kind: "not-run" }; humanReview: "recorded" | "missing" }
+  | { deterministic: { kind: "pass" };
+      ai: { kind: "advisory"; findings: readonly AuditFinding[]; provider: string; modelId: string }
+        | { kind: "not-run" } | { kind: "not-configured" } | { kind: "invalid-output" };
+      humanReview: "recorded" | "missing" };
+// Acceptance is derived, never stored:
+// isAccepted(r) = r.deterministic.kind === "pass" && r.humanReview === "recorded"
+```
+
+A deterministic failure carries `ai: not-run` by construction, so the
+report "deterministic failed, AI looked anyway" cannot be built, and
+no stored `accepted` flag exists for an AI result or a dashboard to
+set. The audit tool prints the three states on separate lines
+(`deterministic`, `ai`, `human-review`) so no single line can be read
+as an approval on its own.
 
 **P-14 AI audit findings are structured, schema-validated, and
 advisory only.** The AI step reuses the existing assessment provider
@@ -800,6 +1156,27 @@ machinery without reusing its contract:
   `runPluginAuditModelPortContract`, run against a fake adapter and
   the hosted adapter over a recorded transport, with zero network in
   tests — the same contract style as the existing assessment tests.
+- Port boundaries, stated once for all three model ports. The repo
+  ends with exactly three model ports over one shared hosted/Meta
+  transport layer, and the table below is the whole sharing contract:
+
+  | Port | Caller and lifecycle | Input (closed) | Output | Contract suite |
+  |---|---|---|---|---|
+  | `AssessmentModelPort` (existing) | On-request, per analysis (K-305) | K-302 closed evidence list | Free-text assessment, separate field (K-307) | `runAssessmentModelPortContract` (unchanged) |
+  | `PluginAuditModelPort` (P-14) | Operator/CI, per plugin change | Quoted plugin source files + manifest + `PLUGIN.md` | Structured advisory findings | `runPluginAuditModelPortContract` |
+  | `PluginPersonalizeModelPort` (P-27) | On-request, per token view, opt-in only | Quoted priorities + quoted frontmatter/excerpts + closed layout facts | `PersonalizeSpec` (ranking + placements) | `runPluginPersonalizeModelPortContract` |
+
+  Shared (transport only): provider endpoint allowlist from validated
+  configuration, server-side key handling, deadline/size/concurrency
+  bounds, cost caps, provider/model identity checks. Never shared:
+  prompt text, input shapes, output schemas, caching keys, and error
+  semantics beyond the mirrored A-15 branch names. No port's output
+  type is readable by another port's caller, and none is readable by
+  scoring, the registry, or the analysis path. Detectors sit outside
+  this table entirely: they hold no port (P-03), so "detector versus
+  assessment" has a one-line answer — a detector is a pure function,
+  an assessment is a port call, and no type converts one into the
+  other.
 - Findings shape: each AI finding is a structured value, never free
   text alone: `severity` (closed enum `info|low|medium|high`),
   `location` (plugin-relative file plus line or section where the
@@ -814,17 +1191,9 @@ machinery without reusing its contract:
   JSON Schema descriptor (the draft-07 subset in section 3.3) carried
   beside them and a plain-check smart constructor,
   `parsePluginAuditReport`, in the style of A-10/A-11 and of
-  `validateAssessmentOutput` in the assessment adapters. **No zod.**
-  Zod is not a dependency in this repo; runtime validation today is
-  plain checks plus smart constructors (A-16, section 3.3), JSON
-  Schema descriptors already exist for REST and MCP, and `ajv` is a
-  test-only devDependency used to validate responses against the
-  published schemas. Adding zod solely for audit findings would add a
-  runtime dependency under K-506/I-04 supply-chain review and a second
-  source of truth beside the TypeScript types, for a closed findings
-  shape that the existing style already covers. If a future audit
-  shape outgrows plain checks, that is a separate dependency decision
-  against repo norms, not part of this design.
+  `validateAssessmentOutput` in the assessment adapters. No schema
+  library is added, for the single reason stated in section 3.3; that
+  paragraph is the record and is not repeated per port.
 - Validation and failure: every model response passes
   `parsePluginAuditReport` before any human sees it as findings.
   Schema-invalid, oversize, or identity-mismatched output gives the
@@ -892,7 +1261,7 @@ priorities to plugins.
 | `version` | semver string | Equals the manifest `version` and the version line in `## Version and changelog` exactly. |
 | `tags` | list of strings, 1–4 entries, no duplicates | Every entry is drawn from the controlled vocabulary below. `topics` is accepted only as a legacy alias: when present it must equal `tags` exactly, and new docs write `tags` only. A tag outside the vocabulary is a deterministic failure, never a free-text extension. |
 | `audience` | list of strings, 1 or more, no duplicates | Every entry is drawn from the closed set `holder`, `trader`, `developer`, `auditor`, `all`. `all` stands alone when present. Audience is display metadata for ordering hints; it never gates visibility (P-26). |
-| `severity` | mapping `{ min, max }` | Closed enum `info \| low \| medium \| high \| critical` per value, with `min` at most `max` in that order (`info < low < medium < high < critical`). This is the advisory severity range the plugin can emit; it is display metadata and never feeds `score` (P-05). |
+| `severity` | mapping `{ min, max }` | Each value is the domain `Severity` from A-12 (`low \| medium \| high` — no second scale; the review removed the former `info`/`critical` values, section 0.1), with `min` at most `max` in that order (`low < medium < high`). This is the advisory severity range the plugin can emit; it is display metadata for the P-26 card floor and never feeds `score` (P-05). A range whose `max` is `high` marks the plugin's card as floored (P-26). |
 
 Controlled vocabulary for `tags` (closed set; adding a tag is an
 ADR change plus a CI vocabulary update in the same change, never a
@@ -929,6 +1298,17 @@ token holder can act on, not detector internals:
    manifest `version` and the frontmatter `version`, and one line
    per released change.
 
+Frontmatter syntax is a deliberately tiny subset, because the repo
+carries no YAML library and adds none for this (section 3.3): flat
+scalar fields (`id`, `kind`, `version`), one string list (`tags`,
+`audience`; inline `[a, b]` or dash lines), and one flat mapping
+(`severity: { min, max }`). The docs validator parses exactly that
+subset with a hand-written, fail-closed parser: duplicate keys,
+anchors, nested structures beyond the severity mapping, quoted
+escapes, or any other YAML feature is a deterministic failure, never
+a best-effort parse. Adding a YAML dependency to parse three field
+shapes would fail the same supply-chain test as a schema library.
+
 Deterministic validation, in CI and in the audit (P-13): the file
 exists, is non-empty within a stated size cap, starts with a
 frontmatter block that parses against the schema above (required
@@ -943,7 +1323,11 @@ a registered plugin, a startup-adjacent build failure in CI — the
 registry never serves a plugin whose docs fail validation, because
 registration in CI runs the same check before merge. The check is a
 named CI/audit check, not a runtime filesystem read in the registry
-(section 3.1).
+(section 3.1): the validator's output (`ValidatedPluginDocs`:
+parsed frontmatter, section index, capped markdown text) is handed
+to the registry builder as a value (section 6), and it is that
+typed frontmatter — never raw markdown — that the P-25 matcher and
+the P-27 request builder consume.
 
 **P-17 The audit checks that PLUGIN.md claims match the code.** Two
 layers, matching the two audit phases in P-13:
@@ -975,10 +1359,15 @@ layers, matching the two audit phases in P-13:
 ### 12.3 Exposing PLUGIN.md: REST, MCP, and web UI
 
 **P-16 Plugin docs are exposed read-only through the same registry,
-rendered safely.** The validated `PLUGIN.md` content joins the
-registry record per plugin (content or a content hash plus the
-validated section list, decided in S-056 against the size cap), and
-the three surfaces derive from that one record (P-08–P-10):
+rendered safely.** The validated `PLUGIN.md` record joins the registry
+entry per plugin as `ValidatedPluginDocs` (section 6): parsed
+frontmatter, the validated section index, and the markdown text under
+the P-15 size cap. The former "content or hash only, decided in
+S-056" deferral is decided here (review, section 0.2): the matcher
+(P-25) needs typed frontmatter and the Docs view needs text, so both
+ship in the record from the first docs story; a hash alone would have
+forced a second, unreviewed docs channel later. The three surfaces
+derive from that one record (P-08–P-10):
 
 - REST: `GET /v1/plugins/:id/docs` returns the plugin id, version,
   and the document (raw markdown plus the parsed section list) in the
