@@ -7,8 +7,8 @@ import { AssessmentPanel } from "../components/AssessmentPanel.tsx";
 import { CantTellPanel } from "../components/CantTellPanel.tsx";
 import { ExplanationList } from "../components/ExplanationList.tsx";
 import { Gauge } from "../components/Gauge.tsx";
-import { RiskBadge } from "../components/RiskBadge.tsx";
 import { ScoreRing } from "../components/ScoreRing.tsx";
+import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
 import { Sidebar } from "../components/Sidebar.tsx";
 import { SignalList } from "../components/SignalList.tsx";
 import type { AnalyzeResult, AssessmentState, ProviderInfo, RiskKind } from "../types.ts";
@@ -320,20 +320,29 @@ function AssessedView({
     }
   }
   const templateLine = (signalId: string): string | undefined => templateBySignal.get(signalId);
+  // Summary strip visibility: always on the assessment tab (no ring there);
+  // on Overview only once the combined score ring has scrolled out of view.
+  // Unmounted when hidden so it takes no layout space and cannot overlap
+  // the ring or gauge cards. The tab key re-subscribes when tab switches
+  // remount the Overview panel.
+  const ringRef = useRef<HTMLElement | null>(null);
+  const ringGone = useRingOutOfView(ringRef, tab);
+  const stripVisible = tab === "assessment" || ringGone;
   return (
     <div>
-      <div className="compact-strip" aria-label="Result summary">
-        <span className="numeric">
-          <strong>{result.score}</strong> {riskWord(result.score)}
-        </span>
-        <span className="numeric compact-strip-probs">
-          {RISKS.map((risk) => `${RISK_SHORT[risk]} ${Math.round(result.probabilities[risk] * 100)}%`).join(" · ")}
-        </span>
-        <span className="mono numeric compact-strip-hash" title={result.codeHash}>
-          {result.codeHash}
-        </span>
-        <RiskBadge score={result.score} />
-      </div>
+      {stripVisible ? (
+        <div className="compact-strip" aria-label="Result summary" data-testid="result-summary">
+          <span className="numeric">
+            <strong>{result.score}</strong> {riskWord(result.score)}
+          </span>
+          <span className="numeric compact-strip-probs">
+            {RISKS.map((risk) => `${RISK_SHORT[risk]} ${Math.round(result.probabilities[risk] * 100)}%`).join(" · ")}
+          </span>
+          <span className="mono numeric compact-strip-hash" title={result.codeHash}>
+            {truncateHash(result.codeHash)}
+          </span>
+        </div>
+      ) : null}
       <div className="tabs" role="tablist" aria-label="Token views" onKeyDown={onTabKeyDown}>
         <button
           type="button"
@@ -365,7 +374,7 @@ function AssessedView({
           <div>
             <div className="token-grid">
               <div>
-                <section className="card" aria-label="Combined score" style={{ marginBottom: 20 }}>
+                <section className="card" aria-label="Combined score" ref={ringRef} style={{ marginBottom: 20 }}>
                   <div className="score-ring-wrap">
                     <ScoreRing score={result.score} />
                     <div style={{ flex: "1 1 240px" }}>

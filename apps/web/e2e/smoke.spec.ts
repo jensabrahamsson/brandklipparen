@@ -94,9 +94,8 @@ test("k020_valid_address_navigates_to_token_page", async ({ page }) => {
 test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  await expect(page.getByTestId("risk-badge").first()).toContainText("84");
-  await expect(page.getByTestId("risk-badge").first()).toContainText("High");
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
+  await expect(page.locator('section[aria-label="Combined score"]')).toContainText("84 High");
   await expect(page.getByText("Honeypot", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("91%", { exact: true })).toBeVisible();
   await expect(page.getByText("What bytecode alone cannot tell you")).toBeVisible();
@@ -113,7 +112,7 @@ test("k305_assessment_tab_shows_not_configured", async ({ page }) => {
   await expect(page.getByText("Assessment is not configured.")).toBeVisible();
   // The deterministic score stands untouched beside the panel.
   await page.getByRole("tab", { name: "Overview" }).click();
-  await expect(page.getByTestId("risk-badge").first()).toContainText("84");
+  await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
 });
 
 test("k507_hostile_signal_renders_as_text_only", async ({ page }) => {
@@ -142,7 +141,7 @@ test("k507_hostile_signal_renders_as_text_only", async ({ page }) => {
 test("design_review_skip_link_keeps_hash", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  await expect(page.getByTestId("risk-badge").first()).toContainText("84");
+  await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
   await page.locator("a.skip-link").focus();
   await page.keyboard.press("Enter");
   expect(new URL(page.url()).hash).toBe(`#/token/${ADDRESS}`);

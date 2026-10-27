@@ -57,7 +57,7 @@ export function App(): JSX.Element {
       </a>
       <header className="page topbar" style={{ paddingBottom: 0 }}>
         <a className="brand" href="#/">
-          <img src="/logo.svg" alt="brandklipparen logo" />
+          <img src="/logo.svg" alt="" />
           brandklipparen
         </a>
         <span className="spacer" />
