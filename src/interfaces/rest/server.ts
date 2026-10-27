@@ -12,8 +12,9 @@
 import Fastify from "fastify";
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
-import { serializeAssessment } from "../../application/analyzeToken.ts";
-import type { AppServices } from "../../application/analyzeToken.ts";
+import { DEFAULT_DETECTOR_SET, serializeAssessment } from "../../application/analyzeToken.ts";
+import type { AppServices, DetectorSet } from "../../application/analyzeToken.ts";
+import { exposeManifest, exposeRegistry, serializePluginList } from "../../plugins/exposure.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import {
@@ -80,6 +81,10 @@ export type RestServerOptions = {
   readonly indexVersion: IndexVersion;
   readonly templateVersion: TemplateVersion;
   readonly catalogue: CapabilityCatalogue;
+  // Registered detector set behind the plugin routes (S-046, P-09): the
+  // REST plugin list derives from this one registry value, the same value
+  // the shared service runs. Absent means the production default set.
+  readonly detectors?: DetectorSet | undefined;
   readonly analyzeTimeoutMs?: number | undefined;
   readonly maxQueryChars?: number | undefined;
   readonly maxBodyBytes?: number | undefined;
@@ -250,11 +255,15 @@ export function createRestServer(options: RestServerOptions): RestServer {
     readonly block: BlockNumberType | "latest";
   };
 
-  function gateRequest(
+  // Shared key gate for every versioned route (K-024): URL size,
+  // secret-like keys, API key and the rate and quota step. Analysis routes
+  // add typed address and block parsing on top; the plugin list routes stop
+  // here, so listing faces the identical key and quota limits.
+  function gateKeyOnly(
     request: FastifyRequest,
     rawInput: unknown,
     requestId: RequestId,
-  ): { readonly ok: true; readonly value: GatedInput } | { readonly ok: false; readonly error: HttpError } {
+  ): { readonly ok: true; readonly value: { readonly apiKey: string } } | { readonly ok: false; readonly error: HttpError } {
     if ((request.raw.url ?? "").length > maxQueryChars) {
       return { ok: false, error: requestTooLarge(requestId as string) };
     }
@@ -267,6 +276,28 @@ export function createRestServer(options: RestServerOptions): RestServer {
     }
     if (typeof headerKey !== "string" || !store.verify(headerKey)) {
       return { ok: false, error: invalidApiKey(requestId as string) };
+    }
+    // Rate and quota step before every expensive step (K-504, M-08): a key
+    // over its per-minute rate or its daily quota receives a retryable
+    // machine error with a retry time, and the analysis never starts.
+    if (limiter !== null) {
+      const keyId = store.keyId(headerKey) ?? "unknown-key";
+      const decision = limiter.check(keyId);
+      if (!decision.allowed) {
+        return { ok: false, error: rateLimited(decision.retryAfterSec, requestId as string) };
+      }
+    }
+    return { ok: true, value: { apiKey: headerKey } };
+  }
+
+  function gateRequest(
+    request: FastifyRequest,
+    rawInput: unknown,
+    requestId: RequestId,
+  ): { readonly ok: true; readonly value: GatedInput } | { readonly ok: false; readonly error: HttpError } {
+    const keyed = gateKeyOnly(request, rawInput, requestId);
+    if (!keyed.ok) {
+      return keyed;
     }
     const parsedInput = parseAnalyzeInput(rawInput);
     if (parsedInput === null) {
@@ -289,17 +320,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         error: validationError("Invalid block: expected latest or a non-negative integer.", requestId as string),
       };
     }
-    // Rate and quota step before every expensive step (K-504, M-08): a key
-    // over its per-minute rate or its daily quota receives a retryable
-    // machine error with a retry time, and the analysis never starts.
-    if (limiter !== null) {
-      const keyId = store.keyId(headerKey) ?? "unknown-key";
-      const decision = limiter.check(keyId);
-      if (!decision.allowed) {
-        return { ok: false, error: rateLimited(decision.retryAfterSec, requestId as string) };
-      }
-    }
-    return { ok: true, value: { apiKey: headerKey, address: address.value, block: block.value } };
+    return { ok: true, value: { apiKey: keyed.value.apiKey, address: address.value, block: block.value } };
   }
 
   // Current day as YYYY-MM-DD for the per-key daily cost meter (I-14).
@@ -438,6 +459,47 @@ export function createRestServer(options: RestServerOptions): RestServer {
       .type("application/json")
       .send(serializeTokenAssessment(requested.value));
   }
+
+  // Registry exposure (S-046, P-09): the plugin list derives from the one
+  // registry value, behind the same API-key gate as the analysis routes
+  // (K-024). No route is hand-written per plugin; detector invocation rides
+  // the existing analysis routes and surfaces under `pluginResults`.
+  const detectors = options.detectors ?? DEFAULT_DETECTOR_SET;
+
+  app.get("/v1/plugins", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    const requestId = issueRequestId();
+    const gated = gateKeyOnly(request, request.query, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(serializePluginList(exposeRegistry(detectors.registry)));
+  });
+
+  app.get<{ Params: { id: string } }>(
+    "/v1/plugins/:id",
+    async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+      const requestId = issueRequestId();
+      const gated = gateKeyOnly(request, request.query, requestId);
+      if (!gated.ok) {
+        return sendError(reply, gated.error);
+      }
+      const id = (request.params as { id?: unknown }).id;
+      const manifest =
+        typeof id === "string" ? detectors.registry.plugins.find((entry) => entry.id === id) : undefined;
+      if (manifest === undefined) {
+        return sendError(reply, notFound(requestId));
+      }
+      return reply
+        .code(200)
+        .header(REQUEST_ID_HEADER, requestId)
+        .type("application/json")
+        .send(canonicalSerialize(exposeManifest(manifest) as never));
+    },
+  );
 
   app.get("/v1/analyze", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleAnalyze(request, reply, request.query);

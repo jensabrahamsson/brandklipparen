@@ -25,9 +25,14 @@ const SECRET_LIKE = /key|token|secret|password|auth/i;
 // Closed tool list, versioned per tool (K-025, M-15). The MVP exposes
 // reading tools over the same service; the list grows solely through the
 // reviewed path in K-026.
-export const TOOL_LIST_VERSION = "1.0.0";
+export const TOOL_LIST_VERSION = "1.1.0";
 export const ASSESS_TOKEN_TOOL = "assess_token";
 export const ASSESS_TOKEN_VERSION = "1.0.0";
+// Registry exposure (S-046, K-031, P-10): one registry-derived reading
+// tool returning the same manifest list as GET /v1/plugins. Per-plugin
+// tools are the S-048 stretch item; the MVP keeps this small closed list.
+export const LIST_PLUGINS_TOOL = "list_plugins";
+export const LIST_PLUGINS_VERSION = "1.0.0";
 // On-request Muse contract assessment (S-038, K-305, K-309): a separate
 // reading tool over the shared assessment service. Scores and evidence
 // pass through untouched; the assessment lands in its own labelled field.
@@ -93,6 +98,15 @@ export const REQUEST_ASSESSMENT_INPUT_SCHEMA: JsonSchema = Object.freeze({
   }),
 });
 
+// Published input schema for list_plugins (S-046, K-026): no arguments.
+// Unknown or secret-like fields are turned away like any other tool input.
+export const LIST_PLUGINS_INPUT_SCHEMA: JsonSchema = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: Object.freeze([]),
+  properties: Object.freeze({}),
+});
+
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
   Object.freeze({
     name: ASSESS_TOKEN_TOOL,
@@ -107,6 +121,13 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       "Request the Muse contract assessment for a token: the same probabilities, score and evidence as assess_token plus a separate Muse-generated assessment field labelled with provider and model id. Runs solely on request. Read-only.",
     version: REQUEST_ASSESSMENT_VERSION,
     inputSchema: REQUEST_ASSESSMENT_INPUT_SCHEMA,
+  }),
+  Object.freeze({
+    name: LIST_PLUGINS_TOOL,
+    description:
+      "List the registered detector plugins: id, version, display name, description, declared inputs, capabilities and weight. Same list as GET /v1/plugins. Read-only.",
+    version: LIST_PLUGINS_VERSION,
+    inputSchema: LIST_PLUGINS_INPUT_SCHEMA,
   }),
 ]);
 
@@ -198,6 +219,31 @@ export function parseAssessTokenInput(args: unknown): AssessInputError | { reado
 // assess_token, so the assessment request faces identical limits (K-026).
 export function parseRequestAssessmentInput(args: unknown): AssessInputError | { readonly input: AssessTokenInput } {
   return parseTokenAddressInput(args);
+}
+
+// Strict boundary check for list_plugins arguments (S-046, K-026): the
+// value must be a plain object with no fields. Unknown fields are turned
+// away; secret-like fields name the key rule like any other tool.
+export function parseListPluginsInput(args: unknown): AssessInputError | { readonly empty: true } {
+  if (args === undefined) {
+    return { empty: true };
+  }
+  if (typeof args !== "object" || args === null || Array.isArray(args)) {
+    return { kind: "validation-error", message: "Invalid arguments: list_plugins takes no arguments." };
+  }
+  for (const name of Object.keys(args)) {
+    if (SECRET_LIKE.test(name)) {
+      return {
+        kind: "key-in-url-or-body",
+        message: "API keys travel outside the tool arguments, never inside them.",
+      };
+    }
+    return {
+      kind: "validation-error",
+      message: `Invalid argument: unknown field ${JSON.stringify(name)}.`,
+    };
+  }
+  return { empty: true };
 }
 
 // Block context shared with the REST adapter: latest, a string of digits or

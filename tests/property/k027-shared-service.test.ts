@@ -209,6 +209,19 @@ describe("shared application service across interfaces", () => {
           for (const field of REPRODUCTION_FIELDS) {
             expect(parsed, `missing reproduction field ${field}`).toHaveProperty(field);
           }
+          // S-046: detector plugin results ride the shared output beside
+          // the calibrated values, identical in every interface.
+          expect(parsed).toHaveProperty("pluginResults");
+          const rawResults: unknown = parsed["pluginResults"];
+          expect(Array.isArray(rawResults)).toBe(true);
+          const pluginResults = rawResults as readonly { pluginId: string }[];
+          expect(pluginResults.length).toBeGreaterThan(0);
+          const mcpParsed = JSON.parse(mcp) as Record<string, unknown>;
+          const uiParsed = JSON.parse(ui) as Record<string, unknown>;
+          expect(mcpParsed["pluginResults"]).toEqual(pluginResults);
+          expect(uiParsed["pluginResults"]).toEqual(pluginResults);
+          const ids = pluginResults.map((entry) => entry.pluginId);
+          expect([...ids].sort()).toEqual(ids);
           const again = await restAssessToken(services, { address: rawAddress, block: blockNumber });
           expect(again).toBe(rest);
         },

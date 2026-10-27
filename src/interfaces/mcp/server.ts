@@ -16,8 +16,9 @@
 // constructors, the same as the REST adapter (K-506).
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
-import { serializeAssessment } from "../../application/analyzeToken.ts";
-import type { AppServices } from "../../application/analyzeToken.ts";
+import { DEFAULT_DETECTOR_SET, serializeAssessment } from "../../application/analyzeToken.ts";
+import type { AppServices, DetectorSet } from "../../application/analyzeToken.ts";
+import { exposeRegistry, serializePluginList } from "../../plugins/exposure.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import { err, ok } from "../../domain/result.ts";
@@ -45,11 +46,13 @@ import type { RateLimitConfig, RateLimiter } from "../rest/rateLimit.ts";
 import type { McpToolError } from "./errors.ts";
 import {
   ASSESS_TOKEN_TOOL,
+  LIST_PLUGINS_TOOL,
   REQUEST_ASSESSMENT_TOOL,
   TOOL_DEFINITIONS,
   TOOL_LIST_VERSION,
   findTool,
   parseAssessTokenInput,
+  parseListPluginsInput,
   parseRequestAssessmentInput,
 } from "./tools.ts";
 import type { AssessTokenInput, ToolDefinition } from "./tools.ts";
@@ -69,6 +72,10 @@ export type McpServerOptions = {
   readonly indexVersion: IndexVersion;
   readonly templateVersion: TemplateVersion;
   readonly catalogue: CapabilityCatalogue;
+  // Registered detector set behind list_plugins (S-046, P-10): the tool
+  // derives from this one registry value, the same value the shared service
+  // runs and GET /v1/plugins lists. Absent means the production default set.
+  readonly detectors?: DetectorSet | undefined;
   readonly analyzeTimeoutMs?: number | undefined;
   readonly maxMessageBytes?: number | undefined;
   // Absent service means the assessment feature is disabled through
@@ -311,6 +318,60 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     });
   }
 
+  // Registry exposure (S-046, K-031, P-10): the registry-derived reading
+  // tool returns the same manifest list as GET /v1/plugins in a text
+  // content block marked as data for the user (M-15). Findings keep riding
+  // the existing assess_token output under pluginResults.
+  async function runListPlugins(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const detectors = options.detectors ?? DEFAULT_DETECTOR_SET;
+    let apiKeyId = "anonymous";
+    if (keyGate) {
+      const candidate = callOptions?.apiKey;
+      if (candidate === undefined) {
+        return err(missingApiKey(requestId as string));
+      }
+      if (!store.verify(candidate)) {
+        return err(invalidApiKey(requestId as string));
+      }
+      apiKeyId = store.keyId(candidate) ?? "unknown-key";
+    }
+    const argLength = safeJsonLength(args);
+    if (argLength === null) {
+      return err(validationError("Invalid arguments: list_plugins takes no arguments.", requestId as string));
+    }
+    if (argLength > maxMessageBytes) {
+      return err(requestTooLarge(requestId as string));
+    }
+    const parsed = parseListPluginsInput(args);
+    if ("kind" in parsed) {
+      switch (parsed.kind) {
+        case "request-too-large":
+          return err(requestTooLarge(requestId as string));
+        case "key-in-url-or-body":
+          return err(keyInToolArgs(requestId as string));
+        case "validation-error":
+        default:
+          return err(validationError(parsed.message ?? "Invalid arguments.", requestId as string));
+      }
+    }
+    // Rate and quota step shared with the analysis tools (K-504, M-08):
+    // an over-limit key receives the retryable machine error here too.
+    if (limiter !== null) {
+      const decision = limiter.check(apiKeyId);
+      if (!decision.allowed) {
+        return err(rateLimited(decision.retryAfterSec, requestId as string));
+      }
+    }
+    return ok({
+      content: Object.freeze([textBlock(serializePluginList(exposeRegistry(detectors.registry)))]),
+      isError: false,
+    });
+  }
+
   async function callTool(
     name: string,
     args: unknown,
@@ -332,6 +393,9 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     }
     if (name === REQUEST_ASSESSMENT_TOOL) {
       return runRequestAssessment(args, requestId, callOptions);
+    }
+    if (name === LIST_PLUGINS_TOOL) {
+      return runListPlugins(args, requestId, callOptions);
     }
     return err(unknownTool(name, requestId as string));
   }
