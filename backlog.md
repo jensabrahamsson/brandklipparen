@@ -35,7 +35,7 @@ the MVP path is green. Low-priority Stretch is cut first (see Buffer).
 | E-05 | Explanations and Muse contract assessment (high priority) | K-301–K-309, K-502, K-513 |
 | E-06 | Interfaces: shared service, REST, MCP, web UI | K-020–K-027, K-101, K-103, K-104, K-107 |
 | E-07 | Security, demo and submission | K-401–K-407, K-501–K-513 |
-| E-08 | Plugin architecture (design in `docs/adr-plugin-architecture.md`, P-xx) | K-028–K-031 (proposed), K-514, K-515 (proposed), K-102, K-210, K-305, K-309 |
+| E-08 | Plugin architecture (design in `docs/adr-plugin-architecture.md`, P-xx) | K-028–K-031 (proposed), K-514, K-515 (proposed), K-102, K-210, K-305, K-309, K-032–K-033, K-516–K-517 (proposed, audit and PLUGIN.md) |
 
 ## Stories
 
@@ -156,10 +156,33 @@ deletes its legacy path in the same story (P-12).
 | S-050 | Worker isolation for untrusted detector plugins | K-515 (proposed), K-501, K-101 | Stretch | `k501_pathological_input_isolates_to_its_analysis` extended to a runaway detector plugin: parallel analyses continue and the plugin records a typed timeout outcome. Precondition for registering any unreviewed detector. |
 | S-051 | Example plugin under `examples/plugins/` and "Writing a plugin" guide | K-028 (proposed), K-108 | Stretch | `example_plugin_registers_and_reports_weight_zero` runs the example detector on a frozen fixture through a local registry and requires a weight-0 finding in `pluginResults`, in `GET /v1/plugins`, and in the Plugins panel with no interface code changed. |
 
+Audit and PLUGIN.md extension (ADR section 12, P-13–P-17; threat
+model H-17–H-20, M-23–M-26). S-042 has landed, so these stories are
+numbered after S-051 and renumber nothing. Proposed K-IDs K-032,
+K-033, K-516, and K-517 enter `docs/requirements.md` in their first
+implementation story below, in the same change. The audit is a CLI
+and CI step, not an analysis-path feature: deterministic checks gate
+acceptance together with a recorded human review, and the AI review
+is advisory only and never affects scores or evidence (P-13, P-14).
+
+| Story | Title | K-IDs | Priority | Test written first |
+|---|---|---|---|---|
+| S-052 | Required `PLUGIN.md` per plugin: contract, manifest `docs` reference, deterministic validator, docs backfilled for registered and example plugins | K-032 (proposed), K-517 (proposed), K-108 | MVP | `k517_plugin_md_missing_or_mismatched_fails_deterministic_check` requires a named failure per missing file, missing section, undeclared documented input, and version mismatch, red against a plugin without `PLUGIN.md`, then green; `plugin_md_validator_accepts_compliant_plugin` passes a compliant fixture. |
+| S-053 | Deterministic plugin audit: `plugin audit` CLI (deterministic mode), static checks, blocking CI job | K-516 (proposed), K-514, K-515 (proposed), K-501 | MVP | `k516_deterministic_audit_fails_forbidden_import_and_capability_mismatch` fails a fixture per forbidden import, capability mismatch, and determinism-lint hit, then passes a clean fixture; `k516_deterministic_failure_runs_zero_model_calls` (integration) requires zero fake-adapter calls on a deterministic failure. |
+| S-054 | Advisory AI plugin audit: `PluginAuditModelPort`, fake adapter, hosted open-weights implementation, structured findings | K-516 (proposed), K-305, K-309, K-502, K-513 | MVP | `runPluginAuditModelPortContract` red against the fake, then green against the fake and the hosted adapter over a recorded transport (no network); `k516_audit_without_key_reports_not_configured_and_sends_nothing`, `k516_injection_in_source_or_docs_stays_quoted_data`, and `k517_schema_invalid_audit_output_discarded` cover the unconfigured, injection, and invalid-output branches; `k516_ai_findings_leave_scores_signals_and_evidence_unchanged` (property). |
+| S-055 | Docs-versus-code checks: deterministic claim checks in the audit plus advisory `docs-drift` findings | K-517 (proposed), K-516 (proposed) | MVP | `k517_documented_inputs_and_version_checked_against_manifest` fails per drifted input, version, and backticked output field, then passes clean; `k517_docs_drift_reported_as_advisory_finding` requires a `docs-drift` finding from the fake adapter for a documented detection with no matching logic, with the deterministic result unchanged. |
+| S-056 | Plugin docs exposure: `GET /v1/plugins/:id/docs` and the MCP docs resource from the one registry | K-033 (proposed), K-023, K-025, K-027, K-508 | MVP | `k033_plugin_docs_match_registry_in_rest_and_mcp` requires identical docs content and section list in REST and MCP for the same plugin; `k024_missing_or_invalid_key_rejected_before_analysis` extended to the docs route; `k025_unknown_tool_returns_machine_readable_error` pattern covers an unknown plugin id with the uniform not-found error. |
+| S-057 | Web UI plugin Docs view: sanitized markdown rendering in the Plugins panel | K-033 (proposed), K-507, K-103, K-108 | MVP | `k517_plugin_docs_render_as_sanitized_markdown` (e2e) feeds a script-bearing `PLUGIN.md` and requires inert text, no raw-HTML execution, and the CSP header present; `k515_plugin_strings_render_as_inert_text` stays green. |
+| S-058 | Read view of the last CI audit report per plugin in REST and MCP (no audit trigger) | K-516 (proposed), K-031 (proposed), K-026 | Stretch | `k516_last_audit_report_shown_as_advisory_with_provider_and_model` requires the report's three separate states (`deterministic`, `ai: advisory`, `human-review`), provider, and model id in REST and MCP; `k516_clean_ai_report_alone_registers_no_plugin` requires that the read view alone changes no registration, score, or evidence. |
+
 Cut order inside E-08, if time runs short: S-048, S-049, S-050, S-051
 are Stretch and cut first, in that order. S-042–S-047 are the MVP of
 this epic and ship as one sequence or not at all, so the registry never
-stands beside a permanent legacy path (P-12).
+stands beside a permanent legacy path (P-12). Inside the audit and
+docs extension, S-058 is Stretch and cut first; S-052–S-057 are its
+MVP and ship as one sequence, so no plugin is ever exposed without
+validated docs and no AI report is ever shown without the
+deterministic gate in front of it.
 
 ## Day-by-day plan, 27/10–4/11
 

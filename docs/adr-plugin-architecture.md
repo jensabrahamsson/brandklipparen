@@ -55,6 +55,13 @@ holds by construction and by CI enforcement, not by convention.
 | Score influence | Plugin findings are reported with weight 0. A finding enters the score only after calibration names it in the versioned model artifact (P-05). |
 | Registry exposure | One registry drives the REST plugin list and analysis output, the MCP tool surface, and the generic web UI panel (P-08–P-10). |
 | Isolation | Detector plugins run in-process as trusted, pure, size-bounded functions in v1. Worker isolation is a precondition for any untrusted detector code (P-06). Assessment plugins keep the existing port limits, deadline, and cost caps. |
+| Plugin audit | Deterministic static checks first, then an optional advisory AI review through the existing hosted open-weights assessment path. The AI result never approves a plugin and never affects scores or evidence (P-13, P-14). |
+| Plugin documentation | Every plugin ships a required `PLUGIN.md` with fixed sections, validated deterministically and exposed read-only through REST, MCP, and the web UI with sanitized rendering (P-15, P-16). The audit checks documented claims against the code (P-17). |
+
+Note on status: story S-042 (plugin API, manifest validation, and the
+empty static registry in `src/plugins/`) has landed. This update extends
+the design only; it renumbers nothing in P-01–P-12, K-028–K-031, or
+K-514–K-515, and adds its stories after S-051 (section 12.5).
 
 ## 3. Typed plugin contract and manifest
 
@@ -79,6 +86,7 @@ are normative:
 | `outputSchema` | `JsonSchema` | JSON Schema descriptor for the plugin output, per section 3.3. Validated at startup and used for boundary validation and generic rendering. |
 | `capabilities` | `PluginCapabilities` | Closed capability flags per section 3.4. Every capability the plugin needs is declared; undeclared capabilities are unrepresentable in the host call. |
 | `limits` | `PluginLimits` | Per-plugin bounds: `maxFindings`, `maxEvidencePerFinding`, `maxOutputBytes`, and for assessment plugins `deadlineMs`, `maxBytesIn`, `maxBytesOut`, `maxConcurrency` mirroring A-17. Values arrive through typed configuration (I-08), never from the plugin at run time. |
+| `docs` | `PluginDocsRef` | Reference to the required `PLUGIN.md` for this plugin (P-15): the fixed relative file name `PLUGIN.md` beside the manifest, plus the document version, which equals the manifest `version`. No absolute path and no path outside the plugin directory is representable. Presence and content are validated deterministically (section 12.2); the registry itself stays free of filesystem access. |
 
 **P-02 Versioned plugin API.** The core exports one constant,
 `PLUGIN_API_VERSION`, starting at `1.0.0`. Compatibility follows semver
@@ -512,7 +520,7 @@ S-051; this ADR fixes its shape):
 
 ```
 examples/plugins/fee-capability/
-  README.md        # what it detects, inputs used, example findings
+  PLUGIN.md        # required plugin docs (P-15); replaces a free-form README for plugins
   manifest.ts      # the frozen PluginManifest value
   detect.ts        # the pure detect function
   detect.test.ts   # unit and golden tests on frozen bytecode fixtures
@@ -588,10 +596,17 @@ in the same change as their implementation stories begin:
 | K-031 | Registry exposure: REST plugin list and analysis output, MCP listing and findings, generic web UI panel | MVP (for E-08) |
 | K-514 | Plugin supply chain: static registration only, reviewed source, no dynamic or remote code loading | MVP (for E-08) |
 | K-515 | Plugin output containment: schema validation, size and count bounds, text-only generic rendering | MVP (for E-08) |
+| K-032 | Required `PLUGIN.md` per plugin: fixed sections, deterministic presence and content validation (P-15) | MVP (for E-08 audit/docs) |
+| K-033 | Plugin docs exposure: REST docs route, MCP docs resource, sanitized web UI docs view from one registry (P-16) | MVP (for E-08 audit/docs) |
+| K-516 | Plugin audit: deterministic static gate plus optional advisory AI review; acceptance requires deterministic pass and human review (P-13, P-14) | MVP (for E-08 audit/docs) |
+| K-517 | Plugin documentation integrity: documented claims checked against manifest and code, deterministically and by advisory review (P-17) | MVP (for E-08 audit/docs) |
 
 Threat-model additions are drafted in `docs/threat-model.md` in this
 change (H-15, H-16, M-21, M-22) against K-514 and K-515, and take effect
-with the same review as this ADR. Existing IDs are untouched: A-06 gains
+with the same review as this ADR. The audit and docs update adds
+H-17–H-20 with M-23–M-26 against proposed K-516 and K-517 (and K-507
+for docs rendering), drafted in section 5.12 of the threat model in
+the same design update. Existing IDs are untouched: A-06 gains
 two rules, A-34 is realised by the assessment plugin kind, and no I-xx
 value changes; new per-plugin limits join the typed configuration schema
 (I-08) with their implementation stories.
@@ -635,3 +650,319 @@ the named points; none blocks S-042:
    in-process. Moving all detectors behind the worker boundary (S-050)
    is open pending a concrete untrusted-detector plan; it is mandatory
    before any such plugin registers, whichever way the default goes.
+5. Plugin audit gate placement. The default in P-13 is: deterministic
+   audit failures block merge in CI, the AI review is a non-blocking
+   advisory report, and a human reviewer records acceptance. Whether a
+   recorded human acceptance becomes a required PR check (rather than
+   review practice) is Jens's call before S-054 starts.
+6. Audit provider scope. The default in P-14 sends plugin source solely
+   to Muse Spark Open on hosted through the existing assessment
+   provider path. Whether the Meta Model API adapter may also run audit
+   reviews, and whether audit may run against plugins whose authors have
+   not consented to source disclosure, is open; the default is hosted
+   only, opt-in per run, with the source files listed before any send.
+7. Docs endpoint scope. The default in P-16 exposes `PLUGIN.md` content
+   read-only to the same API-key holders as `GET /v1/plugins`. Whether
+   plugin docs become public on the demo (no key) is open; the default
+   keeps the key gate.
+
+## 12. Plugin audit and required PLUGIN.md
+
+This section adds P-13–P-17. It designs no runtime behaviour change for
+analysis: the audit runs at plugin authoring, review, and CI time, and
+the docs surfaces are read-only registry exposure. Neither feature
+touches `score`, signals, or evidence (P-05, K-307, A-33).
+
+### 12.1 Plugin audit: deterministic first, AI advisory second
+
+**P-13 The plugin audit is a deterministic gate with an optional
+advisory AI step, in that order.** A `plugin audit` step runs against
+one plugin directory (CLI and CI job; section 12.4). It runs in two
+phases, and the second phase never runs when the first fails:
+
+1. Deterministic static checks over the plugin source and manifest.
+   Each check is a plain, repeatable check with a named failure, in the
+   same style as the CI checks in section 5.1. The check set is:
+   - Forbidden imports: no network, filesystem, process, or evaluator
+     access (`node:*`, `fetch`, `XMLHttpRequest`, `WebSocket`,
+     `eval`, `Function`, dynamic `import()` of a computed specifier)
+     in detector plugin modules, extending the boundary and ESLint
+     rules in section 5.1 and M-21/M-22.
+   - Capability mismatch: imports, declared inputs, and host-visible
+     behaviour are compared against the manifest `capabilities`,
+     `inputs`, and `limits` (P-01, section 3.4). A detector that
+     declares no network capability and imports a network module fails,
+     as does a manifest that declares a capability the code never uses
+     where that mismatch hides a wider surface.
+   - Determinism lint: no clock, randomness, or network identifiers in
+     detector modules (the `a32_domain_has_no_clock_random_or_network`
+     style check from section 5.1, applied to the plugin directory),
+     and no ambient state reads.
+   - Output-contract checks: the `outputSchema` stays inside the
+     supported keyword subset (section 3.3), every finding shape
+     carries evidence (A-13), and manifest limits are present.
+   - `PLUGIN.md` checks from P-15 and the deterministic part of P-17.
+   A deterministic failure is a typed audit outcome naming the check
+   and the file. It blocks registration in CI and blocks merge for a
+   plugin change; no AI result and no human note overrides it in the
+   tool. A human may fix the code or, for a false positive in a check
+   itself, change the check in a reviewed change — the audit records
+   which of the two happened through the normal git history.
+2. Optional AI review. Only after the deterministic phase passes, and
+   only when the operator opts in for that run, the audit sends the
+   plugin source, its manifest, and its `PLUGIN.md` to Muse Spark
+   Open (`meta-models/muse-spark-open-1026`) on hosted for a
+   vulnerability and semantic-drift review (P-14, P-17). Without a
+   configured hosted key the AI phase reports the typed outcome
+   `not configured` — the same posture as the assessment path, where
+   an unconfigured provider answers `assessment-not-configured` and
+   makes zero provider calls — and the deterministic result stands
+   alone. The AI phase is never required for a deterministic pass.
+
+Acceptance of a plugin is therefore: deterministic audit pass **plus**
+a recorded human review. The audit tool states both halves in its
+report (`deterministic: pass|fail`, `ai: advisory|not-run|not
+configured`, `human-review: recorded|missing`) so no single line can
+be read as an approval on its own.
+
+**P-14 AI audit findings are structured, schema-validated, and
+advisory only.** The AI step reuses the existing assessment provider
+machinery without reusing its contract:
+
+- Transport and selection: the audit calls the hosted open-weights
+  adapter through the same validated configuration, server-side key
+  handling, deadline, size limits, concurrency bound, and cost caps
+  as `AssessmentModelPort` (A-17, A-34, I-13, I-14, K-309). It does
+  **not** reuse the K-302 closed evidence list or the K-305 assessment
+  schema: plugin source is not contract evidence. The audit therefore
+  gets its own small port, working title `PluginAuditModelPort`, with
+  one method that takes the frozen audit input (plugin id, version,
+  file list with per-file quoted content, prompt version) and returns
+  a `Result<PluginAuditReport, PluginAuditModelError>` with the A-15
+  error branches mirrored from `AssessmentModelError` (`timeout`,
+  `rate-limited`, `invalid-output`, `output-too-large`,
+  `provider-mismatch`, `unavailable`, plus `not-configured`). The
+  hosted adapter implements it beside its `AssessmentModelPort`
+  implementation, sharing transport code; the composition root wires
+  it only when audit AI is configured. This keeps the assessment
+  contract suite (`runAssessmentModelPortContract`) untouched and
+  gives the audit its own contract suite,
+  `runPluginAuditModelPortContract`, run against a fake adapter and
+  the hosted adapter over a recorded transport, with zero network in
+  tests — the same contract style as the existing assessment tests.
+- Findings shape: each AI finding is a structured value, never free
+  text alone: `severity` (closed enum `info|low|medium|high`),
+  `location` (plugin-relative file plus line or section where the
+  model can name one), `category` (closed enum covering at least
+  forbidden-capability, injection-surface, determinism,
+  evidence-integrity, docs-drift, and other), `rationale` (short
+  English text, rendered as text only), and `confidence` where the
+  schema requires it. The report also carries plugin id, plugin
+  version, prompt version, provider, and model id, mirroring the
+  provider labelling in K-305/K-513.
+- Schema choice (explicit): TypeScript types are normative, with a
+  JSON Schema descriptor (the draft-07 subset in section 3.3) carried
+  beside them and a plain-check smart constructor,
+  `parsePluginAuditReport`, in the style of A-10/A-11 and of
+  `validateAssessmentOutput` in the assessment adapters. **No zod.**
+  Zod is not a dependency in this repo; runtime validation today is
+  plain checks plus smart constructors (A-16, section 3.3), JSON
+  Schema descriptors already exist for REST and MCP, and `ajv` is a
+  test-only devDependency used to validate responses against the
+  published schemas. Adding zod solely for audit findings would add a
+  runtime dependency under K-506/I-04 supply-chain review and a second
+  source of truth beside the TypeScript types, for a closed findings
+  shape that the existing style already covers. If a future audit
+  shape outgrows plain checks, that is a separate dependency decision
+  against repo norms, not part of this design.
+- Validation and failure: every model response passes
+  `parsePluginAuditReport` before any human sees it as findings.
+  Schema-invalid, oversize, or identity-mismatched output gives the
+  typed outcome `invalid-output` (or the matching A-15 branch), the
+  raw model text is discarded rather than rendered, and the audit
+  report states `ai: invalid-output` beside the standing
+  deterministic result. No partial findings are salvaged from an
+  invalid response.
+- Advisory only, by construction: the audit report type has no field
+  that the registry, scoring, or analysis path reads. AI findings
+  never auto-approve a plugin, never register or unregister one,
+  never enter `pluginResults`, and never affect scores, signals, or
+  evidence (P-05, K-307). The report is an input to the human review
+  in P-13, presented with its provider and model id and an explicit
+  `advisory` label wherever it is shown (CLI output, CI artifact, and
+  any later REST/MCP read view).
+- Untrusted input handling: plugin source and `PLUGIN.md` content are
+  untrusted input to the model, exactly as contract strings are on
+  the assessment path (K-308, M-04). The audit prompt keeps the system
+  instruction in its own field, passes each file as quoted data
+  through `UntrustedText.quote` with a length cap per file and a
+  total input cap, is tool-free, and instructs the model that file
+  content is data to review, never instructions to follow. File
+  content that asks the model to approve the plugin, hide a finding,
+  or change the output shape is therefore data inside a quotation,
+  and any response that follows it fails schema validation or is
+  read by the human as a finding about the plugin, not as an
+  instruction the tool obeyed.
+- Disclosure: sending source to a provider is a deliberate, visible
+  act. The audit lists the exact files it will send before sending
+  (dry-run output in the CLI, a log line in CI), sends only the plugin
+  directory's source, manifest, and `PLUGIN.md` (no repo-wide files,
+  no configuration values, no secrets — the provider key travels only
+  as the server-side header, as in M-20), and logs plugin id, file
+  hashes, prompt version, provider, and model id, never file content
+  (I-10). First-party plugin source is already in this repo; a future
+  third-party-style plugin is sent only when its author opts in for
+  that audit run.
+
+### 12.2 Required PLUGIN.md per plugin
+
+**P-15 Every plugin ships a required `PLUGIN.md` as part of its
+contract.** Each plugin directory (first-party under `src/plugins/`,
+examples under `examples/plugins/`) contains one `PLUGIN.md` in
+English beside its manifest. The manifest references it through the
+`docs` field in section 3.1. The file has these required sections,
+under these headings, in this order:
+
+1. `## What it detects` — the finding shapes the plugin emits, in
+   plain English.
+2. `## Why it matters` — the risk or question each finding answers.
+3. `## Inputs` — the declared inputs it consumes (detectors: names
+   from the closed catalogue in section 3.2; assessment plugins: the
+   closed evidence list per K-302).
+4. `## Output and evidence` — the output shape against its
+   `outputSchema` and how each finding carries evidence (A-13).
+5. `## Limitations` — what the plugin cannot see or decide.
+6. `## False positives` — known false-positive shapes and how a
+   reader recognises them.
+7. `## Version and changelog` — the current version, equal to the
+   manifest `version`, and one line per released change.
+
+Deterministic validation, in CI and in the audit (P-13): the file
+exists, is non-empty within a stated size cap, carries every required
+heading, the `## Inputs` section names only inputs the manifest
+declares (and names all of them), the version line equals the
+manifest `version`, and the text is English-facing markdown with no
+embedded raw HTML (P-16). A missing file or a failed check is a
+deterministic audit failure and, for a registered plugin, a startup-
+adjacent build failure in CI — the registry never serves a plugin
+whose docs fail validation, because registration in CI runs the same
+check before merge. The check is a named CI/audit check, not a
+runtime filesystem read in the registry (section 3.1).
+
+**P-17 The audit checks that PLUGIN.md claims match the code.** Two
+layers, matching the two audit phases in P-13:
+
+- Deterministic, where a claim is machine-checkable: declared inputs
+  in `## Inputs` against manifest `inputs`; version string against
+  manifest `version`; finding ids and output fields named in
+  `## Output and evidence` against `outputSchema` property names
+  where the doc uses the stated backtick form for field names;
+  capability claims (for example "makes no network calls") against
+  the forbidden-import check. A mismatch is a deterministic audit
+  failure naming the section and the manifest field it disagrees
+  with.
+- Advisory, for semantic drift: the AI review in P-14 also receives
+  the `PLUGIN.md` and reports, as `docs-drift` findings, claims the
+  code does not support (a documented detection with no matching
+  logic, a limitation the code contradicts, a false-positive note
+  for a shape the code cannot emit). These findings are advisory
+  like every AI finding: a human decides whether the doc or the code
+  changes, and the deterministic layer keeps passing or failing on
+  its own checks meanwhile. `PLUGIN.md` content reaches the model
+  under the same untrusted-input handling as source (P-14): a doc
+  that instructs the model to certify the plugin is quoted data, and
+  the claim itself is a candidate `docs-drift` or injection finding
+  for the human reviewer.
+
+### 12.3 Exposing PLUGIN.md: REST, MCP, and web UI
+
+**P-16 Plugin docs are exposed read-only through the same registry,
+rendered safely.** The validated `PLUGIN.md` content joins the
+registry record per plugin (content or a content hash plus the
+validated section list, decided in S-056 against the size cap), and
+the three surfaces derive from that one record (P-08–P-10):
+
+- REST: `GET /v1/plugins/:id/docs` returns the plugin id, version,
+  and the document (raw markdown plus the parsed section list) in the
+  published `/v1` schema, behind the same API-key gate as
+  `GET /v1/plugins` (K-024), with the uniform not-found error (A-18)
+  for an unknown id. The route is read-only; there is no write or
+  upload path for docs at any stage.
+- MCP: the registry-derived surface gains a resource for plugin docs
+  (working shape: resource URI `plugin://<pluginId>/docs`, with
+  `list_plugins` naming the URI per plugin). Content is returned as a
+  text block marked as untrusted data for the user (M-15), bounded by
+  the same size cap as P-15. A tool form is added only if a caller
+  needs it, through the K-026 review (open decision 3 applies).
+- Web UI: the Plugins panel gains a Docs view per plugin that renders
+  the markdown through a sanitizing renderer: markdown structure
+  (headings, lists, code, emphasis, links with `rel="noopener"`) is
+  rendered, raw HTML in the source is escaped and shown as inert
+  text, scripts, styles, event handlers, and embedded frames are
+  unrepresentable in the output, and every plugin string still
+  renders as escaped text under the strict CSP (K-507, M-13). No new
+  raw-HTML sink (`dangerouslySetInnerHTML` or equivalent) is
+  introduced for plugin docs; if the renderer needs one internally,
+  its input is the sanitizer's output and that change passes the
+  K-507 review and the `k507`-style e2e test in S-057 before release.
+
+### 12.4 CLI shape (outline only)
+
+No code in this design turn. The intended shape, for S-052/S-053:
+
+```text
+plugin audit <plugin-dir> [--deterministic-only] [--with-ai]
+                          [--format text|json] [--list-files]
+plugin docs check <plugin-dir> [--format text|json]
+```
+
+- `plugin audit` runs the deterministic phase, prints one line per
+  check (`pass`/`fail` with the file and field on failure), then the
+  AI phase state (`advisory` with finding count, `not-run`,
+  `not configured`, or `invalid-output`), then the human-review
+  state. Exit code is non-zero exactly when the deterministic phase
+  fails; the AI phase never changes the exit code. `--list-files`
+  prints the exact files the AI phase would send and sends nothing.
+- `plugin docs check` runs only the P-15/P-17 deterministic docs
+  checks, for fast CI use on doc-only changes.
+- CI runs `plugin audit` in deterministic mode as a blocking job for
+  plugin changes and, where a hosted key is configured for the job,
+  the AI phase as a non-blocking job that uploads the structured
+  report as an artifact. An optional REST/MCP read view of the last
+  CI audit report per plugin is a stretch item (S-058); triggering an
+  audit over REST/MCP is out of scope, so the runtime gains no new
+  expensive or source-disclosing path.
+
+### 12.5 Stories and requirements added by this update
+
+Stories S-052–S-058 are added under epic E-08 in `backlog.md`, after
+S-051, test-first like every E-08 story. Proposed new K-IDs, entered
+in `docs/requirements.md` by their first implementation story in the
+same change (section 10 rule, threat-model section 1 point 4):
+
+| Proposed ID | Title | Priority |
+|---|---|---|
+| K-032 | Required `PLUGIN.md` per plugin: fixed sections, deterministic presence and content validation | MVP (for E-08 audit/docs) |
+| K-033 | Plugin docs exposure: REST docs route, MCP docs resource, sanitized web UI docs view from one registry | MVP (for E-08 audit/docs) |
+| K-516 | Plugin audit: deterministic static gate plus optional advisory AI review; acceptance requires deterministic pass and human review | MVP (for E-08 audit/docs) |
+| K-517 | Plugin documentation integrity: documented claims checked against manifest and code, deterministically and by advisory review | MVP (for E-08 audit/docs) |
+
+Alternatives considered for this update and set aside:
+
+- Zod (or another runtime schema library) for AI findings. Set aside
+  in P-14: plain checks plus JSON Schema descriptors are the repo
+  norm, and a new runtime dependency needs its own justification.
+- Letting a clean AI review approve or register a plugin. Rejected:
+  approval is deterministic checks plus human review (P-13); an
+  advisory model result as a gate would make a non-deterministic,
+  injection-exposed step load-bearing (H-18, M-23).
+- Sending the whole repo, or tests and fixtures, to the model.
+  Rejected in P-14: only the plugin's source, manifest, and
+  `PLUGIN.md` are sent, listed in advance, under size caps.
+- Rendering `PLUGIN.md` as raw HTML for fidelity. Rejected in P-16:
+  docs are untrusted content in the visitor's browser (H-20, M-26);
+  sanitized markdown with raw HTML as inert text keeps the K-507
+  posture.
+- A per-plugin docs route or UI component. Rejected for the same
+  reason as in section 10: one registry-derived surface, reviewed
+  once (P-16).

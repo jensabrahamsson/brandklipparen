@@ -377,6 +377,17 @@ surface in every mode per section 6.
 | D | A heavy or hanging build blocks releases during the hackathon. | Ephemeral runners, a time limit per job and a cancelling `concurrency` group per branch as per I-01; timing tests run against frozen fixtures with networking switched off (H-06, M-12). |
 | E | A job writes outside its assigned resource. | Every workflow and every job declares an explicit `permissions` block as per I-03 (H-06, M-12). |
 
+### 4.14 Plugin audit and plugin docs (F-17, F-18; design per ADR section 12)
+
+| Cat. | Threat | Handling |
+|---|---|---|
+| S | A forged audit report or a foreign `PLUGIN.md` impersonates the reviewed plugin's record. | Reports and docs are keyed to plugin id, version, file hashes, prompt version, provider, and model id; docs join the registry only after deterministic validation (H-20, M-26). |
+| T | Plugin source or `PLUGIN.md` text instructs the audit model to approve, suppress, or reformat findings. | The deterministic gate runs first; source and docs reach the model solely as quoted untrusted data in a tool-free call (H-17, M-23, M-24). |
+| R | A clean AI report is later cited as the plugin's approval. | The report states `deterministic`, `ai: advisory`, and `human-review` as separate fields; acceptance is the deterministic pass plus the recorded human review (H-18, M-23). |
+| I | The AI phase sends unpublished plugin source, neighbouring repo files, or secrets to the provider. | Opt-in per run, the exact file list shown before sending, plugin files only under size caps, hashes logged with content kept outside the log (H-19, M-25). |
+| D | A large plugin or an oversize model response binds the audit or CI. | Per-file and total input caps, output size limits, deadline, and the typed `output-too-large` outcome with the deterministic result standing (H-20, M-26). |
+| E | A schema-invalid model response, or raw HTML in `PLUGIN.md`, reaches a reviewer or a visitor's browser as trusted content. | Findings pass `parsePluginAuditReport` before display with raw invalid text discarded; docs render through a sanitizer with raw HTML as inert text under the strict CSP and as marked untrusted data through MCP (H-20, M-26, M-13, M-15). |
+
 ## 5. Threats with countermeasure, requirement ID and test
 
 Every threat states affected flows and boundaries. Every countermeasure states
@@ -918,6 +929,21 @@ The K-IDs K-514 and K-515 below are proposed in the ADR and enter
 `docs/requirements.md` with story S-042, in the same change, per
 section 1 point 4 of this file.
 
+The audit and docs update (ADR section 12, P-13–P-17) adds two further
+surfaces inside this same section, so plugin threats stay in one
+place: a `plugin audit` step (CLI and CI job, with an optional advisory
+AI review through the hosted open-weights path) and a required
+`PLUGIN.md` per plugin, exposed read-only through REST, MCP, and the
+web UI. Two flows are named for these surfaces: F-17 (plugin source,
+manifest, and `PLUGIN.md` from the operator or CI to the audit, and on
+opt-in from the audit to the selected hosted endpoint and back),
+crossing B9 and, for the provider leg, B5/B6; and F-18 (validated
+`PLUGIN.md` content from the registry to REST, MCP, and web UI
+callers), crossing B8. The K-IDs K-516 and K-517, and the functional
+K-032 and K-033, are proposed in the ADR and enter
+`docs/requirements.md` with their first implementation stories
+(S-052–S-057), in the same change, per section 1 point 4.
+
 **H-15 Plugin code admitted outside the reviewed supply chain
 (registry, B9).**
 A plugin loaded at run time from a directory, an environment-named path,
@@ -977,6 +1003,144 @@ executes in a visitor's browser through the generic UI panel.
   enabled and disabled; the e2e test
   `k515_plugin_strings_render_as_inert_text` requires script-bearing
   plugin strings to render as inert text in the Plugins panel.
+
+**H-17 Malicious plugin source or PLUGIN.md as prompt injection into
+the plugin audit (F-17, B5, B6, B9).**
+A plugin author writes source comments, string literals, or
+`PLUGIN.md` text that instruct the audit model to approve the plugin,
+suppress a vulnerability, invent a clean result, or change the
+findings format. The audit prompt is the one place where deliberately
+unreviewed code is placed in front of a model, so the injection
+surface is wider than the closed evidence list in H-02: the input is
+whole files, written by the party who benefits from a clean report.
+
+- M-23 Deterministic-first audit gate with human acceptance: the
+  audit runs its deterministic static checks (forbidden imports,
+  capability mismatches against the manifest, determinism lint,
+  output-contract and `PLUGIN.md` checks per ADR P-13) before any
+  model call, and a deterministic failure ends the audit with no AI
+  phase. Acceptance of a plugin requires the deterministic pass plus
+  a recorded human review; the audit report states the three states
+  separately (`deterministic`, `ai`, `human-review`), and no AI
+  output registers, unregisters, or approves a plugin. Requirement:
+  K-516 (proposed). Test: the integration test
+  `k516_deterministic_failure_runs_zero_model_calls` feeds a plugin
+  with a forbidden import and an opted-in AI phase and requires zero
+  calls to the fake audit adapter; the unit test
+  `k516_audit_report_states_deterministic_ai_and_human_states`
+  requires the three separate states in every report shape.
+- M-24 Injection-resistant audit prompt over quoted untrusted files:
+  the audit prompt keeps its system instruction in its own field and
+  passes plugin source, manifest, and `PLUGIN.md` solely as quoted
+  data through `UntrustedText.quote` with a per-file length cap and a
+  total input cap, in a tool-free call, with the instruction that
+  file content is data to review and never instructions to follow
+  (ADR P-14). A response that follows an embedded instruction either
+  fails the findings schema in M-26 or is read by the human reviewer
+  as a finding about the plugin. Requirement: K-516 (proposed),
+  K-502. Test: the unit test
+  `k516_injection_in_source_or_docs_stays_quoted_data` feeds source
+  and `PLUGIN.md` fixtures carrying approval and suppression
+  instructions through the fake audit adapter and requires the
+  prompt to carry them as quoted data and the report to carry no
+  approval state; the contract suite
+  `runPluginAuditModelPortContract` requires the same quoting against
+  the fake and the hosted adapter over a recorded transport, with
+  zero network in tests.
+
+**H-18 Advisory AI audit result treated as approval, or as score or
+evidence input (F-17, B9).**
+A clean or low-severity AI report is read — by a reviewer, a CI
+dashboard, or later code — as an approval of the plugin, as a
+substitute for the deterministic gate or the human review, or as an
+input to scores, signals, or evidence. The failure is presentational
+and architectural at once: the report looks like a verdict, and any
+field the registry or scoring path can read becomes a path around
+P-05 and K-307.
+
+- M-23 (also against H-17) bounds the report's role: the audit report
+  type carries the explicit `advisory` label with provider and model
+  id wherever it is shown (CLI, CI artifact, and any later read view),
+  has no field that the registry, `pluginResults`, scoring, or the
+  analysis path reads, and its AI severity values are display values
+  that no code maps to risk, direction, or weight. Requirement:
+  K-516 (proposed), K-307. Test: the property test
+  `k516_ai_findings_leave_scores_signals_and_evidence_unchanged`
+  runs a frozen analysis with audit reports of every severity
+  present and absent and requires bit-identical probabilities,
+  score, signals, and evidence; the unit test
+  `k516_clean_ai_report_alone_registers_no_plugin` requires that a
+  plugin with a clean AI report and no deterministic pass or human
+  record stays unregistered.
+
+**H-19 Leakage of plugin source to the model provider (F-17, B5,
+B6).**
+The AI audit phase sends plugin source and `PLUGIN.md` content to
+hosted. Source that an author has not published — a third-party-style
+plugin under evaluation, or a future private plugin — leaves the
+repo boundary to a provider whose retention the project does not
+control, and a careless audit run could widen the send to repo files,
+configuration values, or secrets that were never meant to leave.
+
+- M-25 Opt-in, minimised, and logged source disclosure for the audit:
+  the AI phase runs solely on explicit opt-in per audit run; without
+  a configured hosted key it reports `not configured` and makes zero
+  provider calls. Before any send, the audit lists the exact files it
+  will send (the plugin directory's source, manifest, and `PLUGIN.md`
+  only — no repo-wide files, no configuration values, no secrets; the
+  provider key travels solely as the server-side header per M-20),
+  enforces per-file and total size caps, and logs plugin id, file
+  hashes, prompt version, provider, and model id with file content
+  kept outside the log per I-10. Requirement: K-516 (proposed),
+  K-505, K-513. Test: the unit test
+  `k516_audit_without_key_reports_not_configured_and_sends_nothing`
+  requires the `not-configured` outcome and zero calls against the
+  fake; the integration test
+  `k516_audit_sends_only_listed_plugin_files` captures the fake
+  adapter's received file list for a plugin inside a repo tree with
+  neighbouring secrets-shaped fixtures and requires exactly the
+  listed plugin files with hashes matching the log line.
+
+**H-20 Schema-invalid audit output, or PLUGIN.md rendered as markup
+or read as instruction (F-17, F-18, B6, B8).**
+Two untrusted outputs meet here. First, a tampered, malformed,
+oversize, or identity-mismatched response from the audit provider is
+presented as structured findings, so invented severities or locations
+reach a reviewer with the model's authority. Second, `PLUGIN.md` is
+author-controlled markdown: rendered as raw HTML it executes script
+in a visitor's browser through the Docs view, and returned through
+MCP it is read by a client model as instruction rather than data.
+A missing or drifted `PLUGIN.md` is the quieter form of the same
+threat: docs that claim inputs, detections, or limitations the code
+does not have mislead reviewers and users about what a finding means.
+
+- M-26 Schema-validated audit findings and sanitized, checked plugin
+  docs: every audit model response passes the plain-check smart
+  constructor `parsePluginAuditReport` against the TypeScript
+  findings type and its JSON Schema descriptor (ADR P-14, no new
+  schema library) before any finding is shown; schema-invalid,
+  oversize, or identity-mismatched output gives the typed
+  `invalid-output` outcome, the raw model text is discarded, and the
+  deterministic audit result stands. `PLUGIN.md` presence, required
+  sections, declared inputs, and version are validated
+  deterministically before exposure (ADR P-15), documented claims
+  are checked against manifest and code deterministically where
+  machine-checkable and by the advisory review for semantic drift
+  (ADR P-17), and the exposed document renders through a sanitizing
+  markdown renderer with raw HTML as inert text under the strict CSP
+  in the web UI (K-507, M-13) and as a marked untrusted text block
+  with a size cap through MCP (M-15). Requirement: K-517 (proposed),
+  K-516 (proposed), K-507, K-508. Test: the unit test
+  `k517_schema_invalid_audit_output_discarded` feeds malformed,
+  oversize, and identity-mismatched responses through the fake and
+  requires the `invalid-output` outcome with zero findings shown and
+  the deterministic result unchanged; the unit test
+  `k517_plugin_md_missing_or_mismatched_fails_deterministic_check`
+  requires a named failure for a missing file, a missing section, an
+  undeclared documented input, and a version mismatch; the e2e test
+  `k517_plugin_docs_render_as_sanitized_markdown` feeds a
+  script-bearing `PLUGIN.md` through the Docs view and requires
+  inert text with the CSP header present.
 
 ## 6. Muse contract assessment: bounded MVP feature with both providers
 
@@ -1145,6 +1309,8 @@ as per K-210.
 | CI: push, pull request and release | GitHub permission with least privilege per job as per I-03 | Code, lockfiles, fixtures and artifacts | Green gate with eleven named blocking jobs as per I-01; pinned Actions on SHA, images on digest and extdecomp on checksum; gitleaks, vulnerability and licence checks (M-12). |
 | Offline chain: dataset and training | Operator access outside the repo; run during the hackathon | Fresh public on-chain data with address, bytecode, deploy block and label source | Provenance per data point, label policy, time- and cluster-divided splits, locked seeds and a reproducible command; export solely as artifact under `model/` (M-18, M-19). |
 | Plugin registry and `pluginResults` (design per `docs/adr-plugin-architecture.md`) | Internal; registration solely at build time from reviewed source in the repo | Frozen manifests and declared deterministic facts in; validated findings out under `pluginResults` | Static compile-time registration with startup manifest, API-version, and capability validation; output schema, evidence, count, and size bounds; weight 0 until the artifact names the plugin; text-only generic rendering (M-21, M-22). |
+| Plugin audit: CLI and CI job (design per ADR P-13, P-14) | Operator or CI identity; AI phase solely on opt-in with a configured hosted key | Plugin source, manifest, and `PLUGIN.md` from one plugin directory in; deterministic check results and, on opt-in, structured advisory findings out | Deterministic checks run first and block on failure; the AI phase sends solely the listed plugin files, quoted as untrusted data under size caps, tool-free; findings are schema-validated and advisory only; without a key the AI phase reports `not configured` with zero provider calls (M-23–M-25). |
+| Plugin docs: `PLUGIN.md` via REST, MCP, and web UI (design per ADR P-15, P-16) | API key in header for REST and MCP as per the plugin list; web UI through the REST API | Plugin id in; validated markdown with its section list out | Read-only; presence and required sections validated deterministically before exposure; markdown rendered through a sanitizer with raw HTML as inert text under the strict CSP (M-26, M-13). |
 
 ## 8. Top 5 threats for the public demo
 
@@ -1253,6 +1419,10 @@ K-5xx to its threats and countermeasures, is in section 12.2 in
 | M-20 Validated, size-bounded, identity-checked provider responses | H-14, H-02 | K-513, K-502, K-505 | `k513_tampered_or_oversize_provider_response_rejected` (integration) |
 | M-21 Static, compile-time registration of reviewed plugin source | H-15 | K-514 (proposed), K-506 | `k514_registry_has_no_dynamic_loading` (CI check) |
 | M-22 Pure, bounded, schema-validated, weight-0 plugin output rendered as text | H-16 | K-515 (proposed), K-102, K-507 | `runDetectorPluginContract` (contract) |
+| M-23 Deterministic-first audit gate with human acceptance | H-17, H-18 | K-516 (proposed), K-307 | `k516_deterministic_failure_runs_zero_model_calls` (integration) |
+| M-24 Injection-resistant audit prompt over quoted untrusted files | H-17 | K-516 (proposed), K-502 | `k516_injection_in_source_or_docs_stays_quoted_data` (unit) |
+| M-25 Opt-in, minimised, and logged source disclosure for the audit | H-19 | K-516 (proposed), K-505, K-513 | `k516_audit_sends_only_listed_plugin_files` (integration) |
+| M-26 Schema-validated audit findings and sanitized, checked plugin docs | H-20 | K-517 (proposed), K-516 (proposed), K-507, K-508 | `k517_plugin_docs_render_as_sanitized_markdown` (e2e) |
 
 Every row in the table is included in the suite or the gate as per A-22
 and I-01. A change that activates a new component, port or
