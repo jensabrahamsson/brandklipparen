@@ -56,9 +56,10 @@ holds by construction and by CI enforcement, not by convention.
 | Registry exposure | One registry drives the REST plugin list and analysis output, the MCP tool surface, and the generic web UI panel (P-08–P-10). |
 | Isolation | Detector plugins run in-process as trusted, pure, size-bounded functions in v1. Worker isolation is a precondition for any untrusted detector code (P-06). Assessment plugins keep the existing port limits, deadline, and cost caps. |
 | Plugin audit | Deterministic static checks first, then an optional advisory AI review through the existing hosted open-weights assessment path. The AI result never approves a plugin and never affects scores or evidence (P-13, P-14). |
-| Plugin documentation | Every plugin ships a required `PLUGIN.md` with fixed sections, validated deterministically and exposed read-only through REST, MCP, and the web UI with sanitized rendering (P-15, P-16). The audit checks documented claims against the code (P-17). |
+| Plugin documentation | Every plugin ships a required `PLUGIN.md` with a strict YAML frontmatter (`id`, `kind`, `version`, controlled-vocabulary `tags`, `audience`, severity range) and fixed plain-English sections, validated deterministically in CI and exposed read-only through REST, MCP, and the web UI with sanitized rendering (P-15 refined, P-16). The audit checks documented claims against the code (P-17). |
 | Adaptive web UI (after plugin core) | Schema-driven rendering from each plugin's `outputSchema` through a fixed component library, a deterministic risk-adaptive layout, and a Simple / Expert toggle persisted locally (P-18–P-20). No per-plugin UI code. |
-| Experimental AI layout | Off by default. Muse Spark Open returns a declarative layout spec in JSON that only chooses, orders, and emphasises whitelisted components. It never emits HTML, code, URLs, or styles and never changes scores, evidence, or finding text. Invalid or missing spec falls back to the deterministic layout (P-21–P-23). |
+| Experimental AI layout | Off by default. Muse Spark Open returns a declarative layout spec in JSON that only chooses, orders, and emphasises whitelisted components. It never emits HTML, code, URLs, or styles and never changes scores, evidence, or finding text. Invalid or missing spec falls back to the deterministic layout (P-21–P-23). Section 14 unifies this mode with AI personalization: one experimental toggle, one spec family, one fallback (P-27). |
+| User-priority personalization — **demo headline innovation** | The UI shows what the **user** says matters to them. Priorities are free text stored locally only, matched deterministically to plugin frontmatter tags (no network), and only ever sent to a model when the user explicitly opts in to the single experimental AI personalize mode for that mapping call. Critical findings are never hidden and scores, evidence, and finding text never change (section 14, P-24–P-28). |
 
 Note on status: story S-042 (plugin API, manifest validation, and the
 empty static registry in `src/plugins/`) has landed. This update extends
@@ -71,6 +72,15 @@ implemented after the plugin core. It renumbers nothing in P-01–P-17,
 adds its stories after S-058 (section 13.6), and proposes K-034 and
 K-518. The deterministic parts (P-18–P-20) are MVP for that follow-on
 work; the AI layout mode (P-21) is experimental and Stretch.
+
+Note on status (personalization): user-priority personalization is
+the **demo's headline innovation**. Section 14 refines P-15 (strict
+`PLUGIN.md` frontmatter and plain-English sections) and extends
+P-18–P-23 with P-24–P-28. It renumbers nothing in P-01–P-23, S-042–S-064,
+K-028–K-034, or K-514–K-518, and adds its stories after S-064
+(section 14.7). The deterministic baseline (P-24–P-26) is MVP for the
+demo; the unified AI personalize mode (P-27, P-28) is experimental,
+off by default, and Stretch.
 
 ## 3. Typed plugin contract and manifest
 
@@ -689,6 +699,22 @@ the named points; none blocks S-042:
     in `localStorage` on this device only. Whether the preference is
     also mirrored server-side per API key is open; the default is no
     server state for a presentation preference.
+11. Priorities on the demo. The default in P-24 keeps priorities
+    local-only with the deterministic baseline (P-25) as the demo
+    path. Whether the public demo enables the AI personalize toggle
+    at all (it sends the visitor's priorities text to hosted for
+    that mapping call and costs a provider call per uncached view)
+    is Jens's call before S-070 starts; the default is demo-off for
+    the AI toggle, locally testable with a key, with the
+    deterministic headline path on for every visitor.
+12. Personalize port shape. The default in P-27 is one unified
+    experimental mode with one spec. Whether the implementation
+    extends `PluginLayoutModelPort` in place (renamed in effect to
+    carry ranking plus layout) or adds the sibling
+    `PluginPersonalizeModelPort`, and whether the REST shape is
+    `POST /v1/personalize` or an extended `POST /v1/layout`, is
+    decided in S-068 against the built P-21 code; either way the
+    layout-only toggle in P-21 is never shipped beside it.
 
 ## 12. Plugin audit and required PLUGIN.md
 
@@ -841,45 +867,93 @@ machinery without reusing its contract:
 ### 12.2 Required PLUGIN.md per plugin
 
 **P-15 Every plugin ships a required `PLUGIN.md` as part of its
-contract.** Each plugin directory (first-party under `src/plugins/`,
-examples under `examples/plugins/`) contains one `PLUGIN.md` in
-English beside its manifest. The manifest references it through the
-`docs` field in section 3.1. The file has these required sections,
-under these headings, in this order:
+contract (refined for personalization, section 14).** Each plugin
+directory (first-party under `src/plugins/`, examples under
+`examples/plugins/`) contains one `PLUGIN.md` in English beside its
+manifest. The manifest references it through the `docs` field in
+section 3.1. This refinement supersedes the earlier P-15 wording
+where they differ: the headings `What it checks`, `Why it matters
+to you`, and `Evidence format` replace `What it detects`,
+`Why it matters`, and `Output and evidence`, and `Limitations /
+false positives` merges the earlier `Limitations` and
+`False positives`. `Inputs` and `Version and changelog` are retained
+for the P-17 claim checks. The frontmatter and the controlled
+vocabulary below are new and normative.
 
-1. `## What it detects` — the finding shapes the plugin emits, in
-   plain English.
-2. `## Why it matters` — the risk or question each finding answers.
-3. `## Inputs` — the declared inputs it consumes (detectors: names
+The file starts with a YAML frontmatter block. The frontmatter is
+the machine-readable half of the doc: the deterministic baseline
+in P-25 reads only this block, never the body text, to match user
+priorities to plugins.
+
+| Frontmatter field | Type | Invariant |
+|---|---|---|
+| `id` | string | Equals the manifest `id` (P-01) exactly. A mismatch is a deterministic failure. |
+| `kind` | `"detector" \| "assessment"` | Equals the manifest `kind` exactly. |
+| `version` | semver string | Equals the manifest `version` and the version line in `## Version and changelog` exactly. |
+| `tags` | list of strings, 1–4 entries, no duplicates | Every entry is drawn from the controlled vocabulary below. `topics` is accepted only as a legacy alias: when present it must equal `tags` exactly, and new docs write `tags` only. A tag outside the vocabulary is a deterministic failure, never a free-text extension. |
+| `audience` | list of strings, 1 or more, no duplicates | Every entry is drawn from the closed set `holder`, `trader`, `developer`, `auditor`, `all`. `all` stands alone when present. Audience is display metadata for ordering hints; it never gates visibility (P-26). |
+| `severity` | mapping `{ min, max }` | Closed enum `info \| low \| medium \| high \| critical` per value, with `min` at most `max` in that order (`info < low < medium < high < critical`). This is the advisory severity range the plugin can emit; it is display metadata and never feeds `score` (P-05). |
+
+Controlled vocabulary for `tags` (closed set; adding a tag is an
+ADR change plus a CI vocabulary update in the same change, never a
+per-plugin invention):
+
+`owner-powers`, `honeypot`, `mint`, `fees`, `upgradeability`,
+`liquidity`, `blacklist`, `pausing`, `transfer-limits`, `proxy`,
+`supply`, `external-calls`.
+
+The file then has these required sections, under these headings,
+in this order, written in plain user-facing English — sentences a
+token holder can act on, not detector internals:
+
+1. `## What it checks` — the finding shapes the plugin emits, in
+   plain English (supersedes `What it detects`).
+2. `## Why it matters to you` — the risk or question each finding
+   answers, phrased for the reader who holds or is about to buy the
+   token (supersedes `Why it matters`).
+3. `## What it cannot tell you` — the questions this plugin cannot
+   answer from bytecode alone, linked in spirit to the can't-tell
+   list (K-012). This section is new; it keeps a personalization
+   highlight from reading as a completeness claim.
+4. `## Evidence format` — the output shape against its
+   `outputSchema` and how each finding carries evidence (A-13),
+   with field names in the backtick form P-17 checks
+   (supersedes `Output and evidence`).
+5. `## Limitations / false positives` — what the plugin cannot see
+   or decide, known false-positive shapes, and how a reader
+   recognises them (merges `Limitations` and `False positives`).
+6. `## Inputs` — the declared inputs it consumes (detectors: names
    from the closed catalogue in section 3.2; assessment plugins: the
    closed evidence list per K-302).
-4. `## Output and evidence` — the output shape against its
-   `outputSchema` and how each finding carries evidence (A-13).
-5. `## Limitations` — what the plugin cannot see or decide.
-6. `## False positives` — known false-positive shapes and how a
-   reader recognises them.
 7. `## Version and changelog` — the current version, equal to the
-   manifest `version`, and one line per released change.
+   manifest `version` and the frontmatter `version`, and one line
+   per released change.
 
 Deterministic validation, in CI and in the audit (P-13): the file
-exists, is non-empty within a stated size cap, carries every required
-heading, the `## Inputs` section names only inputs the manifest
-declares (and names all of them), the version line equals the
-manifest `version`, and the text is English-facing markdown with no
-embedded raw HTML (P-16). A missing file or a failed check is a
-deterministic audit failure and, for a registered plugin, a startup-
-adjacent build failure in CI — the registry never serves a plugin
-whose docs fail validation, because registration in CI runs the same
-check before merge. The check is a named CI/audit check, not a
-runtime filesystem read in the registry (section 3.1).
+exists, is non-empty within a stated size cap, starts with a
+frontmatter block that parses against the schema above (required
+fields present, closed sets respected, `id`/`kind`/`version` equal
+to the manifest), carries every required heading in order, the
+`## Inputs` section names only inputs the manifest declares (and
+names all of them), the version line equals the manifest `version`,
+and the text is English-facing markdown with no embedded raw HTML
+(P-16). A missing file, a missing section, an out-of-vocabulary
+tag, or any failed check is a deterministic audit failure and, for
+a registered plugin, a startup-adjacent build failure in CI — the
+registry never serves a plugin whose docs fail validation, because
+registration in CI runs the same check before merge. The check is a
+named CI/audit check, not a runtime filesystem read in the registry
+(section 3.1).
 
 **P-17 The audit checks that PLUGIN.md claims match the code.** Two
 layers, matching the two audit phases in P-13:
 
 - Deterministic, where a claim is machine-checkable: declared inputs
   in `## Inputs` against manifest `inputs`; version string against
-  manifest `version`; finding ids and output fields named in
-  `## Output and evidence` against `outputSchema` property names
+  manifest `version`; frontmatter `id`, `kind`, `version`, `tags`,
+  `audience`, and `severity` against the manifest and the closed
+  sets in P-15 (refined); finding ids and output fields named in
+  `## Evidence format` against `outputSchema` property names
   where the doc uses the stated backtick form for field names;
   capability claims (for example "makes no network calls") against
   the forbidden-import check. A mismatch is a deterministic audit
@@ -1224,3 +1298,325 @@ Alternatives considered for this update and set aside:
   MCP caller that needs ordering can read the same frozen fields and
   order locally. A tool is added only through the K-026 review if a
   caller appears.
+
+## 14. User-priority personalization — the demo headline innovation
+
+User-priority personalization is the **demo's headline innovation**:
+the token page shows what the **user** says matters to them, in the
+user's own words, ahead of what a generic risk order would surface.
+A visitor who writes "I want to know if the owner can stop me
+selling" sees the honeypot, transfer-limit, and owner-power findings
+emphasised first; a visitor who writes nothing sees the existing
+deterministic page unchanged. This section refines P-15 (above) and
+extends P-18–P-23 with P-24–P-28. It changes presentation emphasis
+only: no rule here changes analysis, scoring, evidence, or finding
+text (P-05, K-307, A-33), and the hard floor in P-26 binds every
+layer, including the AI mode.
+
+How the layers compose is stated once here and nowhere contradicted
+later in this section. The token page is built in this order:
+
+1. The frozen analysis and the fixed component library (P-18)
+   produce every section and every string.
+2. The severity floor (P-26) pins high-severity and critical
+   evidence in place: always present, always visible, never
+   collapsed by any layout.
+3. Personalization — deterministic first (P-25), AI only on opt-in
+   (P-27) — orders and emphasises the remaining sections and plugin
+   cards.
+4. The P-19 risk-adaptive order is the order step 3 starts from,
+   and the fallback when personalization has nothing to say.
+5. Simple / Expert (P-20) controls detail depth orthogonally: it
+   reveals or hides detail sections of the same frozen response and
+   never interacts with ranking.
+
+Precedence, highest first: **severity floor (P-26) > valid AI
+personalize spec (P-27, only when the user opted in) >
+deterministic priority baseline (P-25) > P-19 risk-adaptive layout
+> static order**. At most one personalized order is applied at a
+time; the layers never merge two orderings section by section.
+
+### 14.1 User priorities: local-only personal data
+
+**P-24 User priorities are stated in the user's own words, stored
+locally only, and never become a server-side profile.** The token
+page (and, where space allows, the start page) offers one free-text
+field — working label "What matters to you?" — with examples in the
+placeholder text drawn from the controlled vocabulary in human
+words (for example "Can the owner stop me selling? Can fees
+change? Can more tokens be minted?").
+
+- Storage: the text is stored in `localStorage` under one
+  versioned key, `brandklipparen-user-priorities:v1`, as a small
+  JSON value `{ "version": 1, "text": "<priorities>" }`. It is read
+  once at start-up and on edit, in `apps/web` only. There is no
+  server-side profile: no REST field, no MCP field, no database row,
+  no cache key, and no log field ever carries the priorities text.
+  Clearing the field removes the key.
+- Validation on read and on write: the stored value must parse as
+  that exact shape with `version: 1`; `text` is trimmed, capped at
+  500 characters, and rejected to empty (no personalization) when it
+  exceeds the cap, carries control characters, or fails to parse.
+  Any other stored shape is ignored and treated as "no priorities
+  stated", in the same closed-read posture as the mode preference
+  in P-20. The text is rendered only as the visitor's own input
+  value and as escaped text if echoed in a label; it never reaches
+  a raw-HTML sink (K-507).
+- Leaving the device: in the deterministic baseline (P-25) the text
+  never leaves the device at all — matching is client-side and
+  makes zero network calls. The sole exception is P-27: when, and
+  only when, the user explicitly enables the experimental AI
+  personalize mode for that mapping call, the current priorities
+  text is sent once, server-side, to the model as quoted untrusted
+  data (P-27) so it can be mapped to plugin ids. The toggle copy
+  states this before the first AI call in plain English ("Your
+  priorities text is sent to the AI provider for this mapping
+  only"). Turning the toggle off stops all further sends; no
+  history of priorities is sent. Priorities are PII-ish local data
+  (threat model H-26): a user may paste health, wealth, or identity
+  context into the field, so minimisation is by architecture, not
+  by policy text.
+
+### 14.2 Deterministic baseline: keyword and tag matching
+
+**P-25 A pure, testable keyword/tag match over `PLUGIN.md`
+frontmatter reorders and highlights sections deterministically,
+with no network.** This is the default personalization for every
+visitor who states priorities, and the fallback for P-27.
+
+- Input: the validated priorities text (P-24) and, per registered
+  plugin, the validated frontmatter `tags` list (P-15 refined) plus
+  the plugin id. The function reads frontmatter only — never the
+  `PLUGIN.md` body, never finding text, never the network.
+- Matching: the text is lower-cased and tokenised on non-letter
+  boundaries. A versioned keyword table in `apps/web` maps word
+  stems to controlled-vocabulary tags; the working table is:
+
+  | User words (stemmed) | Tag |
+  |---|---|
+  | sell, sold, exit, stuck, trap, honeypot | `honeypot` |
+  | stop, block, freeze, prevent (near sell/transfer/trade) | `honeypot`, `transfer-limits` |
+  | owner, admin, creator, control, power | `owner-powers` |
+  | fee, fees, tax, charge, cost (on buy/sell) | `fees` |
+  | upgrade, change the contract, replace, proxy | `upgradeability`, `proxy` |
+  | liquidity, pool, locked, withdraw (liquidity) | `liquidity` |
+  | blacklist, blocked list, banned, whitelist | `blacklist` |
+  | pause, paused, halt, emergency stop | `pausing` |
+  | limit, cap, max (on transfer/trade/sell) | `transfer-limits` |
+  | mint, minted, more tokens, supply, inflation, print | `mint`, `supply` |
+  | external, call, oracle, dependency | `external-calls` |
+
+  A plugin matches when any of its frontmatter `tags` is hit by
+  the table. Each match is scored by the number of distinct tags
+  hit, then by the plugin's frontmatter `severity.max` as a
+  tie-break display value only. The table is a closed, versioned
+  constant reviewed with this ADR; stemming or entries never come
+  from plugin or user data.
+- Output: an ordered plugin id list, a per-plugin matched-tag list
+  (shown to the user as "Matched: honeypot, fees" so the emphasis
+  is explainable), and a highlight set. Matched plugin cards and
+  their sections are emphasised and moved ahead of unmatched ones
+  within the order the severity floor (P-26) leaves free; DOM order
+  equals visual order (K-103). No section is hidden, removed, or
+  reworded; unmatched content keeps its P-19 order after the
+  matched block. The same priorities and the same registry always
+  give the same output: the function is a pure function in
+  `apps/web`, unit-tested on frozen fixtures with zero network
+  fakes counted.
+- Explainability: when personalization is active the page states
+  "Ordered by what matters to you" with the matched tags per card
+  and a one-click return to the standard order. When no tag matches,
+  the page states that no plugin matched the stated priorities and
+  shows the standard (P-19) order — it never invents a match.
+
+### 14.3 The severity floor and content integrity
+
+**P-26 Personalization never hides high-severity or critical
+findings, and never changes scores, evidence, or finding text.**
+This is a hard floor, normative over P-19, P-25, and P-27:
+
+- Critical evidence is always visible. Every finding or signal
+  whose frozen severity is `high` or `critical` — and the `summary`
+  and `score` sections in every case — stays present, expanded (not
+  collapsed), and reachable in DOM order in every layout:
+  deterministic, priority-ordered, and AI-ordered alike. A
+  personalization spec that would place a floored section below
+  the fold is not rejected for that alone; the renderer clamps the
+  floored sections ahead of all non-floored sections and applies
+  the personalized order only to the rest. A spec that marks a
+  floored section collapsed or absent is invalid as a whole
+  (P-28).
+- No score, probability, signal, evidence entry, or finding,
+  explanation, or assessment text ever changes under
+  personalization. Ordering and emphasis metadata are the only
+  outputs. The property tests in section 14.7 require bit-identical
+  scores, evidence, and finding text with personalization off,
+  deterministic, AI, invalid, and absent.
+- `PLUGIN.md` claims never become findings. A doc that says its
+  plugin "covers honeypots" only contributes frontmatter `tags`
+  to matching; the finding itself still comes from the detector
+  with evidence (A-13, P-03, P-17).
+
+### 14.4 One unified experimental AI mode: "AI personalize"
+
+**P-27 The optional AI mode is one unified experimental "AI
+personalize" mode — not two competing AI modes. It extends the
+P-21 AI layout mode; it does not sit beside it.** Earlier wording
+in P-21 that describes a layout-only AI mode is refined here:
+there is a single toggle, a single port, a single spec family,
+and a single fallback. The working toggle label is
+`AI personalize (experimental)`; while an AI spec is applied the
+page carries the label `Experimental AI personalize` with provider
+and model id. The mode is OFF by default for every visitor.
+
+- What it does: when the user enables the toggle for the current
+  token view, the web UI sends the server the code hash, the
+  closed layout facts P-21 already defines, and — only for this
+  call — the current priorities text (P-24). The server calls Muse
+  Spark Open (`meta-models/muse-spark-open-1026`) on hosted, which
+  maps the free-text priorities to plugin ids using the plugins'
+  `PLUGIN.md` frontmatter and the `What it checks` /
+  `Why it matters to you` sections as quoted reference data, and
+  returns one declarative ranking-plus-layout spec (P-28): an
+  ordered plugin ranking and section placements from the same
+  whitelist family as `LayoutSpec`. Ranking and layout therefore
+  always agree, because one spec carries both; there is no
+  separate ranking call and no precedence fight between two model
+  answers. Documented precedence is the list in the section
+  preamble: a valid AI spec outranks the deterministic baseline
+  for ordering only, and both sit under the P-26 floor.
+- Port shape: one small port, working title
+  `PluginPersonalizeModelPort`, built in parallel to
+  `PluginLayoutModelPort` (P-21) and `PluginAuditModelPort` (P-14)
+  and reusing the hosted adapter's transport, server-side key
+  handling, deadline, size limits, concurrency bound, and cost
+  caps (A-17, I-13, I-14). It returns
+  `Result<PersonalizeSpec, PluginPersonalizeModelError>` with the
+  A-15 branches mirrored from the layout port (`timeout`,
+  `rate-limited`, `invalid-output`, `output-too-large`,
+  `provider-mismatch`, `unavailable`, plus `not-configured`).
+  Without a configured hosted key it reports `not configured`
+  with zero provider calls — the assessment posture (K-305) —
+  and the deterministic baseline (P-25) stands. Whether the
+  implementation extends `PluginLayoutModelPort` in place or adds
+  this sibling port is decided in its first story (section 14.7,
+  open decision 12); the contract that matters — one toggle, one
+  spec, one fallback — holds either way. REST working shape:
+  `POST /v1/personalize` behind the same API-key gate as the
+  analysis routes (K-024). There is no MCP personalize tool in v1.
+- Untrusted input, by construction: user priorities and `PLUGIN.md`
+  content are untrusted model input. The prompt keeps its system
+  instruction in its own field and passes the priorities text and
+  the per-plugin frontmatter plus section excerpts solely as quoted
+  data through `UntrustedText.quote` under per-item and total
+  length caps, in a tool-free call (K-308, M-04 pattern, extended
+  in M-33). Text that instructs the model to hide critical
+  evidence, invent a plugin, change a score, or emit markup is
+  therefore data inside a quotation; a response that follows it
+  fails spec validation (P-28) or amounts to an ordering choice
+  over unchanged, floored content (P-26).
+- Cost and caching mirror the layout path: at most one AI
+  personalize call per uncached token view, cached per code hash,
+  personalize prompt version, provider, and model id — never per
+  priorities text, so a cache entry never becomes a priorities
+  store — under the per-provider daily caps in I-14. The
+  deterministic personalized page renders first; an AI order, when
+  it arrives and validates, only re-places sections. Every error
+  branch falls back to P-25, then to P-19 (P-28).
+
+### 14.5 Personalization spec contract: types plus JSON Schema, no zod
+
+**P-28 The AI personalize output is a closed typed spec validated
+by plain checks plus a JSON Schema descriptor; no schema library
+is added.** This follows section 3.3, P-14, and P-22 exactly:
+
+- TypeScript types are normative. Working shape:
+  `PersonalizeSpec` carries a spec version, a bounded
+  `pluginRanking` (an ordered list of registered plugin ids, each
+  at most once, drawn only from the ids in the request), and the
+  P-22 `placements` list (whitelisted `sectionId`, closed
+  `emphasis` enum, optional `collapsed` for collapsible sections
+  only). It carries no free text, no HTML, no code, no URLs, no
+  styles, and no score or severity value; `summary` and `score`
+  are always present and never collapsible, and no placement may
+  collapse or omit a P-26 floored section.
+- A JSON Schema descriptor (the draft-07 subset in section 3.3,
+  `additionalProperties: false`) is carried beside the types and
+  published with the REST schema, and a plain-check smart
+  constructor, `parsePersonalizeSpec`, validates every model
+  response before the UI applies it — in the style of
+  `parseLayoutSpec` and `parsePluginAuditReport`. Unknown or
+  duplicate plugin ids, rankings naming plugins absent from the
+  request, unknown section ids, duplicate placements, oversize
+  specs, any field outside the descriptor, and any collapse of a
+  floored section give the typed `invalid-output` outcome and the
+  whole spec is discarded; no partial spec is applied.
+- **No zod**, for the same reason as P-14 and P-22: zod is not a
+  dependency in this repo; runtime validation is plain checks plus
+  smart constructors (A-16), JSON Schema descriptors already exist
+  for REST and MCP, and `ajv` is a test-only devDependency. Adding
+  zod solely for the personalize spec would add a runtime
+  dependency under K-506 and I-04 supply-chain review and a second
+  source of truth beside the TypeScript types, for a small closed
+  spec shape the existing style already covers. A contract test
+  checks that the typed spec and the descriptor agree on frozen
+  examples in both directions.
+- Fallback is total (extends P-23): every port error branch, a
+  schema-invalid spec, an identity-mismatched response, and the
+  `not-configured` outcome leave the deterministic baseline (P-25)
+  standing — or the P-19 layout when no priorities are stated —
+  with a short notice that the deterministic order is shown. No
+  code path reads the spec as evidence: the spec type has no field
+  the analysis, scoring, registry, or assessment paths can consume.
+
+### 14.6 Relation to the adaptive UI (P-18–P-23), stated plainly
+
+| Existing rule | Relation under personalization |
+|---|---|
+| P-18 fixed component library | Unchanged. Personalization reorders the sections the library already rendered; it adds no component and no per-plugin UI code. |
+| P-19 deterministic risk-adaptive layout | Becomes the base order and the fallback. It is no longer the outermost ordering when priorities match; its band rules still produce the order P-25 and P-27 start from. |
+| P-20 Simple / Expert | Orthogonal and unchanged. Mode controls detail depth; priorities control emphasis. Both may be active at once with no shared state beyond the page. |
+| P-21 AI layout mode | Superseded as a separate mode. Its port, transport, caps, and whitelist discipline carry into the unified AI personalize mode (P-27); a layout-only toggle is never shipped beside it. |
+| P-22 `LayoutSpec` contract | Extended, not replaced. `PersonalizeSpec` reuses the placement shape and adds `pluginRanking`; the no-zod rationale and smart-constructor validation carry over verbatim. |
+| P-23 deterministic fallback | Extended. The fallback chain is now AI spec → deterministic priority baseline → P-19 layout, each step total. |
+
+### 14.7 Stories and requirements added by this update
+
+Stories S-065–S-070 are added under epic E-08 in `backlog.md`,
+after S-064, test-first like every E-08 story. S-065–S-067
+(deterministic headline path) are MVP for the demo; S-068–S-070
+(unified AI personalize) are Stretch and cut first. Every story
+depends on the stories named in `backlog.md`; the MVP path needs
+S-046 and S-059–S-061 standing. Proposed new K-IDs, entered in
+`docs/requirements.md` by their first implementation story in the
+same change (section 10 rule, threat-model section 1 point 4):
+
+| Proposed ID | Title | Priority |
+|---|---|---|
+| K-035 | User-priority personalization: local-only priorities, deterministic frontmatter matching, severity floor (P-24–P-26, P-15 refined) | MVP (demo headline innovation) |
+| K-519 | AI personalize safety: quoted untrusted priorities and docs, whitelist ranking-plus-layout spec, deterministic fallback (P-27, P-28) | Stretch (experimental) |
+
+Alternatives considered for this update and set aside:
+
+- Two separate AI modes (a ranking mode and the P-21 layout mode)
+  with a documented precedence between them. Set aside in P-27: one
+  toggle, one port, and one spec that carries ranking and layout
+  together is the smaller coherent design, and it removes the
+  failure where a ranking says one thing and a layout another.
+- A server-side priorities profile per API key, so priorities
+  follow the user across devices. Rejected in P-24: priorities are
+  PII-ish free text, the demo needs no account, and local-only
+  storage keeps the "never leaves the device" claim true by
+  architecture (H-26).
+- Matching priorities against `PLUGIN.md` body text or finding
+  text. Rejected in P-25: frontmatter tags are the closed,
+  validated, explainable surface; body text is prose that would
+  make matches untestable and injection-sensitive.
+- Zod for the personalize spec or the frontmatter schema. Set
+  aside in P-28 for the P-14/P-22 reason: plain checks plus JSON
+  Schema descriptors are the repo norm, and a new runtime
+  dependency needs its own justification against K-506 and I-04.
+- Hiding unmatched or low-priority sections to "focus" the page.
+  Rejected in P-26: focus is achieved by order and emphasis; the
+  floor keeps critical evidence always visible and every section
+  reachable.

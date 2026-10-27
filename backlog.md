@@ -35,7 +35,7 @@ the MVP path is green. Low-priority Stretch is cut first (see Buffer).
 | E-05 | Explanations and Muse contract assessment (high priority) | K-301–K-309, K-502, K-513 |
 | E-06 | Interfaces: shared service, REST, MCP, web UI | K-020–K-027, K-101, K-103, K-104, K-107 |
 | E-07 | Security, demo and submission | K-401–K-407, K-501–K-513 |
-| E-08 | Plugin architecture (design in `docs/adr-plugin-architecture.md`, P-xx) | K-028–K-031 (proposed), K-514, K-515 (proposed), K-102, K-210, K-305, K-309, K-032–K-033, K-516–K-517 (proposed, audit and PLUGIN.md), K-034, K-518 (proposed, adaptive web UI) |
+| E-08 | Plugin architecture (design in `docs/adr-plugin-architecture.md`, P-xx) | K-028–K-031 (proposed), K-514, K-515 (proposed), K-102, K-210, K-305, K-309, K-032–K-033, K-516–K-517 (proposed, audit and PLUGIN.md), K-034, K-518 (proposed, adaptive web UI), K-035, K-519 (proposed, user-priority personalization — demo headline innovation) |
 
 ## Stories
 
@@ -195,6 +195,28 @@ layout) and cut first.
 | S-063 | `PluginLayoutModelPort`: fake adapter, hosted Muse Spark Open implementation, `not configured` without key (depends on S-062) | K-518 (proposed), K-513, K-502, K-309 | Stretch | `runPluginLayoutModelPortContract` red against the fake, then green against the fake and the hosted adapter over a recorded transport (no network); `k518_layout_without_key_reports_not_configured_and_sends_nothing` requires the `not-configured` outcome and zero fake-adapter calls; `k518_injection_in_analysis_text_stays_quoted_data` feeds hide, invent, and restyle instructions in finding titles and requires quoted data with no non-spec result field. |
 | S-064 | Experimental AI layout in the web UI: opt-in toggle, `Experimental AI layout` label, deterministic fallback (depends on S-063 and S-061) | K-034 (proposed), K-518 (proposed), K-507, K-103 | Stretch | Playwright `k518_invalid_or_missing_spec_falls_back_to_deterministic_layout` serves an invalid spec and a missing spec through the fake adapter and requires the deterministic layout with the fallback notice; Playwright `k518_ai_layout_toggle_off_by_default_and_labelled` requires the mode off on first visit and the experimental label with provider and model id while on; property `k518_ai_layout_leaves_scores_evidence_and_text_unchanged` requires bit-identical scores, evidence, and finding text with the AI layout on, off, invalid, and absent. All AI-layout tests use the fake adapter; no test reaches the network. |
 
+User-priority personalization extension (ADR section 14, P-15
+refined and P-24–P-28; threat model H-26–H-30, M-32–M-36). This is
+the **demo's headline innovation**: the token page shows what the
+user says matters to them. S-042 and S-043 have landed and S-044
+may be in progress; no completed story is renumbered, and these
+stories are numbered after S-064. Proposed K-IDs K-035 and K-519
+enter `docs/requirements.md` in their first implementation story
+below, in the same change. S-065–S-067 (deterministic headline
+path) are MVP for the demo; S-068–S-070 (unified AI personalize)
+are Stretch and cut first. The AI stories unify with the P-21 AI
+layout mode (one toggle, one spec family, one fallback per ADR
+P-27) and never ship a second, competing AI toggle beside S-064.
+
+| Story | Title | K-IDs | Priority | Test written first |
+|---|---|---|---|---|
+| S-065 | Strict `PLUGIN.md` frontmatter: YAML schema, controlled-vocabulary `tags`, `audience`, severity range, renamed plain-English sections, deterministic CI check (depends on S-052) | K-032 (proposed), K-035 (proposed), K-517 (proposed), K-108 | MVP | `k517_plugin_md_missing_or_mismatched_fails_deterministic_check` extended per missing frontmatter field, out-of-vocabulary tag, `topics` alias mismatch, severity `min` above `max`, and renamed/missing required section (red against a pre-refinement doc, then green); `plugin_md_frontmatter_validator_accepts_compliant_plugin` (unit) passes a compliant fixture; CI check `k035_frontmatter_checked_in_ci_without_network` requires the validator in the gate with zero network calls. Existing registered and example `PLUGIN.md` files are migrated to the refined headings in this story. |
+| S-066 | User priorities field with local-only storage: versioned `localStorage` key, closed-shape validation, clear removes the key (depends on S-059) | K-035 (proposed), K-507, K-509 | MVP | `k035_invalid_stored_priorities_treated_as_none` seeds malformed, oversize (>500 chars), control-character, and markup-bearing stored values and requires no personalization with no stored string reaching the renderer as markup; Playwright `k035_priorities_persist_across_reload_and_clear_removes_them` saves priorities, reloads to the same value in the field, then clears and requires the standard order with the key removed; `k519_priorities_absent_from_logs_cache_and_responses` (integration) searches logs, cache keys, and REST/MCP responses for a canary priorities string and requires zero hits. |
+| S-067 | Deterministic priority baseline: pure keyword/tag matcher over frontmatter, emphasis and ordering under the severity floor (depends on S-065 and S-066) | K-035 (proposed), K-102, K-103, K-507 | MVP | `k035_priorities_match_frontmatter_tags_deterministically` (unit) maps frozen priorities (including "I want to know if the owner can stop me selling" to `honeypot`/`transfer-limits`/`owner-powers` matches) and frozen frontmatter to one ordered id list with matched tags, red against an unranked panel, then green, with the same inputs giving the same output across runs; `k519_priorities_never_sent_without_ai_opt_in` (unit) counts network-fake calls during baseline matching and requires zero; property `k519_personalization_leaves_scores_evidence_and_text_unchanged` with the Playwright test `k519_critical_finding_visible_with_unrelated_priorities` requires every `high`/`critical` section present, expanded, and bit-identical with personalization on, off, and mismatched. |
+| S-068 | Unified personalize spec contract: `PersonalizeSpec` types, JSON Schema descriptor, `parsePersonalizeSpec` smart constructor (depends on S-062 and S-067) | K-519 (proposed), K-035 (proposed), K-506 | Stretch | `k519_personalize_spec_rejects_html_ranking_and_floored_collapse` feeds specs carrying markup, code, URL, and style fields, unknown and duplicate plugin ids, rankings naming absent plugins, and a collapsed critical section and requires `invalid-output` with no partial spec applied, red against an accepting parser, then green; `k519_personalize_spec_agrees_with_json_schema_on_fixtures` checks types and descriptor against each other on frozen examples in both directions. No new runtime dependency: plain checks plus JSON Schema per ADR P-28 (no zod, same rationale as P-14/P-22). |
+| S-069 | `PluginPersonalizeModelPort`: fake adapter, hosted Muse Spark Open implementation, `not configured` without key (depends on S-068; port-shape decision in ADR open decision 12 — extend `PluginLayoutModelPort` or add this sibling port) | K-519 (proposed), K-513, K-502, K-309 | Stretch | `runPluginPersonalizeModelPortContract` red against the fake, then green against the fake and the hosted adapter over a recorded transport (no network); `k519_personalize_without_key_reports_not_configured_and_sends_nothing` requires the `not-configured` outcome and zero fake-adapter calls with the deterministic baseline standing; `k519_injection_in_priorities_or_docs_stays_quoted_data` feeds hide, rank-first, invent, and restyle instructions in priorities and `PLUGIN.md` excerpts and requires quoted data with no non-spec result field. |
+| S-070 | Experimental AI personalize in the web UI: single opt-in toggle replacing the layout-only toggle, `Experimental AI personalize` label, deterministic-baseline fallback (depends on S-069 and S-061) | K-035 (proposed), K-519 (proposed), K-507, K-103 | Stretch | Playwright `k519_invalid_or_missing_personalize_spec_falls_back_to_deterministic_baseline` serves an invalid spec and a missing spec through the fake adapter and requires the deterministic priority order with the fallback notice; Playwright `k519_ai_personalize_toggle_off_by_default_and_labelled` requires the mode off on first visit, the plain-English priorities-send notice before the first call (`k519_ai_personalize_toggle_states_priorities_send_before_first_call`), and the experimental label with provider and model id while on; property `k519_personalization_leaves_scores_evidence_and_text_unchanged` extended across AI on, off, invalid, and absent. All AI-personalize tests use the fake adapter; no test reaches the network. When S-070 ships, the S-064 layout-only toggle is replaced by this single toggle in the same story; when S-070 is cut, S-064 may still ship as designed. |
+
 Cut order inside E-08, if time runs short: S-048, S-049, S-050, S-051
 are Stretch and cut first, in that order. S-042–S-047 are the MVP of
 this epic and ship as one sequence or not at all, so the registry never
@@ -206,7 +228,14 @@ deterministic gate in front of it. Inside the adaptive web UI
 extension, S-064, S-063, and S-062 are Stretch and cut first, in that
 order; S-059–S-061 ship as one sequence after S-046, so the panel is
 never schema-driven without the deterministic layout and the mode
-toggle in front of it.
+toggle in front of it. Inside the personalization extension,
+S-070, S-069, and S-068 are Stretch and cut first, in that order;
+S-065–S-067 ship as one sequence after S-052/S-059–S-061, so the
+headline demo path is never personalization without validated
+frontmatter, local-only storage, and the severity floor in front
+of it. If S-070 ships it replaces the S-064 layout-only toggle
+with the single `AI personalize (experimental)` toggle in the
+same story; if S-070 is cut, S-064 stands as designed.
 
 ## Day-by-day plan, 27/10–4/11
 
