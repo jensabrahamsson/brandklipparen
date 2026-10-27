@@ -46,12 +46,16 @@ import type {
   RiskType,
   Temporality,
 } from "../domain/signals.ts";
+import { cloneMatchSignal } from "../domain/clones.ts";
+import type { CloneMapping } from "../domain/clones.ts";
+import { SkeletonHash } from "../domain/types.ts";
 import { Evidence } from "../domain/evidence.ts";
 import type { CodeSnippet as CodeSnippetType } from "../domain/evidence.ts";
 import { extractSelectors } from "../domain/selectors.ts";
 import type { Probability as ProbabilityType } from "../domain/types.ts";
 import type { CachePort } from "../ports/cache.ts";
 import type { ClockPort } from "../ports/clock.ts";
+import type { CloneIndexPort } from "../ports/cloneIndex.ts";
 import type { ModelArtifactError } from "../ports/modelArtifact.ts";
 import type { ModelArtifactPort } from "../ports/modelArtifact.ts";
 import type { CallContext, RpcError, RpcPort } from "../ports/rpc.ts";
@@ -75,13 +79,16 @@ export type AnalyzeTokenPorts = {
   readonly clock: ClockPort;
   readonly decompiler?: DecompilerPort | undefined;
   readonly cache?: CachePort | undefined;
+  readonly cloneIndex?: CloneIndexPort | undefined;
 };
 
 // Typed input: every adapter validates raw input to these domain values at
 // its boundary (A-11), so the service takes validity as given. The catalogue
 // maps capability keys to risk, direction and severity; the values steer
 // scoring and belong to the versioned calibration setup per K-210 and A-20,
-// arriving here as a parameter like the model artifact itself.
+// arriving here as a parameter like the model artifact itself. The clone
+// mapping carries the same role for clone-match signals: tests pass a
+// placeholder and production passes the artifact mapping.
 export type AnalyzeTokenInput = {
   readonly address: AddressType;
   readonly block: BlockNumberType | "latest";
@@ -91,6 +98,7 @@ export type AnalyzeTokenInput = {
   readonly indexVersion: IndexVersionType;
   readonly templateVersion: TemplateVersionType;
   readonly catalogue: CapabilityCatalogue;
+  readonly cloneMapping?: CloneMapping | undefined;
   readonly proxyMaxDepth?: number | undefined;
 };
 
@@ -348,11 +356,37 @@ export async function analyzeToken(
     input.catalogue,
     observed,
   );
+  // Clone matching against known trap templates (K-017): where a clone
+  // index is bound, an exact code-hash or skeleton-hash hit appends a
+  // clone-match signal with the mandatory group id and prior count before
+  // scoring runs on the frozen artifact. A miss yields no clone signal, and
+  // a port error continues without one while the fast path's response
+  // stands. The response names the bound index version, so hits stay
+  // reproducible per K-102.
+  const indexVersion = ports.cloneIndex === undefined ? input.indexVersion : ports.cloneIndex.indexVersion();
+  let signals: readonly Signal[] = fastPath;
+  if (ports.cloneIndex !== undefined && input.cloneMapping !== undefined) {
+    const skeletonHash = SkeletonHash.of(fetched.value.bytecode);
+    if (!skeletonHash.ok) {
+      return err({ kind: "domain-error", requestId: input.requestId, error: skeletonHash.error });
+    }
+    const matched = ports.cloneIndex.match(codeHash.value, skeletonHash.value);
+    if (matched.ok && matched.value !== null) {
+      const cloneSignal = cloneMatchSignal({
+        codeHash: codeHash.value,
+        bytecode: fetched.value.bytecode,
+        hit: matched.value,
+        mapping: input.cloneMapping,
+      });
+      if (cloneSignal !== null) {
+        signals = Object.freeze([...signals, cloneSignal]);
+      }
+    }
+  }
   // Deepening through DecompilerPort (K-008): a successful run links
   // snippets to the fast-path evidence, while every failure branch yields
   // the hard-to-analyze signal and the fast path's response stands, so
   // scoring still runs on the frozen artifact either way.
-  let signals: readonly Signal[] = fastPath;
   if (ports.decompiler !== undefined) {
     const decompiled = await ports.decompiler.decompile(
       fetched.value.bytecode,
@@ -381,7 +415,7 @@ export async function analyzeToken(
     codeHash: codeHash.value,
     modelVersion: risk.modelVersion,
     artifactChecksum: loaded.value.checksum,
-    indexVersion: input.indexVersion,
+    indexVersion,
     templateVersion: input.templateVersion,
     assessedAt: ports.clock.now(),
     probabilities: risk.probabilities,

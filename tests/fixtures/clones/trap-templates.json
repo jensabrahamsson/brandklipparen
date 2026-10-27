@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "templates": [
+    {
+      "group": "trap-fixed-fee",
+      "priorCount": 3,
+      "bytecode": "0x8063a9059cbb14600a575bff00",
+      "skeletonSimilarity": 0.75
+    },
+    {
+      "group": "trap-mint-gate",
+      "priorCount": 7,
+      "bytecode": "0x806370a0823114600a575b60005500",
+      "skeletonSimilarity": 0.75
+    }
+  ]
+}
