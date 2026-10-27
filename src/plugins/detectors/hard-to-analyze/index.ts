@@ -66,6 +66,7 @@ function manifestOf(): DetectorPlugin["manifest"] {
     displayName: "Hard-to-analyze detector",
     description: "Reports a failed decompilation cause with selector evidence.",
     inputs: ["bytecode", "decompilerCause"],
+    docs: "PLUGIN.md",
     outputSchema: OUTPUT_SCHEMA,
     capabilities: {},
     limits: { maxFindings: 1, maxEvidencePerFinding: 8, maxOutputBytes: 32768 },

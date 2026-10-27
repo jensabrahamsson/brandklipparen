@@ -189,12 +189,12 @@ function causeOfDecompilerError(error: DecompilerError): HardToAnalyzeCause {
   }
 }
 
-// Placeholder risk bucket for unanalyzable code (K-210): the mapping from
-// decompilation failure to risk steering belongs in the versioned model
-// artifact once calibrated; until then the host conversion below reports
-// the single frozen placeholder and the artifact's cause weights steer
-// scoring.
-const UNANALYZABLE_RISK: RiskType = "rug-pull";
+// Fallback risk bucket for unanalyzable code (K-210, S-047): the risk
+// steering for decompilation failures arrives through the artifact mapping
+// handed to the single conversion path below; until calibration names a
+// dedicated entry this frozen fallback applies and the artifact's cause
+// weights steer scoring.
+const FALLBACK_HARD_TO_ANALYZE_RISK: RiskType = "rug-pull";
 
 // Clone hit read from a plugin finding payload: the similarity share
 // beside the mandatory group id and prior count, or null when the payload
@@ -229,47 +229,8 @@ function cloneHitOf(finding: PluginFinding): CloneHit | null {
   return Object.freeze({ similarity: similarity.value, group: group.value, priorCount: rawCount });
 }
 
-// Host conversion of clone-match findings to today's Signal values through
-// the existing clone-mapping path (S-044, P-12 step 2): risk, direction and
-// severity come from the injected clone mapping, never from the finding, so
-// scores stay bit-identical until calibration names the findings (P-05).
-// Findings with unknown payloads or failed construction are skipped; the
-// plugin record in `pluginResults` still carries them.
-function signalsFromCloneMatchFindings(
-  results: readonly PluginResultEntry[],
-  codeHash: CodeHashType,
-  mapping: CloneMapping | undefined,
-): readonly Signal[] {
-  if (mapping === undefined) {
-    return Object.freeze([]);
-  }
-  const out: Signal[] = [];
-  for (const entry of results) {
-    if (entry.outcome !== "ok") {
-      continue;
-    }
-    for (const finding of entry.findings) {
-      const hit = cloneHitOf(finding);
-      if (hit === null) {
-        continue;
-      }
-      const signal = Signal.createCloneMatch({
-        codeHash,
-        risk: mapping.risk,
-        direction: mapping.direction,
-        severity: mapping.severity,
-        similarity: hit.similarity,
-        group: hit.group,
-        priorCount: hit.priorCount,
-        evidence: finding.evidence,
-      });
-      if (signal.ok) {
-        out.push(signal.value);
-      }
-    }
-  }
-  return Object.freeze(out);
-}
+// (S-047: retired with the legacy converters; the clone-match branch now
+// lives in the single conversion path `signalsFromPluginResults` below.)
 
 // Hard-to-analyze cause read from a plugin finding payload: the closed
 // cause the detector reported, or null when the payload carries anything
@@ -289,39 +250,9 @@ function hardCauseOf(finding: PluginFinding): HardToAnalyzeCause | null {
     : null;
 }
 
-// Host conversion of hard-to-analyze findings to today's Signal values
-// (S-044, P-12 step 2): the cause comes from the finding while the risk
-// stays the frozen placeholder, so scores stay bit-identical until
-// calibration names the findings (P-05). Findings with unknown payloads or
-// failed construction are skipped; the plugin record in `pluginResults`
-// still carries them.
-function signalsFromHardToAnalyzeFindings(
-  results: readonly PluginResultEntry[],
-  codeHash: CodeHashType,
-): readonly Signal[] {
-  const out: Signal[] = [];
-  for (const entry of results) {
-    if (entry.outcome !== "ok") {
-      continue;
-    }
-    for (const finding of entry.findings) {
-      const cause = hardCauseOf(finding);
-      if (cause === null) {
-        continue;
-      }
-      const signal = Signal.createHardToAnalyze({
-        codeHash,
-        risk: UNANALYZABLE_RISK,
-        cause,
-        evidence: finding.evidence,
-      });
-      if (signal.ok) {
-        out.push(signal.value);
-      }
-    }
-  }
-  return Object.freeze(out);
-}
+// (S-047: retired with the legacy converters; the hard-to-analyze branch
+// now lives in the single conversion path `signalsFromPluginResults`
+// below.)
 
 // Snippet enrichment for a successful decompilation (K-008): each evidence
 // entry whose selector the worker decompiled gains its snippet, keeping
@@ -416,16 +347,22 @@ function capabilityKeyOf(finding: PluginFinding): CapabilityKey | null {
   return (CAPABILITY_KEYS as readonly string[]).includes(key) ? (key as CapabilityKey) : null;
 }
 
-// Host conversion of capability findings to today's Signal values through
-// the existing catalogue path (S-043, P-12 step 1): risk, direction and
-// severity come from the injected catalogue, never from the finding, so
-// scores stay bit-identical until calibration names the findings (P-05).
+// Single conversion path from plugin findings to today's Signal values
+// through the artifact mapping (S-047, P-05, P-12 step 5): the one function
+// that reads detector output. Risk, direction and severity come from the
+// injected artifact mapping (capability catalogue, clone mapping and the
+// hard-to-analyze fallback), never from the finding, so a plugin cannot
+// steer its own score and only artifact-named findings shape the result.
 // Findings with unknown payloads or failed construction are skipped; the
-// plugin record in `pluginResults` still carries them.
-function signalsFromCapabilityFindings(
+// plugin record in `pluginResults` still carries them at weight 0.
+// Conversion order follows the fixed capability key order, matching the
+// legacy sweep: signals sharing one SignalId keep a stable, deterministic
+// order through the final id sort below.
+function signalsFromPluginResults(
   results: readonly PluginResultEntry[],
   codeHash: CodeHashType,
   catalogue: CapabilityCatalogue,
+  cloneMapping: CloneMapping | undefined,
   temporality: Temporality,
 ): readonly Signal[] {
   // Conversion order follows the fixed capability key order, matching the
@@ -452,7 +389,11 @@ function signalsFromCapabilityFindings(
       .map(({ finding }) => finding);
     ordered.push(...ranked);
   }
-  const out: Signal[] = [];
+  // Branch order reproduces the retired converters entry for entry:
+  // capability signals id-sorted first, then clone-match signals in
+  // registry order, then hard-to-analyze signals in registry order, so
+  // frozen envelopes stay bit-identical.
+  const capability: Signal[] = [];
   for (const finding of ordered) {
     const key = capabilityKeyOf(finding);
     if (key === null) {
@@ -468,10 +409,10 @@ function signalsFromCapabilityFindings(
       evidence: finding.evidence,
     });
     if (signal.ok) {
-      out.push(signal.value);
+      capability.push(signal.value);
     }
   }
-  out.sort((left, right) => {
+  capability.sort((left, right) => {
     const leftId = left.id as string;
     const rightId = right.id as string;
     if (leftId < rightId) {
@@ -482,7 +423,55 @@ function signalsFromCapabilityFindings(
     }
     return 0;
   });
-  return Object.freeze(out);
+  const clones: Signal[] = [];
+  if (cloneMapping !== undefined) {
+    for (const entry of results) {
+      if (entry.outcome !== "ok") {
+        continue;
+      }
+      for (const finding of entry.findings) {
+        const hit = cloneHitOf(finding);
+        if (hit === null) {
+          continue;
+        }
+        const signal = Signal.createCloneMatch({
+          codeHash,
+          risk: cloneMapping.risk,
+          direction: cloneMapping.direction,
+          severity: cloneMapping.severity,
+          similarity: hit.similarity,
+          group: hit.group,
+          priorCount: hit.priorCount,
+          evidence: finding.evidence,
+        });
+        if (signal.ok) {
+          clones.push(signal.value);
+        }
+      }
+    }
+  }
+  const hard: Signal[] = [];
+  for (const entry of results) {
+    if (entry.outcome !== "ok") {
+      continue;
+    }
+    for (const finding of entry.findings) {
+      const cause = hardCauseOf(finding);
+      if (cause === null) {
+        continue;
+      }
+      const signal = Signal.createHardToAnalyze({
+        codeHash,
+        risk: FALLBACK_HARD_TO_ANALYZE_RISK,
+        cause,
+        evidence: finding.evidence,
+      });
+      if (signal.ok) {
+        hard.push(signal.value);
+      }
+    }
+  }
+  return Object.freeze([...capability, ...clones, ...hard]);
 }
 
 // Numbers first, text second: scoring and the template render run before the
@@ -601,11 +590,12 @@ export async function analyzeToken(
       decompilerCause = causeOfDecompilerError(outcome.error);
     }
   }
-  // Single detection run through the registry (S-043 step 1, S-044 step 2):
-  // every registered detector runs behind the registry boundary and its
-  // findings convert to today's Signal values through the existing
-  // catalogue, clone-mapping and placeholder-risk paths. The legacy direct
-  // cloneMatchSignal call and the inline fallback-signal construction are
+  // Single detection run through the registry (S-043 step 1, S-044 step 2,
+  // S-047 step 5): every registered detector runs behind the registry
+  // boundary and its findings convert to today's Signal values through the
+  // single conversion path `signalsFromPluginResults` reading the artifact
+  // mapping. The legacy direct cloneMatchSignal call, the inline
+  // fallback-signal construction and the three interim converters are
   // deleted; the service reads detector output solely through the
   // registry/detect path.
   const pluginResults = runRegisteredDetectors(
@@ -615,19 +605,13 @@ export async function analyzeToken(
       decompilerCause,
     }),
   );
-  const fastPath = signalsFromCapabilityFindings(
+  let signals: readonly Signal[] = signalsFromPluginResults(
     pluginResults,
     codeHash.value,
     input.catalogue,
+    input.cloneMapping,
     observed,
   );
-  const cloneSignals = signalsFromCloneMatchFindings(
-    pluginResults,
-    codeHash.value,
-    input.cloneMapping,
-  );
-  const hardSignals = signalsFromHardToAnalyzeFindings(pluginResults, codeHash.value);
-  let signals: readonly Signal[] = Object.freeze([...fastPath, ...cloneSignals, ...hardSignals]);
   // Snippet enrichment for a successful decompilation (K-008): each
   // evidence entry whose selector the worker decompiled gains its snippet,
   // keeping every other field bit-identical.

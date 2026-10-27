@@ -591,6 +591,37 @@ union, its limits and the exactly-one rule (A-34) stay as they are.
   assessment. Verification: `k307_scores_and_evidence_identical_with_and_without_adapter`
   stays green.
 
+### K-032 Required PLUGIN.md per plugin (MVP)
+
+Every plugin ships a required `PLUGIN.md` in English beside its manifest,
+referenced through the manifest `docs` field holding the fixed file name
+`PLUGIN.md`. Proposed in `docs/adr-plugin-architecture.md` (P-15); this
+story enters the ID with the implementation.
+
+- The manifest smart constructor turns a missing or renamed `docs`
+  reference away with `invalid-plugin-docs`. Verification: unit test
+  `manifest_requires_the_fixed_plugin_md_docs_reference`.
+- The deterministic validator checks presence, the required sections in
+  order (`What it detects`, `Inputs`, `Output`, `Limits`), the `## Inputs`
+  names against the manifest inputs, and the version line against the
+  manifest version, with one named failure per cause. Verification: unit
+  tests `k517_plugin_md_missing_or_mismatched_fails_deterministic_check`
+  and `plugin_md_validator_accepts_compliant_plugin`.
+
+### K-517 Plugin documentation integrity (MVP)
+
+Documented claims are checked against the manifest and the code.
+Proposed in `docs/adr-plugin-architecture.md` (P-17); this story enters
+the ID with the implementation.
+
+- The deterministic layer fails a doc whose `## Inputs` names an input
+  the manifest does not declare, misses a declared input, or carries a
+  version line different from the manifest version. Verification: unit
+  test `k517_plugin_md_missing_or_mismatched_fails_deterministic_check`.
+- Registered and example `PLUGIN.md` files pass the validator.
+  Verification: unit test
+  `plugin_md_backfilled_docs_pass_for_registered_and_example_plugins`.
+
 ## 6. Interfaces (K-0xx, continued)
 
 Each interface is a driving adapter over the same application service
@@ -766,6 +797,22 @@ version.
 - The service accepts typed domain values from each adapter, so
   validation happens once at the boundary. Verification: unit test
   `k027_service_accepts_typed_values_from_each_adapter`.
+
+### K-033 Plugin docs exposure (MVP)
+
+The validated `PLUGIN.md` record for one plugin is readable from the one
+registry-adjacent value in REST and MCP. Proposed in
+`docs/adr-plugin-architecture.md` (P-16); this story enters the ID with
+the implementation.
+
+- `GET /v1/plugins/:id/docs` returns the plugin id, version, section
+  list and markdown behind the same API-key gate as the plugin list,
+  with the uniform not-found error for an unknown id. Verification:
+  integration test `k033_plugin_docs_match_registry_in_rest_and_mcp`.
+- The `get_plugin_docs` MCP tool returns the byte-identical record from
+  the same value, with a machine-readable error for an unknown plugin
+  id. Verification: integration test
+  `k033_plugin_docs_match_registry_in_rest_and_mcp`.
 
 ## 7. Non-functional requirements (K-1xx)
 
@@ -1939,6 +1986,9 @@ the test per acceptance criterion.
 | K-027 | `k027_same_inputs_same_outputs_across_interfaces` (property) |
 | K-028 | `registry_rejects_duplicate_ids_and_unsupported_api_versions` (unit) |
 | K-030 | `runAssessmentModelPortContract` per registered assessment plugin (contract) |
+| K-032 | `k517_plugin_md_missing_or_mismatched_fails_deterministic_check` (unit) |
+| K-033 | `k033_plugin_docs_match_registry_in_rest_and_mcp` (integration) |
+| K-517 | `k517_plugin_md_missing_or_mismatched_fails_deterministic_check` (unit) |
 | K-101 | `k101_fast_path_p95_within_5s` (timing) |
 | K-102 | `k102_golden_fixtures_bit_identical` (golden) |
 | K-103 | `k103_wcag_aa_checklist_per_release` (review) |

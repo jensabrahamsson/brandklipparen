@@ -80,6 +80,7 @@ function manifestOf(): DetectorPlugin["manifest"] {
     displayName: "Capability detector",
     description: "Reports structural bytecode capabilities with selector evidence.",
     inputs: ["bytecode"],
+    docs: "PLUGIN.md",
     outputSchema: OUTPUT_SCHEMA,
     capabilities: {},
     limits: { maxFindings: 8, maxEvidencePerFinding: 128, maxOutputBytes: 32768 },

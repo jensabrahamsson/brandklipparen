@@ -14,6 +14,24 @@ then implement (see A-21 in `docs/architecture.md`).
 Priorities: **MVP** ships for the submission. **Stretch** ships only if
 the MVP path is green. Low-priority Stretch is cut first (see Buffer).
 
+## Parked after plugin core — do not start now
+
+Plugin core finished in this session: **S-047** (calibration promotion,
+D-6 closed), **S-052** (required `PLUGIN.md` plus deterministic
+validator), **S-056** (plugin docs in REST and MCP). S-057 UI is skipped.
+Everything below stays as designed but parked: keep the stories, do not
+code them now.
+
+| Parked group | Stories | Note |
+|---|---|---|
+| E-09 Investigate with Muse | S-072–S-077 | Design exists in `docs/adr-investigate-with-muse.md`; do not code |
+| E-10 own EVM decompiler | S-078–S-085 | Design exists in `docs/adr-evm-decompiler.md`; do not code |
+| Adaptive web UI | S-059–S-064 | After plugin core; not started |
+| User-priority personalization | S-065–S-070 | Demo headline candidate; S-065 frontmatter leftovers included if unused |
+| Plugin audit | S-053–S-055, S-058 | Deterministic CLI, advisory AI review, last-report read view |
+| Registry leftovers | S-048–S-050 | Per-plugin MCP tools, signed allowlist, worker isolation, if unused |
+| Later ideas | — | AI explain/chat/rug, just-deployed feed, REST streaming/snippet/calibration/deploy-time checks, duplicate package.json check, UI P2 |
+
 ## Pre-work
 
 - [ ] Read the official hackathon rules when published and accept them.

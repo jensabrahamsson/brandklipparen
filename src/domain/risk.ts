@@ -47,6 +47,11 @@ const SCORE_SCALE = 100;
 
 // Versioned model artifact (A-20, K-210, K-211). Frozen at parse time; the
 // values steer score() and are reported through RiskResult.modelVersion.
+// `pluginWeights` names the calibrated detector plugins (S-047, P-05): a
+// plugin id mapped to its calibrated weight. A plugin the artifact does
+// not name carries weight 0 and its findings stay display records; the
+// weight is read from the artifact only, never from the manifest or the
+// finding, so a plugin cannot raise its own influence.
 export type ModelArtifact = {
   readonly version: ModelVersionType;
   readonly severityWeights: Readonly<Record<Severity, number>>;
@@ -54,6 +59,7 @@ export type ModelArtifact = {
   readonly biases: Readonly<Record<RiskType, number>>;
   readonly calibration: Readonly<Record<RiskType, CalibrationParams>>;
   readonly scoreWeights: Readonly<Record<RiskType, number>>;
+  readonly pluginWeights: Readonly<Record<string, number>>;
 };
 
 export type CalibrationParams = {
@@ -116,15 +122,25 @@ function readTable<Kind extends string>(
 // Pure validating parser for the versioned model artifact. Unknown input
 // gives a typed invalid-model-artifact error; valid input gives a deeply
 // frozen artifact. Extra keys are rejected so a misspelled field cannot pass
-// silently.
+// silently. `pluginWeights` is optional for older files and defaults to the
+// empty mapping (weight 0 for every plugin); when present every value must
+// be a finite number at least 0 keyed by a non-empty plugin id.
 export function parseModelArtifact(input: unknown): Result<ModelArtifact, DomainError> {
   if (!isRecord(input)) {
     return invalidArtifact("model artifact must be an object");
   }
   const topKeys = Object.keys(input).sort();
   const expectedTop = ["biases", "calibration", "causeWeights", "scoreWeights", "severityWeights", "version"].sort();
-  if (topKeys.length !== expectedTop.length || topKeys.some((key, index) => key !== expectedTop[index])) {
-    return invalidArtifact("model artifact must carry exactly version, severityWeights, causeWeights, biases, calibration and scoreWeights");
+  const expectedTopWithWeights = [...expectedTop, "pluginWeights"].sort();
+  const matchesExpected =
+    (topKeys.length === expectedTop.length &&
+      topKeys.every((key, index) => key === expectedTop[index])) ||
+    (topKeys.length === expectedTopWithWeights.length &&
+      topKeys.every((key, index) => key === expectedTopWithWeights[index]));
+  if (!matchesExpected) {
+    return invalidArtifact(
+      "model artifact must carry exactly version, severityWeights, causeWeights, biases, calibration and scoreWeights with optional pluginWeights",
+    );
   }
   if (typeof input["version"] !== "string") {
     return invalidArtifact("model artifact version must be a string");
@@ -168,6 +184,10 @@ export function parseModelArtifact(input: unknown): Result<ModelArtifact, Domain
     }
     calibration[risk] = Object.freeze({ slope: entry["slope"], intercept: entry["intercept"] });
   }
+  const pluginWeights = readPluginWeights(input["pluginWeights"]);
+  if (pluginWeights === null) {
+    return invalidArtifact("model artifact pluginWeights must map plugin ids to finite numbers at least 0");
+  }
   return ok(
     Object.freeze({
       version: version.value,
@@ -176,8 +196,26 @@ export function parseModelArtifact(input: unknown): Result<ModelArtifact, Domain
       biases: Object.freeze(biases),
       calibration: Object.freeze(calibration),
       scoreWeights: Object.freeze(scoreWeights),
+      pluginWeights: Object.freeze(pluginWeights),
     }),
   );
+}
+
+function readPluginWeights(raw: unknown): Record<string, number> | null {
+  if (raw === undefined) {
+    return {};
+  }
+  if (!isRecord(raw)) {
+    return null;
+  }
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key.length === 0 || !isFiniteNumber(value) || value < 0) {
+      return null;
+    }
+    out[key] = value;
+  }
+  return out;
 }
 
 function sigmoid(logit: number): number {

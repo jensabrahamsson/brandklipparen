@@ -64,6 +64,7 @@ function manifestOf(): DetectorPlugin["manifest"] {
     displayName: "Clone-match detector",
     description: "Reports a known trap-template hit with selector evidence.",
     inputs: ["bytecode", "cloneMatch"],
+    docs: "PLUGIN.md",
     outputSchema: OUTPUT_SCHEMA,
     capabilities: {},
     limits: { maxFindings: 1, maxEvidencePerFinding: 8, maxOutputBytes: 32768 },

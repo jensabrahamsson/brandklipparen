@@ -33,6 +33,12 @@ export const ASSESS_TOKEN_VERSION = "1.0.0";
 // tools are the S-048 stretch item; the MVP keeps this small closed list.
 export const LIST_PLUGINS_TOOL = "list_plugins";
 export const LIST_PLUGINS_VERSION = "1.0.0";
+// Plugin docs exposure (S-056, K-033, P-16): one registry-derived reading
+// tool returning the same validated docs record as GET /v1/plugins/:id/docs.
+// A resource form stays out of scope: this closed tool list is the reviewed
+// surface (K-026).
+export const GET_PLUGIN_DOCS_TOOL = "get_plugin_docs";
+export const GET_PLUGIN_DOCS_VERSION = "1.0.0";
 // On-request Muse contract assessment (S-038, K-305, K-309): a separate
 // reading tool over the shared assessment service. Scores and evidence
 // pass through untouched; the assessment lands in its own labelled field.
@@ -107,6 +113,23 @@ export const LIST_PLUGINS_INPUT_SCHEMA: JsonSchema = Object.freeze({
   properties: Object.freeze({}),
 });
 
+// Published input schema for get_plugin_docs (S-056, K-026): the plugin id
+// only. Unknown or secret-like fields are turned away like any other tool
+// input.
+export const GET_PLUGIN_DOCS_INPUT_SCHEMA: JsonSchema = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: Object.freeze(["id"]),
+  properties: Object.freeze({
+    id: Object.freeze({
+      type: "string",
+      description: "Registered plugin id, for example dev.brandklipparen.capability.",
+      minLength: 1,
+      maxLength: MCP_MAX_ADDRESS_CHARS,
+    }),
+  }),
+});
+
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
   Object.freeze({
     name: ASSESS_TOKEN_TOOL,
@@ -128,6 +151,13 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       "List the registered detector plugins: id, version, display name, description, declared inputs, capabilities and weight. Same list as GET /v1/plugins. Read-only.",
     version: LIST_PLUGINS_VERSION,
     inputSchema: LIST_PLUGINS_INPUT_SCHEMA,
+  }),
+  Object.freeze({
+    name: GET_PLUGIN_DOCS_TOOL,
+    description:
+      "Read the validated PLUGIN.md docs for one registered plugin: id, version, section list and markdown. Same record as GET /v1/plugins/:id/docs. Read-only.",
+    version: GET_PLUGIN_DOCS_VERSION,
+    inputSchema: GET_PLUGIN_DOCS_INPUT_SCHEMA,
   }),
 ]);
 
@@ -244,6 +274,38 @@ export function parseListPluginsInput(args: unknown): AssessInputError | { reado
     };
   }
   return { empty: true };
+}
+
+// Strict boundary check for get_plugin_docs arguments (S-056, K-026): the
+// value must be a plain object carrying solely the plugin id. Unknown
+// fields are turned away; secret-like fields name the key rule like any
+// other tool.
+export function parseGetPluginDocsInput(
+  args: unknown,
+): AssessInputError | { readonly id: string } {
+  if (typeof args !== "object" || args === null || Array.isArray(args)) {
+    return { kind: "validation-error", message: "Invalid arguments: expected an object with id." };
+  }
+  const record = args as Record<string, unknown>;
+  for (const name of Object.keys(record)) {
+    if (name !== "id") {
+      if (SECRET_LIKE.test(name)) {
+        return {
+          kind: "key-in-url-or-body",
+          message: "API keys travel outside the tool arguments, never inside them.",
+        };
+      }
+      return {
+        kind: "validation-error",
+        message: `Invalid argument: unknown field ${JSON.stringify(name)}.`,
+      };
+    }
+  }
+  const rawId = record["id"];
+  if (typeof rawId !== "string" || rawId.length < 1 || rawId.length > MCP_MAX_ADDRESS_CHARS) {
+    return { kind: "validation-error", message: "Invalid id: expected a registered plugin id." };
+  }
+  return { id: rawId };
 }
 
 // Block context shared with the REST adapter: latest, a string of digits or

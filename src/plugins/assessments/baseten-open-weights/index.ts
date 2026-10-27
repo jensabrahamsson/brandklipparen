@@ -38,6 +38,7 @@ function manifestOf(): AssessmentPlugin["manifest"] {
     displayName: "hosted open-weights assessment",
     description: "Opt-in Muse contract assessment through hosted open weights.",
     inputs: [],
+    docs: "PLUGIN.md",
     outputSchema: OUTPUT_SCHEMA,
     capabilities: {
       needsNetwork: true,

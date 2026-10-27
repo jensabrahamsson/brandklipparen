@@ -72,7 +72,8 @@ describe("artifact freeze (K-211)", () => {
     expect(recomputed as string).toBe(verified.checksum as string);
     expect(ArtifactChecksum.parse(verified.checksum as string).ok).toBe(true);
     // The canonical artifact form holds every model value the risk
-    // function reads, so the checksum covers each of them.
+    // function reads, so the checksum covers each of them. Since S-047 the
+    // calibrated plugin weights travel in the same form and checksum.
     const canonical = artifactToCanonical(trained.artifact);
     expect(canonical).toEqual(
       JSON.parse(
@@ -80,6 +81,7 @@ describe("artifact freeze (K-211)", () => {
           biases: trained.artifact.biases,
           calibration: trained.artifact.calibration,
           causeWeights: trained.artifact.causeWeights,
+          pluginWeights: trained.artifact.pluginWeights,
           scoreWeights: trained.artifact.scoreWeights,
           severityWeights: trained.artifact.severityWeights,
           version: trained.artifact.version,

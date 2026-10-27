@@ -16,6 +16,7 @@ function validManifestInput(): Record<string, unknown> {
     displayName: "Capability detector",
     description: "Reports owner capabilities with selector evidence.",
     inputs: ["bytecode", "cloneMatch"],
+    docs: "PLUGIN.md",
     outputSchema: {
       type: "object",
       required: ["findings"],
@@ -123,6 +124,20 @@ describe("plugin manifest smart constructors", () => {
         },
       }).ok,
     ).toBe(true);
+  });
+
+  test("manifest_requires_the_fixed_plugin_md_docs_reference", () => {
+    expect(parseError({ ...validManifestInput(), docs: undefined }).kind).toBe(
+      "invalid-plugin-docs",
+    );
+    expect(parseError({ ...validManifestInput(), docs: "README.md" }).kind).toBe(
+      "invalid-plugin-docs",
+    );
+    const parsed = PluginManifest.parse(validManifestInput());
+    if (!parsed.ok) {
+      throw new Error(`expected ok, got: ${parsed.error.kind}`);
+    }
+    expect(parsed.value.docs).toBe("PLUGIN.md");
   });
 
   test("manifest_rejects_output_schema_outside_the_supported_subset", () => {

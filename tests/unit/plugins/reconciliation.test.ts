@@ -83,6 +83,7 @@ describe("registry reconciliation with the reviewed ADR (S-071)", () => {
       displayName: "Capability detector",
       description: "Reports structural bytecode capabilities with selector evidence.",
       inputs: ["bytecode"],
+      docs: "PLUGIN.md",
       outputSchema: { type: "object", additionalProperties: false },
       limits: { maxFindings: 8, maxEvidencePerFinding: 128, maxOutputBytes: 32768 },
     };

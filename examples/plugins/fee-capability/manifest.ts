@@ -60,6 +60,7 @@ function manifestOf(): DetectorManifest {
     description:
       "Example third-party-style detector that reports fee-setter selectors. Local fixture only; never registered in production.",
     inputs: ["bytecode"],
+    docs: "PLUGIN.md",
     outputSchema: OUTPUT_SCHEMA,
     capabilities: {},
     limits: { maxFindings: 8, maxEvidencePerFinding: 8, maxOutputBytes: 8192 },

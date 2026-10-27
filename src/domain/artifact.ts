@@ -131,10 +131,15 @@ export function artifactToCanonical(artifact: ModelArtifact): CanonicalValue {
     biases[risk] = artifact.biases[risk] ?? 0;
     scoreWeights[risk] = artifact.scoreWeights[risk] ?? 0;
   }
+  const pluginWeights: Record<string, CanonicalValue> = {};
+  for (const pluginId of Object.keys(artifact.pluginWeights ?? {}).sort()) {
+    pluginWeights[pluginId] = artifact.pluginWeights[pluginId] ?? 0;
+  }
   return {
     biases,
     calibration,
     causeWeights,
+    pluginWeights,
     scoreWeights,
     severityWeights,
     version: artifact.version as string,

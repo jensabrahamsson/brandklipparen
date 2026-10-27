@@ -18,7 +18,8 @@ import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { serializeAssessment } from "../../application/analyzeToken.ts";
 import type { AppServices, DetectorSet } from "../../application/analyzeToken.ts";
-import { exposeRegistry, serializePluginList } from "../../plugins/exposure.ts";
+import { exposeRegistry, serializePluginDocs, serializePluginList } from "../../plugins/exposure.ts";
+import type { PluginDocsMap, PluginWeightMapping } from "../../plugins/exposure.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import { err, ok } from "../../domain/result.ts";
@@ -46,12 +47,14 @@ import type { RateLimitConfig, RateLimiter } from "../rest/rateLimit.ts";
 import type { McpToolError } from "./errors.ts";
 import {
   ASSESS_TOKEN_TOOL,
+  GET_PLUGIN_DOCS_TOOL,
   LIST_PLUGINS_TOOL,
   REQUEST_ASSESSMENT_TOOL,
   TOOL_DEFINITIONS,
   TOOL_LIST_VERSION,
   findTool,
   parseAssessTokenInput,
+  parseGetPluginDocsInput,
   parseListPluginsInput,
   parseRequestAssessmentInput,
 } from "./tools.ts";
@@ -77,6 +80,13 @@ export type McpServerOptions = {
   // runs and GET /v1/plugins lists. The composition root wires the set
   // explicitly; no defaulted set exists.
   readonly detectors: DetectorSet;
+  // Calibrated detector weights read once at startup from the loaded
+  // artifact (S-047, P-05, P-10); absent entries expose weight 0.
+  readonly pluginWeights?: PluginWeightMapping | undefined;
+  // Validated plugin docs keyed by plugin id (S-056, P-16): the same
+  // records the REST docs route reads. An unknown plugin id, or a known
+  // id without a record, gives the machine-readable not-found error.
+  readonly pluginDocs?: PluginDocsMap | undefined;
   readonly analyzeTimeoutMs?: number | undefined;
   readonly maxMessageBytes?: number | undefined;
   // Absent service means the assessment feature is disabled through
@@ -367,10 +377,66 @@ export function createMcpServer(options: McpServerOptions): McpServer {
         return err(rateLimited(decision.retryAfterSec, requestId as string));
       }
     }
+    const weights: PluginWeightMapping = options.pluginWeights ?? {};
     return ok({
-      content: Object.freeze([textBlock(serializePluginList(exposeRegistry(detectors.registry)))]),
+      content: Object.freeze([textBlock(serializePluginList(exposeRegistry(detectors.registry, weights)))]),
       isError: false,
     });
+  }
+
+  // Plugin docs exposure (S-056, K-033, P-16): the validated `PLUGIN.md`
+  // record from the one registry-adjacent value in a text content block
+  // marked as data for the user (M-15). An unknown plugin id gives the
+  // machine-readable not-found error following the unknown-tool pattern.
+  async function runGetPluginDocs(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const detectors = options.detectors;
+    let apiKeyId = "anonymous";
+    if (keyGate) {
+      const candidate = callOptions?.apiKey;
+      if (candidate === undefined) {
+        return err(missingApiKey(requestId as string));
+      }
+      if (!store.verify(candidate)) {
+        return err(invalidApiKey(requestId as string));
+      }
+      apiKeyId = store.keyId(candidate) ?? "unknown-key";
+    }
+    const argLength = safeJsonLength(args);
+    if (argLength === null) {
+      return err(validationError("Invalid arguments: expected an object with id.", requestId as string));
+    }
+    if (argLength > maxMessageBytes) {
+      return err(requestTooLarge(requestId as string));
+    }
+    const parsed = parseGetPluginDocsInput(args);
+    if ("kind" in parsed) {
+      switch (parsed.kind) {
+        case "request-too-large":
+          return err(requestTooLarge(requestId as string));
+        case "key-in-url-or-body":
+          return err(keyInToolArgs(requestId as string));
+        case "validation-error":
+        default:
+          return err(validationError(parsed.message ?? "Invalid arguments.", requestId as string));
+      }
+    }
+    if (limiter !== null) {
+      const decision = limiter.check(apiKeyId);
+      if (!decision.allowed) {
+        return err(rateLimited(decision.retryAfterSec, requestId as string));
+      }
+    }
+    const id = parsed.id;
+    const registered = detectors.registry.entries.some((candidate) => candidate.manifest.id === id);
+    const docs = (options.pluginDocs ?? new Map()).get(id);
+    if (!registered || docs === undefined) {
+      return err(validationError(`Unknown plugin id: ${JSON.stringify(id)}.`, requestId as string));
+    }
+    return ok({ content: Object.freeze([textBlock(serializePluginDocs(docs))]), isError: false });
   }
 
   async function callTool(
@@ -397,6 +463,9 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     }
     if (name === LIST_PLUGINS_TOOL) {
       return runListPlugins(args, requestId, callOptions);
+    }
+    if (name === GET_PLUGIN_DOCS_TOOL) {
+      return runGetPluginDocs(args, requestId, callOptions);
     }
     return err(unknownTool(name, requestId as string));
   }

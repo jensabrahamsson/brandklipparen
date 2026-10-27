@@ -95,6 +95,7 @@ const EXTRA_MANIFEST_PARSED = mustOk(
     displayName: "Test extra detector",
     description: "Test-only detector that always reports one finding.",
     inputs: ["bytecode"],
+    docs: "PLUGIN.md",
     outputSchema: {
       type: "array",
       maxItems: 4,

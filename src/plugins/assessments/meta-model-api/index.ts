@@ -38,6 +38,7 @@ function manifestOf(): AssessmentPlugin["manifest"] {
     displayName: "Meta Model API assessment",
     description: "Opt-in Muse contract assessment through the Meta Model API.",
     inputs: [],
+    docs: "PLUGIN.md",
     outputSchema: OUTPUT_SCHEMA,
     capabilities: {
       needsNetwork: true,

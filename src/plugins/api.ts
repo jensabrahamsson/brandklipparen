@@ -136,6 +136,10 @@ type SharedManifestFields = {
   readonly apiVersion: PluginApiVersion;
   readonly displayName: string;
   readonly description: string;
+  // Required plugin docs reference (S-052, P-15): the fixed file name of
+  // the plugin's `PLUGIN.md` beside its manifest. The version lives in the
+  // manifest `version` and in the doc, never in this reference.
+  readonly docs: "PLUGIN.md";
   readonly outputSchema: JsonSchema;
 };
 
@@ -172,6 +176,7 @@ export type PluginManifestError =
   | { kind: "invalid-plugin-display-name"; message: string }
   | { kind: "invalid-plugin-description"; message: string }
   | { kind: "invalid-plugin-inputs"; message: string }
+  | { kind: "invalid-plugin-docs"; message: string }
   | { kind: "invalid-plugin-output-schema"; message: string }
   | { kind: "invalid-plugin-capabilities"; message: string }
   | { kind: "invalid-plugin-limits"; message: string };
@@ -562,6 +567,13 @@ export const PluginManifest = {
         message: "detector plugins declare a non-empty input set holding bytecode",
       });
     }
+    const docs: unknown = raw["docs"];
+    if (docs !== "PLUGIN.md") {
+      return err({
+        kind: "invalid-plugin-docs",
+        message: 'plugin docs must reference the fixed file name "PLUGIN.md"',
+      });
+    }
     const outputSchema: unknown = raw["outputSchema"];
     if (!validateOutputSchema(outputSchema)) {
       return err({
@@ -576,6 +588,7 @@ export const PluginManifest = {
       apiVersion: apiVersion as PluginApiVersion,
       displayName,
       description,
+      docs: "PLUGIN.md" as const,
       outputSchema: deepFreezeSchema(outputSchema),
     };
     if (kind === "assessment") {

@@ -163,7 +163,7 @@ Deliberate deviations, each with one follow-up story (backlog S-071):
 | D-3 | Manifest has no `docs` field; `PLUGIN.md` files carry pre-refinement headings and no frontmatter | `docs` reference (3.1) plus the refined P-15 contract, delivered by S-052/S-065 as already planned |
 | D-4 | Boundary evidence check accepts any selector-shaped string; finding id prefix unchecked | Boundary re-parse through `Evidence`, prefix and plugin-id checks (4.1) |
 | D-5 | Registry is manifests only; executable map is separate; missing implementation degrades per analysis; `DEFAULT_PLUGIN_REGISTRY` throws at module load; `wireAppServices` defaults the detector set | Registry entries (6); composition builds the registry and maps failure to a typed startup error; no load-time throw, no defaulted detector set |
-| D-6 | Built-in findings reach the score through three host converters (catalogue, clone mapping, placeholder risk) | One artifact mapping in S-047 as already planned; converters labelled interim until then (5.2) |
+| D-6 | Built-in findings reach the score through three host converters (catalogue, clone mapping, placeholder risk) | One artifact mapping in S-047 as already planned; converters labelled interim until then (5.2). **Closed by S-047:** the artifact carries `pluginWeights` (weight 0 for unnamed plugins, read from the artifact only), the three converters are deleted in favour of the single conversion path `signalsFromPluginResults` in `src/application/analyzeToken.ts`, and the exposure carries the startup-read weight per detector. |
 
 ### 0.4 Remaining risks (accepted, named)
 

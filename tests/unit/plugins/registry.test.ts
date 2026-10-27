@@ -28,6 +28,7 @@ function parseManifest(overrides: Record<string, unknown> = {}): DetectorManifes
     displayName: "Capability detector",
     description: "Reports owner capabilities with selector evidence.",
     inputs: ["bytecode"],
+    docs: "PLUGIN.md",
     outputSchema: { type: "object", additionalProperties: false },
     capabilities: {},
     limits: { maxFindings: 50, maxEvidencePerFinding: 4, maxOutputBytes: 32768 },

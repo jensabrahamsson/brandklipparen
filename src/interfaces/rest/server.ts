@@ -14,7 +14,14 @@ import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from
 import { randomUUID } from "node:crypto";
 import { serializeAssessment } from "../../application/analyzeToken.ts";
 import type { AppServices, DetectorSet } from "../../application/analyzeToken.ts";
-import { exposeManifest, exposeRegistry, serializePluginList } from "../../plugins/exposure.ts";
+import {
+  exposeManifest,
+  exposeRegistry,
+  serializePluginDocs,
+  serializePluginList,
+  weightOfMapping,
+} from "../../plugins/exposure.ts";
+import type { PluginDocsMap, PluginWeightMapping } from "../../plugins/exposure.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import {
@@ -86,6 +93,14 @@ export type RestServerOptions = {
   // the shared service runs. The composition root wires the set
   // explicitly; no defaulted set exists.
   readonly detectors: DetectorSet;
+  // Calibrated detector weights read once at startup from the loaded
+  // artifact (S-047, P-05, P-09); absent entries expose weight 0. Tests
+  // omit it and see the uncalibrated list.
+  readonly pluginWeights?: PluginWeightMapping | undefined;
+  // Validated plugin docs keyed by plugin id (S-056, P-16): the same
+  // records the MCP docs surface reads. An unknown plugin id, or a known
+  // id without a record, gives the uniform not-found error.
+  readonly pluginDocs?: PluginDocsMap | undefined;
   readonly analyzeTimeoutMs?: number | undefined;
   readonly maxQueryChars?: number | undefined;
   readonly maxBodyBytes?: number | undefined;
@@ -466,6 +481,8 @@ export function createRestServer(options: RestServerOptions): RestServer {
   // (K-024). No route is hand-written per plugin; detector invocation rides
   // the existing analysis routes and surfaces under `pluginResults`.
   const detectors = options.detectors;
+  const pluginWeights: PluginWeightMapping = options.pluginWeights ?? {};
+  const pluginDocs: PluginDocsMap = options.pluginDocs ?? new Map();
 
   app.get("/v1/plugins", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     const requestId = issueRequestId();
@@ -477,7 +494,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
       .code(200)
       .header(REQUEST_ID_HEADER, requestId)
       .type("application/json")
-      .send(serializePluginList(exposeRegistry(detectors.registry)));
+      .send(serializePluginList(exposeRegistry(detectors.registry, pluginWeights)));
   });
 
   app.get<{ Params: { id: string } }>(
@@ -496,11 +513,41 @@ export function createRestServer(options: RestServerOptions): RestServer {
       if (entry === undefined) {
         return sendError(reply, notFound(requestId));
       }
+      const weight = weightOfMapping(pluginWeights, entry.manifest.id);
       return reply
         .code(200)
         .header(REQUEST_ID_HEADER, requestId)
         .type("application/json")
-        .send(canonicalSerialize(exposeManifest(entry.manifest) as never));
+        .send(canonicalSerialize(exposeManifest(entry.manifest, weight) as never));
+    },
+  );
+
+  // Plugin docs exposure (S-056, P-16): the validated `PLUGIN.md` record
+  // from the one registry-adjacent value, behind the same API-key gate as
+  // the plugin list (K-024). Read-only; an unknown plugin id gives the
+  // uniform not-found error (A-18).
+  app.get<{ Params: { id: string } }>(
+    "/v1/plugins/:id/docs",
+    async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+      const requestId = issueRequestId();
+      const gated = gateKeyOnly(request, request.query, requestId);
+      if (!gated.ok) {
+        return sendError(reply, gated.error);
+      }
+      const id = (request.params as { id?: unknown }).id;
+      const registered =
+        typeof id === "string"
+          ? detectors.registry.entries.some((candidate) => candidate.manifest.id === id)
+          : false;
+      const docs = typeof id === "string" ? pluginDocs.get(id) : undefined;
+      if (!registered || docs === undefined) {
+        return sendError(reply, notFound(requestId));
+      }
+      return reply
+        .code(200)
+        .header(REQUEST_ID_HEADER, requestId)
+        .type("application/json")
+        .send(serializePluginDocs(docs));
     },
   );
 
