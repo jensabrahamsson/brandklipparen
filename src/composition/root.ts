@@ -15,8 +15,8 @@ import type { AssessmentProvider } from "../ports/assessmentModel.ts";
 // Single wiring point for the shared application service (A-02, A-03,
 // K-027): the root binds each port to exactly one adapter and hands the ready
 // AppServices structure to the driving adapters (REST, MCP, web UI) through
-// constructor injection. Proxy resolution and just-deployed listing join this
-// structure in later stories.
+// constructor injection. Proxy resolution (S-006) is wired through the same
+// structure; just-deployed listing joins it in a later story.
 export function wireAppServices(ports: AnalyzeTokenPorts): AppServices {
   return createAppServices(ports);
 }

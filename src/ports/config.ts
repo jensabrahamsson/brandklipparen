@@ -75,6 +75,7 @@ export type AppConfig = {
   readonly rpcMaxConcurrency?: number;
   readonly rpcRetryBudget?: number;
   readonly rpcMaxResponseBytes?: number;
+  readonly proxyMaxDepth?: number;
   readonly assessmentDeadlineMs?: number;
   readonly assessmentMaxInputBytes?: number;
   readonly assessmentMaxOutputBytes?: number;

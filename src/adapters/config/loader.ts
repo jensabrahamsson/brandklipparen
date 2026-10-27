@@ -208,6 +208,7 @@ const V = {
   rpcMaxConcurrency: "BRANDKLIPPAREN_RPC_MAX_CONCURRENCY",
   rpcRetryBudget: "BRANDKLIPPAREN_RPC_RETRY_BUDGET",
   rpcMaxResponseBytes: "BRANDKLIPPAREN_RPC_MAX_RESPONSE_BYTES",
+  proxyMaxDepth: "BRANDKLIPPAREN_PROXY_MAX_DEPTH",
   assessmentDeadlineMs: "BRANDKLIPPAREN_ASSESSMENT_DEADLINE_MS",
   assessmentMaxInputBytes: "BRANDKLIPPAREN_ASSESSMENT_MAX_INPUT_BYTES",
   assessmentMaxOutputBytes: "BRANDKLIPPAREN_ASSESSMENT_MAX_OUTPUT_BYTES",
@@ -362,6 +363,14 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   );
   if (!rpcMaxResponseBytes.ok) {
     return rpcMaxResponseBytes;
+  }
+  // Proxy chain bound (K-002, K-005): optional in every setup; the
+  // application falls back to its placeholder default when unset.
+  const proxyMaxDepth = optionalField(env, V.proxyMaxDepth, (raw) =>
+    parseInteger(V.proxyMaxDepth, raw, 1, 32),
+  );
+  if (!proxyMaxDepth.ok) {
+    return proxyMaxDepth;
   }
   const assessmentDeadlineMs = requiredWhen(env, V.assessmentDeadlineMs, isDemo, (raw) =>
     parseInteger(V.assessmentDeadlineMs, raw, 1, 3600000),
@@ -579,6 +588,7 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(rpcMaxResponseBytes.value === undefined
       ? {}
       : { rpcMaxResponseBytes: rpcMaxResponseBytes.value }),
+    ...(proxyMaxDepth.value === undefined ? {} : { proxyMaxDepth: proxyMaxDepth.value }),
     ...(assessmentDeadlineMs.value === undefined
       ? {}
       : { assessmentDeadlineMs: assessmentDeadlineMs.value }),

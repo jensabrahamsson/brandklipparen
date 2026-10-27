@@ -224,6 +224,14 @@ function keccak256Hex(input: Uint8Array): string {
   return `0x${bytesToHex(keccak256Bytes(input))}`;
 }
 
+// Keccak-256 over the UTF-8 bytes of a text label, 0x-prefixed lowercase.
+// Pure helper for spec-formula derivations such as the proxy storage slots:
+// tests recompute the expected slots through this function, so the slot
+// values are derived from the formula rather than copied from elsewhere.
+export function keccak256HexOfUtf8(text: string): string {
+  return keccak256Hex(utf8Encode(text));
+}
+
 // 0x followed by 40 hex characters, stored in EIP-55 checksummed form.
 export type Address = string & { readonly __brand: "Address" };
 export const Address = {

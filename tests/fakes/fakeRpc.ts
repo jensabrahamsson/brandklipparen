@@ -4,11 +4,12 @@
 // any port call and cache behaviour without network access.
 import { err, ok } from "../../src/domain/result.ts";
 import type { Result } from "../../src/domain/result.ts";
-import { Bytecode } from "../../src/domain/types.ts";
+import { Bytecode, StorageWord } from "../../src/domain/types.ts";
 import type {
   Address as AddressType,
   BlockNumber as BlockNumberType,
   CallData as CallDataType,
+  Slot as SlotType,
   StorageWord as StorageWordType,
 } from "../../src/domain/types.ts";
 import type {
@@ -20,11 +21,13 @@ import type {
 
 export class FakeRpcAdapter implements RpcPort {
   readonly getCodeCalls: string[] = [];
+  readonly getStorageAtCalls: Array<{ address: string; slot: string }> = [];
   getBlockNumberCalls = 0;
 
   constructor(
     private readonly codes: ReadonlyMap<string, string>,
     private readonly headBlock: BlockNumberType,
+    private readonly storage: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map(),
   ) {}
 
   async getCode(address: AddressType, ctx: CallContext): Promise<Result<BytecodeResult, RpcError>> {
@@ -41,8 +44,21 @@ export class FakeRpcAdapter implements RpcPort {
     return ok({ bytecode: parsed.value, block });
   }
 
-  async getStorageAt(): Promise<Result<StorageWordType, RpcError>> {
-    return err({ kind: "invalid-response", message: "fake rpc carries no storage" });
+  async getStorageAt(
+    address: AddressType,
+    slot: SlotType,
+  ): Promise<Result<StorageWordType, RpcError>> {
+    this.getStorageAtCalls.push({ address: address as string, slot: slot as string });
+    // Unwritten slots read as zero, matching chain behaviour; configured
+    // entries replay their frozen word.
+    const raw =
+      this.storage.get(address as string)?.get((slot as string).toLowerCase()) ??
+      `0x${"0".repeat(64)}`;
+    const parsed = StorageWord.parse(raw);
+    if (!parsed.ok) {
+      return err({ kind: "invalid-response", message: parsed.error.message });
+    }
+    return ok(parsed.value);
   }
 
   async call(): Promise<Result<CallDataType, RpcError>> {

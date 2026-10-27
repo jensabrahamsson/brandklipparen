@@ -12,6 +12,10 @@
 // analysis path here carries zero assessment calls (A-33).
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
+import { noneProxyResolution, proxyToCanonical } from "../domain/proxy.ts";
+import type { ProxyResolution } from "../domain/proxy.ts";
+import { resolveProxy } from "./resolveProxy.ts";
+import type { ResolveProxyError, ResolveProxyInput, ResolveProxySuccess } from "./resolveProxy.ts";
 import { standardCantTell } from "../domain/cantTell.ts";
 import type { CantTellItem } from "../domain/cantTell.ts";
 import { explanationToCanonical, renderExplanation } from "../domain/explain.ts";
@@ -68,6 +72,7 @@ export type AnalyzeTokenInput = {
   readonly indexVersion: IndexVersionType;
   readonly templateVersion: TemplateVersionType;
   readonly catalogue: CapabilityCatalogue;
+  readonly proxyMaxDepth?: number | undefined;
 };
 
 // Canonical assessment envelope: the same input triple of bytecode, block
@@ -79,6 +84,7 @@ export type AssessmentEnvelope = {
   readonly kind: "assessed";
   readonly target: AddressType;
   readonly block: BlockNumberType;
+  readonly proxy: ProxyResolution;
   readonly codeHash: CodeHashType;
   readonly modelVersion: ModelVersionType;
   readonly artifactChecksum: ArtifactChecksumType;
@@ -137,6 +143,20 @@ export async function analyzeToken(
   if (!codeHash.ok) {
     return err({ kind: "domain-error", requestId: input.requestId, error: codeHash.error });
   }
+  // Proxy resolution runs on the pinned block through RpcPort; a typed
+  // port failure degrades to no proxy info so the deterministic analysis
+  // still delivers its result (K-002, K-005).
+  const proxyInput: ResolveProxyInput = {
+    address: input.address,
+    block,
+    requestId: input.requestId,
+    deadline: input.deadline,
+    ...(input.proxyMaxDepth === undefined ? {} : { maxDepth: input.proxyMaxDepth }),
+  };
+  const resolvedProxy = await resolveProxy(ports, proxyInput);
+  const proxy: ProxyResolution = resolvedProxy.ok
+    ? resolvedProxy.value.resolution
+    : noneProxyResolution();
   const loaded = ports.modelArtifacts.load(input.modelVersion);
   if (!loaded.ok) {
     return err({ kind: "model-artifact-error", requestId: input.requestId, error: loaded.error });
@@ -152,6 +172,7 @@ export async function analyzeToken(
     kind: "assessed",
     target: input.address,
     block,
+    proxy,
     codeHash: codeHash.value,
     modelVersion: risk.modelVersion,
     artifactChecksum: loaded.value.checksum,
@@ -190,6 +211,7 @@ export function assessmentToCanonical(envelope: AssessmentEnvelope): CanonicalVa
     kind: "assessed",
     target: envelope.target as string,
     block: envelope.block as number,
+    proxy: proxyToCanonical(envelope.proxy),
     codeHash: envelope.codeHash as string,
     modelVersion: envelope.modelVersion as string,
     artifactChecksum: envelope.artifactChecksum as string,
@@ -256,11 +278,28 @@ export type AppServices = {
   readonly analyzeToken: (
     input: AnalyzeTokenInput,
   ) => Promise<Result<AnalyzeTokenSuccess, ApplicationError>>;
+  readonly resolveProxy: (
+    input: ResolveProxyInput,
+  ) => Promise<Result<ResolveProxySuccess, ApplicationError>>;
 };
 
 export function createAppServices(ports: AnalyzeTokenPorts): AppServices {
   return Object.freeze({
     analyzeToken: (input: AnalyzeTokenInput): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> =>
       analyzeToken(ports, input),
+    resolveProxy: async (
+      input: ResolveProxyInput,
+    ): Promise<Result<ResolveProxySuccess, ApplicationError>> => {
+      const resolved = await resolveProxy(ports, input);
+      if (!resolved.ok) {
+        const translated: ResolveProxyError = resolved.error;
+        return err({
+          kind: "rpc-error",
+          requestId: translated.requestId,
+          error: translated.error,
+        });
+      }
+      return ok(resolved.value);
+    },
   });
 }
