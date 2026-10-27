@@ -1,16 +1,19 @@
-// Proxy resolution service for the shared application layer (S-006,
-// K-002, K-005, A-02). Reads EIP-1967 storage slots through RpcPort at the
-// pinned block, decodes them with the pure domain module, classifies the
-// admin and reports the upgrade authority with slot and block evidence.
-// Proxy chains are followed up to a configured bound, and cycles terminate
-// through a visited set. This module performs no I/O of its own; every
-// external call goes through the port, and the module imports solely
-// domain and ports.
+// Proxy resolution service for the shared application layer (S-006, S-007,
+// K-002, K-004, K-005, K-007, A-02). Reads EIP-1967 storage slots through
+// RpcPort at the pinned block, decodes them with the pure domain module,
+// detects EIP-1167 minimal-proxy bytecode and EIP-7702 delegation
+// designators from the fetched code, and classifies the admin and the
+// upgrade authority with slot and block evidence. Proxy chains are followed
+// up to a configured bound, and cycles terminate through a visited set.
+// This module performs no I/O of its own; every external call goes through
+// the port, and the module imports solely domain and ports.
 import {
   ADMIN_SLOT,
   IMPLEMENTATION_SLOT,
   bytecodeHasSelector,
   decodeSlotAddress,
+  parseEip1167Target,
+  parseEip7702Delegation,
   proxiableUUIDSelector,
   selectorOffsetInBytecode,
 } from "../domain/proxy.ts";
@@ -130,6 +133,62 @@ export async function resolveProxy(
         return rpcError(input, failed);
       }
       return ok({ resolution: last, block });
+    }
+    // EIP-7702 comes first: delegated EOA code carries the 0xef0100 prefix
+    // with the delegation address inline, so no slot read applies.
+    const delegated = parseEip7702Delegation(proxyCode);
+    if (delegated !== null) {
+      const targetCode = await readCode(ports, codeCache, delegated, ctx);
+      if (targetCode === null || targetCode === undefined) {
+        if (targetCode === undefined) {
+          const failed = await readCodeError(ports, codeCache, delegated, ctx);
+          if (failed !== null) {
+            return rpcError(input, failed);
+          }
+        }
+        return ok({ resolution: last, block });
+      }
+      const targetHash = CodeHash.of(targetCode);
+      if (!targetHash.ok) {
+        return ok({ resolution: last, block });
+      }
+      last = Object.freeze({
+        kind: "eip7702",
+        delegation: delegated,
+        delegationCodeHash: targetHash.value,
+        mutability: "changeable-by-new-authorization",
+      });
+      current = delegated;
+      depth += 1;
+      continue;
+    }
+    // EIP-1167 follows: the minimal-proxy bytecode embeds the fixed target
+    // address inline, so no slot read applies.
+    const minimalTarget = parseEip1167Target(proxyCode);
+    if (minimalTarget !== null) {
+      const targetCode = await readCode(ports, codeCache, minimalTarget, ctx);
+      if (targetCode === null || targetCode === undefined) {
+        if (targetCode === undefined) {
+          const failed = await readCodeError(ports, codeCache, minimalTarget, ctx);
+          if (failed !== null) {
+            return rpcError(input, failed);
+          }
+        }
+        return ok({ resolution: last, block });
+      }
+      const targetHash = CodeHash.of(targetCode);
+      if (!targetHash.ok) {
+        return ok({ resolution: last, block });
+      }
+      last = Object.freeze({
+        kind: "eip1167",
+        target: minimalTarget,
+        targetCodeHash: targetHash.value,
+        mutability: "fixed",
+      });
+      current = minimalTarget;
+      depth += 1;
+      continue;
     }
     const implWord = await ports.rpc.getStorageAt(current, IMPLEMENTATION_SLOT, ctx);
     if (!implWord.ok) {

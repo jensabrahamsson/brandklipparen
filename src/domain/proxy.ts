@@ -1,10 +1,12 @@
-// Proxy resolution: EIP-1967 and UUPS proxy detection (K-002, K-005, S-006).
+// Proxy resolution: EIP-1967, UUPS, EIP-1167 and EIP-7702 detection
+// (K-002, K-004, K-005, K-007, S-006, S-007).
 // Pure domain module: slot definitions are derived from the public spec
 // formula (keccak256 of the documented label minus 1) through the shared
 // Keccak implementation, and slot decoding is a total function of the
-// storage word. Reading storage slots goes through RpcPort in the
-// application service; this module performs no I/O. Beacon, EIP-1167,
-// diamond and EIP-7702 branches arrive in later stories (S-007–S-009).
+// storage word. Byte-pattern detection for EIP-1167 and EIP-7702 is a
+// total function of the bytecode. Reading storage slots goes through
+// RpcPort in the application service; this module performs no I/O.
+// Beacon and diamond branches arrive in later stories (S-008, S-009).
 import { extractSelectors } from "./selectors.ts";
 import { Address, keccak256HexOfUtf8 } from "./types.ts";
 import type {
@@ -115,10 +117,83 @@ export type UpgradeAuthority =
   | { readonly kind: "contract"; readonly holder: AddressType; readonly codeHash: CodeHashType }
   | { readonly kind: "locked" };
 
-// Proxy resolution branches for this story (A-12 subset). Each branch that
+// EIP-1167 minimal proxy runtime shape (public EIP-1167 pattern): 45 bytes
+// with a 10-byte prefix, the 20-byte embedded target, and a 15-byte suffix.
+export const EIP1167_BYTE_LENGTH = 45;
+const EIP1167_PREFIX: readonly number[] = Object.freeze([
+  0x36, 0x3d, 0x3d, 0x37, 0x3d, 0x3d, 0x3d, 0x36, 0x3d, 0x73,
+]);
+const EIP1167_SUFFIX: readonly number[] = Object.freeze([
+  0x5a, 0xf4, 0x3d, 0x82, 0x80, 0x3e, 0x90, 0x3d, 0x91, 0x60, 0x2b, 0x57, 0xfd, 0x5b, 0xf3,
+]);
+
+// EIP-7702 delegation designator prefix on EOA code: 0xef0100 followed by
+// the 20-byte delegation address (23 bytes total).
+export const EIP7702_BYTE_LENGTH = 23;
+const EIP7702_PREFIX: readonly number[] = Object.freeze([0xef, 0x01, 0x00]);
+
+const HEX_DIGITS_LOWER = "0123456789abcdef";
+
+function bytesToHexLower(slice: Uint8Array): string {
+  let out = "";
+  for (let i = 0; i < slice.length; i += 1) {
+    const byte = slice[i] ?? 0;
+    out += HEX_DIGITS_LOWER[(byte >> 4) & 15] ?? "0";
+    out += HEX_DIGITS_LOWER[byte & 15] ?? "0";
+  }
+  return out;
+}
+
+function addressOfSlice(slice: Uint8Array): AddressType | null {
+  const parsed = Address.parse(`0x${bytesToHexLower(slice)}`);
+  if (!parsed.ok) {
+    return null;
+  }
+  return parsed.value;
+}
+
+// Embedded EIP-1167 target, or null when the bytecode diverges from the
+// pattern. Total: every bytecode maps to exactly one branch, never throws.
+export function parseEip1167Target(bytecode: BytecodeType): AddressType | null {
+  const raw = bytecode as Uint8Array;
+  if (raw.length !== EIP1167_BYTE_LENGTH) {
+    return null;
+  }
+  for (let i = 0; i < EIP1167_PREFIX.length; i += 1) {
+    if ((raw[i] ?? -1) !== (EIP1167_PREFIX[i] ?? -2)) {
+      return null;
+    }
+  }
+  const suffixStart = EIP1167_BYTE_LENGTH - EIP1167_SUFFIX.length;
+  for (let i = 0; i < EIP1167_SUFFIX.length; i += 1) {
+    if ((raw[suffixStart + i] ?? -1) !== (EIP1167_SUFFIX[i] ?? -2)) {
+      return null;
+    }
+  }
+  return addressOfSlice(raw.slice(EIP1167_PREFIX.length, suffixStart));
+}
+
+// Delegated EIP-7702 target, or null when the code carries another prefix.
+// Total: every bytecode maps to exactly one branch, never throws.
+export function parseEip7702Delegation(bytecode: BytecodeType): AddressType | null {
+  const raw = bytecode as Uint8Array;
+  if (raw.length !== EIP7702_BYTE_LENGTH) {
+    return null;
+  }
+  for (let i = 0; i < EIP7702_PREFIX.length; i += 1) {
+    if ((raw[i] ?? -1) !== (EIP7702_PREFIX[i] ?? -2)) {
+      return null;
+    }
+  }
+  return addressOfSlice(raw.slice(EIP7702_PREFIX.length));
+}
+
+// Proxy resolution branches (A-12 subset). Each branch that
 // reports an implementation carries the evidence the requirement names:
 // the storage slot, the pinned block, and the selector with its PC offset
-// where derivable. Beacon, EIP-1167, diamond and EIP-7702 branches arrive
+// where derivable for EIP-1967/UUPS. The EIP-1167 target is fixed
+// (logic locked) and the EIP-7702 delegation can change by new
+// authorization per K-004 and K-007. Beacon and diamond branches arrive
 // in their own stories and extend this union.
 export type ProxyResolution =
   | { readonly kind: "none" }
@@ -141,6 +216,18 @@ export type ProxyResolution =
       readonly upgradeFunction: SelectorType;
       readonly upgradeFunctionOffset?: PcOffsetType;
       readonly upgradeAuthority: UpgradeAuthority;
+    }
+  | {
+      readonly kind: "eip1167";
+      readonly target: AddressType;
+      readonly targetCodeHash: CodeHashType;
+      readonly mutability: "fixed";
+    }
+  | {
+      readonly kind: "eip7702";
+      readonly delegation: AddressType;
+      readonly delegationCodeHash: CodeHashType;
+      readonly mutability: "changeable-by-new-authorization";
     };
 
 // The empty proxy outcome: the address holds no recognised proxy pointer.
@@ -178,6 +265,20 @@ export function proxyToCanonical(resolution: ProxyResolution): CanonicalValue {
             ? null
             : (resolution.upgradeFunctionOffset as number),
         upgradeAuthority: authorityToCanonical(resolution.upgradeAuthority),
+      };
+    case "eip1167":
+      return {
+        kind: "eip1167",
+        target: resolution.target as string,
+        targetCodeHash: resolution.targetCodeHash as string,
+        mutability: resolution.mutability,
+      };
+    case "eip7702":
+      return {
+        kind: "eip7702",
+        delegation: resolution.delegation as string,
+        delegationCodeHash: resolution.delegationCodeHash as string,
+        mutability: resolution.mutability,
       };
   }
 }
