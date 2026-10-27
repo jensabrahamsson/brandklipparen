@@ -1,0 +1,16 @@
+{
+  "description": "Synthetic recorded JSON-RPC fixture for tests only. The address and bytecode below are made up and clearly synthetic; they do not belong to a real token.",
+  "address": "0x1234567890123456789012345678901234567890",
+  "block": 24000000,
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_getCode",
+    "params": ["0x1234567890123456789012345678901234567890", "0x16e3600"]
+  },
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": "0x6001600055"
+  }
+}

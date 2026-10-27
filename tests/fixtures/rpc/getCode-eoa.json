@@ -1,0 +1,16 @@
+{
+  "description": "Synthetic recorded JSON-RPC fixture for tests only. The address below is made up and clearly synthetic; it stands for an externally owned account with no contract code.",
+  "address": "0x0987654321098765432109876543210987654321",
+  "block": 24000000,
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "eth_getCode",
+    "params": ["0x0987654321098765432109876543210987654321", "0x16e3600"]
+  },
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 2,
+    "result": "0x"
+  }
+}
