@@ -32,6 +32,7 @@ import type {
 } from "./analyzeToken.ts";
 import type { AssessmentFallback } from "./requestAssessment.ts";
 import { EvidenceList } from "../ports/assessmentModel.ts";
+import type { RequestCounterSink } from "./observability.ts";
 import type {
   AssessmentModelPort,
   AssessmentProvider,
@@ -152,8 +153,12 @@ export type TokenAssessmentOutcome =
   | { readonly kind: "disabled"; readonly reason: string };
 
 export type AssessmentService = {
+  // An optional request-scoped sink counts the RPC calls of the underlying
+  // analysis and the single assessment call of this request (K-107); cache
+  // hits and capped keys record zero assessment calls.
   readonly requestForToken: (
     input: AssessmentRequestInput,
+    counters?: RequestCounterSink | undefined,
   ) => Promise<Result<TokenAssessmentOutcome, ApplicationError>>;
   readonly promptVersion: PromptVersionType;
   readonly provider: AssessmentProvider | null;
@@ -286,6 +291,7 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
 
   async function requestForToken(
     input: AssessmentRequestInput,
+    counters?: RequestCounterSink | undefined,
   ): Promise<Result<TokenAssessmentOutcome, ApplicationError>> {
     const adapter = deps.adapter;
     if (adapter === undefined) {
@@ -294,7 +300,7 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
         reason: "Assessment is not configured: set an assessment provider to enable it.",
       });
     }
-    const analysed = await deps.analyze(input);
+    const analysed = await deps.analyze(input, counters);
     if (!analysed.ok) {
       return err(analysed.error);
     }
@@ -373,6 +379,7 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
       });
     }
     const ctx: CallContext = { requestId: input.requestId, deadline: input.deadline, block: input.block };
+    counters?.recordAssessmentCalls(1);
     const assessed = await adapter.assess(evidence.value, deps.promptVersion, ctx);
     if (!assessed.ok) {
       return ok({

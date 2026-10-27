@@ -182,10 +182,30 @@
     },
     "health": {
       "type": "object",
-      "required": ["status", "apiVersion"],
+      "required": ["status", "apiVersion", "assessment", "costUnits"],
       "properties": {
         "status": { "const": "ok" },
-        "apiVersion": { "const": "v1" }
+        "apiVersion": { "const": "v1" },
+        "assessment": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": ["provider", "modelId"],
+              "properties": {
+                "provider": { "enum": ["meta-model-api", "hosted-open-weights"] },
+                "modelId": { "type": "string", "minLength": 1 }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["disabled"],
+              "properties": {
+                "disabled": { "const": true }
+              }
+            }
+          ]
+        },
+        "costUnits": { "const": "placeholder-cost-unit" }
       }
     },
     "error": {

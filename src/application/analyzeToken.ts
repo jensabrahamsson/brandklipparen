@@ -39,6 +39,8 @@ import type {
   TemplateVersion as TemplateVersionType,
   Timestamp as TimestampType,
 } from "../domain/types.ts";
+import { withCountedRpc } from "./observability.ts";
+import type { RequestCounterSink } from "./observability.ts";
 import { Signal, detectCapabilities } from "../domain/signals.ts";
 import type {
   CapabilityCatalogue,
@@ -278,11 +280,16 @@ function memoKeyOf(input: AnalyzeTokenInput): string {
 
 // Numbers first, text second: scoring and the template render run before the
 // envelope is frozen, so an assessment added later leaves them unchanged.
+// An optional request-scoped sink counts each RPC call in this run (K-107);
+// without a sink the run behaves exactly as before.
 export async function analyzeToken(
   ports: AnalyzeTokenPorts,
   input: AnalyzeTokenInput,
   addressIndex: Map<string, CacheKeyType> = new Map(),
+  counters?: RequestCounterSink | undefined,
 ): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> {
+  const rpc = counters === undefined ? ports.rpc : withCountedRpc(ports.rpc, counters);
+  const countedPorts = counters === undefined ? ports : { ...ports, rpc };
   // Cache lookup before any external call (I-14): a remembered key gives a
   // hit with zero RPC, decompiler and model calls. A miss, a rejected entry
   // or an unreachable store falls through to the fresh path below (A-15).
@@ -298,13 +305,13 @@ export async function analyzeToken(
     }
   }
   const ctx: CallContext = { requestId: input.requestId, deadline: input.deadline, block: input.block };
-  const resolvedBlock = await resolveBlock(ports.rpc, input, ctx);
+  const resolvedBlock = await resolveBlock(rpc, input, ctx);
   if (!resolvedBlock.ok) {
     return resolvedBlock;
   }
   const block = resolvedBlock.value;
   const blockCtx: CallContext = { requestId: input.requestId, deadline: input.deadline, block };
-  const fetched = await ports.rpc.getCode(input.address, blockCtx);
+  const fetched = await rpc.getCode(input.address, blockCtx);
   if (!fetched.ok) {
     if (fetched.error.kind === "no-code") {
       return ok({ kind: "no-contract", target: input.address, block });
@@ -341,7 +348,7 @@ export async function analyzeToken(
     deadline: input.deadline,
     ...(input.proxyMaxDepth === undefined ? {} : { maxDepth: input.proxyMaxDepth }),
   };
-  const resolvedProxy = await resolveProxy(ports, proxyInput);
+  const resolvedProxy = await resolveProxy(countedPorts, proxyInput);
   const proxy: ProxyResolution = resolvedProxy.ok
     ? resolvedProxy.value.resolution
     : noneProxyResolution();
@@ -521,10 +528,12 @@ export function serializeAssessment(envelope: AssessmentEnvelope): string {
 
 // The bound service handed to the driving adapters (A-02, A-03): one entry
 // point with the same typed input and the same model version in REST, MCP and
-// the web UI.
+// the web UI. Driving adapters may pass a request-scoped sink that counts
+// each RPC call in that run (K-107); without a sink nothing is counted.
 export type AppServices = {
   readonly analyzeToken: (
     input: AnalyzeTokenInput,
+    counters?: RequestCounterSink | undefined,
   ) => Promise<Result<AnalyzeTokenSuccess, ApplicationError>>;
   readonly resolveProxy: (
     input: ResolveProxyInput,
@@ -537,8 +546,11 @@ export function createAppServices(ports: AnalyzeTokenPorts): AppServices {
   // to the cache key and is re-verified through the cache on every use.
   const addressIndex = new Map<string, CacheKeyType>();
   return Object.freeze({
-    analyzeToken: (input: AnalyzeTokenInput): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> =>
-      analyzeToken(ports, input, addressIndex),
+    analyzeToken: (
+      input: AnalyzeTokenInput,
+      counters?: RequestCounterSink | undefined,
+    ): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> =>
+      analyzeToken(ports, input, addressIndex, counters),
     resolveProxy: async (
       input: ResolveProxyInput,
     ): Promise<Result<ResolveProxySuccess, ApplicationError>> => {

@@ -16,6 +16,10 @@ import { serializeAssessment } from "../../application/analyzeToken.ts";
 import type { AppServices } from "../../application/analyzeToken.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
+import {
+  PLACEHOLDER_COST_UNIT,
+  createRequestCounters,
+} from "../../application/observability.ts";
 import { Address, BlockNumber, RequestId, Timestamp } from "../../domain/types.ts";
 import type {
   Address as AddressType,
@@ -46,6 +50,12 @@ export const API_VERSION = "v1";
 export const API_KEY_HEADER = "x-api-key";
 export const REQUEST_ID_HEADER = "x-request-id";
 export const DEEPENING_STATUS_HEADER = "x-deepening-status";
+// Request-scoped cost metadata per response (S-031, K-107): assessment calls
+// and placeholder assessment cost units for this request. A normal analyze
+// request reports zero for both; an assessment request reports the counted
+// calls (zero on a cache hit or a capped key, one on a provider call).
+export const ASSESSMENT_CALLS_HEADER = "x-assessment-calls";
+export const ASSESSMENT_COST_HEADER = "x-assessment-cost-units";
 
 const DEFAULT_ANALYZE_TIMEOUT_MS = 30000;
 const DEFAULT_MAX_QUERY_CHARS = 2048;
@@ -177,11 +187,26 @@ export function createRestServer(options: RestServerOptions): RestServer {
   app.get("/health", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     void request;
     const requestId = issueRequestId();
+    // Minimal observability and cost frame (S-031, K-104, K-107, I-12):
+    // provider and model labelling with the placeholder cost unit. Keys
+    // stay out: the frame names the provider and model id only.
+    const service = options.assessmentService;
+    const assessment =
+      service === undefined || service.provider === null || service.modelId === null
+        ? { disabled: true }
+        : { provider: service.provider, modelId: service.modelId };
     return reply
       .code(200)
       .header(REQUEST_ID_HEADER, requestId)
       .type("application/json")
-      .send(JSON.stringify({ status: "ok", apiVersion: API_VERSION }));
+      .send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          assessment,
+          costUnits: PLACEHOLDER_COST_UNIT,
+        }),
+      );
   });
 
   // Shared boundary gate for the analysis routes (A-11, A-16): URL size,
@@ -252,16 +277,22 @@ export function createRestServer(options: RestServerOptions): RestServer {
     if (!deadline.ok) {
       return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
     }
-    const analysed = await options.services.analyzeToken({
-      address,
-      block,
-      requestId,
-      deadline: deadline.value,
-      modelVersion: options.modelVersion,
-      indexVersion: options.indexVersion,
-      templateVersion: options.templateVersion,
-      catalogue: options.catalogue,
-    });
+    // Request-scoped counters (S-031, K-107): the analyze path carries zero
+    // assessment calls, and the headers report it for this request.
+    const counters = createRequestCounters();
+    const analysed = await options.services.analyzeToken(
+      {
+        address,
+        block,
+        requestId,
+        deadline: deadline.value,
+        modelVersion: options.modelVersion,
+        indexVersion: options.indexVersion,
+        templateVersion: options.templateVersion,
+        catalogue: options.catalogue,
+      },
+      counters,
+    );
     if (!analysed.ok) {
       const mapped = toHttpError(analysed.error);
       return sendError(
@@ -269,6 +300,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         requestError(mapped.status, mapped.code, mapped.message, requestId),
       );
     }
+    const usage = counters.snapshot();
     if (analysed.value.kind === "no-contract") {
       const body = canonicalSerialize({
         kind: "no-contract",
@@ -279,6 +311,8 @@ export function createRestServer(options: RestServerOptions): RestServer {
         .code(200)
         .header(REQUEST_ID_HEADER, requestId)
         .header(DEEPENING_STATUS_HEADER, "pending")
+        .header(ASSESSMENT_CALLS_HEADER, String(usage.assessmentCalls))
+        .header(ASSESSMENT_COST_HEADER, String(usage.assessmentCostUnits))
         .type("application/json")
         .send(body);
     }
@@ -286,6 +320,8 @@ export function createRestServer(options: RestServerOptions): RestServer {
       .code(200)
       .header(REQUEST_ID_HEADER, requestId)
       .header(DEEPENING_STATUS_HEADER, "pending")
+      .header(ASSESSMENT_CALLS_HEADER, String(usage.assessmentCalls))
+      .header(ASSESSMENT_COST_HEADER, String(usage.assessmentCostUnits))
       .type("application/json")
       .send(serializeAssessment(analysed.value.envelope));
   }
@@ -309,18 +345,22 @@ export function createRestServer(options: RestServerOptions): RestServer {
     if (!deadline.ok) {
       return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
     }
-    const requested = await service.requestForToken({
-      address: gated.value.address,
-      block: gated.value.block,
-      requestId,
-      deadline: deadline.value,
-      modelVersion: options.modelVersion,
-      indexVersion: options.indexVersion,
-      templateVersion: options.templateVersion,
-      catalogue: options.catalogue,
-      apiKeyId: store.keyId(gated.value.apiKey) ?? "unknown-key",
-      day: currentDay(),
-    });
+    const counters = createRequestCounters();
+    const requested = await service.requestForToken(
+      {
+        address: gated.value.address,
+        block: gated.value.block,
+        requestId,
+        deadline: deadline.value,
+        modelVersion: options.modelVersion,
+        indexVersion: options.indexVersion,
+        templateVersion: options.templateVersion,
+        catalogue: options.catalogue,
+        apiKeyId: store.keyId(gated.value.apiKey) ?? "unknown-key",
+        day: currentDay(),
+      },
+      counters,
+    );
     if (!requested.ok) {
       const mapped = toHttpError(requested.error);
       return sendError(
@@ -331,6 +371,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
     if (requested.value.kind === "disabled") {
       return sendError(reply, assessmentNotConfigured(requestId));
     }
+    const usage = counters.snapshot();
     if (requested.value.kind === "no-contract") {
       const body = canonicalSerialize({
         kind: "no-contract",
@@ -341,6 +382,8 @@ export function createRestServer(options: RestServerOptions): RestServer {
         .code(200)
         .header(REQUEST_ID_HEADER, requestId)
         .header(DEEPENING_STATUS_HEADER, "pending")
+        .header(ASSESSMENT_CALLS_HEADER, String(usage.assessmentCalls))
+        .header(ASSESSMENT_COST_HEADER, String(usage.assessmentCostUnits))
         .type("application/json")
         .send(body);
     }
@@ -348,6 +391,8 @@ export function createRestServer(options: RestServerOptions): RestServer {
       .code(200)
       .header(REQUEST_ID_HEADER, requestId)
       .header(DEEPENING_STATUS_HEADER, "pending")
+      .header(ASSESSMENT_CALLS_HEADER, String(usage.assessmentCalls))
+      .header(ASSESSMENT_COST_HEADER, String(usage.assessmentCostUnits))
       .type("application/json")
       .send(serializeTokenAssessment(requested.value));
   }
