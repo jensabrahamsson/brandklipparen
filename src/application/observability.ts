@@ -17,6 +17,7 @@ import type {
 } from "../ports/assessmentModel.ts";
 import type { AssessmentModelError } from "../ports/assessmentModel.ts";
 import type { Result } from "../domain/result.ts";
+import { REDACTED } from "../ports/config.ts";
 import type {
   Address as AddressType,
   BlockNumber as BlockNumberType,
@@ -47,6 +48,52 @@ export type RequestUsage = {
   readonly assessmentCostUnits: number;
   readonly costUnit: CostUnit;
 };
+
+// Log field allowlist from the I-10 table (K-509, M-16): every field in
+// every emitted log record belongs to this list. The analysis record above
+// carries the per-analysis subset; the remaining fields ride on health,
+// assessment and cache records. Keys stay out: callers pass the key's hash
+// ID (apiKeyId), never key material.
+export const LOG_FIELD_ALLOWLIST: readonly string[] = Object.freeze([
+  "timestamp",
+  "level",
+  "service",
+  "environment",
+  "requestId",
+  "apiKeyId",
+  "address",
+  "codeHash",
+  "skeletonHash",
+  "blockNumber",
+  "modelVersion",
+  "artifactChecksum",
+  "indexVersion",
+  "templateVersion",
+  "stepDurationsMs",
+  "outcome",
+  "rpcCallCount",
+  "assessmentCallCount",
+  "assessmentCostUnits",
+  "costUnit",
+  "cacheHit",
+  "assessmentProvider",
+  "assessmentModelId",
+  "promptVersion",
+  "decompilerVersion",
+  "explanationVersion",
+]);
+
+// Allowlist check for one emitted record: true when every top-level field
+// belongs to the list. Adapters run this before printing, so a new field
+// fails loudly instead of leaking past the review.
+export function isAllowlistedLogRecord(record: Record<string, unknown>): boolean {
+  for (const key of Object.keys(record)) {
+    if (!LOG_FIELD_ALLOWLIST.includes(key)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 // Minimal sink shared by the counted port wrappers and the services: each
 // outgoing call site records one call, and callers read the frozen total.
@@ -214,6 +261,10 @@ export type HealthCostFrame = {
   readonly assessment: HealthAssessmentFrame;
 };
 
+export function redactForLog(value: unknown): unknown {
+  return redactValue(value);
+}
+
 export function buildHealthCostFrame(input: {
   readonly assessment: HealthAssessmentFrame;
 }): HealthCostFrame {
@@ -222,4 +273,67 @@ export function buildHealthCostFrame(input: {
     assessmentCostPerCall: PLACEHOLDER_ASSESSMENT_COST_PER_CALL,
     assessment: input.assessment,
   });
+}
+
+// Secret-shaped field names (K-509, M-16). The stable hashed key identifier
+// apiKeyId is allowlisted in LOG_FIELD_ALLOWLIST and passes through;
+// every other key-shaped name is redacted with the fixed marker.
+const SECRET_KEY_PATTERN = /api[_-]?key|secret|passwd|password|authorization|set-cookie|\btoken\b/i;
+
+function isSecretKey(name: string): boolean {
+  if (name === "apiKeyId") {
+    return false;
+  }
+  return SECRET_KEY_PATTERN.test(name);
+}
+
+function redactUrlCredentials(text: string): string {
+  return text.replace(/(https?:\/\/)[^/\s@]+@/gi, `$1${REDACTED}@`);
+}
+
+function redactQuerySecrets(text: string): string {
+  return text.replace(/([?&](?:api[_-]?key|token|secret)[^=]*=)[^&\s]*/gi, `$1${REDACTED}`);
+}
+
+function redactBearerTokens(text: string): string {
+  return text
+    .replace(/\bbearer\s+[A-Za-z0-9._~+/-]+/gi, `bearer ${REDACTED}`)
+    .replace(/((?:x-)?api[_-]?key\s*[:=]\s*)\S+/gi, `$1${REDACTED}`);
+}
+
+// Redacts key-like material inside one string: embedded URL credentials,
+// secret query parameters, bearer tokens and key header values. Plain
+// identifiers such as addresses and code hashes carry none of these
+// shapes and pass through unchanged.
+function redactStringForLog(text: string): string {
+  return redactBearerTokens(redactQuerySecrets(redactUrlCredentials(text)));
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+// Deep redaction for one log value (K-509, M-16): secret-shaped fields and
+// key-bearing strings become the fixed redaction marker, every other value
+// passes through unchanged. The input is never mutated; records and arrays
+// are rebuilt.
+function redactValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return redactStringForLog(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactValue(entry));
+  }
+  if (isPlainRecord(value)) {
+    const out: Record<string, unknown> = {};
+    for (const name of Object.keys(value)) {
+      out[name] = isSecretKey(name) ? REDACTED : redactValue(value[name]);
+    }
+    return out;
+  }
+  return value;
 }

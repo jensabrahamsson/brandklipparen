@@ -292,6 +292,18 @@ export class JsonRpcAdapter implements RpcPort {
     return ok(Math.min(this.timeoutMs, Math.floor(remaining)));
   }
 
+  // Call-time allowlist guard (K-503, M-07): the request target comes
+  // solely from the validated configuration, so an adapter constructed
+  // with a non-https endpoint fails with a typed error before any byte
+  // leaves the process. The endpoint value never enters the error text.
+  private allowlistedUrl(method: string): Result<string, RpcError> {
+    const url = this.endpoint.reveal();
+    if (!url.startsWith("https://")) {
+      return err({ kind: "node-error", message: `rpc call ${method} target is outside the allowlist` });
+    }
+    return ok(url);
+  }
+
   private async invoke(
     method: string,
     params: readonly unknown[],
@@ -303,7 +315,11 @@ export class JsonRpcAdapter implements RpcPort {
     }
     const id = this.nextId;
     this.nextId += 1;
-    const url = this.endpoint.reveal();
+    const allowed = this.allowlistedUrl(method);
+    if (!allowed.ok) {
+      return allowed;
+    }
+    const url = allowed.value;
     const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;

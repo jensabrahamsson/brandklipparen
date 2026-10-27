@@ -15,6 +15,7 @@ export type HttpErrorCode =
   | "request-too-large"
   | "not-found"
   | "assessment-not-configured"
+  | "rate-limited"
   | "upstream-unavailable"
   | "service-unavailable"
   | "internal-error";
@@ -29,6 +30,8 @@ export type HttpErrorBody = {
 export type HttpError = {
   readonly status: number;
   readonly body: HttpErrorBody;
+  // Present on rate-limited responses: seconds until the caller may retry.
+  readonly retryAfterSec?: number | undefined;
 };
 
 export function requestError(
@@ -63,6 +66,19 @@ export function validationError(detail: string, requestId: string): HttpError {
 
 export function requestTooLarge(requestId: string): HttpError {
   return requestError(413, "request-too-large", "Request exceeds the input size limit.", requestId);
+}
+
+export function rateLimited(retryAfterSec: number, requestId: string): HttpError {
+  return {
+    status: 429,
+    body: {
+      status: 429,
+      code: "rate-limited",
+      message: `Rate limit exceeded; retry after ${retryAfterSec} seconds with the same request ID.`,
+      requestId,
+    },
+    retryAfterSec,
+  };
 }
 
 export function notFound(requestId: string): HttpError {

@@ -34,11 +34,14 @@ import {
   invalidApiKey,
   keyInToolArgs,
   missingApiKey,
+  rateLimited,
   requestTooLarge,
   toMcpError,
   unknownTool,
   validationError,
 } from "./errors.ts";
+import { createRateLimiter } from "../rest/rateLimit.ts";
+import type { RateLimitConfig, RateLimiter } from "../rest/rateLimit.ts";
 import type { McpToolError } from "./errors.ts";
 import {
   ASSESS_TOKEN_TOOL,
@@ -71,6 +74,10 @@ export type McpServerOptions = {
   // Absent service means the assessment feature is disabled through
   // configuration (K-309): request_assessment answers assessment-not-configured.
   readonly assessmentService?: AssessmentService | undefined;
+  // Shared rate and quota limits with the REST adapter per M-08 (K-504);
+  // absent limits disable the check, as in local development.
+  readonly rateLimit?: RateLimitConfig | undefined;
+  readonly rateLimitNowMs?: (() => number) | undefined;
 };
 
 // Tool result content: the canonical assessment text as data for the user.
@@ -135,6 +142,10 @@ export function createMcpServer(options: McpServerOptions): McpServer {
   const keyGate = (options.apiKeys ?? []).length > 0;
   const analyzeTimeoutMs = options.analyzeTimeoutMs ?? DEFAULT_ANALYZE_TIMEOUT_MS;
   const maxMessageBytes = options.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES;
+  const limiter: RateLimiter | null =
+    options.rateLimit === undefined
+      ? null
+      : createRateLimiter(options.rateLimit, options.rateLimitNowMs);
 
   // Shared tool gate (A-11, A-16, K-026): API key, message size and the
   // published input schema. Both reading tools reuse the same gate, so
@@ -175,6 +186,15 @@ export function createMcpServer(options: McpServerOptions): McpServer {
           return err(validationError(parsed.message ?? "Invalid arguments.", requestId as string));
         default:
           return err(validationError("Invalid arguments: expected an object with address and block.", requestId as string));
+      }
+    }
+    // Rate and quota step before every expensive tool call (K-504, M-08),
+    // shared with the REST adapter: over-limit keys receive a retryable
+    // machine error and the analysis never starts.
+    if (limiter !== null) {
+      const decision = limiter.check(apiKeyId);
+      if (!decision.allowed) {
+        return err(rateLimited(decision.retryAfterSec, requestId as string));
       }
     }
     return ok({ input: parsed.input, apiKeyId });

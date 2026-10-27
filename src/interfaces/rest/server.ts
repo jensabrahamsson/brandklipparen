@@ -39,17 +39,26 @@ import {
   keyInUrlOrBody,
   missingApiKey,
   notFound,
+  rateLimited,
   requestError,
   requestTooLarge,
   toHttpError,
   validationError,
 } from "./errors.ts";
 import type { HttpError } from "./errors.ts";
+import { createRateLimiter } from "./rateLimit.ts";
+import type { RateLimitConfig, RateLimiter } from "./rateLimit.ts";
 
 export const API_VERSION = "v1";
 export const API_KEY_HEADER = "x-api-key";
 export const REQUEST_ID_HEADER = "x-request-id";
 export const DEEPENING_STATUS_HEADER = "x-deepening-status";
+// Strict content security policy on every response (K-507, M-13): the API
+// carries data only, so no source is allowed to execute. Contract-derived
+// strings travel inside JSON string values as inert text.
+export const CSP_HEADER = "content-security-policy";
+export const CONTENT_SECURITY_POLICY =
+  "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
 // Request-scoped cost metadata per response (S-031, K-107): assessment calls
 // and placeholder assessment cost units for this request. A normal analyze
 // request reports zero for both; an assessment request reports the counted
@@ -77,6 +86,13 @@ export type RestServerOptions = {
   // Absent service means the assessment feature is disabled through
   // configuration (K-309): /v1/assessment answers assessment-not-configured.
   readonly assessmentService?: AssessmentService | undefined;
+  // Absent limits mean the demo runs without rate limiting, as in local
+  // development and in older suites; the demo configuration always sets
+  // the versioned values per I-12 (K-504, M-08).
+  readonly rateLimit?: RateLimitConfig | undefined;
+  // Injected clock reader for the limiter; tests pass a fake clock while
+  // production reads the wall clock (A-32 stays intact: the core is untouched).
+  readonly rateLimitNowMs?: (() => number) | undefined;
 };
 
 export type RestServer = {
@@ -133,11 +149,16 @@ function issueRequestId(): RequestId {
 }
 
 function sendError(reply: FastifyReply, error: HttpError): FastifyReply {
-  return reply
+  const withHeaders = reply
     .code(error.status)
     .header(REQUEST_ID_HEADER, error.body.requestId)
-    .type("application/json")
-    .send(JSON.stringify(error.body));
+    .type("application/json");
+  if (error.retryAfterSec !== undefined) {
+    // Retryable machine error (K-504, M-08): the caller reads the wait
+    // from the header as well as the message.
+    withHeaders.header("retry-after", String(error.retryAfterSec));
+  }
+  return withHeaders.send(JSON.stringify(error.body));
 }
 
 function hasSecretLikeKey(value: unknown): boolean {
@@ -164,6 +185,10 @@ function parseBlock(raw: string | number | undefined): { ok: true; value: BlockN
 
 export function createRestServer(options: RestServerOptions): RestServer {
   const store: ApiKeyStore = createApiKeyStore({ keys: options.apiKeys, pepper: options.apiKeyPepper });
+  const limiter: RateLimiter | null =
+    options.rateLimit === undefined
+      ? null
+      : createRateLimiter(options.rateLimit, options.rateLimitNowMs);
   const analyzeTimeoutMs = options.analyzeTimeoutMs ?? DEFAULT_ANALYZE_TIMEOUT_MS;
   const maxQueryChars = options.maxQueryChars ?? DEFAULT_MAX_QUERY_CHARS;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
@@ -182,6 +207,13 @@ export function createRestServer(options: RestServerOptions): RestServer {
   app.setNotFoundHandler(async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     void request;
     return sendError(reply, notFound(issueRequestId()));
+  });
+
+  // The policy rides on every response, including errors and the health
+  // check, so no route weakens the client posture (M-13).
+  app.addHook("onSend", async (_request, reply, payload) => {
+    reply.header(CSP_HEADER, CONTENT_SECURITY_POLICY);
+    return payload;
   });
 
   app.get("/health", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
@@ -256,6 +288,16 @@ export function createRestServer(options: RestServerOptions): RestServer {
         ok: false,
         error: validationError("Invalid block: expected latest or a non-negative integer.", requestId as string),
       };
+    }
+    // Rate and quota step before every expensive step (K-504, M-08): a key
+    // over its per-minute rate or its daily quota receives a retryable
+    // machine error with a retry time, and the analysis never starts.
+    if (limiter !== null) {
+      const keyId = store.keyId(headerKey) ?? "unknown-key";
+      const decision = limiter.check(keyId);
+      if (!decision.allowed) {
+        return { ok: false, error: rateLimited(decision.retryAfterSec, requestId as string) };
+      }
     }
     return { ok: true, value: { apiKey: headerKey, address: address.value, block: block.value } };
   }

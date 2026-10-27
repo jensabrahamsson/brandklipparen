@@ -16,6 +16,7 @@ export type McpErrorCode =
   | "request-too-large"
   | "unknown-tool"
   | "assessment-not-configured"
+  | "rate-limited"
   | "upstream-unavailable"
   | "service-unavailable"
   | "internal-error";
@@ -62,6 +63,14 @@ export function validationError(detail: string, requestId: string): McpToolError
 
 export function requestTooLarge(requestId: string): McpToolError {
   return mcpError("request-too-large", "Request exceeds the input size limit.", requestId);
+}
+
+export function rateLimited(retryAfterSec: number, requestId: string): McpToolError {
+  return mcpError(
+    "rate-limited",
+    `Rate limit exceeded; retry after ${retryAfterSec} seconds with the same request ID.`,
+    requestId,
+  );
 }
 
 export function unknownTool(name: string, requestId: string): McpToolError {
