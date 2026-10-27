@@ -36,6 +36,7 @@ import { parseModelArtifact } from "../../../src/domain/risk.ts";
 import { createRestServer } from "../../../src/interfaces/rest/server.ts";
 import type { RestServer } from "../../../src/interfaces/rest/server.ts";
 import { createMcpServer } from "../../../src/interfaces/mcp/server.ts";
+import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -120,8 +121,9 @@ describe("script-bearing data stays inert with a strict CSP (K-507, M-13)", () =
       modelArtifacts: placeholderArtifact(),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
       decompiler: new HostileSnippetDecompiler(),
-    });
-    server = createRestServer({
+    },
+  mustDefaultDetectorSet());
+    server = createRestServer({ detectors: mustDefaultDetectorSet(),
       services,
       apiKeys: [new SecretString(TEST_API_KEY)] as readonly SecretString[],
       apiKeyPepper: new SecretString(TEST_PEPPER),
@@ -221,8 +223,9 @@ describe("script-bearing data stays inert with a strict CSP (K-507, M-13)", () =
       modelArtifacts: placeholderArtifact(),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
       decompiler: new HostileSnippetDecompiler(),
-    });
-    const mcp = createMcpServer({
+    },
+  mustDefaultDetectorSet());
+    const mcp = createMcpServer({ detectors: mustDefaultDetectorSet(),
       services,
       apiKeys: [new SecretString(TEST_API_KEY)] as readonly SecretString[],
       apiKeyPepper: new SecretString(TEST_PEPPER),

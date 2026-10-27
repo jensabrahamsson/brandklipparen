@@ -10,6 +10,7 @@ import { detectCapabilities } from "../../src/domain/signals.ts";
 import type { CapabilityCatalogue } from "../../src/domain/signals.ts";
 import { extractSelectors } from "../../src/domain/selectors.ts";
 import { SkeletonHash } from "../../src/domain/types.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 import {
   Address,
   ArtifactChecksum,
@@ -157,6 +158,7 @@ describe("hostile bytecode stays inside typed outcomes (K-501, M-02)", () => {
             decompiler: new FakeDecompilerAdapter(),
           },
           input,
+          mustDefaultDetectorSet(),
         );
         if (outcome.ok) {
           expect(["assessed", "no-contract"]).toContain(outcome.value.kind);

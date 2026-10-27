@@ -37,6 +37,7 @@ import { FakeClockAdapter } from "../fakes/fakeClock.ts";
 import { FakeDecompilerAdapter } from "../fakes/fakeDecompiler.ts";
 import { FakeModelArtifactAdapter } from "../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../fakes/fakeRpc.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -128,7 +129,8 @@ describe("analysis cache per code hash (K-013)", () => {
     const clock = new FakeClockAdapter(mustOk(Timestamp.of(1700000000000)));
     const decompiler = new FakeDecompilerAdapter({ scenario: "success" });
     const cache = new InMemoryCacheAdapter();
-    const services = createAppServices({ rpc, modelArtifacts: artifacts, clock, decompiler, cache });
+    const services = createAppServices({ rpc, modelArtifacts: artifacts, clock, decompiler, cache },
+  mustDefaultDetectorSet());
 
     const input = testInput(mustOk(ModelVersion.parse("0.1.0")));
     const first = await services.analyzeToken(input);
@@ -175,7 +177,8 @@ describe("analysis cache per code hash (K-013)", () => {
     const clock = new FakeClockAdapter(mustOk(Timestamp.of(1700000000000)));
     const decompiler = new FakeDecompilerAdapter({ scenario: "success" });
     const cache = new InMemoryCacheAdapter();
-    const services = createAppServices({ rpc, modelArtifacts: artifacts, clock, decompiler, cache });
+    const services = createAppServices({ rpc, modelArtifacts: artifacts, clock, decompiler, cache },
+  mustDefaultDetectorSet());
 
     const oldVersion = mustOk(ModelVersion.parse("0.1.0"));
     const newVersion = mustOk(ModelVersion.parse("0.2.0"));
@@ -217,7 +220,8 @@ describe("analysis cache per code hash (K-013)", () => {
     const clock = new FakeClockAdapter(mustOk(Timestamp.of(1700000000000)));
     const decompiler = new FakeDecompilerAdapter({ scenario: "success" });
     const cache = new FakeCacheAdapter();
-    const services = createAppServices({ rpc, modelArtifacts: artifacts, clock, decompiler, cache });
+    const services = createAppServices({ rpc, modelArtifacts: artifacts, clock, decompiler, cache },
+  mustDefaultDetectorSet());
 
     const modelVersion = mustOk(ModelVersion.parse("0.1.0"));
     const first = await services.analyzeToken(testInput(modelVersion));

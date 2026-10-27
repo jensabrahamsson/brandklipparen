@@ -6,7 +6,7 @@
 // local fixture only: nothing registers it in the production default
 // registry, and it imports solely the plugin API (P-03).
 import { PLUGIN_API_VERSION, PluginManifest } from "../../../src/plugins/api.ts";
-import type { PluginManifest as PluginManifestValue } from "../../../src/plugins/api.ts";
+import type { DetectorManifest } from "../../../src/plugins/api.ts";
 
 export const FEE_CAPABILITY_PLUGIN_ID = "dev.brandklipparen.example-fee-capability";
 
@@ -50,7 +50,7 @@ const OUTPUT_SCHEMA = Object.freeze({
   }),
 });
 
-function manifestOf(): PluginManifestValue {
+function manifestOf(): DetectorManifest {
   const parsed = PluginManifest.parse({
     id: FEE_CAPABILITY_PLUGIN_ID,
     version: "1.0.0",
@@ -66,6 +66,11 @@ function manifestOf(): PluginManifestValue {
   });
   if (!parsed.ok) {
     throw new Error(`example fee-capability manifest failed validation: ${parsed.error.kind}`);
+  }
+  if (parsed.value.kind !== "detector") {
+    throw new Error(
+      `example fee-capability manifest carries kind ${parsed.value.kind}, expected detector`,
+    );
   }
   return parsed.value;
 }

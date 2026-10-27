@@ -26,6 +26,7 @@ import {
 import { FileModelArtifactAdapter } from "../../src/adapters/model/fileArtifact.ts";
 import { FakeClockAdapter } from "../fakes/fakeClock.ts";
 import { FakeRpcAdapter } from "../fakes/fakeRpc.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
@@ -157,7 +158,8 @@ describe("frozen calibration artifact (K-211)", () => {
       rpc: new FakeRpcAdapter(codes, block),
       modelArtifacts: tamperedAdapter,
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-    });
+    },
+  mustDefaultDetectorSet());
     const denied = await refused.analyzeToken({
       address: mustOk(Address.parse("0x0102030405060708090a0b0c0d0e0f1011121314")),
       block,
@@ -191,7 +193,8 @@ describe("frozen calibration artifact (K-211)", () => {
       rpc: new FakeRpcAdapter(codes, block),
       modelArtifacts: intactAdapter,
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-    });
+    },
+  mustDefaultDetectorSet());
     const assessed = await allowed.analyzeToken({
       address: mustOk(Address.parse("0x0102030405060708090a0b0c0d0e0f1011121314")),
       block,

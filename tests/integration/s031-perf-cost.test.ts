@@ -38,6 +38,7 @@ import { FakeModelArtifactAdapter } from "../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../fakes/fakeRpc.ts";
 import { createRestServer } from "../../src/interfaces/rest/server.ts";
 import type { RestServer } from "../../src/interfaces/rest/server.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -125,7 +126,8 @@ describe("performance, observability and cost frames (S-031)", () => {
       [mustOk(Address.parse(TEST_ADDRESS)) as string, TEST_BYTECODE],
     ]);
     const rpc = new FakeRpcAdapter(codes, mustOk(BlockNumber.of(TEST_BLOCK)));
-    services = createAppServices(testPorts(rpc));
+    services = createAppServices(testPorts(rpc),
+  mustDefaultDetectorSet());
     assessmentFake = new FakeAssessmentModelAdapter({
       provider: "meta-model-api",
       modelId: "test-model-for-s031-only",
@@ -137,7 +139,7 @@ describe("performance, observability and cost frames (S-031)", () => {
       dailyCapPerKey: 100,
       meter: createInMemoryAssessmentCostMeter(),
     });
-    server = createRestServer({
+    server = createRestServer({ detectors: mustDefaultDetectorSet(),
       services,
       assessmentService,
       apiKeys: [new SecretString(TEST_API_KEY)] as readonly SecretString[],

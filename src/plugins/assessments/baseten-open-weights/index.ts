@@ -60,6 +60,11 @@ function manifestOf(): AssessmentPlugin["manifest"] {
       `hosted-open-weights assessment manifest failed validation: ${parsed.error.kind}`,
     );
   }
+  if (parsed.value.kind !== "assessment") {
+    throw new Error(
+      `hosted-open-weights manifest carries kind ${parsed.value.kind}, expected assessment`,
+    );
+  }
   return parsed.value;
 }
 

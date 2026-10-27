@@ -21,6 +21,7 @@ import { FakeClockAdapter } from "../../../fakes/fakeClock.ts";
 import { FakeModelArtifactAdapter } from "../../../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../../../fakes/fakeRpc.ts";
 import { createMcpServer } from "../../../../src/interfaces/mcp/server.ts";
+import { mustDefaultDetectorSet } from "../../../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -58,7 +59,8 @@ function placeholderServices(onAnalyze?: () => void): AppServices {
       Object.freeze({ artifact, checksum: mustOk(ArtifactChecksum.parse("ef".repeat(32))) }),
     ),
     clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-  });
+  },
+  mustDefaultDetectorSet());
   return Object.freeze({
     analyzeToken: async (input) => {
       onAnalyze?.();
@@ -85,7 +87,7 @@ function serverOptions() {
 describe("MCP input validation (K-026)", () => {
   test("k026_invalid_address_fails_schema_before_analysis", async () => {
     let analyzeCalls = 0;
-    const mcp = createMcpServer({ services: placeholderServices(() => { analyzeCalls += 1; }), ...serverOptions() });
+    const mcp = createMcpServer({ detectors: mustDefaultDetectorSet(), services: placeholderServices(() => { analyzeCalls += 1; }), ...serverOptions() });
     for (const address of ["not-an-address", "", "0x1234", 42, null, undefined]) {
       const result = await mcp.callTool("assess_token", { address });
       expect(result.ok).toBe(false);
@@ -99,7 +101,7 @@ describe("MCP input validation (K-026)", () => {
 
   test("k026_oversized_input_rejected_before_analysis", async () => {
     let analyzeCalls = 0;
-    const mcp = createMcpServer({ services: placeholderServices(() => { analyzeCalls += 1; }), ...serverOptions() });
+    const mcp = createMcpServer({ detectors: mustDefaultDetectorSet(), services: placeholderServices(() => { analyzeCalls += 1; }), ...serverOptions() });
     // Past the same address length cap as the REST adapter, so the tool
     // itself turns the input away before analysis.
     const huge = await mcp.callTool("assess_token", { address: `0x${"ab".repeat(1500)}` });
@@ -113,7 +115,7 @@ describe("MCP input validation (K-026)", () => {
 
   test("k026_extra_fields_rejected_before_analysis", async () => {
     let analyzeCalls = 0;
-    const mcp = createMcpServer({ services: placeholderServices(() => { analyzeCalls += 1; }), ...serverOptions() });
+    const mcp = createMcpServer({ detectors: mustDefaultDetectorSet(), services: placeholderServices(() => { analyzeCalls += 1; }), ...serverOptions() });
     // The input schema is strict: injected extra fields never reach analysis.
     const result = await mcp.callTool("assess_token", {
       address: "0x0102030405060708090a0b0c0d0e0f1011121314",
@@ -129,7 +131,7 @@ describe("MCP input validation (K-026)", () => {
 
   test("k026_secret_like_argument_rejected_before_analysis", async () => {
     let analyzeCalls = 0;
-    const mcp = createMcpServer({ services: placeholderServices(() => { analyzeCalls += 1; }), ...serverOptions() });
+    const mcp = createMcpServer({ detectors: mustDefaultDetectorSet(), services: placeholderServices(() => { analyzeCalls += 1; }), ...serverOptions() });
     // Keys travel outside the tool arguments, never inside them (M-10).
     const result = await mcp.callTool("assess_token", {
       address: "0x0102030405060708090a0b0c0d0e0f1011121314",
@@ -145,7 +147,7 @@ describe("MCP input validation (K-026)", () => {
 
   test("k026_invalid_block_rejected_before_analysis", async () => {
     let analyzeCalls = 0;
-    const mcp = createMcpServer({ services: placeholderServices(() => { analyzeCalls += 1; }), ...serverOptions() });
+    const mcp = createMcpServer({ detectors: mustDefaultDetectorSet(), services: placeholderServices(() => { analyzeCalls += 1; }), ...serverOptions() });
     for (const block of ["yesterday", -1, 1.5, "0x123"]) {
       const result = await mcp.callTool("assess_token", {
         address: "0x0102030405060708090a0b0c0d0e0f1011121314",
@@ -162,7 +164,7 @@ describe("MCP input validation (K-026)", () => {
 
   test("k026_missing_or_invalid_key_rejected_before_analysis", async () => {
     let analyzeCalls = 0;
-    const keyed = createMcpServer({
+    const keyed = createMcpServer({ detectors: mustDefaultDetectorSet(),
       services: placeholderServices(() => { analyzeCalls += 1; }),
       apiKeys: [new SecretString("mcp-test-key")] as readonly SecretString[],
       apiKeyPepper: new SecretString("mcp-test-pepper"),
@@ -180,7 +182,7 @@ describe("MCP input validation (K-026)", () => {
   });
 
   test("k026_malformed_json_rpc_never_throws", async () => {
-    const mcp = createMcpServer({ services: placeholderServices(), ...serverOptions() });
+    const mcp = createMcpServer({ detectors: mustDefaultDetectorSet(), services: placeholderServices(), ...serverOptions() });
     for (const raw of ["", "{broken", "42", "null", "[]", JSON.stringify({ jsonrpc: "1.0", id: 1, method: "tools/list" })]) {
       const rawResponse = await mcp.handleJsonRpc(raw);
       const parsed = JSON.parse(rawResponse) as { error?: { code?: number } };

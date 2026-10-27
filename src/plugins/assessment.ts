@@ -8,7 +8,7 @@
 // configuration selects among already-registered plugins only and never
 // names code to load (P-07). This module imports solely the plugin API
 // and port types, so the detector purity boundary is unaffected.
-import type { PluginId, PluginManifest } from "./api.ts";
+import type { AssessmentManifest, PluginId, PluginManifest } from "./api.ts";
 import type { AssessmentProvider } from "../ports/assessmentModel.ts";
 
 // One registered assessment plugin: the manifest plus the provider whose
@@ -16,7 +16,7 @@ import type { AssessmentProvider } from "../ports/assessmentModel.ts";
 // always "assessment"; createAssessmentPlugin enforces that at module
 // load, so a detector manifest can never register here.
 export type AssessmentPlugin = {
-  readonly manifest: PluginManifest;
+  readonly manifest: AssessmentManifest;
   readonly provider: AssessmentProvider;
 };
 

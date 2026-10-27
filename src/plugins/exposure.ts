@@ -74,7 +74,7 @@ export function exposeManifest(manifest: PluginManifest): ExposedPlugin {
 // sort by id where canonical order matters; the assessed envelope already
 // sorts pluginResults by plugin id (P-11).
 export function exposeRegistry(registry: PluginRegistry): readonly ExposedPlugin[] {
-  return Object.freeze(registry.plugins.map(exposeManifest));
+  return Object.freeze(registry.entries.map((entry) => exposeManifest(entry.manifest)));
 }
 
 // Single serialisation path for the plugin list: object keys in

@@ -28,6 +28,7 @@ import type { LoadedArtifact } from "../../src/ports/modelArtifact.ts";
 import { FakeClockAdapter } from "../fakes/fakeClock.ts";
 import { FakeModelArtifactAdapter } from "../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../fakes/fakeRpc.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 
 const HEAD_BLOCK = 24000000;
 
@@ -252,7 +253,8 @@ describe("S-007 minimal proxy and 7702 delegation (K-004, K-007)", () => {
       rpc: new FakeRpcAdapter(codes, block),
       modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: proxy,
       block,
@@ -283,7 +285,8 @@ describe("S-007 minimal proxy and 7702 delegation (K-004, K-007)", () => {
       rpc: new FakeRpcAdapter(codes, block),
       modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: account,
       block,

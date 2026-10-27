@@ -20,6 +20,7 @@ import { FakeClockAdapter } from "../../fakes/fakeClock.ts";
 import { FakeModelArtifactAdapter } from "../../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../../fakes/fakeRpc.ts";
 import { IMPLEMENTATION_SLOT, ADMIN_SLOT } from "../../../src/domain/proxy.ts";
+import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -90,7 +91,8 @@ describe("assessment envelope carries proxy information (K-002, K-005)", () => {
       rpc: new FakeRpcAdapter(codes, block, storage),
       modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: proxy,
       block,
@@ -125,7 +127,8 @@ describe("assessment envelope carries proxy information (K-002, K-005)", () => {
       rpc: new FakeRpcAdapter(codes, block),
       modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: target,
       block,

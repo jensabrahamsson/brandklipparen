@@ -30,6 +30,7 @@ import { FakeClockAdapter } from "../fakes/fakeClock.ts";
 import { FakeDecompilerAdapter } from "../fakes/fakeDecompiler.ts";
 import { FakeModelArtifactAdapter } from "../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../fakes/fakeRpc.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 
 const PROCESS_TIMEOUT_MS = 30000;
 
@@ -111,7 +112,8 @@ describe("extdecomp deepening in the application service (K-008, K-501)", () => 
           maxOutputBytes: 65536,
           maxMemoryMb: 512,
         }),
-      });
+      },
+  mustDefaultDetectorSet());
       // A decompilation timeout is a domain outcome, not an analysis
       // failure: the call resolves to an assessed envelope.
       const analysed = await services.analyzeToken({
@@ -187,19 +189,22 @@ describe("extdecomp deepening in the application service (K-008, K-501)", () => 
         modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
         clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
         decompiler: hanging,
-      });
+      },
+  mustDefaultDetectorSet());
       const workingServices = createAppServices({
         rpc: new FakeRpcAdapter(codes, block),
         modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
         clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
         decompiler: working,
-      });
+      },
+  mustDefaultDetectorSet());
       const crashingServices = createAppServices({
         rpc: new FakeRpcAdapter(codes, block),
         modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
         clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
         decompiler: crashing,
-      });
+      },
+  mustDefaultDetectorSet());
       // The hanging run and the healthy run overlap: each worker is its
       // own process, so the hang stays inside its own analysis.
       const [hangingResult, workingResult] = await Promise.all([
@@ -255,7 +260,8 @@ describe("extdecomp deepening in the application service (K-008, K-501)", () => 
         modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
         clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
         decompiler: fake,
-      });
+      },
+  mustDefaultDetectorSet());
       const analysed = await services.analyzeToken({
         address: target,
         block,

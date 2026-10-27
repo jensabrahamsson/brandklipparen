@@ -16,7 +16,7 @@
 // constructors, the same as the REST adapter (K-506).
 import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
-import { DEFAULT_DETECTOR_SET, serializeAssessment } from "../../application/analyzeToken.ts";
+import { serializeAssessment } from "../../application/analyzeToken.ts";
 import type { AppServices, DetectorSet } from "../../application/analyzeToken.ts";
 import { exposeRegistry, serializePluginList } from "../../plugins/exposure.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
@@ -74,8 +74,9 @@ export type McpServerOptions = {
   readonly catalogue: CapabilityCatalogue;
   // Registered detector set behind list_plugins (S-046, P-10): the tool
   // derives from this one registry value, the same value the shared service
-  // runs and GET /v1/plugins lists. Absent means the production default set.
-  readonly detectors?: DetectorSet | undefined;
+  // runs and GET /v1/plugins lists. The composition root wires the set
+  // explicitly; no defaulted set exists.
+  readonly detectors: DetectorSet;
   readonly analyzeTimeoutMs?: number | undefined;
   readonly maxMessageBytes?: number | undefined;
   // Absent service means the assessment feature is disabled through
@@ -327,7 +328,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     requestId: RequestId,
     callOptions: CallToolOptions | undefined,
   ): Promise<Result<McpToolResult, McpToolError>> {
-    const detectors = options.detectors ?? DEFAULT_DETECTOR_SET;
+    const detectors = options.detectors;
     let apiKeyId = "anonymous";
     if (keyGate) {
       const candidate = callOptions?.apiKey;

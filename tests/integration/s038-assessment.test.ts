@@ -59,6 +59,7 @@ import { createRestServer } from "../../src/interfaces/rest/server.ts";
 import type { RestServer } from "../../src/interfaces/rest/server.ts";
 import { createMcpServer } from "../../src/interfaces/mcp/server.ts";
 import type { McpServer } from "../../src/interfaces/mcp/server.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
@@ -155,7 +156,8 @@ function buildStack(bytecodes?: ReadonlyMap<string, string>): {
     rpc: rpcFake,
     modelArtifacts: placeholderArtifact(),
     clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-  });
+  },
+  mustDefaultDetectorSet());
   return { services, rpcFake };
 }
 
@@ -425,7 +427,7 @@ describe("S-038 disabled wiring with no default provider (K-305, K-309)", () => 
   beforeAll(async () => {
     const { services } = buildStack();
     const versions = testVersions();
-    rest = createRestServer({
+    rest = createRestServer({ detectors: mustDefaultDetectorSet(),
       services,
       apiKeys: [new SecretString(TEST_API_KEY)] as readonly SecretString[],
       apiKeyPepper: new SecretString(TEST_PEPPER),
@@ -436,7 +438,7 @@ describe("S-038 disabled wiring with no default provider (K-305, K-309)", () => 
     });
     restBaseUrl = await rest.listen("127.0.0.1", 0);
     const stack = buildStack();
-    mcp = createMcpServer({
+    mcp = createMcpServer({ detectors: mustDefaultDetectorSet(),
       services: stack.services,
       modelVersion: versions.modelVersion,
       indexVersion: versions.indexVersion,
@@ -482,7 +484,7 @@ describe("S-038 assessment end to end over REST and MCP (K-305, K-309)", () => {
     const { services } = buildStack();
     const versions = testVersions();
     assessment = assessmentServiceFor(services, adapters["meta-model-api"]);
-    rest = createRestServer({
+    rest = createRestServer({ detectors: mustDefaultDetectorSet(),
       services,
       apiKeys: [new SecretString(TEST_API_KEY)] as readonly SecretString[],
       apiKeyPepper: new SecretString(TEST_PEPPER),
@@ -495,7 +497,7 @@ describe("S-038 assessment end to end over REST and MCP (K-305, K-309)", () => {
     restBaseUrl = await rest.listen("127.0.0.1", 0);
     const stack = buildStack();
     const mcpAssessment = assessmentServiceFor(stack.services, adapters["hosted-open-weights"]);
-    mcp = createMcpServer({
+    mcp = createMcpServer({ detectors: mustDefaultDetectorSet(),
       services: stack.services,
       modelVersion: versions.modelVersion,
       indexVersion: versions.indexVersion,

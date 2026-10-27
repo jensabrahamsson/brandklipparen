@@ -25,17 +25,15 @@ import type {
   BlockNumber as BlockNumberType,
 } from "../../src/domain/types.ts";
 import type { CapabilityCatalogue } from "../../src/domain/signals.ts";
-import {
-  createAppServices,
-  DEFAULT_DETECTOR_SET,
-} from "../../src/application/analyzeToken.ts";
+import { createAppServices } from "../../src/application/analyzeToken.ts";
 import type { AppServices, DetectorSet } from "../../src/application/analyzeToken.ts";
 import {
   DEFAULT_DETECTOR_PLUGINS,
   buildPluginRegistry,
-  detectorPluginTable,
 } from "../../src/plugins/registry.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 import { PluginManifest } from "../../src/plugins/api.ts";
+import type { DetectorManifest } from "../../src/plugins/api.ts";
 import type { DetectorInput, DetectorPlugin, PluginFinding } from "../../src/plugins/detector.ts";
 import { Evidence } from "../../src/domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../src/domain/evidence.ts";
@@ -88,7 +86,7 @@ const TEST_CATALOGUE: CapabilityCatalogue = Object.freeze({
 // A test-only detector that always reports one finding with valid
 // evidence, registered solely in the local set below. Production never
 // sees it: the default registry is untouched.
-const EXTRA_MANIFEST = mustOk(
+const EXTRA_MANIFEST_PARSED = mustOk(
   PluginManifest.parse({
     id: "dev.brandklipparen.test-extra",
     version: "1.0.0",
@@ -140,6 +138,11 @@ const EXTRA_MANIFEST = mustOk(
   }),
 );
 
+if (EXTRA_MANIFEST_PARSED.kind !== "detector") {
+  throw new Error("test extra manifest carries the wrong kind");
+}
+const EXTRA_MANIFEST: DetectorManifest = EXTRA_MANIFEST_PARSED;
+
 const EXTRA_PLUGIN: DetectorPlugin = Object.freeze({
   manifest: EXTRA_MANIFEST,
   detect: (input: DetectorInput): readonly PluginFinding[] => {
@@ -158,8 +161,8 @@ const EXTRA_PLUGIN: DetectorPlugin = Object.freeze({
 
 function extendedDetectorSet(): DetectorSet {
   const plugins = [...DEFAULT_DETECTOR_PLUGINS, EXTRA_PLUGIN] as readonly DetectorPlugin[];
-  const registry = mustOk(buildPluginRegistry(plugins.map((plugin) => plugin.manifest)));
-  return Object.freeze({ registry, plugins: detectorPluginTable(plugins) });
+  const registry = mustOk(buildPluginRegistry(plugins));
+  return Object.freeze({ registry });
 }
 
 function buildServices(bytecodeHex: string, address: AddressType, block: BlockNumberType): AppServices {
@@ -168,7 +171,8 @@ function buildServices(bytecodeHex: string, address: AddressType, block: BlockNu
     rpc: new FakeRpcAdapter(codes, block),
     modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
     clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-  });
+  },
+  mustDefaultDetectorSet());
 }
 
 function hexArb(length: number): fc.Arbitrary<string> {
@@ -262,8 +266,8 @@ describe("plugin findings leave score and probabilities unchanged", () => {
 
   test("default detector set carries no test-only plugin", () => {
     expect(
-      DEFAULT_DETECTOR_SET.registry.plugins.some(
-        (manifest) => manifest.id === EXTRA_MANIFEST.id,
+      mustDefaultDetectorSet().registry.entries.some(
+        (entry) => entry.manifest.id === EXTRA_MANIFEST.id,
       ),
     ).toBe(false);
   });

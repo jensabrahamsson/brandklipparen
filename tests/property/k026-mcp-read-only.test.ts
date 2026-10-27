@@ -25,6 +25,7 @@ import { FakeModelArtifactAdapter } from "../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../fakes/fakeRpc.ts";
 import { createMcpServer } from "../../src/interfaces/mcp/server.ts";
 import type { McpServer } from "../../src/interfaces/mcp/server.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -76,8 +77,9 @@ function buildStack(): { mcp: McpServer; rpc: FakeRpcAdapter; artifacts: FakeMod
     rpc,
     modelArtifacts: artifacts,
     clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-  });
-  const mcp = createMcpServer({
+  },
+  mustDefaultDetectorSet());
+  const mcp = createMcpServer({ detectors: mustDefaultDetectorSet(),
     services,
     modelVersion: mustOk(ModelVersion.parse("0.1.0")),
     indexVersion: mustOk(IndexVersion.parse("1.0.0")),

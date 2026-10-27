@@ -22,6 +22,7 @@ import type { CapabilityCatalogue } from "../../src/domain/signals.ts";
 import type { CloneMapping } from "../../src/domain/clones.ts";
 import { FakeClockAdapter } from "../fakes/fakeClock.ts";
 import { FakeRpcAdapter } from "../fakes/fakeRpc.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
@@ -65,7 +66,8 @@ describe("k017 clone index version in the response", () => {
       modelArtifacts: new FileModelArtifactAdapter(join(repoRoot, "model")),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
       cloneIndex: created.value,
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: target,
       block,

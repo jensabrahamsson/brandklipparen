@@ -10,33 +10,44 @@
 import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
 import type { CloneHit } from "../domain/clones.ts";
+import { CodeSnippet, Evidence } from "../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../domain/evidence.ts";
 import type { HardToAnalyzeCause } from "../domain/signals.ts";
+import { PcOffset, Selector } from "../domain/types.ts";
 import type {
   Bytecode as BytecodeType,
   CodeHash as CodeHashType,
 } from "../domain/types.ts";
 import type {
+  DetectorManifest,
   JsonSchema,
   JsonValue,
   PluginApiVersion,
   PluginId,
-  PluginManifest,
   PluginVersion,
 } from "./api.ts";
 import type { PluginRegistry } from "./registry.ts";
 
-// Closed detector input for v1 (ADR section 3.2): facts the host has already
-// computed deterministically. The capability plugin declares solely
-// `bytecode`, which travels with its CodeHash per the catalogue row
-// "Bytecode with CodeHash". The clone-match plugin additionally declares
-// `cloneMatch`: the template hit the host looked up through CloneIndexPort,
-// or null on a miss or an index failure. The hard-to-analyze plugin
-// declares solely `bytecode` and reads the host-supplied `decompilerCause`
-// fact beside it: the cause the host derived from the DecompilerPort
-// failure, or null when decompilation succeeded or no worker is bound.
-// Both facts stay optional on the type so detectors written against an
-// earlier input keep compiling; the host always sets them explicitly.
+// Full host fact set for one analysis (ADR section 3.2): every fact the
+// host computed deterministically. The registry projects this set per
+// detector before the call, so a detector never observes an undeclared
+// fact. `bytecode` travels with its `codeHash` per the catalogue row
+// "Bytecode with CodeHash"; `cloneMatch` is the template hit the host
+// looked up through CloneIndexPort (null on a miss or an index failure);
+// `decompilerCause` is the cause the host derived from the DecompilerPort
+// failure (null when decompilation succeeded or no worker is bound).
+export type DetectorFacts = {
+  readonly bytecode: BytecodeType;
+  readonly codeHash: CodeHashType;
+  readonly cloneMatch: CloneHit | null;
+  readonly decompilerCause: HardToAnalyzeCause | null;
+};
+
+// Projected detector input for v1 (ADR section 3.2): one frozen input per
+// detector holding exactly the facts that detector declared. An undeclared
+// fact is absent (the field is missing, not nulled), so a detector that
+// reads one reads `undefined` and the registry contract suite catches it
+// by requiring the projected run and the full-fact run to agree.
 export type DetectorInput = {
   readonly bytecode: BytecodeType;
   readonly codeHash: CodeHashType;
@@ -57,7 +68,7 @@ export type PluginFinding = {
 };
 
 export type DetectorPlugin = {
-  readonly manifest: PluginManifest;
+  readonly manifest: DetectorManifest;
   readonly detect: (input: DetectorInput) => readonly PluginFinding[];
 };
 
@@ -73,10 +84,10 @@ export type PluginResultEntry = {
   readonly findings: readonly PluginFinding[];
 };
 
-// Frozen detector input construction. The host passes exactly the declared
-// inputs and nothing else; values are frozen so detect cannot widen them.
-// Host-computed facts default to null, so a detector without a hit or a
-// cause reads an explicit empty fact instead of an absent field.
+// Frozen full fact set construction. The host computes every fact once
+// per analysis; values are frozen so detect cannot widen them. A missing
+// hit or cause arrives as its stated null, so the projection below passes
+// an explicit empty fact for a declared-but-absent input.
 export function createDetectorInput(
   bytecode: BytecodeType,
   codeHash: CodeHashType,
@@ -84,13 +95,41 @@ export function createDetectorInput(
     readonly cloneMatch?: CloneHit | null;
     readonly decompilerCause?: HardToAnalyzeCause | null;
   },
-): DetectorInput {
+): DetectorFacts {
   return Object.freeze({
     bytecode,
     codeHash,
     cloneMatch: facts?.cloneMatch ?? null,
     decompilerCause: facts?.decompilerCause ?? null,
   });
+}
+
+// Projection to one detector's declared inputs (ADR section 3.2): the host
+// builds one frozen input per detector holding exactly the facts that
+// detector declared. An undeclared fact is absent, so a detector that
+// reads one reads `undefined`. `bytecode` with its `codeHash` always
+// travels, since every detector declares it.
+export function projectDetectorInput(
+  manifest: DetectorManifest,
+  facts: DetectorFacts,
+): DetectorInput {
+  const declared = new Set<string>(manifest.inputs);
+  const projected: {
+    bytecode: BytecodeType;
+    codeHash: CodeHashType;
+    cloneMatch?: CloneHit | null;
+    decompilerCause?: HardToAnalyzeCause | null;
+  } = {
+    bytecode: facts.bytecode,
+    codeHash: facts.codeHash,
+  };
+  if (declared.has("cloneMatch")) {
+    projected.cloneMatch = facts.cloneMatch;
+  }
+  if (declared.has("decompilerCause")) {
+    projected.decompilerCause = facts.decompilerCause;
+  }
+  return Object.freeze(projected);
 }
 
 function isRecord(value: unknown): value is { readonly [key: string]: unknown } {
@@ -262,21 +301,34 @@ function toPlainJson(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value)) as unknown;
 }
 
-// Evidence shape check ahead of schema validation: every finding carries at
-// least one entry and every entry carries a selector string, mirroring A-13
-// so a finding without evidence never reaches scoring or rendering.
-function hasValidEvidence(findings: readonly PluginFinding[], maxPerFinding: number): boolean {
+// Boundary re-proof of finding identity and evidence ahead of schema
+// validation (ADR section 4.1): every finding id carries the
+// `<pluginId>:` prefix, `finding.pluginId` equals the manifest id, and
+// each evidence entry is re-parsed through the domain smart constructors.
+// A selector-shaped string is not evidence until the domain constructor
+// accepts it (A-13), and an offset must derive from the analysed bytecode
+// (K-010). Any failure is `invalid-output` for that plugin; unproven
+// evidence never reaches scoring, serialisation, or rendering.
+function hasProvenFindings(
+  plugin: DetectorPlugin,
+  input: DetectorInput,
+  findings: readonly PluginFinding[],
+  maxPerFinding: number,
+): boolean {
+  const prefix = `${plugin.manifest.id}:`;
   for (const finding of findings) {
     if (!isRecord(finding)) {
       return false;
     }
     const record = finding as { readonly [key: string]: unknown };
-    if (
-      typeof record["id"] !== "string" ||
-      (record["id"] as string).length === 0 ||
-      typeof record["title"] !== "string" ||
-      (record["title"] as string).trim().length === 0
-    ) {
+    const id: unknown = record["id"];
+    if (typeof id !== "string" || !id.startsWith(prefix) || id.length === prefix.length) {
+      return false;
+    }
+    if (record["pluginId"] !== plugin.manifest.id) {
+      return false;
+    }
+    if (typeof record["title"] !== "string" || (record["title"] as string).trim().length === 0) {
       return false;
     }
     const evidence: unknown = record["evidence"];
@@ -284,12 +336,61 @@ function hasValidEvidence(findings: readonly PluginFinding[], maxPerFinding: num
       return false;
     }
     for (const entry of evidence) {
-      if (!isRecord(entry) || typeof entry["selector"] !== "string") {
+      if (!isProvenEvidence(entry, input.bytecode)) {
         return false;
       }
     }
   }
   return true;
+}
+
+function isProvenEvidence(entry: unknown, bytecode: BytecodeType): boolean {
+  if (!isRecord(entry) || typeof entry["selector"] !== "string") {
+    return false;
+  }
+  const selector = Selector.parse(entry["selector"]);
+  if (!selector.ok) {
+    return false;
+  }
+  const offset: unknown = entry["offset"];
+  if (offset !== undefined && offset !== null) {
+    if (typeof offset !== "number" || !PcOffset.of(offset, bytecode).ok) {
+      return false;
+    }
+  }
+  const snippet: unknown = entry["snippet"];
+  if (snippet === undefined) {
+    return Evidence.create({ selector: selector.value }).ok;
+  }
+  if (!isRecord(snippet) || typeof snippet["selector"] !== "string") {
+    return false;
+  }
+  const snippetSelector = Selector.parse(snippet["selector"]);
+  if (!snippetSelector.ok) {
+    return false;
+  }
+  if (
+    typeof snippet["text"] !== "string" ||
+    (snippet["text"] as string).length === 0 ||
+    typeof snippet["line"] !== "number" ||
+    !Number.isInteger(snippet["line"]) ||
+    (snippet["line"] as number) < 0
+  ) {
+    return false;
+  }
+  const built = CodeSnippet.create({
+    text: snippet["text"] as string,
+    line: snippet["line"] as number,
+    selector: snippetSelector.value,
+  });
+  if (!built.ok) {
+    return false;
+  }
+  if (offset === undefined || offset === null) {
+    return Evidence.create({ selector: selector.value, snippet: built.value }).ok;
+  }
+  const provenOffset = PcOffset.of(offset, bytecode);
+  return provenOffset.ok && Evidence.create({ selector: selector.value, offset: provenOffset.value, snippet: built.value }).ok;
 }
 
 // Runs one detector plugin behind the registry boundary (P-06): the call is
@@ -309,7 +410,7 @@ export function runDetectorPlugin(
   if (!Array.isArray(raw) || raw.length > limits.maxFindings) {
     return outcomeEntry(plugin, "invalid-output", []);
   }
-  if (!hasValidEvidence(raw, limits.maxEvidencePerFinding)) {
+  if (!hasProvenFindings(plugin, input, raw, limits.maxEvidencePerFinding)) {
     return outcomeEntry(plugin, "invalid-output", []);
   }
   let plain: unknown;
@@ -342,42 +443,29 @@ export function runDetectorPlugin(
   return outcomeEntry(plugin, "ok", Object.freeze(sorted));
 }
 
-// Runs every registered detector whose manifest names it (P-08): solely
-// registered plugins run, so a plugin absent from the registry array never
-// executes. Results sort by plugin id for canonical output (P-11). A
-// registered manifest without a bound implementation is a wiring defect and
-// degrades to `invalid-output` with an empty finding list, keeping the
-// analysis standing.
+// Runs every registered detector entry (P-08): solely registered entries
+// run, so a plugin absent from the registry never executes. Each entry
+// carries its implementation, so a registered manifest without an
+// implementation is unrepresentable and needs no per-analysis outcome.
+// The host projects the full fact set to each detector's declared inputs
+// before the call (ADR section 3.2). Results sort by plugin id for
+// canonical output (P-11).
 export function runRegisteredDetectors(
   registry: PluginRegistry,
-  plugins: ReadonlyMap<string, DetectorPlugin>,
-  input: DetectorInput,
+  facts: DetectorFacts,
 ): readonly PluginResultEntry[] {
-  const manifests = [...registry.plugins].sort((left, right) => {
-    if (left.id < right.id) {
+  const entries = [...registry.entries].sort((left, right) => {
+    if (left.manifest.id < right.manifest.id) {
       return -1;
     }
-    if (left.id > right.id) {
+    if (left.manifest.id > right.manifest.id) {
       return 1;
     }
     return 0;
   });
   const out: PluginResultEntry[] = [];
-  for (const manifest of manifests) {
-    const plugin = plugins.get(manifest.id);
-    if (plugin === undefined) {
-      out.push(
-        Object.freeze({
-          pluginId: manifest.id,
-          pluginVersion: manifest.version,
-          apiVersion: manifest.apiVersion,
-          outcome: "invalid-output",
-          findings: Object.freeze([]),
-        }),
-      );
-      continue;
-    }
-    out.push(runDetectorPlugin(plugin, input));
+  for (const plugin of entries) {
+    out.push(runDetectorPlugin(plugin, projectDetectorInput(plugin.manifest, facts)));
   }
   return Object.freeze(out);
 }

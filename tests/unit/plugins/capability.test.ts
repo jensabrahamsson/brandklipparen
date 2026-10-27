@@ -25,10 +25,14 @@ import type { Result } from "../../../src/domain/result.ts";
 import type { CapabilityCatalogue } from "../../../src/domain/signals.ts";
 import { capabilityDetectorPlugin } from "../../../src/plugins/detectors/capability/index.ts";
 import type { DetectorInput } from "../../../src/plugins/detector.ts";
-import { buildDefaultPluginRegistry } from "../../../src/plugins/registry.ts";
+import {
+  buildPluginRegistry,
+  DEFAULT_DETECTOR_PLUGINS,
+} from "../../../src/plugins/registry.ts";
 import { FakeClockAdapter } from "../../fakes/fakeClock.ts";
 import { FakeRpcAdapter } from "../../fakes/fakeRpc.ts";
 import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
+import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..", "..");
@@ -70,12 +74,12 @@ describe("capability detector plugin", () => {
   });
 
   test("default registry holds the capability plugin and stays frozen", () => {
-    const built = buildDefaultPluginRegistry();
+    const built = buildPluginRegistry(DEFAULT_DETECTOR_PLUGINS);
     expect(built.ok).toBe(true);
     if (!built.ok) {
       return;
     }
-    expect(built.value.plugins.map((entry) => entry.id)).toEqual([
+    expect(built.value.entries.map((entry) => entry.manifest.id)).toEqual([
       "dev.brandklipparen.capability",
       "dev.brandklipparen.clone-match",
       "dev.brandklipparen.hard-to-analyze",
@@ -102,7 +106,8 @@ describe("capability detector plugin", () => {
       ),
       modelArtifacts: new FileModelArtifactAdapter(join(repoRoot, "model")),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: target,
       block,

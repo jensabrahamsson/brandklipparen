@@ -71,6 +71,11 @@ function manifestOf(): DetectorPlugin["manifest"] {
   if (!parsed.ok) {
     throw new Error(`clone-match plugin manifest failed validation: ${parsed.error.kind}`);
   }
+  if (parsed.value.kind !== "detector") {
+    throw new Error(
+      `clone-match plugin manifest carries kind ${parsed.value.kind}, expected detector`,
+    );
+  }
   return parsed.value;
 }
 

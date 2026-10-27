@@ -8,18 +8,18 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { PluginManifest } from "../../../src/plugins/api.ts";
+import type { DetectorManifest } from "../../../src/plugins/api.ts";
 import {
   buildPluginRegistry,
   createEmptyPluginRegistry,
   getPlugin,
   registeredPluginIds,
 } from "../../../src/plugins/registry.ts";
-import type { PluginManifest as PluginManifestValue } from "../../../src/plugins/api.ts";
-import { EMPTY_PLUGIN_REGISTRY } from "../../../src/composition/root.ts";
+import type { DetectorPlugin } from "../../../src/plugins/detector.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
-function parseManifest(overrides: Record<string, unknown> = {}): PluginManifestValue {
+function parseManifest(overrides: Record<string, unknown> = {}): DetectorManifest {
   const parsed = PluginManifest.parse({
     id: "dev.brandklipparen.capability",
     version: "1.0.0",
@@ -27,7 +27,7 @@ function parseManifest(overrides: Record<string, unknown> = {}): PluginManifestV
     apiVersion: "1.0.0",
     displayName: "Capability detector",
     description: "Reports owner capabilities with selector evidence.",
-    inputs: ["selectors"],
+    inputs: ["bytecode"],
     outputSchema: { type: "object", additionalProperties: false },
     capabilities: {},
     limits: { maxFindings: 50, maxEvidencePerFinding: 4, maxOutputBytes: 32768 },
@@ -36,7 +36,17 @@ function parseManifest(overrides: Record<string, unknown> = {}): PluginManifestV
   if (!parsed.ok) {
     throw new Error(`test manifest failed to parse: ${parsed.error.kind} ${parsed.error.message}`);
   }
+  if (parsed.value.kind !== "detector") {
+    throw new Error("test manifest carries the wrong kind");
+  }
   return parsed.value;
+}
+
+function testEntry(overrides: Record<string, unknown> = {}): DetectorPlugin {
+  return Object.freeze({
+    manifest: parseManifest(overrides),
+    detect: () => Object.freeze([]),
+  });
 }
 
 function sourceFiles(directory: string): string[] {
@@ -48,8 +58,8 @@ function sourceFiles(directory: string): string[] {
 
 describe("static plugin registry", () => {
   test("registry_rejects_duplicate_ids_and_unsupported_api_versions", () => {
-    const first = parseManifest();
-    const duplicate = parseManifest({ version: "2.0.0" });
+    const first = testEntry();
+    const duplicate = testEntry({ version: "2.0.0" });
     const duplicates = buildPluginRegistry([first, duplicate]);
     expect(duplicates.ok).toBe(false);
     if (duplicates.ok) {
@@ -59,7 +69,7 @@ describe("static plugin registry", () => {
     expect(duplicates.error.pluginId).toBe("dev.brandklipparen.capability");
 
     for (const apiVersion of ["0.9.0", "1.1.0", "2.0.0"]) {
-      const ranged = buildPluginRegistry([parseManifest({ apiVersion })]);
+      const ranged = buildPluginRegistry([testEntry({ apiVersion })]);
       expect(ranged.ok).toBe(false);
       if (ranged.ok) {
         throw new Error(`expected an unsupported api version error for ${apiVersion}`);
@@ -68,20 +78,46 @@ describe("static plugin registry", () => {
       expect(ranged.error.pluginId).toBe("dev.brandklipparen.capability");
     }
 
-    const violating = buildPluginRegistry([
-      parseManifest({ capabilities: { needsNetwork: true } }),
-    ]);
+    // The smart constructor already rejects detector network capability,
+    // so the registry re-check is defence in depth over an entry it did
+    // not parse itself.
+    const networked = {
+      manifest: {
+        ...parseManifest(),
+        capabilities: { ...parseManifest().capabilities, needsNetwork: true },
+      },
+      detect: () => Object.freeze([]),
+    } as unknown as DetectorPlugin;
+    const violating = buildPluginRegistry([networked]);
     expect(violating.ok).toBe(false);
     if (violating.ok) {
       throw new Error("expected an unsupported capability error");
     }
     expect(violating.error.kind).toBe("unsupported-capability");
 
+    const missing = buildPluginRegistry([
+      { manifest: parseManifest() } as unknown as DetectorPlugin,
+    ]);
+    expect(missing.ok).toBe(false);
+    if (missing.ok) {
+      throw new Error("expected a missing implementation error");
+    }
+    expect(missing.error.kind).toBe("missing-plugin-implementation");
+    expect(missing.error.pluginId).toBe("dev.brandklipparen.capability");
+
     const clean = buildPluginRegistry([
-      parseManifest(),
-      parseManifest({ id: "dev.brandklipparen.clone-match", apiVersion: "1.0.5" }),
+      testEntry(),
+      testEntry({ id: "dev.brandklipparen.clone-match", apiVersion: "1.0.5" }),
     ]);
     expect(clean.ok).toBe(true);
+    if (!clean.ok) {
+      throw new Error("expected the clean registry to build");
+    }
+    expect(clean.value.entries.map((entry) => entry.manifest.id)).toEqual([
+      "dev.brandklipparen.capability",
+      "dev.brandklipparen.clone-match",
+    ]);
+    expect(Object.isFrozen(clean.value)).toBe(true);
   });
 
   test("k514_registry_has_no_dynamic_loading", () => {
@@ -112,9 +148,9 @@ describe("static plugin registry", () => {
   });
 
   test("k514_unregistered_plugin_never_runs", () => {
-    // Solely registered plugins are returned for execution: a plugin
-    // absent from the registry array is absent from every lookup.
-    const registered = parseManifest();
+    // Solely registered entries are returned for execution: a plugin
+    // absent from the registry entries is absent from every lookup.
+    const registered = testEntry();
     const built = buildPluginRegistry([registered]);
     if (!built.ok) {
       throw new Error("expected the registry to build");
@@ -126,10 +162,10 @@ describe("static plugin registry", () => {
     expect(registeredPluginIds(registry)).not.toContain("dev.brandklipparen.absent");
   });
 
-  test("registry_builds_empty_and_freezes_through_the_composition_root", () => {
+  test("registry_builds_empty_and_freezes", () => {
     const empty = createEmptyPluginRegistry();
-    expect(empty.plugins).toEqual([]);
+    expect(empty.entries).toEqual([]);
     expect(Object.isFrozen(empty)).toBe(true);
-    expect(EMPTY_PLUGIN_REGISTRY.plugins).toEqual([]);
+    expect(Object.isFrozen(empty.entries)).toBe(true);
   });
 });

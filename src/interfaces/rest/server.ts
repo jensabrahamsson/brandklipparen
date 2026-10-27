@@ -12,7 +12,7 @@
 import Fastify from "fastify";
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_DETECTOR_SET, serializeAssessment } from "../../application/analyzeToken.ts";
+import { serializeAssessment } from "../../application/analyzeToken.ts";
 import type { AppServices, DetectorSet } from "../../application/analyzeToken.ts";
 import { exposeManifest, exposeRegistry, serializePluginList } from "../../plugins/exposure.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
@@ -83,8 +83,9 @@ export type RestServerOptions = {
   readonly catalogue: CapabilityCatalogue;
   // Registered detector set behind the plugin routes (S-046, P-09): the
   // REST plugin list derives from this one registry value, the same value
-  // the shared service runs. Absent means the production default set.
-  readonly detectors?: DetectorSet | undefined;
+  // the shared service runs. The composition root wires the set
+  // explicitly; no defaulted set exists.
+  readonly detectors: DetectorSet;
   readonly analyzeTimeoutMs?: number | undefined;
   readonly maxQueryChars?: number | undefined;
   readonly maxBodyBytes?: number | undefined;
@@ -464,7 +465,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
   // registry value, behind the same API-key gate as the analysis routes
   // (K-024). No route is hand-written per plugin; detector invocation rides
   // the existing analysis routes and surfaces under `pluginResults`.
-  const detectors = options.detectors ?? DEFAULT_DETECTOR_SET;
+  const detectors = options.detectors;
 
   app.get("/v1/plugins", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     const requestId = issueRequestId();
@@ -488,16 +489,18 @@ export function createRestServer(options: RestServerOptions): RestServer {
         return sendError(reply, gated.error);
       }
       const id = (request.params as { id?: unknown }).id;
-      const manifest =
-        typeof id === "string" ? detectors.registry.plugins.find((entry) => entry.id === id) : undefined;
-      if (manifest === undefined) {
+      const entry =
+        typeof id === "string"
+          ? detectors.registry.entries.find((candidate) => candidate.manifest.id === id)
+          : undefined;
+      if (entry === undefined) {
         return sendError(reply, notFound(requestId));
       }
       return reply
         .code(200)
         .header(REQUEST_ID_HEADER, requestId)
         .type("application/json")
-        .send(canonicalSerialize(exposeManifest(manifest) as never));
+        .send(canonicalSerialize(exposeManifest(entry.manifest) as never));
     },
   );
 

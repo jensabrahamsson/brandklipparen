@@ -49,22 +49,13 @@ import type {
   RiskType,
   Temporality,
 } from "../domain/signals.ts";
-import {
-  DEFAULT_DETECTOR_PLUGINS,
-  DEFAULT_PLUGIN_REGISTRY,
-  detectorPluginTable,
-} from "../plugins/registry.ts";
 import type { PluginRegistry } from "../plugins/registry.ts";
 import {
   createDetectorInput,
   pluginResultToCanonical,
   runRegisteredDetectors,
 } from "../plugins/detector.ts";
-import type {
-  DetectorPlugin,
-  PluginFinding,
-  PluginResultEntry,
-} from "../plugins/detector.ts";
+import type { PluginFinding, PluginResultEntry } from "../plugins/detector.ts";
 import type { CloneHit, CloneMapping } from "../domain/clones.ts";
 import { CloneGroupId, Probability, SkeletonHash } from "../domain/types.ts";
 import { Evidence } from "../domain/evidence.ts";
@@ -120,20 +111,16 @@ export type AnalyzeTokenInput = {
   readonly proxyMaxDepth?: number | undefined;
 };
 
-// Detector set handed to the application service (S-043, P-08): the
-// validated manifest registry beside the executable lookup. The service runs
-// solely plugins named by the registry value, so an unregistered plugin
-// never runs. The composition root owns the default value; tests pass their
-// own set to select among already-registered plugins.
+// Detector set handed to the application service (S-043, P-08; entries
+// in S-071 per ADR section 0.3, D-5): the validated registry of entries.
+// Each entry carries its manifest beside its implementation, so the
+// service runs solely registered entries and an unregistered plugin never
+// runs. The composition root builds the set through the startup builder
+// and hands it in explicitly; no defaulted set exists, so a caller cannot
+// forget to wire the real set.
 export type DetectorSet = {
   readonly registry: PluginRegistry;
-  readonly plugins: ReadonlyMap<string, DetectorPlugin>;
 };
-
-export const DEFAULT_DETECTOR_SET: DetectorSet = Object.freeze({
-  registry: DEFAULT_PLUGIN_REGISTRY,
-  plugins: detectorPluginTable(DEFAULT_DETECTOR_PLUGINS),
-});
 
 // Canonical assessment envelope: the same input triple of bytecode, block
 // number and artifact version gives a bit-identical serialisation on every
@@ -505,9 +492,9 @@ function signalsFromCapabilityFindings(
 export async function analyzeToken(
   ports: AnalyzeTokenPorts,
   input: AnalyzeTokenInput,
+  detectors: DetectorSet,
   addressIndex: Map<string, CacheKeyType> = new Map(),
   counters?: RequestCounterSink | undefined,
-  detectors: DetectorSet = DEFAULT_DETECTOR_SET,
 ): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> {
   const rpc = counters === undefined ? ports.rpc : withCountedRpc(ports.rpc, counters);
   const countedPorts = counters === undefined ? ports : { ...ports, rpc };
@@ -623,7 +610,6 @@ export async function analyzeToken(
   // registry/detect path.
   const pluginResults = runRegisteredDetectors(
     detectors.registry,
-    detectors.plugins,
     createDetectorInput(fetched.value.bytecode, codeHash.value, {
       cloneMatch: cloneHit,
       decompilerCause,
@@ -783,7 +769,7 @@ export type AppServices = {
 
 export function createAppServices(
   ports: AnalyzeTokenPorts,
-  detectors: DetectorSet = DEFAULT_DETECTOR_SET,
+  detectors: DetectorSet,
 ): AppServices {
   // Address index for the cache fast path, shared by every call through
   // this service (K-013). The index maps address, block and model version
@@ -794,7 +780,7 @@ export function createAppServices(
       input: AnalyzeTokenInput,
       counters?: RequestCounterSink | undefined,
     ): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> =>
-      analyzeToken(ports, input, addressIndex, counters, detectors),
+      analyzeToken(ports, input, detectors, addressIndex, counters),
     resolveProxy: async (
       input: ResolveProxyInput,
     ): Promise<Result<ResolveProxySuccess, ApplicationError>> => {

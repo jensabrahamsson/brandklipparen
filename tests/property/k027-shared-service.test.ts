@@ -36,6 +36,7 @@ import type { LoadedArtifact } from "../../src/ports/modelArtifact.ts";
 import { FakeClockAdapter } from "../fakes/fakeClock.ts";
 import { FakeModelArtifactAdapter } from "../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../fakes/fakeRpc.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -90,7 +91,8 @@ function buildServices(bytecodeHex: string, address: AddressType, block: BlockNu
     rpc: new FakeRpcAdapter(codes, block),
     modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
     clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-  });
+  },
+  mustDefaultDetectorSet());
 }
 
 const REQUEST_ID = "123e4567-e89b-12d3-a456-426614174000";

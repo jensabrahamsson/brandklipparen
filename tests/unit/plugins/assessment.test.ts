@@ -18,7 +18,7 @@ import {
 import {
   metaModelApiAssessmentPlugin,
 } from "../../../src/plugins/assessments/meta-model-api/index.ts";
-import { buildPluginRegistry } from "../../../src/plugins/registry.ts";
+import { buildAssessmentRegistry } from "../../../src/plugins/registry.ts";
 import type { AssessmentProvider } from "../../../src/ports/assessmentModel.ts";
 
 function asPluginId(raw: string): PluginId {
@@ -75,16 +75,16 @@ describe("assessment plugin registry (S-045)", () => {
   });
 
   test("assessment_registry_builds_with_unique_ids_and_lookup_by_plugin_id", () => {
-    const built = buildPluginRegistry([
-      metaModelApiAssessmentPlugin.manifest,
-      hostedOpenWeightsAssessmentPlugin.manifest,
+    const built = buildAssessmentRegistry([
+      metaModelApiAssessmentPlugin,
+      hostedOpenWeightsAssessmentPlugin,
     ]);
     expect(built.ok).toBe(true);
     if (!built.ok) {
       return;
     }
     const registry = built.value;
-    expect(registry.plugins.length).toBe(2);
+    expect(registry.entries.length).toBe(2);
     expect(Object.isFrozen(registry)).toBe(true);
     const table = assessmentPluginTable([
       metaModelApiAssessmentPlugin,
@@ -104,9 +104,9 @@ describe("assessment plugin registry (S-045)", () => {
   });
 
   test("duplicate_assessment_ids_fail_the_registry_builder", () => {
-    const duplicated = buildPluginRegistry([
-      metaModelApiAssessmentPlugin.manifest,
-      metaModelApiAssessmentPlugin.manifest,
+    const duplicated = buildAssessmentRegistry([
+      metaModelApiAssessmentPlugin,
+      metaModelApiAssessmentPlugin,
     ]);
     expect(duplicated.ok).toBe(false);
     if (duplicated.ok) {

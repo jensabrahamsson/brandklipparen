@@ -28,6 +28,7 @@ import { createRestServer } from "../../../src/interfaces/rest/server.ts";
 import type { RestServer } from "../../../src/interfaces/rest/server.ts";
 import { createMcpServer } from "../../../src/interfaces/mcp/server.ts";
 import type { McpServer } from "../../../src/interfaces/mcp/server.ts";
+import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -99,7 +100,8 @@ function buildServices(onAnalyze?: () => void): { services: AppServices; rpcFake
     rpc: rpcFake,
     modelArtifacts: placeholderArtifact(),
     clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-  });
+  },
+  mustDefaultDetectorSet());
   const services: AppServices = Object.freeze({
     analyzeToken: async (input) => {
       onAnalyze?.();
@@ -120,14 +122,14 @@ describe("read-only MCP server over the shared service (S-028)", () => {
     const { services } = buildServices(() => {
       analyzeCalls += 1;
     });
-    rest = createRestServer({
+    rest = createRestServer({ detectors: mustDefaultDetectorSet(),
       services,
       apiKeys: [new SecretString(TEST_API_KEY)] as readonly SecretString[],
       apiKeyPepper: new SecretString(TEST_PEPPER),
       ...sharedOptions(),
     });
     restBaseUrl = await rest.listen("127.0.0.1", 0);
-    mcp = createMcpServer({ services, ...sharedOptions() });
+    mcp = createMcpServer({ detectors: mustDefaultDetectorSet(), services, ...sharedOptions() });
   });
 
   afterAll(async () => {

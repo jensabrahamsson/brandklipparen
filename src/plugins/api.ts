@@ -30,26 +30,18 @@ export type PluginApiVersion = string & { readonly __brand: "PluginApiVersion" }
 // registry dispatch site until it is handled.
 export type PluginKind = "detector" | "assessment";
 
-// Closed catalogue of detector inputs (ADR section 3.2): facts the host
-// has already computed deterministically. Requesting a name outside this
-// catalogue is unrepresentable in the manifest type.
-export type PluginInputName =
-  | "bytecode"
-  | "selectors"
-  | "disassembly"
-  | "proxy"
-  | "cloneMatch"
-  | "snippets"
-  | "measuredValues";
+// Closed catalogue of detector inputs (ADR section 3.2, reviewed
+// section 0.1): the three facts the host has already computed
+// deterministically. Every fact the host supplies is a fact the detector
+// cannot derive purely itself. Requesting a name outside this catalogue
+// is unrepresentable in the manifest type; a fact re-enters the catalogue
+// only by ADR amendment.
+export type PluginInputName = "bytecode" | "cloneMatch" | "decompilerCause";
 
 const PLUGIN_INPUT_NAMES: ReadonlySet<string> = new Set([
   "bytecode",
-  "selectors",
-  "disassembly",
-  "proxy",
   "cloneMatch",
-  "snippets",
-  "measuredValues",
+  "decompilerCause",
 ]);
 
 // JSON values carried in the output schema descriptor.
@@ -95,41 +87,78 @@ const SCHEMA_TYPE_NAMES: ReadonlySet<string> = new Set([
   "null",
 ]);
 
-// Closed capability flags (ADR section 3.4). Capabilities gate what the
-// host offers the plugin; they never widen what the plugin can reach,
-// because the plugin receives solely values.
-export type PluginCapabilities = {
-  readonly needsNetwork: boolean;
-  readonly needsSecrets: boolean;
+// Closed capability flags per kind (ADR section 3.4, reviewed section
+// 0.2). Capabilities gate what the host offers the plugin; they never
+// widen what the plugin can reach, because the plugin receives solely
+// values. Detector-forbidden values fail in the manifest smart
+// constructor itself, so a detector manifest carrying `needsNetwork: true`
+// cannot be constructed, let alone registered.
+export type DetectorCapabilities = {
+  readonly needsNetwork: false;
+  readonly needsSecrets: false;
   readonly affectsScore: boolean;
   readonly runsInFastPath: boolean;
 };
 
-// Per-plugin bounds. Detector entries are required; assessment entries
-// add deadline and byte bounds mirroring A-17. Values arrive through
-// typed configuration, never from the plugin at run time.
-export type PluginLimits = {
+export type AssessmentCapabilities = {
+  readonly needsNetwork: boolean;
+  readonly needsSecrets: false;
+  readonly affectsScore: false;
+  readonly runsInFastPath: false;
+};
+
+export type PluginCapabilities = DetectorCapabilities | AssessmentCapabilities;
+
+// Per-plugin bounds per kind (ADR section 3.4). Detector limits carry the
+// three count and size bounds; a detector carrying a provider deadline is
+// a type error. Assessment limits add the deadline and byte bounds
+// mirroring A-17. Values arrive through typed configuration, never from
+// the plugin at run time.
+export type DetectorLimits = {
   readonly maxFindings: number;
   readonly maxEvidencePerFinding: number;
   readonly maxOutputBytes: number;
-  readonly deadlineMs?: number | undefined;
-  readonly maxBytesIn?: number | undefined;
-  readonly maxBytesOut?: number | undefined;
-  readonly maxConcurrency?: number | undefined;
 };
 
-export type PluginManifest = {
+export type AssessmentLimits = DetectorLimits & {
+  readonly deadlineMs: number;
+  readonly maxBytesIn: number;
+  readonly maxBytesOut: number;
+  readonly maxConcurrency: number;
+};
+
+export type PluginLimits = DetectorLimits | AssessmentLimits;
+
+type SharedManifestFields = {
   readonly id: PluginId;
   readonly version: PluginVersion;
   readonly kind: PluginKind;
   readonly apiVersion: PluginApiVersion;
   readonly displayName: string;
   readonly description: string;
-  readonly inputs: readonly PluginInputName[];
   readonly outputSchema: JsonSchema;
-  readonly capabilities: PluginCapabilities;
-  readonly limits: PluginLimits;
 };
+
+// Discriminated manifest union (ADR section 3.1, reviewed section 0.2):
+// detector and assessment manifests are different types with different
+// `inputs`, `capabilities` and `limits` shapes, so a state that mixes
+// kinds (a detector with a provider deadline, an assessment declaring
+// detector inputs) fails to typecheck instead of failing at run time.
+export type DetectorManifest = SharedManifestFields & {
+  readonly kind: "detector";
+  readonly inputs: readonly PluginInputName[];
+  readonly capabilities: DetectorCapabilities;
+  readonly limits: DetectorLimits;
+};
+
+export type AssessmentManifest = SharedManifestFields & {
+  readonly kind: "assessment";
+  readonly inputs: readonly [];
+  readonly capabilities: AssessmentCapabilities;
+  readonly limits: AssessmentLimits;
+};
+
+export type PluginManifest = DetectorManifest | AssessmentManifest;
 
 // One branch per manifest field, so a new field forces an explicit branch
 // at every exhaustive switch. Values stay outside the error text where
@@ -291,6 +320,14 @@ function deepFreezeSchema(schema: JsonSchema): JsonSchema {
 }
 
 function parseCapabilities(
+  kind: "detector",
+  raw: unknown,
+): Result<DetectorCapabilities, PluginManifestError>;
+function parseCapabilities(
+  kind: "assessment",
+  raw: unknown,
+): Result<AssessmentCapabilities, PluginManifestError>;
+function parseCapabilities(
   kind: PluginKind,
   raw: unknown,
 ): Result<PluginCapabilities, PluginManifestError> {
@@ -333,15 +370,71 @@ function parseCapabilities(
       });
     }
   }
+  if (kind === "detector") {
+    if (parsed["needsNetwork"] === true) {
+      return err({
+        kind: "invalid-plugin-capabilities",
+        message: "detector plugins hold zero network capability",
+      });
+    }
+    if (parsed["needsSecrets"] === true) {
+      return err({
+        kind: "invalid-plugin-capabilities",
+        message: "detector plugins hold zero secret capability",
+      });
+    }
+    return ok({
+      needsNetwork: false,
+      needsSecrets: false,
+      affectsScore: parsed["affectsScore"] ?? false,
+      runsInFastPath: parsed["runsInFastPath"] ?? false,
+    });
+  }
+  if (parsed["needsSecrets"] === true) {
+    return err({
+      kind: "invalid-plugin-capabilities",
+      message: "assessment plugins never receive key values",
+    });
+  }
+  if (parsed["affectsScore"] === true) {
+    return err({
+      kind: "invalid-plugin-capabilities",
+      message: "assessment plugins never affect the score",
+    });
+  }
+  if (parsed["runsInFastPath"] === true) {
+    return err({
+      kind: "invalid-plugin-capabilities",
+      message: "assessment plugins never run in the fast path",
+    });
+  }
   return ok({
     needsNetwork: parsed["needsNetwork"] ?? false,
-    needsSecrets: parsed["needsSecrets"] ?? false,
-    affectsScore: parsed["affectsScore"] ?? false,
-    runsInFastPath: parsed["runsInFastPath"] ?? false,
+    needsSecrets: false,
+    affectsScore: false,
+    runsInFastPath: false,
   });
 }
 
-function parseLimits(raw: unknown): Result<PluginLimits, PluginManifestError> {
+const ASSESSMENT_LIMIT_KEYS = [
+  "deadlineMs",
+  "maxBytesIn",
+  "maxBytesOut",
+  "maxConcurrency",
+] as const;
+
+function parseLimits(
+  kind: "detector",
+  raw: unknown,
+): Result<DetectorLimits, PluginManifestError>;
+function parseLimits(
+  kind: "assessment",
+  raw: unknown,
+): Result<AssessmentLimits, PluginManifestError>;
+function parseLimits(
+  kind: PluginKind,
+  raw: unknown,
+): Result<PluginLimits, PluginManifestError> {
   if (!isRecord(raw)) {
     return err({
       kind: "invalid-plugin-limits",
@@ -358,26 +451,33 @@ function parseLimits(raw: unknown): Result<PluginLimits, PluginManifestError> {
         "plugin limits require positive integer maxFindings, maxEvidencePerFinding and maxOutputBytes",
     });
   }
-  const limits: { [key: string]: number } = {
+  if (kind === "detector") {
+    for (const key of ASSESSMENT_LIMIT_KEYS) {
+      if (raw[key] !== undefined) {
+        return err({
+          kind: "invalid-plugin-limits",
+          message: `detector plugins carry no provider limit ${key}`,
+        });
+      }
+    }
+    return ok(Object.freeze({ maxFindings, maxEvidencePerFinding, maxOutputBytes }));
+  }
+  const assessed: { [key: string]: number } = {
     maxFindings,
     maxEvidencePerFinding,
     maxOutputBytes,
   };
-  for (const key of ["deadlineMs", "maxBytesIn", "maxBytesOut", "maxConcurrency"] as const) {
-    const entry: unknown = raw[key];
-    if (entry === undefined) {
-      continue;
-    }
-    const parsed = parsePositiveInt(entry);
+  for (const key of ASSESSMENT_LIMIT_KEYS) {
+    const parsed = parsePositiveInt(raw[key]);
     if (parsed === null) {
       return err({
         kind: "invalid-plugin-limits",
-        message: `plugin limit ${key} must be a positive integer when present`,
+        message: `assessment plugins require positive integer limit ${key}`,
       });
     }
-    limits[key] = parsed;
+    assessed[key] = parsed;
   }
-  return ok(Object.freeze(limits) as PluginLimits);
+  return ok(Object.freeze(assessed) as PluginLimits);
 }
 
 export const PluginManifest = {
@@ -449,10 +549,17 @@ export const PluginManifest = {
       }
       seen.add(entry);
     }
-    if (kind === "assessment" && inputs.length > 0) {
+    if (kind === "assessment") {
+      if (inputs.length > 0) {
+        return err({
+          kind: "invalid-plugin-inputs",
+          message: "assessment plugins declare no detector inputs",
+        });
+      }
+    } else if (inputs.length === 0 || !seen.has("bytecode")) {
       return err({
         kind: "invalid-plugin-inputs",
-        message: "assessment plugins declare no detector inputs",
+        message: "detector plugins declare a non-empty input set holding bytecode",
       });
     }
     const outputSchema: unknown = raw["outputSchema"];
@@ -462,24 +569,47 @@ export const PluginManifest = {
         message: "plugin outputSchema must stay inside the supported keyword subset",
       });
     }
+    const frozenInputs = Object.freeze([...(inputs as PluginInputName[])]);
+    const shared = {
+      id: id as PluginId,
+      version: version as PluginVersion,
+      apiVersion: apiVersion as PluginApiVersion,
+      displayName,
+      description,
+      outputSchema: deepFreezeSchema(outputSchema),
+    };
+    if (kind === "assessment") {
+      const capabilities = parseCapabilities(kind, raw["capabilities"]);
+      if (!capabilities.ok) {
+        return err(capabilities.error);
+      }
+      const limits = parseLimits(kind, raw["limits"]);
+      if (!limits.ok) {
+        return err(limits.error);
+      }
+      return ok(
+        Object.freeze({
+          ...shared,
+          kind,
+          inputs: frozenInputs as readonly [],
+          capabilities: Object.freeze(capabilities.value),
+          limits: limits.value,
+        }),
+      );
+    }
     const capabilities = parseCapabilities(kind, raw["capabilities"]);
     if (!capabilities.ok) {
       return err(capabilities.error);
     }
-    const limits = parseLimits(raw["limits"]);
+    const limits = parseLimits(kind, raw["limits"]);
     if (!limits.ok) {
       return err(limits.error);
     }
     return ok(
       Object.freeze({
-        id: id as PluginId,
-        version: version as PluginVersion,
+        ...shared,
         kind,
-        apiVersion: apiVersion as PluginApiVersion,
-        displayName,
-        description,
-        inputs: Object.freeze([...(inputs as PluginInputName[])]) as readonly PluginInputName[],
-        outputSchema: deepFreezeSchema(outputSchema),
+        inputs: frozenInputs as readonly PluginInputName[],
         capabilities: Object.freeze(capabilities.value),
         limits: limits.value,
       }),

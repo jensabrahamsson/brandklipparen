@@ -8,7 +8,7 @@
 // the error text (A-15, K-505).
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
-import { DEFAULT_DETECTOR_SET, createAppServices } from "../application/analyzeToken.ts";
+import { createAppServices } from "../application/analyzeToken.ts";
 import type {
   AnalyzeTokenPorts,
   AppServices,
@@ -29,32 +29,40 @@ import {
 import type { AssessmentPlugin } from "../plugins/assessment.ts";
 import {
   ASSESSMENT_PLUGINS,
+  DEFAULT_DETECTOR_PLUGINS,
   buildDefaultAssessmentRegistry,
-  createEmptyPluginRegistry,
+  buildPluginRegistry,
 } from "../plugins/registry.ts";
-import type { PluginRegistry } from "../plugins/registry.ts";
+import type { PluginRegistryError } from "../plugins/registry.ts";
 import type { PluginId } from "../plugins/api.ts";
 import type { AppConfig, ConfigError } from "../ports/config.ts";
 import type { MetaModelApiAdapter } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
 import type { hostedOpenWeightsAdapter } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
-
-// S-043 (ADR P-12 step 1): the default detector set carries the validated
-// plugin registry beside the executable detector lookup, and the shared
-// application service runs detection solely through it. The empty S-042
-// registry stays for startup tests.
-export const EMPTY_PLUGIN_REGISTRY: PluginRegistry = createEmptyPluginRegistry();
 import type { ModelId } from "../domain/types.ts";
 import type { AssessmentProvider } from "../ports/assessmentModel.ts";
+
+// Builds the detector set the shared application service runs (S-043,
+// P-08; entries in S-071 per ADR section 0.3, D-5): the startup builder
+// validates the static first-party entry set once and the composition
+// root maps a failure to a typed startup error. Nothing is built at
+// module load, and no defaulted set exists: callers wire the returned set
+// explicitly through `wireAppServices`.
+export function buildDetectorSet(): Result<DetectorSet, PluginRegistryError> {
+  const built = buildPluginRegistry(DEFAULT_DETECTOR_PLUGINS);
+  if (!built.ok) {
+    return err(built.error);
+  }
+  return ok(Object.freeze({ registry: built.value }));
+}
 
 // Single wiring point for the shared application service (A-02, A-03,
 // K-027): the root binds each port to exactly one adapter and hands the ready
 // AppServices structure to the driving adapters (REST, MCP, web UI) through
 // constructor injection. Proxy resolution (S-006) is wired through the same
-// structure; just-deployed listing joins it in a later story.
-export function wireAppServices(
-  ports: AnalyzeTokenPorts,
-  detectors: DetectorSet = DEFAULT_DETECTOR_SET,
-): AppServices {
+// structure; just-deployed listing joins it in a later story. The detector
+// set is required explicitly: it comes from `buildDetectorSet`, so a
+// caller cannot forget to wire the real set.
+export function wireAppServices(ports: AnalyzeTokenPorts, detectors: DetectorSet): AppServices {
   return createAppServices(ports, detectors);
 }
 
@@ -203,7 +211,7 @@ export function createAssessmentAdapterForPlugin(
     });
   }
   const plugin = ASSESSMENT_PLUGIN_TABLE.get(pluginId);
-  const registered = assessed.value.plugins.some((entry) => entry.id === pluginId);
+  const registered = assessed.value.entries.some((entry) => entry.manifest.id === pluginId);
   if (plugin === undefined || !registered) {
     return err({
       kind: "invalid-value",

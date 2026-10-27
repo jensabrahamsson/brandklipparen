@@ -1,13 +1,14 @@
 // Hard-to-analyze detector plugin `dev.brandklipparen.hard-to-analyze`
-// (S-044, P-12 step 2). First-party detector behind the registry: the host
-// derives the decompiler failure cause through DecompilerPort and hands it
-// over as the `decompilerCause` input fact, and the plugin reports it with
-// selector evidence at weight 0. A null cause yields no findings, so a
-// successful decompilation stays silent. The application service maps the
-// finding to today's hard-to-analyze Signal through the frozen placeholder
-// risk, so scores stay bit-identical until calibration names the finding
-// (P-05). Pure and synchronous: this module imports solely the plugin API
-// and domain types and pure functions (P-03).
+// (S-044, P-12 step 2; inputs declared in S-071 per ADR section 3.2, D-1).
+// First-party detector behind the registry: the host derives the
+// decompiler failure cause through DecompilerPort and hands it over as
+// the declared `decompilerCause` input fact, and the plugin reports it
+// with selector evidence at weight 0. A null cause yields no findings, so
+// a successful decompilation stays silent. The application service maps
+// the finding to today's hard-to-analyze Signal through the frozen
+// placeholder risk, so scores stay bit-identical until calibration names
+// the finding (P-05). Pure and synchronous: this module imports solely
+// the plugin API and domain types and pure functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
 import { extractSelectors } from "../../../domain/selectors.ts";
@@ -64,13 +65,18 @@ function manifestOf(): DetectorPlugin["manifest"] {
     apiVersion: PLUGIN_API_VERSION,
     displayName: "Hard-to-analyze detector",
     description: "Reports a failed decompilation cause with selector evidence.",
-    inputs: ["bytecode"],
+    inputs: ["bytecode", "decompilerCause"],
     outputSchema: OUTPUT_SCHEMA,
     capabilities: {},
     limits: { maxFindings: 1, maxEvidencePerFinding: 8, maxOutputBytes: 32768 },
   });
   if (!parsed.ok) {
     throw new Error(`hard-to-analyze plugin manifest failed validation: ${parsed.error.kind}`);
+  }
+  if (parsed.value.kind !== "detector") {
+    throw new Error(
+      `hard-to-analyze plugin manifest carries kind ${parsed.value.kind}, expected detector`,
+    );
   }
   return parsed.value;
 }

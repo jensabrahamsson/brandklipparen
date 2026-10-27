@@ -35,12 +35,16 @@ import type { CloneMapping } from "../../../src/domain/clones.ts";
 import { cloneMatchDetectorPlugin } from "../../../src/plugins/detectors/clone-match/index.ts";
 import { hardToAnalyzeDetectorPlugin } from "../../../src/plugins/detectors/hard-to-analyze/index.ts";
 import type { DetectorInput } from "../../../src/plugins/detector.ts";
-import { buildDefaultPluginRegistry } from "../../../src/plugins/registry.ts";
+import {
+  buildPluginRegistry,
+  DEFAULT_DETECTOR_PLUGINS,
+} from "../../../src/plugins/registry.ts";
 import { FakeClockAdapter } from "../../fakes/fakeClock.ts";
 import { FakeCloneIndexAdapter } from "../../fakes/fakeCloneIndex.ts";
 import { FakeDecompilerAdapter } from "../../fakes/fakeDecompiler.ts";
 import { FakeRpcAdapter } from "../../fakes/fakeRpc.ts";
 import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
+import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..", "..");
@@ -146,16 +150,16 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
     expect(cloneMatchDetectorPlugin.manifest.inputs).toEqual(["bytecode", "cloneMatch"]);
     expect(hardToAnalyzeDetectorPlugin.manifest.id).toBe("dev.brandklipparen.hard-to-analyze");
     expect(hardToAnalyzeDetectorPlugin.manifest.kind).toBe("detector");
-    expect(hardToAnalyzeDetectorPlugin.manifest.inputs).toEqual(["bytecode"]);
+    expect(hardToAnalyzeDetectorPlugin.manifest.inputs).toEqual(["bytecode", "decompilerCause"]);
   });
 
   test("default registry holds all three first-party detectors", () => {
-    const built = buildDefaultPluginRegistry();
+    const built = buildPluginRegistry(DEFAULT_DETECTOR_PLUGINS);
     expect(built.ok).toBe(true);
     if (!built.ok) {
       return;
     }
-    expect(built.value.plugins.map((entry) => entry.id)).toEqual([
+    expect(built.value.entries.map((entry) => entry.manifest.id)).toEqual([
       "dev.brandklipparen.capability",
       "dev.brandklipparen.clone-match",
       "dev.brandklipparen.hard-to-analyze",
@@ -192,7 +196,8 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
       modelArtifacts: new FileModelArtifactAdapter(join(repoRoot, "model")),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
       cloneIndex: mustCloneIndex(),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: target,
       block,
@@ -239,7 +244,8 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
       modelArtifacts: new FileModelArtifactAdapter(join(repoRoot, "model")),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
       cloneIndex: mustCloneIndex(),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: target,
       block,
@@ -275,7 +281,8 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
         kind: "index-unavailable",
         message: "fake index is down",
       }),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: target,
       block,
@@ -302,7 +309,8 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
       modelArtifacts: new FileModelArtifactAdapter(join(repoRoot, "model")),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
       decompiler: new FakeDecompilerAdapter({ scenario: "timeout" }),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: target,
       block,
@@ -339,7 +347,8 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
       modelArtifacts: new FileModelArtifactAdapter(join(repoRoot, "model")),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
       decompiler: new FakeDecompilerAdapter({ scenario: "success" }),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: target,
       block,
@@ -373,7 +382,8 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
       modelArtifacts: new FileModelArtifactAdapter(join(repoRoot, "model")),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
       decompiler: new FakeDecompilerAdapter({ scenario: "timeout" }),
-    });
+    },
+  mustDefaultDetectorSet());
     const analysed = await services.analyzeToken({
       address: target,
       block,

@@ -31,6 +31,7 @@ import { FakeCacheAdapter } from "../../fakes/fakeCache.ts";
 import { parseModelArtifact } from "../../../src/domain/risk.ts";
 import { createRestServer } from "../../../src/interfaces/rest/server.ts";
 import type { RestServer } from "../../../src/interfaces/rest/server.ts";
+import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -142,8 +143,9 @@ describe("rate and cost limits (K-504, M-08, M-09)", () => {
         rpc: new FakeRpcAdapter(codes, mustOk(BlockNumber.of(TEST_BLOCK))),
         modelArtifacts: placeholderArtifact(),
         clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-      });
-      server = createRestServer({
+      },
+  mustDefaultDetectorSet());
+      server = createRestServer({ detectors: mustDefaultDetectorSet(),
         services,
         ...testServerOptions(),
         rateLimit: { perKeyPerMinute: 2, perKeyPerDay: 100, globalPerMinute: 1000 },
@@ -177,7 +179,8 @@ describe("rate and cost limits (K-504, M-08, M-09)", () => {
         rpc: rpcFake,
         modelArtifacts: placeholderArtifact(),
         clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-      });
+      },
+  mustDefaultDetectorSet());
       let analyses = 0;
       const counting = Object.freeze({
         analyzeToken: async (
@@ -189,7 +192,7 @@ describe("rate and cost limits (K-504, M-08, M-09)", () => {
         },
         resolveProxy: services.resolveProxy,
       });
-      server = createRestServer({
+      server = createRestServer({ detectors: mustDefaultDetectorSet(),
         services: counting,
         ...testServerOptions(),
         rateLimit: { perKeyPerMinute: 1000, perKeyPerDay: 1, globalPerMinute: 1000 },
@@ -269,8 +272,8 @@ describe("rate and cost limits (K-504, M-08, M-09)", () => {
         templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
         catalogue: TEST_CATALOGUE,
       },
-      addressIndex,
-    );
+      mustDefaultDetectorSet(),
+      addressIndex);
     expect(first.ok).toBe(true);
     const outageRpc = new OutageRpcAdapter();
     const second = await analyzeToken(
@@ -285,8 +288,8 @@ describe("rate and cost limits (K-504, M-08, M-09)", () => {
         templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
         catalogue: TEST_CATALOGUE,
       },
-      addressIndex,
-    );
+      mustDefaultDetectorSet(),
+      addressIndex);
     expect(second.ok).toBe(true);
     expect(outageRpc.getCodeCalls).toBe(0);
     if (first.ok && first.value.kind === "assessed" && second.ok && second.value.kind === "assessed") {
@@ -309,8 +312,9 @@ describe("rate limiter over REST in isolation (K-504)", () => {
       rpc: new FakeRpcAdapter(codes, mustOk(BlockNumber.of(TEST_BLOCK))),
       modelArtifacts: placeholderArtifact(),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-    });
-    server = createRestServer({
+    },
+  mustDefaultDetectorSet());
+    server = createRestServer({ detectors: mustDefaultDetectorSet(),
       services,
       ...testServerOptions(),
       rateLimit: { perKeyPerMinute: 1000, perKeyPerDay: 1000, globalPerMinute: 1000 },

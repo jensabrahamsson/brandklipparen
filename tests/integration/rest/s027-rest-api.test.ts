@@ -33,6 +33,7 @@ import { FakeModelArtifactAdapter } from "../../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../../fakes/fakeRpc.ts";
 import { createRestServer } from "../../../src/interfaces/rest/server.ts";
 import type { RestServer } from "../../../src/interfaces/rest/server.ts";
+import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const schemaPath = join(repoRoot, "src", "interfaces", "rest", "schema", "v1.json");
@@ -100,7 +101,8 @@ function testServices(
     rpc: rpcFake,
     modelArtifacts: placeholderArtifact(),
     clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-  });
+  },
+  mustDefaultDetectorSet());
   const services: AppServices = Object.freeze({
     analyzeToken: async (input) => {
       onAnalyze?.();
@@ -131,7 +133,7 @@ describe("versioned REST API over the shared service (S-027)", () => {
     const { services } = testServices(undefined, () => {
       analyzeCalls += 1;
     });
-    server = createRestServer({ services, ...testServerOptions() });
+    server = createRestServer({ detectors: mustDefaultDetectorSet(), services, ...testServerOptions() });
     baseUrl = await server.listen("127.0.0.1", 0);
   });
 
@@ -259,7 +261,7 @@ describe("versioned REST API over the shared service (S-027)", () => {
         mustOk(BlockNumber.of(TEST_BLOCK)),
       ),
     );
-    const failingServer = createRestServer({ services: failing.services, ...testServerOptions() });
+    const failingServer = createRestServer({ detectors: mustDefaultDetectorSet(), services: failing.services, ...testServerOptions() });
     const failingBase = await failingServer.listen("127.0.0.1", 0);
     try {
       const upstream = await fetch(`${failingBase}/v1/analyze?address=${TEST_ADDRESS}`, {

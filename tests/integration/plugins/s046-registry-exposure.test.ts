@@ -23,7 +23,7 @@ import {
 import type { CapabilityCatalogue } from "../../../src/domain/signals.ts";
 import { createAppServices } from "../../../src/application/analyzeToken.ts";
 import type { AppServices } from "../../../src/application/analyzeToken.ts";
-import { DEFAULT_PLUGIN_REGISTRY } from "../../../src/plugins/registry.ts";
+import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 import { SecretString } from "../../../src/ports/config.ts";
 import { FakeClockAdapter } from "../../fakes/fakeClock.ts";
 import { FakeModelArtifactAdapter } from "../../fakes/fakeModelArtifact.ts";
@@ -87,7 +87,8 @@ function testServices(): AppServices {
     rpc: new FakeRpcAdapter(codes, mustOk(BlockNumber.of(TEST_BLOCK))),
     modelArtifacts: placeholderArtifact(),
     clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-  });
+  },
+  mustDefaultDetectorSet());
 }
 
 function sharedOptions() {
@@ -108,9 +109,9 @@ describe("registry exposure across interfaces (S-046)", () => {
 
   beforeAll(async () => {
     const services = testServices();
-    rest = createRestServer({ services, ...sharedOptions() });
+    rest = createRestServer({ detectors: mustDefaultDetectorSet(), services, ...sharedOptions() });
     restBaseUrl = await rest.listen("127.0.0.1", 0);
-    mcp = createMcpServer({ services, ...sharedOptions() });
+    mcp = createMcpServer({ detectors: mustDefaultDetectorSet(), services, ...sharedOptions() });
   });
 
   afterAll(async () => {
@@ -134,9 +135,10 @@ describe("registry exposure across interfaces (S-046)", () => {
     expect(validate(JSON.parse(restText))).toBe(true);
     const restList = JSON.parse(restText) as { readonly plugins: readonly unknown[] };
     expect(Array.isArray(restList.plugins)).toBe(true);
-    expect(restList.plugins.length).toBe(DEFAULT_PLUGIN_REGISTRY.plugins.length);
+    const defaultIds = mustDefaultDetectorSet().registry.entries.map((entry) => entry.manifest.id);
+    expect(restList.plugins.length).toBe(defaultIds.length);
     const restIds = restList.plugins.map((entry) => (entry as { id: string }).id);
-    expect(restIds).toEqual(DEFAULT_PLUGIN_REGISTRY.plugins.map((manifest) => manifest.id));
+    expect(restIds).toEqual(defaultIds);
 
     const listed = await mcp.callTool("list_plugins", {}, { apiKey: TEST_API_KEY });
     expect(listed.ok).toBe(true);
@@ -149,13 +151,13 @@ describe("registry exposure across interfaces (S-046)", () => {
     };
     expect(mcpList).toEqual(restList);
 
-    for (const manifest of DEFAULT_PLUGIN_REGISTRY.plugins) {
-      const single = await fetch(`${restBaseUrl}/v1/plugins/${manifest.id}`, {
+    for (const id of defaultIds) {
+      const single = await fetch(`${restBaseUrl}/v1/plugins/${id}`, {
         headers: { "x-api-key": TEST_API_KEY },
       });
       expect(single.status).toBe(200);
       const body = (await single.json()) as { id: string };
-      expect(body.id).toBe(manifest.id);
+      expect(body.id).toBe(id);
     }
   });
 
@@ -188,7 +190,7 @@ describe("registry exposure across interfaces (S-046)", () => {
     };
     expect(Array.isArray(restBody.pluginResults)).toBe(true);
     expect(restBody.pluginResults.map((entry) => entry.pluginId)).toEqual(
-      DEFAULT_PLUGIN_REGISTRY.plugins.map((manifest) => manifest.id),
+      mustDefaultDetectorSet().registry.entries.map((entry) => entry.manifest.id),
     );
 
     const assessed = await mcp.callTool(

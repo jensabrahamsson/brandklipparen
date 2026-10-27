@@ -33,6 +33,7 @@ import { validateCacheEntry } from "../../src/adapters/cache/validateCacheEntry.
 import { FakeClockAdapter } from "../fakes/fakeClock.ts";
 import { FakeModelArtifactAdapter } from "../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../fakes/fakeRpc.ts";
+import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -172,7 +173,8 @@ describe("verified responses and cache entries (K-511, M-14)", () => {
       modelArtifacts: placeholderArtifact(),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
       cache,
-    });
+    },
+  mustDefaultDetectorSet());
     const first = await services.analyzeToken({
       address: mustOk(Address.parse(TEST_ADDRESS)),
       block: mustOk(BlockNumber.of(TEST_BLOCK)),
@@ -242,8 +244,8 @@ describe("verified responses and cache entries (K-511, M-14)", () => {
         templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
         catalogue: TEST_CATALOGUE,
       },
-      addressIndex,
-    );
+      mustDefaultDetectorSet(),
+      addressIndex);
     expect(analysed.ok).toBe(true);
     // The provider goes down; the same key still serves from the cache
     // with zero RPC calls.
@@ -260,8 +262,8 @@ describe("verified responses and cache entries (K-511, M-14)", () => {
         templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
         catalogue: TEST_CATALOGUE,
       },
-      addressIndex,
-    );
+      mustDefaultDetectorSet(),
+      addressIndex);
     expect(served.ok).toBe(true);
     expect(outage.getCodeCalls).toBe(0);
     if (analysed.ok && analysed.value.kind === "assessed" && served.ok && served.value.kind === "assessed") {

@@ -15,7 +15,7 @@ function validManifestInput(): Record<string, unknown> {
     apiVersion: "1.0.0",
     displayName: "Capability detector",
     description: "Reports owner capabilities with selector evidence.",
-    inputs: ["selectors", "disassembly"],
+    inputs: ["bytecode", "cloneMatch"],
     outputSchema: {
       type: "object",
       required: ["findings"],
@@ -95,20 +95,33 @@ describe("plugin manifest smart constructors", () => {
   });
 
   test("manifest_rejects_unknown_and_duplicate_inputs", () => {
-    expect(parseError({ ...validManifestInput(), inputs: ["selectors", "tape"] }).kind).toBe(
+    expect(parseError({ ...validManifestInput(), inputs: ["bytecode", "tape"] }).kind).toBe(
       "invalid-plugin-inputs",
     );
     expect(
-      parseError({ ...validManifestInput(), inputs: ["selectors", "selectors"] }).kind,
+      parseError({ ...validManifestInput(), inputs: ["bytecode", "bytecode"] }).kind,
     ).toBe("invalid-plugin-inputs");
   });
 
   test("manifest_rejects_detector_inputs_for_assessment_kind", () => {
     expect(
-      parseError({ ...validManifestInput(), kind: "assessment", inputs: ["selectors"] }).kind,
+      parseError({ ...validManifestInput(), kind: "assessment", inputs: ["bytecode"] }).kind,
     ).toBe("invalid-plugin-inputs");
     expect(
-      PluginManifest.parse({ ...validManifestInput(), kind: "assessment", inputs: [] }).ok,
+      PluginManifest.parse({
+        ...validManifestInput(),
+        kind: "assessment",
+        inputs: [],
+        limits: {
+          maxFindings: 100,
+          maxEvidencePerFinding: 8,
+          maxOutputBytes: 65536,
+          deadlineMs: 30000,
+          maxBytesIn: 1048576,
+          maxBytesOut: 65536,
+          maxConcurrency: 2,
+        },
+      }).ok,
     ).toBe(true);
   });
 
@@ -140,6 +153,15 @@ describe("plugin manifest smart constructors", () => {
       ...validManifestInput(),
       kind: "assessment",
       inputs: [],
+      limits: {
+        maxFindings: 1,
+        maxEvidencePerFinding: 1,
+        maxOutputBytes: 20000,
+        deadlineMs: 30000,
+        maxBytesIn: 1048576,
+        maxBytesOut: 20000,
+        maxConcurrency: 2,
+      },
     });
     if (!assessment.ok) {
       throw new Error(`expected ok, got: ${assessment.error.kind}`);

@@ -22,9 +22,7 @@ import { createAppServices } from "../../../src/application/analyzeToken.ts";
 import type { AppServices, DetectorSet } from "../../../src/application/analyzeToken.ts";
 import {
   DEFAULT_DETECTOR_PLUGINS,
-  DEFAULT_PLUGIN_REGISTRY,
   buildPluginRegistry,
-  detectorPluginTable,
 } from "../../../src/plugins/registry.ts";
 import type { DetectorPlugin } from "../../../src/plugins/detector.ts";
 import { SecretString } from "../../../src/ports/config.ts";
@@ -95,12 +93,11 @@ function exampleDetectorSet(): DetectorSet {
     Object.freeze({ manifest: feeCapabilityManifest, detect: detectFeeCapability }),
   ] as readonly DetectorPlugin[];
   return Object.freeze({
-    registry: mustOk(buildPluginRegistry(plugins.map((plugin) => plugin.manifest))),
-    plugins: detectorPluginTable(plugins),
+    registry: mustOk(buildPluginRegistry(plugins)),
   });
 }
 
-function testServices(detectors?: DetectorSet): AppServices {
+function testServices(detectors: DetectorSet): AppServices {
   const codes = new Map<string, string>([[mustOk(Address.parse(TEST_ADDRESS)) as string, TEST_BYTECODE]]);
   return createAppServices(
     {
@@ -183,7 +180,7 @@ describe("example plugin through a local registry (S-051)", () => {
     expect(example?.outcome).toBe("ok");
     expect(example?.findings.length).toBeGreaterThan(0);
 
-    const plain = await testServices().analyzeToken({
+    const plain = await testServices(exampleDetectorSet()).analyzeToken({
       address: mustOk(Address.parse(TEST_ADDRESS)),
       block: mustOk(BlockNumber.of(TEST_BLOCK)),
       requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174000")),
@@ -202,7 +199,9 @@ describe("example plugin through a local registry (S-051)", () => {
 
   test("production default registry carries no example plugin", () => {
     expect(
-      DEFAULT_PLUGIN_REGISTRY.plugins.some((manifest) => manifest.id === EXAMPLE_ID),
+      mustOk(buildPluginRegistry(DEFAULT_DETECTOR_PLUGINS)).entries.some(
+        (entry) => entry.manifest.id === EXAMPLE_ID,
+      ),
     ).toBe(false);
     expect(
       DEFAULT_DETECTOR_PLUGINS.some((plugin) => plugin.manifest.id === EXAMPLE_ID),
