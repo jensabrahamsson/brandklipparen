@@ -6,9 +6,20 @@
 // the error text (A-15, K-505).
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
+import { createAppServices } from "../application/analyzeToken.ts";
+import type { AnalyzeTokenPorts, AppServices } from "../application/analyzeToken.ts";
 import type { AppConfig, ConfigError } from "../ports/config.ts";
 import type { ModelId } from "../domain/types.ts";
 import type { AssessmentProvider } from "../ports/assessmentModel.ts";
+
+// Single wiring point for the shared application service (A-02, A-03,
+// K-027): the root binds each port to exactly one adapter and hands the ready
+// AppServices structure to the driving adapters (REST, MCP, web UI) through
+// constructor injection. Proxy resolution and just-deployed listing join this
+// structure in later stories.
+export function wireAppServices(ports: AnalyzeTokenPorts): AppServices {
+  return createAppServices(ports);
+}
 
 export type AssessmentBinding =
   | { readonly kind: "disabled" }
