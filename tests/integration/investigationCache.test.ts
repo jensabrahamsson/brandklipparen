@@ -100,7 +100,11 @@ function scriptedAdapter(counter: { calls: number }): InvestigationModelPort {
         });
       }
       const first = input.trace[0]?.evidenceIds[0] ?? "missing";
-      return ok({ kind: "conclude", narrativeDraft: `The frozen evidence shows the finding. [E:${first}]` });
+      return ok({
+        kind: "conclude",
+        narrativeDraft: `The frozen evidence shows the finding. [E:${first}]`,
+        rationale: "Cached investigation concludes from the frozen evidence.",
+      });
     },
   };
 }

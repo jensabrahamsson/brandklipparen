@@ -9,6 +9,11 @@ export function parseBlockField(raw: unknown): number | null {
   if (typeof raw === "number" && Number.isSafeInteger(raw) && raw >= 0) {
     return raw;
   }
+  // A bare `0x` word carries no digits and reads as zero (S-110), so an
+  // empty quantity never turns a whole poll away.
+  if (raw === "0x" || raw === "0X") {
+    return 0;
+  }
   if (typeof raw === "string" && raw.length > 0) {
     const parsed = raw.startsWith("0x") || raw.startsWith("0X") ? parseInt(raw, 16) : parseInt(raw, 10);
     if (Number.isSafeInteger(parsed) && parsed >= 0) {

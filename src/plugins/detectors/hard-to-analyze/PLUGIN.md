@@ -32,10 +32,10 @@ risk: treat it as a reason to be careful, not as proof of danger.
 At most one finding with the namespaced id
 `dev.brandklipparen.hard-to-analyze:<cause>`, a short English title, the
 first dispatcher selector as `evidence`, and the payload with `cause`.
-Every finding carries at least one `evidence` entry. Findings report at
-weight 0: the application service maps them to calibrated signals through
-the frozen placeholder risk, and a finding enters the score only after
-calibration names it.
+Every finding carries at least one `evidence` entry. As a first-party
+detector, its findings convert to calibrated signals through the model
+artifact's cause mapping, and the artifact sets their effective weight,
+which the plugin list exposes per plugin.
 
 ## Limitations / false positives
 

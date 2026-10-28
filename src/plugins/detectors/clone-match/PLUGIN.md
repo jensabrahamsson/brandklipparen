@@ -34,10 +34,10 @@ At most one finding with the namespaced id
 `dev.brandklipparen.clone-match:<group>`, a short English title, the first
 dispatcher selector as `evidence` with the PC offset wherever derivable, and
 the payload with `similarity`, `group`, and `priorCount`. Every finding
-carries at least one `evidence` entry. Findings report at weight 0: the
-application service maps them to calibrated signals through the versioned
-clone mapping, and a finding enters the score only after calibration
-names it.
+carries at least one `evidence` entry. As a first-party detector, its
+findings convert to calibrated signals through the versioned clone
+mapping in the model artifact, and the artifact sets their effective
+weight, which the plugin list exposes per plugin.
 
 ## Limitations / false positives
 

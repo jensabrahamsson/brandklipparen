@@ -80,7 +80,7 @@
   <text x="320" y="410" font-size="12" class="q">Summary by Muse · from 7 signals · analyzed in 2.8 s</text>
   <text x="300" y="430" font-size="12" class="q">Calibration: of earlier tokens scored 80–89, 83% blocked sells or lost liquidity within 7 days.</text>
 
-  <!-- tre mätare -->
+  <!-- three gauges -->
   <rect x="80" y="468" width="285" height="160" rx="16" class="card"/>
   <text x="100" y="498" font-size="14" class="b">Rug pull</text>
   <text x="345" y="498" font-size="12" class="q" text-anchor="end">4 signals</text>
@@ -110,7 +110,7 @@
   <text x="158" y="680" font-size="13" class="q">7 found · sorted by impact on the score</text>
   <text x="960" y="680" font-size="13" class="br" text-anchor="end">Expand all</text>
 
-  <!-- signal 1, utfälld -->
+  <!-- signal 1, expanded -->
   <rect x="80" y="696" width="880" height="452" rx="14" class="card"/>
   <rect x="80" y="710" width="4" height="36" rx="2" fill="#E5534B"/>
   <text x="104" y="726" font-size="16" class="b">Owner can blacklist wallets from selling</text>
@@ -158,7 +158,7 @@
   <text x="808" y="1134" font-size="12" class="br" text-anchor="end">Copy evidence</text>
   <text x="936" y="1134" font-size="12" class="br" text-anchor="end">Open in bytecode →</text>
 
-  <!-- signal 2–7, infällda -->
+  <!-- signals 2–7, collapsed -->
   <rect x="80" y="1160" width="880" height="64" rx="14" class="card"/>
   <rect x="80" y="1174" width="4" height="36" rx="2" fill="#E5534B"/>
   <text x="104" y="1188" font-size="15" class="b">Sell fee can be raised to 99%</text>
@@ -201,7 +201,7 @@
   <text x="900" y="1557" font-size="18" class="b lo" text-anchor="end">−3</text>
   <text x="936" y="1556" font-size="14" class="q" text-anchor="middle">⌄</text>
 
-  <!-- vad som inte går att avgöra -->
+  <!-- what cannot be told -->
   <rect x="80" y="1608" width="880" height="220" rx="14" fill="#12161C" stroke="#3A4250" stroke-dasharray="6 5"/>
   <circle cx="114" cy="1642" r="12" fill="url(#hatch)" stroke="#3A4250"/>
   <text x="114" y="1647" font-size="13" class="b s" text-anchor="middle">?</text>

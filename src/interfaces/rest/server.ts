@@ -20,10 +20,10 @@ import {
   serializePluginDocs,
   serializePluginList,
   weightOfMapping,
-} from "../../plugins/exposure.ts";
-import type { PluginDocsMap, PluginWeightMapping } from "../../plugins/exposure.ts";
-import { serializeStoredAuditReport } from "../../plugins/auditReport.ts";
-import type { StoredAuditReportMap } from "../../plugins/auditReport.ts";
+} from "../../application/pluginExposure.ts";
+import type { PluginDocsMap, PluginWeightMapping } from "../../application/pluginExposure.ts";
+import { serializeStoredAuditReport } from "../../application/pluginExposure.ts";
+import type { StoredAuditReportMap } from "../../application/pluginExposure.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import { requiredFlooredSections, serializePersonalizeOutcome } from "../../application/personalizeService.ts";
@@ -44,7 +44,7 @@ import type { RugRisk } from "../../ports/rugModel.ts";
 import type { CalibrationView } from "../../application/calibrationView.ts";
 import { MAX_NAMING_SELECTORS } from "../../application/decompilerNaming.ts";
 import type { DecompilerNamingService } from "../../application/decompilerNaming.ts";
-import { sectionBodyOf } from "../../plugins/docs.ts";
+import { sectionBodyOf } from "../../application/pluginExposure.ts";
 import { serializeTokenInvestigation } from "../../application/investigationService.ts";
 import type { InvestigationService } from "../../application/investigationService.ts";
 import {
@@ -749,6 +749,9 @@ export function createRestServer(options: RestServerOptions): RestServer {
         .type("application/json")
         .send(body);
     }
+    if (request.raw.destroyed) {
+      return reply;
+    }
     const assessedBody = assessedBodyOf(analysed.value.envelope, fields.value);
     const streamBody = `data: ${assessedBody}\n\ndata: ${JSON.stringify({ kind: "deepening", status: "pending" })}\n\n`;
     return reply
@@ -1261,6 +1264,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         promptVersion,
       },
       { requestId, deadline: deadline.value, block: gated.value.block },
+      store.keyId(gated.value.apiKey) ?? "unknown-key",
     );
     return reply
       .code(200)
@@ -1316,7 +1320,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         }),
       );
     }
-    const outcome = await service.resolve(selectors);
+    const outcome = await service.resolve(selectors, store.keyId(gated.value.apiKey) ?? "unknown-key");
     if (outcome.kind === "ok") {
       return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
         JSON.stringify({
@@ -1417,7 +1421,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         }),
       );
     }
-    const outcome = await service.explain(input);
+    const outcome = await service.explain(input, store.keyId(gated.value.apiKey) ?? "unknown-key");
     return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
       JSON.stringify({
         status: "ok",
@@ -1614,7 +1618,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         }),
       );
     }
-    const outcome = await service.chat(input);
+    const outcome = await service.chat(input, store.keyId(gated.value.apiKey) ?? "unknown-key");
     return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
       JSON.stringify({
         status: "ok",
@@ -1722,7 +1726,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         }),
       );
     }
-    const outcome = await service.narrate(input);
+    const outcome = await service.narrate(input, store.keyId(gated.value.apiKey) ?? "unknown-key");
     return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
       JSON.stringify({
         status: "ok",

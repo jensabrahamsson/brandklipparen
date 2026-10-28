@@ -33,7 +33,9 @@ export type InvestigationDecision =
       readonly args: Readonly<Record<string, unknown>>;
       readonly rationale: string;
     }
-  | { readonly kind: "conclude"; readonly narrativeDraft: string };
+  // The conclude rationale names why the trace answers the question
+  // (S-112): the token report always carries it beside the narrative.
+  | { readonly kind: "conclude"; readonly narrativeDraft: string; readonly rationale: string };
 
 // One tool descriptor in the frozen catalogue (P-32): id, human summary
 // and the declared argument names. Argument values are validated per tool

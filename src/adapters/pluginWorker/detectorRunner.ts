@@ -36,6 +36,29 @@ function readStdin(): Promise<string> {
   });
 }
 
+// Transport revival for the worker boundary (S-105): the host encodes
+// bytecode as `0x` hex because stdio carries JSON only. The runner revives
+// that one field to bytes before calling `detect`, so the detector
+// observes the same value shape as an in-process run. Every other field
+// travels JSON-safe and passes through untouched.
+function reviveDetectorInput(input: unknown): unknown {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return input;
+  }
+  const record = input as { readonly [field: string]: unknown };
+  const bytecode = record["bytecode"];
+  if (typeof bytecode !== "string" || !bytecode.startsWith("0x")) {
+    return input;
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.from(Buffer.from(bytecode.slice(2), "hex"));
+  } catch {
+    return input;
+  }
+  return Object.freeze({ ...record, bytecode: bytes });
+}
+
 async function main(): Promise<void> {
   const modulePath = process.argv[2];
   if (typeof modulePath !== "string" || modulePath.length === 0) {
@@ -62,7 +85,9 @@ async function main(): Promise<void> {
     return;
   }
   try {
-    const findings = (await (detect as (input: unknown) => unknown)(input)) as unknown;
+    const findings = (await (detect as (input: unknown) => unknown)(
+      reviveDetectorInput(input),
+    )) as unknown;
     respond({ kind: "ok", findings: JSON.stringify(findings) });
   } catch {
     respond({ kind: "worker-error", message: "detector threw inside its worker" });

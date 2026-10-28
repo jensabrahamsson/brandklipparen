@@ -37,7 +37,7 @@
   <text x="720" y="168" font-size="40" class="b" text-anchor="middle" letter-spacing="-0.6">Know the risk before you buy.</text>
   <text x="720" y="206" font-size="17" class="s" text-anchor="middle">Paste a contract address. Rug pull, honeypot and bot-pump risk from bytecode alone, explained in plain English.</text>
 
-  <!-- sökfält, fokuserat -->
+  <!-- search field, focused -->
   <rect x="336" y="240" width="768" height="72" rx="17" fill="none" stroke="#7E9CC2" stroke-opacity="0.18" stroke-width="6"/>
   <rect x="340" y="244" width="760" height="64" rx="14" fill="#161B22" stroke="#7E9CC2" stroke-width="1.5"/>
   <circle cx="374" cy="274" r="8" fill="none" stroke="#8B95A3" stroke-width="2"/>
@@ -48,7 +48,7 @@
   <text x="1028" y="282" font-size="15" class="b" text-anchor="middle" style="fill:#0E1116">Analyze</text>
   <text x="720" y="340" font-size="13" class="q" text-anchor="middle">Try <tspan class="m s">0x1234…9a0f</tspan>   ·   press <tspan class="s">⌘K</tspan> anywhere   ·   result in ~3 s</text>
 
-  <!-- tre löften -->
+  <!-- three promises -->
   <g font-size="13">
     <circle cx="452" cy="381" r="3" fill="#7E9CC2"/>
     <text x="462" y="386" class="s">Works on unverified contracts</text>
@@ -86,7 +86,7 @@
   <text x="790" y="524" class="th">BOT-PUMP</text>
   <text x="900" y="524" class="th">TOP SIGNAL</text>
 
-  <!-- rad 1: hög risk, ny -->
+  <!-- row 1: high risk, new -->
   <rect x="81" y="540" width="1278" height="60" fill="#7E9CC2" fill-opacity="0.05"/>
   <rect x="81" y="540" width="3" height="60" fill="#7E9CC2"/>
   <line x1="96" y1="540" x2="1344" y2="540" stroke="#232A34"/>
@@ -188,6 +188,6 @@
 
   <line x1="96" y1="960" x2="1344" y2="960" stroke="#232A34"/>
 
-  <!-- anteckningar (skissnivå) -->
-  <text x="80" y="1006" font-size="12" class="q">Skissanteckning: raden överst är nyss inkommen (markering bleknar efter 5 s). Klick på rad öppnar tokensidan. Färg följer alltid poängen: under 30 grön, 30–59 orange, 60+ röd.</text>
+  <!-- notes (sketch level) -->
+  <text x="80" y="1006" font-size="12" class="q">Sketch note: the top row just arrived (highlight fades after 5 s). Clicking a row opens the token page. Colour always follows the score: below 30 green, 30–59 orange, 60+ red.</text>
 </svg>

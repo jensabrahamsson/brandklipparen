@@ -1,29 +1,29 @@
 # Brandklipparen
 
-**Frågan:** hur långt kommer man med bara bytecode?
+**The question:** how far do you get with bytecode alone?
 
-Brandklipparen bedömer risken för nya Ethereum-tokens direkt från kontraktets bytecode:
-rug pull, honeypot och bot-pump. Ut kommer kalibrerade sannolikheter med bevis,
-alltså vilka mönster i bytecoden som drog upp eller ner risken.
+Brandklipparen scores the risk of new Ethereum tokens directly from the contract bytecode:
+rug pull, honeypot and bot-pump. Out come calibrated probabilities with evidence,
+that is which patterns in the bytecode raised or lowered the risk.
 
-## Delar
-- Dekompilering av overifierade kontrakt (t.ex. extdecomp)
-- Mönsterigenkänning i bytecode: funktionsselektorer, proxyer, ägar- och mintkontroller, avgifter, blacklist/pause
-- Senare: pool-händelser och tidiga plånböcker som extra bevis
-- Muse förklarar fynden på vanlig engelska
-- Gränssnitt: webb-UI, MCP-server och REST-API med nyckel
+## Parts
+- Decompilation of unverified contracts (e.g. extdecomp)
+- Pattern recognition in bytecode: function selectors, proxies, owner and mint controls, fees, blacklist/pause
+- Later: pool events and early wallets as extra evidence
+- Muse explains the findings in plain English
+- Interface: web UI, MCP server and REST API with key
 
 ## Demo
-Klistra in en kontraktsadress, få riskprofil + förklaring på några sekunder.
+Paste a contract address, get a risk profile + explanation in seconds.
 
-## Två fokus
-1. **Modellen:** så träffsäker som möjligt med bara bytecode, med kalibrerade sannolikheter och bevis för varje signal. Trösklar och vikter tas fram nya här.
-2. **UX och UI:** fantastiskt. Klistra in en adress och förstå risken på några sekunder, med förklaringar i klartext.
+## Two focuses
+1. **The model:** as accurate as possible with bytecode alone, with calibrated probabilities and evidence for every signal. Thresholds and weights are derived anew here.
+2. **UX and UI:** fantastic. Paste an address and understand the risk in seconds, with plain-text explanations.
 
-## UI-riktning
-Inspiration: DEXTools (https://www.dextools.io), fast betydligt bättre. Tokensida med tydligt riskbetyg överst,
-sannolikheter för rug pull, honeypot och bot-pump, och varje signal med bevis (vilken funktion i bytecoden) och
-en förklaring i klartext. Snabbt, mörkt tema, går att förstå på några sekunder.
+## UI direction
+Inspiration: DEXTools (https://www.dextools.io), but considerably better. Token page with a clear risk score on top,
+probabilities for rug pull, honeypot and bot-pump, and every signal with evidence (which function in the bytecode) and
+a plain-text explanation. Fast, dark theme, understandable in seconds.
 
-## Namnet
-Brandklipparen var Karl XII:s häst: snabb, vaksam och pålitlig.
+## The name
+Brandklipparen was Charles XII's horse: fast, vigilant and reliable.

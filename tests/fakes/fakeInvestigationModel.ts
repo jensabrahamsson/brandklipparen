@@ -79,6 +79,7 @@ export class FakeInvestigationModelAdapter implements InvestigationModelPort {
         return ok({
           kind: "conclude",
           narrativeDraft: `The frozen evidence shows the finding. [E:${firstEvidence}]`,
+          rationale: "Fake rationale: conclude from the frozen evidence.",
         });
       }
       case "timeout":

@@ -92,6 +92,56 @@ export type RpcAdapterConfig = {
 // The RPC endpoint comes solely from the validated configuration (K-503,
 // M-07): the first allowlisted URL. User input becomes address, slot and
 // call-data values in the request body and never the request target.
+// Chain id the process requires (S-108, K-001): Ethereum mainnet only,
+// verified once against the live endpoint at startup.
+export const REQUIRED_MAINNET_CHAIN_ID = "0x1";
+
+export type ChainIdVerificationError =
+  | { kind: "chain-mismatch"; message: string }
+  | { kind: "unavailable"; message: string };
+
+// Startup chain check (S-108): one `eth_chainId` round trip over the
+// injected transport, requiring exactly `0x1`. Any other answer, or a
+// failed round trip, fails typed so the process blocks before serving.
+// The endpoint URL travels only as the request target, never into errors.
+export async function verifyMainnetChainId(
+  url: string,
+  transport: RpcTransport,
+  timeoutMs: number,
+): Promise<Result<null, ChainIdVerificationError>> {
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] });
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), timeoutMs);
+  let response: RpcTransportResponse;
+  try {
+    response = await transport(url, body, controller.signal);
+  } catch {
+    clearTimeout(deadline);
+    return err({ kind: "unavailable", message: "the chain id check could not reach the endpoint" });
+  }
+  clearTimeout(deadline);
+  if (response.status === 429) {
+    return err({ kind: "unavailable", message: "the chain id check was rate limited" });
+  }
+  if (response.status < 200 || response.status >= 300) {
+    return err({ kind: "unavailable", message: "the chain id check received an error status" });
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(response.bodyText) as unknown;
+  } catch {
+    return err({ kind: "unavailable", message: "the chain id check received no JSON document" });
+  }
+  const result =
+    typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)["result"]
+      : undefined;
+  if (typeof result !== "string" || result.toLowerCase() !== REQUIRED_MAINNET_CHAIN_ID) {
+    return err({ kind: "chain-mismatch", message: "the endpoint is not Ethereum mainnet" });
+  }
+  return ok(null);
+}
+
 export function createRpcAdapterFromConfig(
   config: RpcAdapterConfig,
   transport?: RpcTransport | undefined,

@@ -369,7 +369,7 @@ surface in every mode per section 6.
 |---|---|---|
 | S | Example values or a foreign environment impersonate operational configuration. | `.env.example` carries solely variable names with empty value fields; the typed schema in I-08 is normative and is validated at startup (H-05, M-11). |
 | T | A crafted environment variable steers RPC targets, model endpoint or limits. | The configuration is validated against the typed schema at startup; an invalid variable gives a startup error that names the variable with the values kept outside the error text (H-03, H-05, M-07, M-11). |
-| R | A key leak or rotation is disputed afterwards. | Every key has an entry outside the repo with owner, purpose, scope and rotation date; leaks and rotations are documented in `beslut/logg.md` as per I-09 (H-05, M-11). |
+| R | A key leak or rotation is disputed afterwards. | Every key has an entry outside the repo with owner, purpose, scope and rotation date; leaks and rotations are documented in `docs/decisions/log.md` as per I-09 (H-05, M-11). |
 | I | A secret is checked in, logged or reaches a client response. | Gitleaks runs in the pre-commit hook and in CI as per I-02; logs redact keys and headers as per I-10; client responses are searched for key patterns in tests (H-05, H-10, M-11, M-16). |
 | D | A missing key or variable stops operation unrecorded. | The startup error names the variable within seconds; the health check shows status per dependency as per K-104 (H-05, M-11). |
 | E | Broad permissions on a key give a foothold outside its task. | Every key is created in Jens Abrahamsson's name for the project with least privilege, read permission for RPC access and separate keys per environment as per I-09 (H-05, M-11). |
@@ -843,7 +843,7 @@ paths under the stolen key's quota and consumption profile.
   revocation apply from the next call; the leak routine in I-09
   blocks the key with the issuer first, creates a replacement,
   rolls it out, verifies the health check and documents
-  the event in `beslut/logg.md` with the key value kept outside the entry.
+  the event in `docs/decisions/log.md` with the key value kept outside the entry.
   The repo and the history are scanned with gitleaks in the pre-commit hook
   and in CI as per I-02, and `.env.example` carries solely
   variable names. Requirement: K-505, K-510, K-513. Test: the CI check

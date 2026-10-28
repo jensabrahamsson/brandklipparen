@@ -1,0 +1,199 @@
+// Process entry point for the served app (S-105, K-101, K-104).
+// `npm run start:rest` serves the versioned REST API; `npm run start:mcp`
+// serves the MCP server over stdio. Both modes build the app through the
+// single composition function `buildApp` (config to adapters to services
+// to REST/MCP), which requires rate limiting and routes non-first-party
+// detectors through the plugin worker behind the allowlist. The process
+// starts no daemon, no watch mode and no timer: REST binds one listener
+// and MCP reads stdin until it closes. Ethereum mainnet only.
+import { readFileSync } from "node:fs";
+import { loadConfig } from "./adapters/config/loader.ts";
+import { createextdecompAdapterFromConfig } from "./adapters/extdecomp/extdecompAdapter.ts";
+import {
+  fetchRpcTransport,
+  verifyMainnetChainId,
+} from "./adapters/rpc/jsonRpcAdapter.ts";
+import { InMemoryCacheAdapter } from "./adapters/cache/inMemoryCache.ts";
+import { FileModelArtifactAdapter } from "./adapters/model/fileArtifact.ts";
+import { createRpcAdapterFromConfig } from "./adapters/rpc/jsonRpcAdapter.ts";
+import { buildApp } from "./composition/app.ts";
+import { createRestServer } from "./interfaces/rest/server.ts";
+import { createMcpServer, serveStdio } from "./interfaces/mcp/server.ts";
+import { Timestamp } from "./domain/types.ts";
+import type { Timestamp as TimestampType } from "./domain/types.ts";
+import { formatConfigError } from "./ports/config.ts";
+import type { ClockPort } from "./ports/clock.ts";
+import type { Allowlist } from "./adapters/pluginAllowlist/allowlist.ts";
+import type { AnalyzeTokenPorts } from "./application/analyzeToken.ts";
+import type { AppConfig } from "./ports/config.ts";
+
+// Wall-clock reader for the served app (A-05, K-102): production passes
+// the real clock while tests inject fakes. The range check is
+// unreachable for a live clock; it fails fast instead of serving a
+// degraded timestamp.
+function systemClock(): ClockPort {
+  return Object.freeze({
+    now: (): TimestampType => {
+      const parsed = Timestamp.of(Date.now());
+      if (!parsed.ok) {
+        throw new Error("the wall clock is outside the valid timestamp range");
+      }
+      return parsed.value;
+    },
+  });
+}
+
+function fail(message: string): never {
+  process.stderr.write(`${message}\n`);
+  process.exit(2);
+}
+
+function usage(): never {
+  fail("usage: start:rest | start:mcp [--allowlist <path>]");
+}
+
+// Allowlist for separately published detectors (S-049, S-105): an
+// optional JSON file carrying the signed allowlist value. Without it the
+// default first-party registry needs no admission and the builder fails
+// closed on any non-first-party entry.
+function loadAllowlist(path: string | null): Allowlist | undefined {
+  if (path === null) {
+    return undefined;
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
+  } catch {
+    fail(`the allowlist file at ${path} is not readable JSON`);
+  }
+  if (typeof raw !== "object" || raw === null || !Array.isArray((raw as { entries?: unknown }).entries)) {
+    fail(`the allowlist file at ${path} holds no allowlist entries`);
+  }
+  return raw as Allowlist;
+}
+
+function allowlistFlag(argv: readonly string[]): string | null {
+  const flag = argv.indexOf("--allowlist");
+  if (flag === -1) {
+    return null;
+  }
+  const path = argv[flag + 1];
+  if (path === undefined || path.length === 0) {
+    fail("--allowlist needs a file path");
+  }
+  return path;
+}
+
+// One `eth_chainId` check per process start (S-108, K-001): the endpoint
+// must answer mainnet before the process builds or serves anything.
+async function startupPorts(config: AppConfig): Promise<AnalyzeTokenPorts> {
+  const rpc = createRpcAdapterFromConfig({
+    rpcUrls: config.rpcUrls,
+    rpcDeadlineMs: config.rpcDeadlineMs,
+    rpcMaxResponseBytes: config.rpcMaxResponseBytes,
+  });
+  if (!rpc.ok) {
+    fail(formatConfigError(rpc.error));
+  }
+  const firstUrl = config.rpcUrls?.[0];
+  const verified = await verifyMainnetChainId(
+    firstUrl === undefined ? "" : firstUrl.reveal(),
+    fetchRpcTransport,
+    config.rpcDeadlineMs ?? 15000,
+  );
+  if (!verified.ok) {
+    fail(
+      verified.error.kind === "chain-mismatch"
+        ? "the RPC endpoint is not Ethereum mainnet (chainId 1 required)"
+        : `the chain id check failed: ${verified.error.message}`,
+    );
+  }
+  const extdecomp = createextdecompAdapterFromConfig({
+    extdecompBinaryPath: config.extdecompBinaryPath,
+    extdecompDeadlineMs: config.extdecompDeadlineMs,
+    extdecompMaxOutputBytes: config.extdecompMaxOutputBytes,
+    extdecompMaxMemoryMb: config.extdecompMaxMemoryMb,
+  });
+  return Object.freeze({
+    rpc: rpc.value,
+    modelArtifacts: new FileModelArtifactAdapter(config.modelArtifactPath),
+    clock: systemClock(),
+    decompiler: extdecomp.ok ? extdecomp.value : undefined,
+    cache: new InMemoryCacheAdapter(),
+  });
+}
+
+function loadAppConfig(): AppConfig {
+  const loaded = loadConfig(process.env);
+  if (!loaded.ok) {
+    fail(formatConfigError(loaded.error));
+  }
+  return loaded.value;
+}
+
+async function startRest(allowlistPath: string | null): Promise<void> {
+  const config = loadAppConfig();
+  const built = buildApp(config, {
+    ports: await startupPorts(config),
+    allowlist: loadAllowlist(allowlistPath),
+  });
+  if (!built.ok) {
+    fail(
+      built.error.kind === "missing-variable" || built.error.kind === "invalid-value"
+        ? formatConfigError(built.error)
+        : `detector registry failed to build: ${built.error.kind}`,
+    );
+  }
+  const server = createRestServer(built.value.rest);
+  const port = config.httpPort ?? 8080;
+  const baseUrl = await server.listen("127.0.0.1", port);
+  process.stdout.write(`brandklipparen rest listening on ${baseUrl}\n`);
+  const shutdown = (): void => {
+    void server.close().then(() => process.exit(0));
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+async function startMcp(allowlistPath: string | null): Promise<void> {
+  const config = loadAppConfig();
+  const built = buildApp(config, {
+    ports: await startupPorts(config),
+    allowlist: loadAllowlist(allowlistPath),
+  });
+  if (!built.ok) {
+    fail(
+      built.error.kind === "missing-variable" || built.error.kind === "invalid-value"
+        ? formatConfigError(built.error)
+        : `detector registry failed to build: ${built.error.kind}`,
+    );
+  }
+  const server = createMcpServer(built.value.mcp);
+  const running = serveStdio(server);
+  process.stderr.write("brandklipparen mcp serving on stdio\n");
+  const shutdown = (): void => {
+    running.close();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  const mode = argv[0];
+  const allowlistPath = allowlistFlag(argv);
+  if (mode === "rest") {
+    await startRest(allowlistPath);
+    return;
+  }
+  if (mode === "mcp") {
+    await startMcp(allowlistPath);
+    return;
+  }
+  usage();
+}
+
+void main().catch((error: unknown) => {
+  fail(error instanceof Error ? error.message : "the server failed to start");
+});

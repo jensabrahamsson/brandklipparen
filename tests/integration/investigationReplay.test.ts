@@ -99,7 +99,7 @@ function scriptedReplay(decisions: readonly InvestigationDecision[]): Investigat
       const decision = decisions[calls];
       calls += 1;
       if (decision === undefined) {
-        return ok({ kind: "conclude", narrativeDraft: "" });
+        return ok({ kind: "conclude", narrativeDraft: "", rationale: "Replayed trace ends here." });
       }
       return ok(decision);
     },

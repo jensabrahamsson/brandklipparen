@@ -162,7 +162,11 @@ describe("investigation service selection", () => {
         bodyText: JSON.stringify({
           provider: "hosted-open-weights",
           modelId: "meta-models/muse-spark-open-1026",
-          decision: { kind: "conclude", narrativeDraft: "Recorded conclusion without citations." },
+          decision: {
+            kind: "conclude",
+            narrativeDraft: "Recorded conclusion without citations.",
+            rationale: "Recorded rationale: conclude from the frozen evidence.",
+          },
         }),
       };
     };

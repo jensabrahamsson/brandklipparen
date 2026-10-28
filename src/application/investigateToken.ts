@@ -42,6 +42,10 @@ export type FrozenInvestigationFacts = {
   readonly evidenceIds: readonly string[];
   readonly score: number;
   readonly snapshot: unknown;
+  // Synthetic inputs (S-112): true when the facts come from a fixture or
+  // synthetic corpus rather than chain reads. The report then marks the
+  // input unverified; chain-sourced facts stay verified.
+  readonly synthetic?: boolean | undefined;
 };
 
 // Hard limits from typed configuration (P-34). Every limit ends the run
@@ -236,6 +240,17 @@ export function advanceInvestigation(
       detail: "conclude ends the decision sequence",
     });
   }
+  // Every decision names its rationale (S-112): a blank rationale turns
+  // the step away as invalid, so the report always covers each executed
+  // tool with the reason it ran.
+  const rationale = typeof decision.rationale === "string" ? decision.rationale : "";
+  if (rationale.trim().length === 0) {
+    return fail({
+      kind: "invalid-decision",
+      message: "the decision names no rationale",
+      detail: "every decision carries a non-empty rationale",
+    });
+  }
   if (decision.kind === "conclude") {
     return ok({
       trace: state.trace.slice(),
@@ -273,6 +288,13 @@ export type InvestigationEnvelope =
       readonly report: {
         readonly narrative: string;
         readonly droppedClaims: number;
+        // Conclude rationale (S-112): the token report always names why
+        // the trace answers the question, beside the narrative.
+        readonly rationale: string;
+        // Input verification (S-112): false for synthetic inputs, which
+        // the report marks unverified instead of presenting as chain
+        // findings.
+        readonly verifiedInput: boolean;
         readonly steps: InvestigationTrace;
         readonly collectedEvidenceIds: readonly EvidenceRef[];
       };
@@ -468,6 +490,8 @@ export async function investigateToken(
         report: {
           narrative: checked.narrative,
           droppedClaims: checked.droppedClaims,
+          rationale: decision.rationale,
+          verifiedInput: facts.synthetic !== true,
           steps: state.trace.slice(),
           collectedEvidenceIds: state.collected.slice(),
         },

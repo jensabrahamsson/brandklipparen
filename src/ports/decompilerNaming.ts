@@ -12,7 +12,8 @@ export type SuggestedName = {
 export type DecompilerNamingOutcome =
   | { readonly kind: "ok"; readonly names: readonly SuggestedName[] }
   | { readonly kind: "not-configured" }
-  | { readonly kind: "invalid-output" };
+  | { readonly kind: "invalid-output" }
+  | { readonly kind: "capped" };
 
 export type DecompilerNamingPort = {
   suggestNames(selectors: readonly string[]): Promise<DecompilerNamingOutcome>;

@@ -11,6 +11,8 @@
 // Scores, evidence and finding text are untouched: this service reads the
 // frozen envelope and returns a separate overlay.
 import type { ChatAnswer, ChatInput, ChatModelOutcome, ChatModelPort } from "../ports/chatModel.ts";
+import type { OverlayBudget } from "./overlayBudget.ts";
+
 
 export const MAX_CHAT_ANSWERS = 8;
 export const MAX_CHAT_ANSWER_CHARS = 1000;
@@ -100,18 +102,22 @@ export type ChatOutcome =
       readonly modelId: string;
     }
   | { readonly kind: "not-configured" }
-  | { readonly kind: "invalid-output" };
+  | { readonly kind: "invalid-output" }
+  | { readonly kind: "capped" };
 
 export type ChatService = {
   readonly enabled: boolean;
   readonly provider: string | null;
   readonly modelId: string | null;
-  chat(input: ChatInput): Promise<ChatOutcome>;
+  chat(input: ChatInput, keyId?: string | undefined): Promise<ChatOutcome>;
 };
 
 // Explicit opt-in factory: a null port builds the disabled service, so the
 // overlay stays off until a caller wires a real port.
-export function createChatService(port: ChatModelPort | null): ChatService {
+export function createChatService(
+  port: ChatModelPort | null,
+  budget?: OverlayBudget | undefined,
+): ChatService {
   if (port === null) {
     return Object.freeze({
       enabled: false,
@@ -124,7 +130,17 @@ export function createChatService(port: ChatModelPort | null): ChatService {
     enabled: true,
     provider: port.provider(),
     modelId: port.modelId(),
-    chat: async (input: ChatInput): Promise<ChatOutcome> => {
+    chat: async (input: ChatInput, keyId?: string | undefined): Promise<ChatOutcome> => {
+      const cacheKey = `chat|${port.provider()}|${port.modelId()}|${JSON.stringify(input)}`;
+      if (budget !== undefined && keyId !== undefined) {
+        const hit = budget.lookup<ChatOutcome>(cacheKey);
+        if (hit !== null) {
+          return hit;
+        }
+        if (!budget.trySpend(keyId)) {
+          return Object.freeze({ kind: "capped" });
+        }
+      }
       const outcome = await port.chat(input);
       if (outcome.kind === "not-configured") {
         return Object.freeze({ kind: "not-configured" });
@@ -134,13 +150,17 @@ export function createChatService(port: ChatModelPort | null): ChatService {
         return Object.freeze({ kind: "invalid-output" });
       }
       const checked = checkChatCitations(answers, new Set(input.evidenceIds));
-      return Object.freeze({
+      const final: ChatOutcome = Object.freeze({
         kind: "ok",
         answers: checked.answers,
         droppedClaims: checked.droppedClaims,
         provider: port.provider(),
         modelId: port.modelId(),
       });
+      if (budget !== undefined && keyId !== undefined) {
+        budget.store(cacheKey, final);
+      }
+      return final;
     },
   });
 }

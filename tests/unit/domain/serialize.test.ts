@@ -118,7 +118,7 @@ describe("k102 canonical serialization", () => {
   });
 
   test("k102_canonical_bytes_are_utf8", () => {
-    const text = '{"note":"häst ▲"}';
+    const text = '{"note":"horse ▲"}';
     // canonicalBytes encodes the serialized form in fixed UTF-8.
     expect(canonicalBytes(text as CanonicalValue)).toEqual(
       new Uint8Array(Buffer.from(canonicalSerialize(text as CanonicalValue), "utf8")),

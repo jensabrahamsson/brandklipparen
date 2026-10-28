@@ -8,6 +8,7 @@
 // with zero sends (K-505). Free-tier pacing (3 calls per second, 100k
 // per day) is enforced with a token bucket and a daily counter; provider
 // rate-limit answers trigger backoff with the wait carried in the error.
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import type { SecretString } from "../../ports/config.ts";
@@ -45,10 +46,19 @@ export type EtherscanLogsAdapterOptions = {
   readonly timeoutMs?: number | undefined;
   readonly transport?: EtherscanLogsTransport | undefined;
   readonly now?: (() => number) | undefined;
+  // Block span per page (S-110): ranges wider than one page fan out to one
+  // request per chunk and merge in order, so a large range never truncates
+  // silently at the provider cap.
+  readonly maxBlocksPerPage?: number | undefined;
+  // Daily budget persistence (S-110): JSON file holding the spent day and
+  // count, read at construction and rewritten after every spend, so a
+  // restart keeps the daily cap instead of resetting it.
+  readonly budgetPath?: string | undefined;
 };
 
 export const DEFAULT_ETHERSCAN_CALLS_PER_SECOND = 3;
 export const DEFAULT_ETHERSCAN_CALLS_PER_DAY = 100000;
+export const DEFAULT_ETHERSCAN_MAX_BLOCKS_PER_PAGE = 1000;
 
 type BucketState = {
   tokens: number;
@@ -86,6 +96,12 @@ export class EtherscanLogsAdapter implements LpFeedPort {
   private readonly now: () => number;
   private readonly bucket: BucketState;
 
+  private readonly maxBlocksPerPage: number;
+  private readonly budgetPath: string | undefined;
+  // Malformed logs skipped per poll (S-110): a bad log never fails the
+  // poll; the count lets the caller notice a noisy range.
+  private skippedLogs = 0;
+
   constructor(options: EtherscanLogsAdapterOptions & { apiKey: SecretString }) {
     this.apiKey = options.apiKey;
     this.baseUrl = options.baseUrl ?? ETHERSCAN_LOGS_BASE_URL;
@@ -95,6 +111,10 @@ export class EtherscanLogsAdapter implements LpFeedPort {
     this.timeoutMs = options.timeoutMs ?? 30000;
     this.transport = options.transport ?? fetchEtherscanLogsTransport;
     this.now = options.now ?? Date.now;
+    const pageSize = options.maxBlocksPerPage ?? DEFAULT_ETHERSCAN_MAX_BLOCKS_PER_PAGE;
+    this.maxBlocksPerPage =
+      Number.isSafeInteger(pageSize) && pageSize > 0 ? pageSize : DEFAULT_ETHERSCAN_MAX_BLOCKS_PER_PAGE;
+    this.budgetPath = options.budgetPath;
     const started = this.now();
     this.bucket = {
       tokens: this.callsPerSecond,
@@ -104,6 +124,25 @@ export class EtherscanLogsAdapter implements LpFeedPort {
       backoffUntilMs: 0,
       backoffMs: this.backoffBaseMs,
     };
+    this.restoreBudget();
+  }
+
+  // Malformed logs skipped across polls on this adapter (S-110).
+  skippedLogCount(): number {
+    return this.skippedLogs;
+  }
+
+  // Block chunks for one range (S-110): contiguous, ordered, covering the
+  // whole range, so paged polls merge without gaps or overlap.
+  private pageRange(fromBlock: number, toBlock: number): Array<{ from: number; to: number }> {
+    const pages: Array<{ from: number; to: number }> = [];
+    let cursor = fromBlock;
+    while (cursor <= toBlock) {
+      const end = Math.min(toBlock, cursor + this.maxBlocksPerPage - 1);
+      pages.push({ from: cursor, to: end });
+      cursor = end + 1;
+    }
+    return pages;
   }
 
   async pollLogs(input: FeedPollInput, ctx: FeedCallContext): Promise<Result<readonly FeedLog[], LpFeedError>> {
@@ -111,6 +150,23 @@ export class EtherscanLogsAdapter implements LpFeedPort {
     if (!checked.ok) {
       return err({ kind: "invalid-response", message: checked.error.message });
     }
+    const merged: FeedLog[] = [];
+    for (const page of this.pageRange(checked.value.fromBlock, checked.value.toBlock)) {
+      const paged = await this.pollPage(checked.value.factory, page.from, page.to, ctx);
+      if (!paged.ok) {
+        return err(paged.error);
+      }
+      merged.push(...paged.value);
+    }
+    return ok(Object.freeze(merged));
+  }
+
+  private async pollPage(
+    factory: string,
+    fromBlock: number,
+    toBlock: number,
+    ctx: FeedCallContext,
+  ): Promise<Result<readonly FeedLog[], LpFeedError>> {
     const at = this.now();
     if (at > ctx.deadlineMs) {
       return err({ kind: "timeout", message: "feed poll exceeded its deadline" });
@@ -139,10 +195,11 @@ export class EtherscanLogsAdapter implements LpFeedPort {
     }
     this.bucket.tokens -= 1;
     this.bucket.dayCount += 1;
+    this.persistBudget();
     const url =
       `${this.baseUrl}?chainid=${ETHERSCAN_LOGS_CHAIN_ID}&module=logs&action=getLogs` +
-      `&address=${checked.value.factory.toLowerCase()}` +
-      `&fromBlock=${checked.value.fromBlock}&toBlock=${checked.value.toBlock}` +
+      `&address=${factory.toLowerCase()}` +
+      `&fromBlock=${fromBlock}&toBlock=${toBlock}` +
       `&apikey=${encodeURIComponent(this.apiKey.reveal())}`;
     let response: EtherscanLogsTransportResponse;
     try {
@@ -184,12 +241,58 @@ export class EtherscanLogsAdapter implements LpFeedPort {
     for (const raw of result) {
       const parsed = parseFeedLog(raw);
       if (parsed === null) {
-        return err({ kind: "invalid-response", message: "feed log source gave a malformed log" });
+        this.skippedLogs += 1;
+        continue;
       }
       logs.push(parsed);
     }
     this.bucket.backoffMs = this.backoffBaseMs;
     return ok(Object.freeze(logs));
+  }
+
+  // Daily budget restore and persist (S-110): best effort on both ends, so
+  // a missing or unwritable file never fails a poll; it only loses the
+  // cross-restart memory of the daily count.
+  private restoreBudget(): void {
+    if (this.budgetPath === undefined) {
+      return;
+    }
+    let raw: string;
+    try {
+      raw = readFileSync(this.budgetPath, "utf8");
+    } catch {
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      return;
+    }
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return;
+    }
+    const record = parsed as { day?: unknown; dayCount?: unknown };
+    if (typeof record["day"] !== "string" || typeof record["dayCount"] !== "number") {
+      return;
+    }
+    this.bucket.day = record["day"];
+    if (Number.isSafeInteger(record["dayCount"]) && (record["dayCount"] as number) >= 0) {
+      this.bucket.dayCount = record["dayCount"] as number;
+    }
+  }
+
+  private persistBudget(): void {
+    if (this.budgetPath === undefined) {
+      return;
+    }
+    const tmpPath = `${this.budgetPath}.tmp-${process.pid}`;
+    try {
+      writeFileSync(tmpPath, JSON.stringify({ day: this.bucket.day, dayCount: this.bucket.dayCount }), "utf8");
+      renameSync(tmpPath, this.budgetPath);
+    } catch {
+      // Best effort: losing the file only loses the cross-restart memory.
+    }
   }
 
   private refill(at: number): void {
@@ -232,7 +335,9 @@ export class EtherscanLogsAdapter implements LpFeedPort {
 // Binds the real adapter when the key is set, and the not-configured
 // adapter otherwise. Missing values never fail startup: the feed stays
 // idle until the operator configures it.
-export function createEtherscanLogsAdapter(options: EtherscanLogsAdapterOptions): LpFeedPort {
+export function createEtherscanLogsAdapter(
+  options: EtherscanLogsAdapterOptions,
+): EtherscanLogsAdapter | NotConfiguredEtherscanLogsAdapter {
   if (options.apiKey === undefined) {
     return new NotConfiguredEtherscanLogsAdapter();
   }

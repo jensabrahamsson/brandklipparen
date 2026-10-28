@@ -2,7 +2,7 @@
 id: dev.brandklipparen.decompiler
 kind: detector
 version: 1.0.0
-tags: [transfer-limits, pausing]
+tags: [external-calls]
 audience: [holder, auditor]
 severity: { min: low, max: medium }
 ---

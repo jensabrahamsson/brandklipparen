@@ -29,6 +29,12 @@ jobs:
       - run: node -p process.versions.node | grep -q '^22\.'
       - run: npm ci --ignore-scripts
       - run: npm run check
+      # Vendor-name guard: no non-Meta AI vendor or tool name in tracked
+      # files (also runs inside `npm run check`).
+      - run: npm run check:vendors
+      # English-only guard: no Swedish letters in tracked text files
+      # (also runs inside `npm run check`).
+      - run: npm run check:english
       # S-053 deterministic plugin audit gate (K-516, P-13): every
       # registered and example plugin passes the static checks, or the
       # gate turns red before any advisory AI review.

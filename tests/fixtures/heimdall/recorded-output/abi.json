@@ -1,0 +1,6 @@
+{
+  "functions": [
+    { "selector": "0xa9059cbb", "name": "transfer" },
+    { "selector": "0x70a08231", "name": "balanceOf" }
+  ]
+}

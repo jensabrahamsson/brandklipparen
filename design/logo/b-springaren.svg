@@ -1,16 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
-  <title>Brandklipparen – märke B "Springaren"</title>
-  <!-- Springaren = schackets häst på svenska. Pjäsen tar sig förbi hinder; produkten tar dig förbi fällor. -->
+  <title>Brandklipparen – mark B "Springaren"</title>
+  <!-- Springaren = the knight in chess. The piece jumps over obstacles; the product carries you past traps. -->
   <rect width="120" height="120" rx="26" fill="#0E1116"/>
   <g transform="translate(10 8)">
     <!-- fot -->
     <rect x="20" y="92" width="60" height="8" rx="2" fill="#7E9CC2"/>
     <rect x="27" y="84" width="46" height="5" rx="1.5" fill="#7E9CC2"/>
-    <!-- huvud och hals i ett stycke -->
+    <!-- head and neck in one piece -->
     <path d="M30 81 L31 62 Q31 40 42 27 L46 12 L54 22 Q73 25 83 47 L87 59 L77 63 L67 55 L61 57 Q71 69 71 81 Z" fill="#7E9CC2"/>
-    <!-- manens skåror: tre snabba snitt längs nacken -->
+    <!-- mane grooves: three quick cuts along the neck -->
     <path d="M35 44 L44 40 M33 54 L43 51 M32 64 L42 62" stroke="#0E1116" stroke-width="3" stroke-linecap="round"/>
-    <!-- öga -->
+    <!-- eye -->
     <circle cx="63" cy="37" r="3" fill="#D4B36A"/>
   </g>
 </svg>

@@ -1,18 +1,24 @@
 // extdecomp worker adapter behind DecompilerPort (S-011, K-008, K-501,
-// A-27, M-01, M-02). Each decompilation spawns one dedicated child process
-// and is bounded by a hard timeout, an input size guard and an output size
-// guard from the operational configuration (I-08, I-11); a pathological
-// input occupies solely its own worker, so parallel analyses continue.
-// The worker receives the bytecode hex as its sole input flow on argv and
-// returns one JSON document on stdout under the output limit. The child
-// starts with an empty environment, so no process secret can leak into the
-// worker; outbound networking and filesystem restrictions for the real
-// binary live in the platform sandbox per I-11 (M-01). The real extdecomp
-// binary is not installed here and is never downloaded by this code: the
-// binary path arrives from the configuration, and the suite runs the
-// adapter against the fake worker script under tests/fixtures.
+// A-27, M-01, M-02; subcommand invocation since S-102). Each decompilation
+// spawns one dedicated child process through the `decompile` subcommand
+// and is bounded by a hard timeout, an input size guard, an output size
+// guard and a concurrency semaphore from the operational configuration
+// (I-08, I-11); a pathological input occupies solely its own worker, so
+// parallel analyses continue. The worker receives the bytecode hex on argv
+// and writes its parsed output files (`abi.json` plus `decompiled.sol`)
+// into an adapter-owned output directory the invocation names with
+// `--output`. The child starts with an empty environment, so no process
+// secret can leak into the worker; outbound networking and filesystem
+// restrictions for the real binary live in the platform sandbox per I-11
+// (M-01). The real extdecomp binary is not installed here and is never
+// downloaded by this code: the binary path arrives from the configuration,
+// and the suite runs the adapter against the fake worker script under
+// tests/fixtures.
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import { CodeSnippet } from "../../domain/evidence.ts";
@@ -123,6 +129,11 @@ export class extdecompAdapter implements DecompilerPort {
   private readonly maxBytesIn: number;
   private readonly maxMemoryMb: number;
   private readonly maxConcurrency: number;
+  // Concurrency semaphore state (S-102): at most maxConcurrency workers
+  // run at once; further requests wait in FIFO order. The count is only
+  // touched on the event loop, so acquire and release stay race-free.
+  private inFlight = 0;
+  private readonly waiters: Array<() => void> = [];
 
   constructor(options: extdecompAdapterOptions) {
     this.binaryPath = options.binaryPath;
@@ -131,7 +142,9 @@ export class extdecompAdapter implements DecompilerPort {
     this.maxOutputBytes = resolveextdecompMaxOutputBytes(options.maxOutputBytes);
     this.maxBytesIn = resolveextdecompMaxBytesIn(options.maxBytesIn);
     this.maxMemoryMb = resolveextdecompMaxMemoryMb(options.maxMemoryMb);
-    this.maxConcurrency = options.maxConcurrency ?? 1;
+    const concurrency = options.maxConcurrency ?? 1;
+    this.maxConcurrency =
+      Number.isSafeInteger(concurrency) && concurrency > 0 ? concurrency : 1;
   }
 
   limits(): DecompilerLimits {
@@ -161,7 +174,45 @@ export class extdecompAdapter implements DecompilerPort {
         }),
       );
     }
-    return this.runWorker(bytecode, codeHash, this.timeoutMs);
+    // One process per request behind the concurrency semaphore (S-102):
+    // the slot is held for the whole worker run and released on every
+    // path, so excess requests wait instead of spawning.
+    return (async (): Promise<Result<DecompiledContract, DecompilerError>> => {
+      await this.acquireSlot();
+      try {
+        return await this.runWorker(bytecode, codeHash, this.timeoutMs);
+      } finally {
+        this.releaseSlot();
+      }
+    })();
+  }
+
+  private acquireSlot(): Promise<void> {
+    if (this.inFlight < this.maxConcurrency) {
+      this.inFlight += 1;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.waiters.push(resolve);
+    }).then(() => {
+      this.inFlight += 1;
+    });
+  }
+
+  private releaseSlot(): void {
+    this.inFlight -= 1;
+    const next = this.waiters.shift();
+    if (next !== undefined) {
+      next();
+    }
+  }
+
+  private removeDir(path: string): void {
+    try {
+      rmSync(path, { recursive: true, force: true });
+    } catch {
+      // Best effort: a leftover temp dir never fails the analysis.
+    }
   }
 
   private runWorker(
@@ -169,16 +220,30 @@ export class extdecompAdapter implements DecompilerPort {
     codeHash: CodeHashType,
     timeoutMs: number,
   ): Promise<Result<DecompiledContract, DecompilerError>> {
+    let outDir: string;
+    try {
+      outDir = mkdtempSync(join(tmpdir(), "extdecomp-decompile-"));
+    } catch {
+      return Promise.resolve(
+        err({ kind: "process-error", message: "decompiler worker output directory failed" }),
+      );
+    }
+    const outputDir = outDir;
     return new Promise((resolve) => {
       const hex = `0x${bytesToHex(bytecode)}`;
       let child: ChildProcess;
       try {
-        child = spawn(this.binaryPath, [...this.binaryArgs, hex], {
-          stdio: ["ignore", "pipe", "ignore"],
-          shell: false,
-          env: {},
-        });
+        child = spawn(
+          this.binaryPath,
+          [...this.binaryArgs, "decompile", hex, "--output", outputDir],
+          {
+            stdio: ["ignore", "pipe", "ignore"],
+            shell: false,
+            env: {},
+          },
+        );
       } catch {
+        this.removeDir(outputDir);
         resolve(err({ kind: "process-error", message: "decompiler worker failed to start" }));
         return;
       }
@@ -187,6 +252,7 @@ export class extdecompAdapter implements DecompilerPort {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
+          this.removeDir(outputDir);
           resolve(result);
         }
       };
@@ -199,28 +265,11 @@ export class extdecompAdapter implements DecompilerPort {
         finish(err({ kind: "timeout", message: `decompilation timed out after ${timeoutMs} ms` }));
       };
       const timer = setTimeout(finishTimeout, timeoutMs);
-      const chunks: Buffer[] = [];
-      let received = 0;
-      child.stdout?.on("data", (chunk: Buffer) => {
-        received += chunk.length;
-        if (received > this.maxOutputBytes) {
-          try {
-            child.kill("SIGKILL");
-          } catch {
-            // The child already exited; the close handler stays silent
-            // because settled is already true after finish below.
-          }
-          finish(
-            err({
-              kind: "output-too-large",
-              message: `decompiled output exceeded the limit of ${this.maxOutputBytes} bytes`,
-              limitBytes: this.maxOutputBytes,
-            }),
-          );
-          return;
-        }
-        chunks.push(chunk);
-      });
+      // Stdout is drained and discarded: progress chatter from the real
+      // binary must never block the pipe, and the parsed output comes
+      // from the output files, never from stdout.
+      child.stdout?.on("data", () => undefined);
+      child.stdout?.on("error", () => undefined);
       child.on("error", () => {
         finish(err({ kind: "process-error", message: "decompiler worker failed to start" }));
       });
@@ -234,67 +283,63 @@ export class extdecompAdapter implements DecompilerPort {
           );
           return;
         }
-        finish(this.parseOutput(Buffer.concat(chunks), codeHash));
+        finish(this.parseOutputFiles(outputDir, codeHash));
       });
     });
   }
 
-  // Strict boundary check at the port boundary (A-16): exactly one object
-  // with exactly the functions array, and each function carries exactly a
-  // valid selector plus a well-formed snippet. Hostile or distorted output
-  // is turned away with invalid-output before it reaches the core (M-02).
-  private parseOutput(
-    raw: Buffer,
+  // Strict boundary check at the port boundary (A-16, S-102): the
+  // `decompile` output directory holds exactly `abi.json` (the function
+  // list with one valid selector per entry) beside `decompiled.sol` (one
+  // `// function <selector>` section per entry). Each function carries a
+  // valid selector plus a well-formed snippet drawn from its section.
+  // Hostile or distorted output is turned away with invalid-output before
+  // it reaches the core (M-02); files past the output limit are turned
+  // away as output-too-large without being parsed.
+  private parseOutputFiles(
+    outputDir: string,
     codeHash: CodeHashType,
   ): Result<DecompiledContract, DecompilerError> {
+    const abi = this.readOutputFile(outputDir, "abi.json");
+    if (!abi.ok) {
+      return err(abi.error);
+    }
+    const sol = this.readOutputFile(outputDir, "decompiled.sol");
+    if (!sol.ok) {
+      return err(sol.error);
+    }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(raw.toString("utf8")) as unknown;
+      parsed = JSON.parse(abi.value.text) as unknown;
     } catch {
-      return err(invalidOutput("is not valid JSON"));
+      return err(invalidOutput("abi.json is not valid JSON"));
     }
-    if (!isRecord(parsed)) {
-      return err(invalidOutput("holds no object"));
+    if (!isRecord(parsed) || !Array.isArray(parsed["functions"])) {
+      return err(invalidOutput("abi.json holds no functions array"));
     }
-    const topKeys = Object.keys(parsed);
-    if (topKeys.length !== 1 || topKeys[0] !== "functions" || !Array.isArray(parsed["functions"])) {
-      return err(invalidOutput("holds no functions array"));
-    }
+    const sections = splitSolSections(sol.value.text);
+    const seen = new Set<string>();
     const functions: DecompiledFunction[] = [];
     for (const entry of parsed["functions"]) {
-      if (!isRecord(entry)) {
-        return err(invalidOutput("holds a function that is no object"));
+      if (!isRecord(entry) || typeof entry["selector"] !== "string") {
+        return err(invalidOutput("abi.json holds a function without a selector"));
       }
-      const entryKeys = Object.keys(entry).sort();
-      if (entryKeys.length !== 2 || entryKeys[0] !== "selector" || entryKeys[1] !== "snippet") {
-        return err(invalidOutput("holds a function without exactly selector and snippet"));
+      const selector = Selector.parse(entry["selector"]);
+      if (!selector.ok) {
+        return err(invalidOutput("abi.json holds no valid selector"));
       }
-      const selector =
-        typeof entry["selector"] === "string" ? Selector.parse(entry["selector"]) : null;
-      if (selector === null || !selector.ok) {
-        return err(invalidOutput("holds no valid selector"));
+      const key = selector.value as string;
+      if (seen.has(key)) {
+        return err(invalidOutput("abi.json repeats a selector"));
       }
-      const snippetRaw = entry["snippet"];
-      if (!isRecord(snippetRaw)) {
-        return err(invalidOutput("holds a snippet that is no object"));
-      }
-      const snippetKeys = Object.keys(snippetRaw).sort();
-      if (
-        snippetKeys.length !== 2 ||
-        snippetKeys[0] !== "line" ||
-        snippetKeys[1] !== "text" ||
-        typeof snippetRaw["text"] !== "string" ||
-        snippetRaw["text"].length === 0
-      ) {
-        return err(invalidOutput("holds a snippet without text and line"));
-      }
-      const line = snippetRaw["line"];
-      if (typeof line !== "number" || !Number.isInteger(line) || line < 0) {
-        return err(invalidOutput("holds a snippet without a valid line"));
+      seen.add(key);
+      const section = sections.get(key.toLowerCase());
+      if (section === undefined || section.text.length === 0) {
+        return err(invalidOutput("decompiled.sol holds no body for a listed selector"));
       }
       const snippet = CodeSnippet.create({
-        text: snippetRaw["text"],
-        line,
+        text: section.text,
+        line: section.line,
         selector: selector.value,
       });
       if (!snippet.ok) {
@@ -304,4 +349,61 @@ export class extdecompAdapter implements DecompilerPort {
     }
     return ok(Object.freeze({ codeHash, functions: Object.freeze(functions) }));
   }
+
+  private readOutputFile(
+    outputDir: string,
+    name: string,
+  ): Result<{ readonly text: string }, DecompilerError> {
+    const path = join(outputDir, name);
+    let size = 0;
+    try {
+      size = statSync(path).size;
+    } catch {
+      return err({ kind: "invalid-output", message: `decompiler output misses ${name}` });
+    }
+    if (size > this.maxOutputBytes) {
+      return err({
+        kind: "output-too-large",
+        message: `decompiled output exceeded the limit of ${this.maxOutputBytes} bytes`,
+        limitBytes: this.maxOutputBytes,
+      });
+    }
+    try {
+      return ok({ text: readFileSync(path, "utf8") });
+    } catch {
+      return err({ kind: "invalid-output", message: `decompiler output ${name} is unreadable` });
+    }
+  }
+}
+
+// One `// function <selector>` section per function (S-102): the marker
+// line opens the section and every following line up to the next marker
+// is the function body. The snippet text is the trimmed body and the
+// snippet line is the marker's zero-based line number.
+function splitSolSections(
+  text: string,
+): Map<string, { readonly text: string; readonly line: number }> {
+  const bodies = new Map<string, { readonly lines: string[]; readonly line: number }>();
+  let current: string | null = null;
+  for (const [index, line] of text.split("\n").entries()) {
+    const marker = line.match(/^\/\/\s*function\s+(0x[0-9a-fA-F]{8})\s*$/);
+    if (marker !== null) {
+      current = (marker[1] ?? "").toLowerCase();
+      if (!bodies.has(current)) {
+        bodies.set(current, { lines: [], line: index });
+      }
+      continue;
+    }
+    if (current !== null) {
+      bodies.get(current)?.lines.push(line);
+    }
+  }
+  const sections = new Map<string, { readonly text: string; readonly line: number }>();
+  for (const [selector, body] of bodies) {
+    const bodyText = body.lines.join("\n").trim();
+    if (bodyText.length > 0) {
+      sections.set(selector, Object.freeze({ text: bodyText, line: body.line }));
+    }
+  }
+  return sections;
 }

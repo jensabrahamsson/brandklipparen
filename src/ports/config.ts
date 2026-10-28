@@ -127,6 +127,10 @@ export type AppConfig = {
   readonly feedEtherscanApiKey?: SecretString;
   readonly feedRpcUrl?: SecretString;
   readonly feedWethAddress?: Address;
+  // Feed cursor and pending-queue file (S-103): optional in every setup.
+  // An unset path leaves state in memory only, so local and CI runs stay
+  // file-free; the poller writes through this path when it is set.
+  readonly feedStatePath?: string | undefined;
 };
 
 // Kept for traceability: docs/architecture.md (A-05) names this value DriftConfig.

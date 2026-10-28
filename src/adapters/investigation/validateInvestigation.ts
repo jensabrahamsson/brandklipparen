@@ -24,7 +24,7 @@ const MAX_RATIONALE_CHARS = 2000;
 
 const TOP_LEVEL_KEYS: readonly string[] = Object.freeze(["decision", "modelId", "provider"]);
 const RUN_TOOL_KEYS: readonly string[] = Object.freeze(["args", "kind", "rationale", "toolId"]);
-const CONCLUDE_KEYS: readonly string[] = Object.freeze(["kind", "narrativeDraft"]);
+const CONCLUDE_KEYS: readonly string[] = Object.freeze(["kind", "narrativeDraft", "rationale"]);
 
 function hasExactlyKeys(record: Record<string, unknown>, expected: readonly string[]): boolean {
   const actual = Object.keys(record).sort();
@@ -98,7 +98,11 @@ export function validateInvestigationDecision(
     if (typeof draft !== "string" || draft.length === 0 || draft.length > expectation.maxOutputChars) {
       return err(invalid("conclude decision needs a capped narrative draft"));
     }
-    return ok({ kind: "conclude", narrativeDraft: draft });
+    const conclusion = decision["rationale"];
+    if (typeof conclusion !== "string" || conclusion.length === 0 || conclusion.length > MAX_RATIONALE_CHARS) {
+      return err(invalid("conclude decision needs a capped rationale"));
+    }
+    return ok({ kind: "conclude", narrativeDraft: draft, rationale: conclusion });
   }
   return err(invalid("investigation decision kind is unknown"));
 }

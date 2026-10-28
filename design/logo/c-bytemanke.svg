@@ -1,16 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
-  <title>Brandklipparen – märke C "Bytemanke"</title>
-  <!-- Samma hästhuvud som A, men manen är rader av bytes: hästen är byggd av det den läser. -->
+  <title>Brandklipparen – mark C "Bytemanke"</title>
+  <!-- Same horse head as A, but the mane is rows of bytes: the horse is built from what it reads. -->
   <rect width="120" height="120" rx="26" fill="#0E1116"/>
   <g transform="translate(16 10)">
-    <!-- huvud och hals -->
+    <!-- head and neck -->
     <path d="M40 30 L48 8 L56 25 L64 27 L90 55 L92 65 L84 71 L70 65 L58 66 L66 96 L24 96 Q26 56 40 30 Z" fill="#7E9CC2"/>
-    <!-- manen: bytecode-rader, översta i kornguld -->
+    <!-- mane: bytecode rows, topmost in grain gold -->
     <rect x="18" y="31" width="16" height="6" rx="3" fill="#D4B36A"/>
     <rect x="4"  y="43" width="24" height="6" rx="3" fill="#4E6A8F"/>
     <rect x="12" y="55" width="13" height="6" rx="3" fill="#4E6A8F"/>
     <rect x="6"  y="67" width="18" height="6" rx="3" fill="#4E6A8F"/>
-    <!-- öga, urstansat -->
+    <!-- eye, punched out -->
     <path d="M62 37 L68 40 L62 43 Z" fill="#0E1116"/>
   </g>
 </svg>

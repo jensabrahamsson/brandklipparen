@@ -192,7 +192,11 @@ describe("investigation graph runner", () => {
   test("k520_recorded_investigation_replays_bit_identical", async () => {
     const script: readonly InvestigationDecision[] = [
       { kind: "run-tool", toolId: "evidence.list", args: {}, rationale: "List frozen evidence." },
-      { kind: "conclude", narrativeDraft: "The frozen evidence shows the finding. [E:sig-1]" },
+      {
+        kind: "conclude",
+        narrativeDraft: "The frozen evidence shows the finding. [E:sig-1]",
+        rationale: "Conclude from the frozen evidence.",
+      },
     ];
     const first = await investigateToken(scriptedAdapter(script), catalogue(), frozenFacts(), context(), limits(), {
       now: () => 1000,
@@ -217,7 +221,11 @@ describe("investigation graph runner", () => {
         const before = JSON.stringify(facts.snapshot);
         const script: readonly InvestigationDecision[] = [
           { kind: "run-tool", toolId: "detector.capability", args: {}, rationale: "Re-run capability." },
-          { kind: "conclude", narrativeDraft: `Draft tail ${draftTail}. [E:sig-1]` },
+          {
+            kind: "conclude",
+            narrativeDraft: `Draft tail ${draftTail}. [E:sig-1]`,
+            rationale: "Conclude from the frozen evidence.",
+          },
         ];
         const envelope = await investigateToken(scriptedAdapter(script), catalogue(), facts, context(), limits(), {
           now: () => 1000,

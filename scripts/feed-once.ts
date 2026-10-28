@@ -106,6 +106,7 @@ async function main(): Promise<void> {
   const weth = config.feedWethAddress ?? null;
   if (weth === null) {
     console.error("WETH quote not configured: set BK_WETH_ADDRESS to resolve the WETH side");
+    process.exit(2);
   }
   const quotes = {
     usdc: QUOTE_TOKENS.usdc,

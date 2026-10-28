@@ -12,6 +12,8 @@ import type {
   DecompilerNamingPort,
   SuggestedName,
 } from "../ports/decompilerNaming.ts";
+import type { OverlayBudget } from "./overlayBudget.ts";
+
 
 export const MAX_NAMING_SELECTORS = 64;
 
@@ -81,12 +83,15 @@ export async function resolveSuggestedNames(
 
 export type DecompilerNamingService = {
   readonly enabled: boolean;
-  resolve(selectors: readonly string[]): Promise<DecompilerNamingOutcome>;
+  resolve(selectors: readonly string[], keyId?: string | undefined): Promise<DecompilerNamingOutcome>;
 };
 
 // Explicit opt-in factory: a null port (the default) builds the disabled
 // service, so naming stays off until a caller wires a real port.
-export function createDecompilerNamingService(port: DecompilerNamingPort | null): DecompilerNamingService {
+export function createDecompilerNamingService(
+  port: DecompilerNamingPort | null,
+  budget?: OverlayBudget | undefined,
+): DecompilerNamingService {
   if (port === null) {
     return Object.freeze({
       enabled: false,
@@ -96,7 +101,25 @@ export function createDecompilerNamingService(port: DecompilerNamingPort | null)
   }
   return Object.freeze({
     enabled: true,
-    resolve: (selectors: readonly string[]): Promise<DecompilerNamingOutcome> =>
-      resolveSuggestedNames(port, selectors),
+    resolve: async (
+      selectors: readonly string[],
+      keyId?: string | undefined,
+    ): Promise<DecompilerNamingOutcome> => {
+      const cacheKey = `naming|${[...selectors].sort().join(",")}`;
+      if (budget !== undefined && keyId !== undefined) {
+        const hit = budget.lookup<DecompilerNamingOutcome>(cacheKey);
+        if (hit !== null) {
+          return hit;
+        }
+        if (!budget.trySpend(keyId)) {
+          return Object.freeze({ kind: "capped" });
+        }
+      }
+      const outcome = await resolveSuggestedNames(port, selectors);
+      if (budget !== undefined && keyId !== undefined && outcome.kind === "ok") {
+        budget.store(cacheKey, outcome);
+      }
+      return outcome;
+    },
   });
 }

@@ -12,7 +12,10 @@
 import {
   FEED_FACTORIES,
   LP_FEED_REORG_WINDOW_BLOCKS,
+  V2_MINT_TOPIC0,
   V2_PAIR_CREATED_TOPIC0,
+  V2_SYNC_TOPIC0,
+  V3_MINT_TOPIC0,
   V3_POOL_CREATED_TOPIC0,
   V4_INITIALIZE_TOPIC0,
   candidateKeyOf,
@@ -32,7 +35,9 @@ import type {
   PoolRef,
   QuoteSet,
 } from "../domain/lpFeed.ts";
-import type { FeedLog } from "../ports/lpFeed.ts";
+import type { FeedCallContext, FeedLog, LpFeedError, LpFeedPort } from "../ports/lpFeed.ts";
+import { err, ok } from "../domain/result.ts";
+import type { Result } from "../domain/result.ts";
 
 // Emitted candidate (K-039): the feed envelope carries no score,
 // probabilities, signals or evidence by construction.
@@ -332,4 +337,147 @@ export function noteAnalysisAddress(pointers: Map<string, string>, address: stri
   if (!pointers.has(slot)) {
     pointers.set(slot, key);
   }
+}
+
+// Liquidity topic0 values for the pair/pool retrieval (S-103): V2 Mint or Sync
+// on the pair and V3 Mint on the pool. The address poll returns every log
+// for the pair, so the fetch keeps solely these topic0 values and drops
+// transfers, approvals and unrelated events before gating.
+const LIQUIDITY_TOPIC0S: ReadonlySet<string> = Object.freeze(
+  new Set(
+    [V2_MINT_TOPIC0, V2_SYNC_TOPIC0, V3_MINT_TOPIC0].map((topic) => topic.toLowerCase()),
+  ),
+);
+
+// Default cap on pair-address polls per cycle (S-103): one factory poll
+// plus at most this many pair polls, so a creation burst cannot exhaust
+// the free-tier daily budget in one cycle.
+export const DEFAULT_MAX_PAIR_POLLS_PER_CYCLE = 25;
+
+// Pair addresses decoded from creation logs (S-103): V2 pair and V3 pool
+// addresses are pollable log addresses, while V4 pool ids are not, so
+// only V2/V3 creations contribute fetch targets.
+function pairAddressesOfCreations(logs: readonly FeedLog[]): readonly string[] {
+  const addresses: string[] = [];
+  const seen = new Set<string>();
+  for (const log of logs) {
+    const v2 = decodeV2PairCreated(log);
+    if (v2.ok) {
+      const address = v2.value.pair.toLowerCase();
+      if (!seen.has(address)) {
+        seen.add(address);
+        addresses.push(address);
+      }
+      continue;
+    }
+    const v3 = decodeV3PoolCreated(log);
+    if (v3.ok) {
+      const address = v3.value.pool.toLowerCase();
+      if (!seen.has(address)) {
+        seen.add(address);
+        addresses.push(address);
+      }
+    }
+  }
+  return Object.freeze(addresses);
+}
+
+// Liquidity fetch for fresh pair addresses (S-103): one port poll per new
+// pair or pool address over the same block range, keeping solely
+// Mint/Sync topic0 logs. A failed pair poll is recorded and skipped, so
+// one quiet or erroring pair never blocks the rest of the cycle; a failed
+// factory poll fails the cycle with the typed port error instead.
+export async function fetchLiquidityLogs(
+  feed: LpFeedPort,
+  pairs: readonly string[],
+  fromBlock: number,
+  toBlock: number,
+  ctx: FeedCallContext,
+): Promise<{ readonly logs: readonly FeedLog[]; readonly failed: readonly string[] }> {
+  const logs: FeedLog[] = [];
+  const failed: string[] = [];
+  for (const pair of pairs) {
+    const polled = await feed.pollLogs({ factory: pair, fromBlock, toBlock }, ctx);
+    if (!polled.ok) {
+      failed.push(pair);
+      continue;
+    }
+    for (const log of polled.value) {
+      if (LIQUIDITY_TOPIC0S.has((log.topics[0] ?? "").toLowerCase())) {
+        logs.push(log);
+      }
+    }
+  }
+  return Object.freeze({ logs: Object.freeze(logs), failed: Object.freeze(failed) });
+}
+
+export type FeedCycleInput = {
+  readonly feed: LpFeedPort;
+  readonly factories: readonly string[];
+  readonly fromBlock: number;
+  readonly toBlock: number;
+  readonly ctx: FeedCallContext;
+  readonly quotes: QuoteSet;
+  readonly pending: readonly PendingCandidate[];
+  readonly seenKeys: ReadonlySet<string>;
+  readonly blockHashByKey: ReadonlyMap<string, string>;
+  readonly nowMs: number;
+  readonly ttlMs: number;
+  readonly maxPairPolls?: number | undefined;
+};
+
+export type FeedCycleOutput = {
+  readonly output: FeedPollOutput;
+  readonly failedPairs: readonly string[];
+  // Block cursor for the persisted feed state (S-103): the caller stores
+  // this beside the pending queue and resumes the next poll from it.
+  readonly cursorBlock: number;
+};
+
+// Composed feed poll with the liquidity retrieval (S-103, K-039): factory
+// polls first, then Mint/Sync polls for the decoded V2/V3 pair addresses
+// over the same range, then the shared gate over the combined logs, so a
+// same-transaction funded creation promotes immediately instead of
+// waiting in the pending queue for a later poll.
+export async function pollFeedWithLiquidity(
+  input: FeedCycleInput,
+): Promise<Result<FeedCycleOutput, LpFeedError>> {
+  const creationLogs: FeedLog[] = [];
+  for (const factory of input.factories) {
+    const polled = await input.feed.pollLogs(
+      { factory, fromBlock: input.fromBlock, toBlock: input.toBlock },
+      input.ctx,
+    );
+    if (!polled.ok) {
+      return err(polled.error);
+    }
+    creationLogs.push(...polled.value);
+  }
+  const pairs = pairAddressesOfCreations(creationLogs).slice(
+    0,
+    input.maxPairPolls ?? DEFAULT_MAX_PAIR_POLLS_PER_CYCLE,
+  );
+  const fetched = await fetchLiquidityLogs(
+    input.feed,
+    pairs,
+    input.fromBlock,
+    input.toBlock,
+    input.ctx,
+  );
+  const output = processFeedPoll({
+    logs: [...creationLogs, ...fetched.logs],
+    quotes: input.quotes,
+    pending: input.pending,
+    seenKeys: input.seenKeys,
+    blockHashByKey: input.blockHashByKey,
+    nowMs: input.nowMs,
+    ttlMs: input.ttlMs,
+  });
+  return ok(
+    Object.freeze({
+      output,
+      failedPairs: fetched.failed,
+      cursorBlock: input.toBlock,
+    }),
+  );
 }

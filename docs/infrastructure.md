@@ -317,7 +317,7 @@ or suspected leaked key is handled in exactly this order:
 4. The health check under I-12 runs green on the new key.
 5. The repo and the history are scanned with gitleaks under I-02, and
    the logs for the key's validity period are reviewed for usage.
-6. The incident is documented in `beslut/logg.md` with date, the key's
+6. The incident is documented in `docs/decisions/log.md` with date, the key's
    purpose, scope and steps taken, with the key value kept outside
    the record. (K-505, K-509, K-510, M-11)
 
@@ -327,7 +327,7 @@ key record outside the repo; the integration test
 `k510_rotation_and_revocation_without_restart` requires that rotation
 and revocation hold from the next call; the drill
 `i09_leaked_key_drill_follows_steps` runs the leak procedure steps 1–6 on
-a test key and requires a completed record in `beslut/logg.md` per
+a test key and requires a completed record in `docs/decisions/log.md` per
 step; the CI check `k505_gitleaks_clean_on_repo_and_history`
 requires zero hits after the procedure.
 

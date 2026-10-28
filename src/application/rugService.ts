@@ -12,6 +12,8 @@
 // untouched: this service reads the frozen envelope and returns a separate
 // overlay.
 import type { RugInput, RugModelOutcome, RugModelPort, RugSentence } from "../ports/rugModel.ts";
+import type { OverlayBudget } from "./overlayBudget.ts";
+
 
 export const MAX_RUG_SENTENCES = 8;
 export const MAX_RUG_SENTENCE_CHARS = 1000;
@@ -102,18 +104,22 @@ export type RugOutcome =
       readonly modelId: string;
     }
   | { readonly kind: "not-configured" }
-  | { readonly kind: "invalid-output" };
+  | { readonly kind: "invalid-output" }
+  | { readonly kind: "capped" };
 
 export type RugService = {
   readonly enabled: boolean;
   readonly provider: string | null;
   readonly modelId: string | null;
-  narrate(input: RugInput): Promise<RugOutcome>;
+  narrate(input: RugInput, keyId?: string | undefined): Promise<RugOutcome>;
 };
 
 // Explicit opt-in factory: a null port builds the disabled service, so the
 // overlay stays off until a caller wires a real port.
-export function createRugService(port: RugModelPort | null): RugService {
+export function createRugService(
+  port: RugModelPort | null,
+  budget?: OverlayBudget | undefined,
+): RugService {
   if (port === null) {
     return Object.freeze({
       enabled: false,
@@ -126,7 +132,17 @@ export function createRugService(port: RugModelPort | null): RugService {
     enabled: true,
     provider: port.provider(),
     modelId: port.modelId(),
-    narrate: async (input: RugInput): Promise<RugOutcome> => {
+    narrate: async (input: RugInput, keyId?: string | undefined): Promise<RugOutcome> => {
+      const cacheKey = `rug|${port.provider()}|${port.modelId()}|${JSON.stringify(input)}`;
+      if (budget !== undefined && keyId !== undefined) {
+        const hit = budget.lookup<RugOutcome>(cacheKey);
+        if (hit !== null) {
+          return hit;
+        }
+        if (!budget.trySpend(keyId)) {
+          return Object.freeze({ kind: "capped" });
+        }
+      }
       const outcome = await port.narrate(input);
       if (outcome.kind === "not-configured") {
         return Object.freeze({ kind: "not-configured" });
@@ -136,7 +152,7 @@ export function createRugService(port: RugModelPort | null): RugService {
         return Object.freeze({ kind: "invalid-output" });
       }
       const checked = checkRugCitations(sentences, new Set(input.evidenceIds));
-      return Object.freeze({
+      const final: RugOutcome = Object.freeze({
         kind: "ok",
         narrative: checked.narrative,
         droppedClaims: checked.droppedClaims,
@@ -144,6 +160,10 @@ export function createRugService(port: RugModelPort | null): RugService {
         provider: port.provider(),
         modelId: port.modelId(),
       });
+      if (budget !== undefined && keyId !== undefined) {
+        budget.store(cacheKey, final);
+      }
+      return final;
     },
   });
 }

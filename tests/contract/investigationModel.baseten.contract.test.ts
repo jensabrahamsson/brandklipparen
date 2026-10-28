@@ -50,6 +50,7 @@ function recordedTransport(scenario: InvestigationContractScenario): hostedInves
             decision: {
               kind: "conclude",
               narrativeDraft: "Recorded draft citing frozen evidence. [E:sig-1]",
+              rationale: "Recorded rationale: conclude from the frozen evidence.",
             },
           }),
         };

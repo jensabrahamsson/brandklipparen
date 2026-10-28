@@ -10,7 +10,7 @@ import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import { ASSESS_TOKEN_INPUT_SCHEMA } from "./tools.ts";
 import type { ToolDefinition } from "./tools.ts";
-import type { PluginRegistry } from "../../plugins/registry.ts";
+import type { PluginRegistry } from "../../application/pluginExposure.ts";
 
 export type PluginToolDefinitionError = {
   readonly kind: "duplicate-plugin-tool";

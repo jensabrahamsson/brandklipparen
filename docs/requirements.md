@@ -1818,7 +1818,7 @@ at submission per K-405 and K-406.
 
 The project builds submitted code, data formats and names during the
 hackathon 27/10–4/11 2026. The design sketches in `design/` are the
-preparatory work from 25/10 per `beslut/logg.md`.
+preparatory work from 25/10 per `docs/decisions/log.md`.
 
 - The repo history shows each submitted file's creation within the
   period. Verification: review

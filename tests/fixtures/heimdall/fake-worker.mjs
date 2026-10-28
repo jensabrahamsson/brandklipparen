@@ -1,11 +1,15 @@
-// Fake extdecomp worker for tests (S-011, K-008, K-501).
-// Test-only stand-in for the extdecomp binary: it reads one hex bytecode
-// from argv and writes one JSON document to stdout, so the adapter test
-// exercises real process isolation, timeouts and crash handling without the
-// real binary installed. Modes are selected with --mode=<mode>:
+// Fake extdecomp worker for tests (S-011, K-008, K-501; file output since
+// S-102). Test-only stand-in for the extdecomp binary: it reads one hex
+// bytecode from argv and writes the decompile-subcommand output files
+// (`abi.json` plus `decompiled.sol`) into the `--output` directory, so the
+// adapter test exercises real process isolation, timeouts, crash handling
+// and file parsing without the real binary installed.
+// Modes are selected with --mode=<mode>:
 // success prints functions linked to PUSH4 selectors found in the input,
 // hang sleeps past every test timeout, crash exits non-zero, oversize
-// prints past a small test cap, invalid prints non-JSON text.
+// writes past a small test cap, invalid writes non-JSON output.
+import { mkdirSync, writeFileSync } from "node:fs";
+
 const args = process.argv.slice(2);
 
 function modeOf() {
@@ -17,9 +21,18 @@ function modeOf() {
   return "success";
 }
 
+function flagValue(name) {
+  const at = args.indexOf(name);
+  if (at !== -1 && at + 1 < args.length) {
+    return args[at + 1];
+  }
+  const glued = args.find((arg) => arg.startsWith(`${name}=`));
+  return glued === undefined ? null : glued.slice(name.length + 1);
+}
+
 function bytecodeOf() {
-  const rest = args.filter((arg) => !arg.startsWith("--"));
-  return rest[rest.length - 1] ?? "";
+  const hexes = args.filter((arg) => /^0x[0-9a-fA-F]*$/.test(arg));
+  return hexes[hexes.length - 1] ?? "";
 }
 
 function findPush4Selectors(hex) {
@@ -37,7 +50,20 @@ function findPush4Selectors(hex) {
 }
 
 const mode = modeOf();
-const bytecode = bytecodeOf();
+const output = flagValue("--output");
+
+if (output !== null) {
+  mkdirSync(output, { recursive: true });
+}
+
+function writeFiles(abi, sol) {
+  if (output === null) {
+    process.stderr.write("fake worker: --output is required\n");
+    process.exit(2);
+  }
+  writeFileSync(`${output}/abi.json`, abi, "utf8");
+  writeFileSync(`${output}/decompiled.sol`, sol, "utf8");
+}
 
 if (mode === "hang") {
   setTimeout(() => {}, 120000);
@@ -45,15 +71,18 @@ if (mode === "hang") {
   process.stderr.write("fake worker: simulated crash\n");
   process.exit(1);
 } else if (mode === "oversize") {
-  process.stdout.write(`{"functions": [{"selector": "0x00000000", "snippet": {"text": "`);
-  process.stdout.write("z".repeat(65536));
-  process.stdout.write(`", "line": 0}}]}`);
+  const selector = "0x00000000";
+  writeFiles(
+    JSON.stringify({ functions: [{ selector, name: "oversized" }] }),
+    `// function ${selector}\n${"z".repeat(65536)}\n`,
+  );
 } else if (mode === "invalid") {
-  process.stdout.write("this is not decompiler output\n");
+  writeFiles("this is not decompiler output\n", "// function 0x00000000\nempty\n");
 } else {
-  const functions = findPush4Selectors(bytecode).map((selector, index) => ({
-    selector,
-    snippet: { text: `decompiled function for selector ${selector}`, line: index },
-  }));
-  process.stdout.write(JSON.stringify({ functions }));
+  const selectors = findPush4Selectors(bytecodeOf());
+  const abi = { functions: selectors.map((selector) => ({ selector, name: `fn_${selector.slice(2)}` })) };
+  const sol = selectors
+    .map((selector) => `// function ${selector}\ndecompiled function for selector ${selector}\n`)
+    .join("\n");
+  writeFiles(JSON.stringify(abi), `${sol}\n`);
 }

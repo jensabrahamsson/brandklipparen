@@ -70,7 +70,52 @@ export type PluginFinding = {
 export type DetectorPlugin = {
   readonly manifest: DetectorManifest;
   readonly detect: (input: DetectorInput) => readonly PluginFinding[];
+  // Static worker entry for off-hot-path execution (S-105): the absolute
+  // module path the plugin worker imports to run this detector in its own
+  // process. Static registration data, never configuration (P-07): entries
+  // without it always run in-process. First-party fast-path detectors omit
+  // it; non-first-party detectors carry it so the host can route them off
+  // the hot path behind the allowlist.
+  readonly modulePath?: string | undefined;
 };
+
+// First-party detector ids (S-105): the reviewed in-tree detectors that
+// run on the hot path. Every other registered detector id is
+// non-first-party and the composition routes it through the plugin worker
+// behind the allowlist. This is an execution-routing set, distinct from
+// the scoring set in the application service (only allowlisted findings
+// convert, whatever the route).
+export const FIRST_PARTY_DETECTOR_IDS: readonly string[] = Object.freeze([
+  "dev.brandklipparen.capability",
+  "dev.brandklipparen.clone-match",
+  "dev.brandklipparen.hard-to-analyze",
+  "dev.brandklipparen.decompiler",
+]);
+
+// Isolated worker run behind an injected runner (S-105): the plugin layer
+// owns the routing decision while the composition injects the process
+// boundary, so this module stays free of process spawns and the
+// dependency gate keeps adapters out of the plugin core.
+export type WorkerDetectorRun =
+  | { readonly kind: "ok"; readonly findingsJson: string }
+  | { readonly kind: "timeout" }
+  | { readonly kind: "worker-error"; readonly message: string };
+
+export type DetectorExecution = {
+  readonly runInWorker: (modulePath: string, input: unknown) => Promise<WorkerDetectorRun>;
+};
+
+// Transport encoding for the worker boundary (S-105): bytecode travels as
+// `0x` hex because the worker stdio channel carries JSON only; the runner
+// revives it to bytes before calling `detect`. Code hash and the nullable
+// facts are JSON-safe branded strings, records or nulls and travel as-is.
+export function encodeWorkerDetectorInput(input: DetectorInput): unknown {
+  return Object.freeze({
+    ...input,
+    bytecode: `0x${Buffer.from(input.bytecode).toString("hex")}`,
+    codeHash: input.codeHash as string,
+  });
+}
 
 // Per-plugin outcome per analysis (ADR section 5.4, S-050). Every outcome
 // leaves the rest of the analysis standing; only `ok` contributes
@@ -395,24 +440,23 @@ function isProvenEvidence(entry: unknown, bytecode: BytecodeType): boolean {
   return provenOffset.ok && Evidence.create({ selector: selector.value, offset: provenOffset.value, snippet: built.value }).ok;
 }
 
-// Runs one detector plugin behind the registry boundary (P-06): the call is
-// wrapped, limits are enforced on the returned value, and every failure
-// contributes an empty finding list with its typed outcome.
-export function runDetectorPlugin(
+// Shared output boundary for both execution routes (P-06, S-105): finding
+// identity and evidence are re-proved, then size and schema limits are
+// enforced on the plain JSON value. Every failure contributes an empty
+// finding list with its typed outcome. In-process findings carry class
+// instances while worker findings arrive as plain JSON; both pass through
+// the same checks on the same values.
+export function checkDetectorOutput(
   plugin: DetectorPlugin,
   input: DetectorInput,
+  raw: unknown,
 ): PluginResultEntry {
   const limits = plugin.manifest.limits;
-  let raw: readonly PluginFinding[];
-  try {
-    raw = plugin.detect(input);
-  } catch {
-    return outcomeEntry(plugin, "threw", []);
-  }
   if (!Array.isArray(raw) || raw.length > limits.maxFindings) {
     return outcomeEntry(plugin, "invalid-output", []);
   }
-  if (!hasProvenFindings(plugin, input, raw, limits.maxEvidencePerFinding)) {
+  const findings = raw as readonly PluginFinding[];
+  if (!hasProvenFindings(plugin, input, findings, limits.maxEvidencePerFinding)) {
     return outcomeEntry(plugin, "invalid-output", []);
   }
   let plain: unknown;
@@ -433,7 +477,7 @@ export function runDetectorPlugin(
   if (!validatePluginOutput(plain, plugin.manifest.outputSchema)) {
     return outcomeEntry(plugin, "invalid-output", []);
   }
-  const sorted = [...raw].sort((left, right) => {
+  const sorted = [...findings].sort((left, right) => {
     if (left.id < right.id) {
       return -1;
     }
@@ -443,6 +487,72 @@ export function runDetectorPlugin(
     return 0;
   });
   return outcomeEntry(plugin, "ok", Object.freeze(sorted));
+}
+
+// Runs one detector plugin behind the registry boundary (P-06): the call is
+// wrapped, then the shared output boundary checks the returned value. A
+// throw contributes an empty finding list with the `threw` outcome.
+export function runDetectorPlugin(
+  plugin: DetectorPlugin,
+  input: DetectorInput,
+): PluginResultEntry {
+  let raw: readonly PluginFinding[];
+  try {
+    raw = plugin.detect(input);
+  } catch {
+    return outcomeEntry(plugin, "threw", []);
+  }
+  return checkDetectorOutput(plugin, input, raw);
+}
+
+// Routing decision for one registered entry (S-105): first-party fast-path
+// detectors stay in-process on the hot path; every other entry with a
+// static worker module runs in its own worker process. An entry without a
+// worker module always runs in-process, so registries built before worker
+// routing keep their behaviour.
+function runsInWorker(plugin: DetectorPlugin): boolean {
+  if (plugin.modulePath === undefined) {
+    return false;
+  }
+  if (FIRST_PARTY_DETECTOR_IDS.includes(plugin.manifest.id)) {
+    return plugin.manifest.capabilities.runsInFastPath === false;
+  }
+  return true;
+}
+
+// Runs one entry through the injected worker runner (S-105): the projected
+// input is transport-encoded, the worker result is parsed back to JSON, and
+// the shared output boundary checks it like an in-process return. A worker
+// timeout records the typed `timeout` outcome; any other worker failure
+// records `threw`, so the rest of the analysis stands either way.
+async function runDetectorPluginInWorker(
+  plugin: DetectorPlugin,
+  input: DetectorInput,
+  execution: DetectorExecution,
+): Promise<PluginResultEntry> {
+  const modulePath = plugin.modulePath;
+  if (modulePath === undefined) {
+    return outcomeEntry(plugin, "invalid-output", []);
+  }
+  let ran: WorkerDetectorRun;
+  try {
+    ran = await execution.runInWorker(modulePath, encodeWorkerDetectorInput(input));
+  } catch {
+    return outcomeEntry(plugin, "threw", []);
+  }
+  if (ran.kind === "timeout") {
+    return outcomeEntry(plugin, "timeout", []);
+  }
+  if (ran.kind === "worker-error") {
+    return outcomeEntry(plugin, "threw", []);
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(ran.findingsJson) as unknown;
+  } catch {
+    return outcomeEntry(plugin, "invalid-output", []);
+  }
+  return checkDetectorOutput(plugin, input, raw);
 }
 
 // Runs every registered detector entry (P-08): solely registered entries
@@ -468,6 +578,39 @@ export function runRegisteredDetectors(
   const out: PluginResultEntry[] = [];
   for (const plugin of entries) {
     out.push(runDetectorPlugin(plugin, projectDetectorInput(plugin.manifest, facts)));
+  }
+  return Object.freeze(out);
+}
+
+// Async twin of `runRegisteredDetectors` with worker routing (S-105):
+// entries the routing decision sends off the hot path run sequentially in
+// the injected worker, each behind its own deadline, while first-party
+// fast-path entries run in-process. Without an execution binding every
+// entry runs in-process, so callers that wire no worker keep the exact
+// synchronous behaviour. Sequential in plugin-id order keeps the result
+// order — and the envelope bytes — identical to the synchronous run.
+export async function runRegisteredDetectorsAsync(
+  registry: PluginRegistry,
+  facts: DetectorFacts,
+  execution?: DetectorExecution | undefined,
+): Promise<readonly PluginResultEntry[]> {
+  const entries = [...registry.entries].sort((left, right) => {
+    if (left.manifest.id < right.manifest.id) {
+      return -1;
+    }
+    if (left.manifest.id > right.manifest.id) {
+      return 1;
+    }
+    return 0;
+  });
+  const out: PluginResultEntry[] = [];
+  for (const plugin of entries) {
+    const input = projectDetectorInput(plugin.manifest, facts);
+    if (execution !== undefined && runsInWorker(plugin)) {
+      out.push(await runDetectorPluginInWorker(plugin, input, execution));
+    } else {
+      out.push(runDetectorPlugin(plugin, input));
+    }
   }
   return Object.freeze(out);
 }

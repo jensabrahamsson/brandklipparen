@@ -77,6 +77,31 @@ describe("CI gate enforcement", () => {
     }
   });
 
+  test("a06_gate_probes_src_interfaces", () => {
+    // S-104: the dependency gate runs over `src` (and `apps`), so a probe
+    // import under `src/interfaces` that bypasses the application service
+    // fails the gate. The probe lives in the real tree for the run and is
+    // removed afterwards, so no stray file survives the test.
+    const clean = run("npx", ["depcruise", "--validate", ".dependency-cruiser.cjs", "src", "apps"]);
+    expect(clean).toBe(0);
+    const probePath = join(repoRoot, "src", "interfaces", "__a06_probe__.ts");
+    writeFileSync(
+      probePath,
+      'import type { PluginRegistry } from "../plugins/registry.ts";\nexport const probe: PluginRegistry | null = null;\n',
+    );
+    try {
+      const broken = run("npx", [
+        "depcruise",
+        "--validate",
+        ".dependency-cruiser.cjs",
+        "src/interfaces",
+      ]);
+      expect(broken).not.toBe(0);
+    } finally {
+      rmSync(probePath, { force: true });
+    }
+  }, GATE_TIMEOUT_MS);
+
   test("k106_typecheck_blocks_on_error", () => {
     // Type-check only the small fixtures with dedicated minimal tsconfigs,
     // not the whole project: the whole-project check grows with the repo

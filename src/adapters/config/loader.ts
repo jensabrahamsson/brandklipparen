@@ -288,6 +288,7 @@ const V = {
   feedEtherscanApiKey: "ETHERSCAN_API_KEY",
   feedRpcUrl: "BRANDKLIPPAREN_FEED_RPC_URL",
   feedWethAddress: "BK_WETH_ADDRESS",
+  feedStatePath: "BRANDKLIPPAREN_FEED_STATE_PATH",
   investigateMaxTokens: "BRANDKLIPPAREN_INVESTIGATE_MAX_TOKENS",
   investigateToolTimeoutMs: "BRANDKLIPPAREN_INVESTIGATE_TOOL_TIMEOUT_MS",
 } as const;
@@ -731,6 +732,17 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!feedWethAddress.ok) {
     return feedWethAddress;
   }
+  // The declared return type keeps the parse callback inference exact
+  // (the unannotated `err` would widen the field to unknown).
+  const feedStatePath = optionalField(env, V.feedStatePath, (raw): Result<string, ConfigError> => {
+    if (raw.length === 0 || raw.length > 1024 || raw.includes("\0")) {
+      return err({ kind: "invalid-value", variable: V.feedStatePath, reason: "must be a non-empty path" });
+    }
+    return ok(raw);
+  });
+  if (!feedStatePath.ok) {
+    return feedStatePath;
+  }
 
   const config: AppConfig = {
     env: envName,
@@ -868,6 +880,7 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
       : { feedEtherscanApiKey: feedEtherscanApiKey.value }),
     ...(feedRpcUrl.value === undefined ? {} : { feedRpcUrl: feedRpcUrl.value }),
     ...(feedWethAddress.value === undefined ? {} : { feedWethAddress: feedWethAddress.value }),
+    ...(feedStatePath.value === undefined ? {} : { feedStatePath: feedStatePath.value }),
   };
 
   if (config.rpcUrls !== undefined) {

@@ -21,6 +21,8 @@ import type {
   PromptVersion as PromptVersionType,
 } from "../domain/types.ts";
 import { canonicalSerialize } from "../domain/serialize.ts";
+import type { OverlayBudget } from "./overlayBudget.ts";
+
 
 // Floored sections derived from the envelope (P-26): `summary` and
 // `score` always, plus `signals` whenever a signal raises risk and
@@ -130,12 +132,17 @@ export type PersonalizeOutcome =
 export type PersonalizeServiceDeps = {
   readonly adapter: PluginPersonalizeModelPort;
   readonly cache?: PersonalizeCacheStore | undefined;
+  readonly budget?: OverlayBudget | undefined;
 };
 
 export type PersonalizeService = {
   readonly provider: string;
   readonly modelId: string;
-  requestPersonalize(input: PersonalizeRequestInput, ctx: PluginPersonalizeCallContext): Promise<PersonalizeOutcome>;
+  requestPersonalize(
+    input: PersonalizeRequestInput,
+    ctx: PluginPersonalizeCallContext,
+    keyId?: string | undefined,
+  ): Promise<PersonalizeOutcome>;
 };
 
 export function createPersonalizeService(deps: PersonalizeServiceDeps): PersonalizeService {
@@ -146,7 +153,9 @@ export function createPersonalizeService(deps: PersonalizeServiceDeps): Personal
     async requestPersonalize(
       input: PersonalizeRequestInput,
       ctx: PluginPersonalizeCallContext,
+      keyId?: string | undefined,
     ): Promise<PersonalizeOutcome> {
+      const budget = deps.budget;
       const built = PersonalizeInput.create(input);
       if (!built.ok) {
         return { kind: "error", error: "invalid-output", message: built.error.message };
@@ -178,6 +187,15 @@ export function createPersonalizeService(deps: PersonalizeServiceDeps): Personal
             cache: "hit",
           };
         }
+      }
+      // The input cache above already served repeats for zero cost; the
+      // budget gates the provider call itself per key and day (S-106).
+      if (budget !== undefined && keyId !== undefined && !budget.trySpend(keyId)) {
+        return {
+          kind: "error",
+          error: "rate-limited",
+          message: "personalize daily cost cap reached for this key",
+        };
       }
       const result = await adapter.personalize(built.value, ctx);
       if (!result.ok) {

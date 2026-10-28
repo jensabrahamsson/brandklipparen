@@ -11,6 +11,8 @@
 // Scores, evidence and finding text are untouched: this service reads the
 // frozen envelope and returns a separate overlay.
 import type { ExplainInput, ExplainModelOutcome, ExplainModelPort, ExplainSentence } from "../ports/explainModel.ts";
+import type { OverlayBudget } from "./overlayBudget.ts";
+
 
 export const MAX_EXPLAIN_SENTENCES = 16;
 export const MAX_EXPLAIN_SENTENCE_CHARS = 1000;
@@ -100,18 +102,22 @@ export type ExplainOutcome =
       readonly modelId: string;
     }
   | { readonly kind: "not-configured" }
-  | { readonly kind: "invalid-output" };
+  | { readonly kind: "invalid-output" }
+  | { readonly kind: "capped" };
 
 export type ExplainService = {
   readonly enabled: boolean;
   readonly provider: string | null;
   readonly modelId: string | null;
-  explain(input: ExplainInput): Promise<ExplainOutcome>;
+  explain(input: ExplainInput, keyId?: string | undefined): Promise<ExplainOutcome>;
 };
 
 // Explicit opt-in factory: a null port builds the disabled service, so the
 // overlay stays off until a caller wires a real port.
-export function createExplainService(port: ExplainModelPort | null): ExplainService {
+export function createExplainService(
+  port: ExplainModelPort | null,
+  budget?: OverlayBudget | undefined,
+): ExplainService {
   if (port === null) {
     return Object.freeze({
       enabled: false,
@@ -124,7 +130,17 @@ export function createExplainService(port: ExplainModelPort | null): ExplainServ
     enabled: true,
     provider: port.provider(),
     modelId: port.modelId(),
-    explain: async (input: ExplainInput): Promise<ExplainOutcome> => {
+    explain: async (input: ExplainInput, keyId?: string | undefined): Promise<ExplainOutcome> => {
+      const cacheKey = `explain|${port.provider()}|${port.modelId()}|${JSON.stringify(input)}`;
+      if (budget !== undefined && keyId !== undefined) {
+        const hit = budget.lookup<ExplainOutcome>(cacheKey);
+        if (hit !== null) {
+          return hit;
+        }
+        if (!budget.trySpend(keyId)) {
+          return Object.freeze({ kind: "capped" });
+        }
+      }
       const outcome = await port.explain(input);
       if (outcome.kind === "not-configured") {
         return Object.freeze({ kind: "not-configured" });
@@ -134,13 +150,17 @@ export function createExplainService(port: ExplainModelPort | null): ExplainServ
         return Object.freeze({ kind: "invalid-output" });
       }
       const checked = checkExplainCitations(sentences, new Set(input.evidenceIds));
-      return Object.freeze({
+      const final: ExplainOutcome = Object.freeze({
         kind: "ok",
         narrative: checked.narrative,
         droppedClaims: checked.droppedClaims,
         provider: port.provider(),
         modelId: port.modelId(),
       });
+      if (budget !== undefined && keyId !== undefined) {
+        budget.store(cacheKey, final);
+      }
+      return final;
     },
   });
 }

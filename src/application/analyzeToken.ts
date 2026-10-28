@@ -53,9 +53,13 @@ import type { PluginRegistry } from "../plugins/registry.ts";
 import {
   createDetectorInput,
   pluginResultToCanonical,
-  runRegisteredDetectors,
+  runRegisteredDetectorsAsync,
 } from "../plugins/detector.ts";
-import type { PluginFinding, PluginResultEntry } from "../plugins/detector.ts";
+import type {
+  DetectorExecution,
+  PluginFinding,
+  PluginResultEntry,
+} from "../plugins/detector.ts";
 import type { CloneHit, CloneMapping } from "../domain/clones.ts";
 import { CloneGroupId, Probability, SkeletonHash } from "../domain/types.ts";
 import { Evidence } from "../domain/evidence.ts";
@@ -118,9 +122,12 @@ export type AnalyzeTokenInput = {
 // service runs solely registered entries and an unregistered plugin never
 // runs. The composition root builds the set through the startup builder
 // and hands it in explicitly; no defaulted set exists, so a caller cannot
-// forget to wire the real set.
+// forget to wire the real set. The optional execution binding routes
+// non-first-party detectors through the plugin worker (S-105); without it
+// every entry runs inline.
 export type DetectorSet = {
   readonly registry: PluginRegistry;
+  readonly execution?: DetectorExecution | undefined;
 };
 
 // Canonical assessment envelope: the same input triple of bytecode, block
@@ -719,13 +726,15 @@ export async function analyzeToken(
   // mapping. The legacy direct cloneMatchSignal call, the inline
   // fallback-signal construction and the three interim converters are
   // deleted; the service reads detector output solely through the
-  // registry/detect path.
-  const pluginResults = runRegisteredDetectors(
+  // registry/detect path. With an execution binding, non-first-party
+  // detectors run in the plugin worker off the hot path (S-105).
+  const pluginResults = await runRegisteredDetectorsAsync(
     detectors.registry,
     createDetectorInput(analysisBytecode, codeHash.value, {
       cloneMatch: cloneHit,
       decompilerCause,
     }),
+    detectors.execution,
   );
   let signals: readonly Signal[] = signalsFromPluginResults(
     pluginResults,

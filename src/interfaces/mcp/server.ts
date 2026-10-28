@@ -18,10 +18,10 @@ import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { serializeAssessment } from "../../application/analyzeToken.ts";
 import type { AppServices, DetectorSet } from "../../application/analyzeToken.ts";
-import { exposeRegistry, serializePluginDocs, serializePluginList } from "../../plugins/exposure.ts";
-import type { PluginDocsMap, PluginWeightMapping } from "../../plugins/exposure.ts";
-import { serializeStoredAuditReport } from "../../plugins/auditReport.ts";
-import type { StoredAuditReportMap } from "../../plugins/auditReport.ts";
+import { exposeRegistry, serializePluginDocs, serializePluginList } from "../../application/pluginExposure.ts";
+import type { PluginDocsMap, PluginWeightMapping } from "../../application/pluginExposure.ts";
+import { serializeStoredAuditReport } from "../../application/pluginExposure.ts";
+import type { StoredAuditReportMap } from "../../application/pluginExposure.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import { serializeTokenInvestigation } from "../../application/investigationService.ts";
@@ -69,11 +69,17 @@ import {
 } from "./tools.ts";
 import type { AssessTokenInput, ToolDefinition } from "./tools.ts";
 import { buildPluginToolDefinitions, pluginToolNameFor } from "./pluginTools.ts";
-import { pluginResultToCanonical } from "../../plugins/detector.ts";
+import { pluginResultToCanonical } from "../../application/pluginExposure.ts";
 
 export const MCP_SERVER_NAME = "brandklipparen-mcp";
 export const MCP_SERVER_VERSION = "1.0.0";
-export const MCP_PROTOCOL_VERSION = "1.0";
+// Dated MCP protocol version the server negotiates (S-107, K-021): the
+// handshake pins the wire version both sides speak, and an SDK client
+// sending anything else fails closed instead of silently downgrading.
+export const MCP_PROTOCOL_VERSION = "2025-06-18";
+export const SUPPORTED_MCP_PROTOCOL_VERSIONS: readonly string[] = Object.freeze([
+  MCP_PROTOCOL_VERSION,
+]);
 
 const DEFAULT_ANALYZE_TIMEOUT_MS = 30000;
 const DEFAULT_MAX_MESSAGE_BYTES = 8192;
@@ -755,12 +761,27 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     const params = record["params"];
     const auth = typeof record["auth"] === "string" ? (record["auth"] as string) : undefined;
     switch (method) {
-      case "initialize":
+      case "initialize": {
+        // SDK handshake negotiation (S-107): the client opens with its
+        // protocol version beside capabilities and client info, and the
+        // server answers with the negotiated dated version it supports.
+        // Anything else fails closed with a machine-readable mismatch.
+        const offered =
+          typeof params === "object" && params !== null && !Array.isArray(params)
+            ? (params as Record<string, unknown>)["protocolVersion"]
+            : undefined;
+        if (typeof offered !== "string" || !SUPPORTED_MCP_PROTOCOL_VERSIONS.includes(offered)) {
+          return jsonRpcError(id, -32602, "Unsupported MCP protocol version.", {
+            code: "protocol-version-mismatch",
+            supported: [...SUPPORTED_MCP_PROTOCOL_VERSIONS],
+          });
+        }
         return jsonRpcResult(id, {
-          protocolVersion: MCP_PROTOCOL_VERSION,
+          protocolVersion: offered,
           capabilities: { tools: {} },
           serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
         });
+      }
       case "ping":
         return jsonRpcResult(id, {});
       case "tools/list":

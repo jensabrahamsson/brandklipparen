@@ -38,7 +38,7 @@ describe("decompiler eval harness", () => {
       for (const arg of args) {
         expect(arg).not.toContain("http");
         expect(arg).not.toContain("-r");
-        expect(arg).not.toContain("generic");
+        expect(arg).not.toContain("api-key");
         expect(arg).not.toContain("llm");
       }
     }

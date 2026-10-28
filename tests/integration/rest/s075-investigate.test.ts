@@ -107,7 +107,11 @@ function scriptedAdapter(): InvestigationModelPort {
         });
       }
       const first = input.trace[0]?.evidenceIds[0] ?? "sig-1";
-      return ok({ kind: "conclude", narrativeDraft: `The frozen evidence shows the finding. [E:${first}]` });
+      return ok({
+        kind: "conclude",
+        narrativeDraft: `The frozen evidence shows the finding. [E:${first}]`,
+        rationale: "Route test concludes from the frozen evidence.",
+      });
     },
   };
 }

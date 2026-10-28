@@ -41,9 +41,9 @@ A list of findings with the namespaced id
 selector evidence with the PC offset wherever derivable, and the payload
 `{ "capability": "<key>" }`. The payload carries one field, `capability`,
 and every finding carries at least one `evidence` entry with a `selector`.
-Findings report at weight 0: the application service maps them to
-calibrated signals through the versioned model artifact, and a finding
-enters the score only after calibration names it.
+As a first-party detector, its findings convert to calibrated signals
+through the versioned model artifact, and the artifact sets their
+effective weight, which the plugin list exposes per plugin.
 
 ## Limitations / false positives
 
