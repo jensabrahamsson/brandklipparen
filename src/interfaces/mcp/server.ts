@@ -64,6 +64,8 @@ import {
   parseRequestAssessmentInput,
 } from "./tools.ts";
 import type { AssessTokenInput, ToolDefinition } from "./tools.ts";
+import { buildPluginToolDefinitions, pluginToolNameFor } from "./pluginTools.ts";
+import { pluginResultToCanonical } from "../../plugins/detector.ts";
 
 export const MCP_SERVER_NAME = "brandklipparen-mcp";
 export const MCP_SERVER_VERSION = "1.0.0";
@@ -173,6 +175,19 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     options.rateLimit === undefined
       ? null
       : createRateLimiter(options.rateLimit, options.rateLimitNowMs);
+
+  // Per-plugin tool snapshot (S-048, K-031): one reading tool per
+  // registered detector, frozen at server creation. Names outside this
+  // snapshot answer `unknown-tool` without analysis.
+  const pluginBuilt = buildPluginToolDefinitions(options.detectors.registry);
+  const pluginDefinitions: readonly ToolDefinition[] = pluginBuilt.ok ? pluginBuilt.value : [];
+  const pluginIdByToolName = new Map<string, string>();
+  for (const entry of options.detectors.registry.entries) {
+    pluginIdByToolName.set(pluginToolNameFor(entry.manifest.id), entry.manifest.id);
+  }
+  const allDefinitions: readonly ToolDefinition[] = Object.freeze([...TOOL_DEFINITIONS, ...pluginDefinitions]);
+  const findAnyTool = (name: string): ToolDefinition | null =>
+    (findTool(name) ?? pluginDefinitions.find((tool) => tool.name === name) ?? null);
 
   // Shared tool gate (A-11, A-16, K-026): API key, message size and the
   // published input schema. Both reading tools reuse the same gate, so
@@ -521,6 +536,66 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     return ok({ content: Object.freeze([textBlock(serializePluginDocs(docs))]), isError: false });
   }
 
+  // Per-plugin detector tool (S-048, K-031): the same gate and analysis
+  // as assess_token, then the response filtered to one plugin id. Scores
+  // and evidence pass through untouched in the shared path; this tool
+  // only narrows the serialized view to the snapshot entry.
+  async function runPluginTool(
+    pluginId: string,
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const gated = gateToolArgs(args, parseAssessTokenInput, requestId, callOptions);
+    if (!gated.ok) {
+      return err(gated.error);
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return err({
+        code: "internal-error",
+        message: "Analysis failed; retry with the same request ID.",
+        requestId,
+      } satisfies McpToolError);
+    }
+    const analysed = await options.services.analyzeToken({
+      address: gated.value.input.address,
+      block: gated.value.input.block,
+      requestId,
+      deadline: deadline.value,
+      modelVersion: options.modelVersion,
+      indexVersion: options.indexVersion,
+      templateVersion: options.templateVersion,
+      catalogue: options.catalogue,
+    });
+    if (!analysed.ok) {
+      const mapped = toMcpError(analysed.error);
+      return err({ ...mapped, requestId });
+    }
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return ok({ content: Object.freeze([textBlock(body)]), isError: false });
+    }
+    const entry = analysed.value.envelope.pluginResults.find(
+      (candidate) => candidate.pluginId === pluginId,
+    );
+    const canonical =
+      entry === undefined
+        ? { pluginId, findings: [] as readonly import("../../domain/serialize.ts").CanonicalValue[] }
+        : (pluginResultToCanonical(entry) as unknown as {
+            pluginId: string;
+            findings: readonly import("../../domain/serialize.ts").CanonicalValue[];
+          });
+    const body = canonicalSerialize({
+      plugin: { id: canonical.pluginId, findings: canonical.findings },
+    });
+    return ok({ content: Object.freeze([textBlock(body)]), isError: false });
+  }
+
   async function callTool(
     name: string,
     args: unknown,
@@ -534,7 +609,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
         requestId: "00000000-0000-4000-8000-000000000000",
       });
     }
-    if (findTool(name) === null) {
+    if (findAnyTool(name) === null) {
       return err(unknownTool(name, requestId as string));
     }
     if (name === ASSESS_TOKEN_TOOL) {
@@ -551,6 +626,10 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     }
     if (name === INVESTIGATE_TOKEN_TOOL) {
       return runInvestigate(args, requestId, callOptions);
+    }
+    const pluginId = pluginIdByToolName.get(name);
+    if (pluginId !== undefined) {
+      return runPluginTool(pluginId, args, requestId, callOptions);
     }
     return err(unknownTool(name, requestId as string));
   }
@@ -616,7 +695,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       case "ping":
         return jsonRpcResult(id, {});
       case "tools/list":
-        return jsonRpcResult(id, { tools: TOOL_DEFINITIONS, toolListVersion: TOOL_LIST_VERSION });
+        return jsonRpcResult(id, { tools: allDefinitions, toolListVersion: TOOL_LIST_VERSION });
       case "tools/call": {
         if (typeof params !== "object" || params === null || Array.isArray(params)) {
           return jsonRpcError(id, -32602, "Invalid params: expected name and arguments.", {
@@ -651,7 +730,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     }
   }
 
-  return Object.freeze({ listTools: () => TOOL_DEFINITIONS, callTool, handleJsonRpc });
+  return Object.freeze({ listTools: () => allDefinitions, callTool, handleJsonRpc });
 }
 
 // Minimal stdio transport: newline-delimited JSON-RPC frames on stdin,

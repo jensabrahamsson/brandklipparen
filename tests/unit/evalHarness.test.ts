@@ -1,0 +1,133 @@
+// Eval harness unit tests (S-082, K-038, K-521, D-09, D-10, M-47).
+// Written first per A-21 (red): scripts/eval-decompiler.ts does not
+// exist yet. No test invokes a binary: the harness runs against the
+// frozen corpus with an injected process stub, and the skip path runs
+// with `extdecomp_BIN` unset.
+import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  EVAL_PASS_TOLERANCE_POINTS,
+  EXPECTED_extdecomp_VERSION,
+  buildextdecompArgs,
+  checkextdecompVersion,
+  evaluateOwn,
+  runEval,
+  summarize,
+} from "../../scripts/eval-decompiler.ts";
+import type { ContractEval, ContractExpectation } from "../../scripts/eval-decompiler.ts";
+
+const CORPUS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "evm", "corpus");
+
+function corpusOf(): { contracts: ContractExpectation[]; expected: { ownPassRate: number; spotAgreement: number } } {
+  return JSON.parse(readFileSync(join(CORPUS_DIR, "corpus.json"), "utf8")) as {
+    contracts: ContractExpectation[];
+    expected: { ownPassRate: number; spotAgreement: number };
+  };
+}
+
+describe("decompiler eval harness", () => {
+  test("d09_eval_runs_only_on_local_bytecode_without_network_or_llm_flags", () => {
+    for (const input of ["0x6001600055", "/tmp/token-simple.hex"]) {
+      const args = buildextdecompArgs(input);
+      expect(args).toEqual(["decompile", input]);
+      for (const arg of args) {
+        expect(arg).not.toContain("http");
+        expect(arg).not.toContain("-r");
+        expect(arg).not.toContain("generic");
+        expect(arg).not.toContain("llm");
+      }
+    }
+  });
+
+  test("d10_version_gate_accepts_pinned_and_names_mismatch", () => {
+    expect(checkextdecompVersion("0.9.1")).toEqual({ ok: true });
+    expect(checkextdecompVersion("extdecomp 0.9.1")).toEqual({ ok: true });
+    const mismatch = checkextdecompVersion("0.8.0");
+    expect(mismatch.ok).toBe(false);
+    if (mismatch.ok) {
+      return;
+    }
+    expect(mismatch.expected).toBe(EXPECTED_extdecomp_VERSION);
+    expect(mismatch.reported).toBe("0.8.0");
+  });
+
+  test("d09_eval_skips_cleanly_without_extdecomp_bin", async () => {
+    const result = await runEval({ corpusDir: CORPUS_DIR, extdecompBin: undefined });
+    expect(result.exitCode).toBe(0);
+    expect(result.extdecompVersion).toBe(null);
+    for (const evaluation of result.summary.contracts) {
+      expect(evaluation.extdecomp).toEqual({ status: "not-run" });
+    }
+    expect(result.summary.consistent).toBe(true);
+  });
+
+  test("d09_eval_fails_on_version_mismatch_naming_both_strings", async () => {
+    const result = await runEval({
+      corpusDir: CORPUS_DIR,
+      extdecompBin: "/bin/echo-stub",
+      run: () => ({ status: 0, stdout: "0.8.0", stderr: "" }),
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.extdecompVersion).toBe("0.8.0");
+    expect(result.markdown).toContain(EXPECTED_extdecomp_VERSION);
+    expect(result.markdown).toContain("0.8.0");
+  });
+
+  test("d09_eval_records_per_failure_version_and_digest", async () => {
+    const result = await runEval({
+      corpusDir: CORPUS_DIR,
+      extdecompBin: "/bin/echo-stub",
+      run: (bin, args) => {
+        if (args[0] === "--version") {
+          return { status: 0, stdout: "0.9.1", stderr: "" };
+        }
+        expect(bin).toBe("/bin/echo-stub");
+        expect(args[0]).toBe("decompile");
+        return { status: 1, stdout: "", stderr: "boom" };
+      },
+    });
+    expect(result.exitCode).toBe(0);
+    for (const evaluation of result.summary.contracts) {
+      expect(evaluation.extdecomp.status).toBe("failed");
+      if (evaluation.extdecomp.status !== "failed") {
+        continue;
+      }
+      expect(evaluation.extdecomp.version).toBe("0.9.1");
+      expect(evaluation.extdecomp.inputDigest).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+
+  test("d09_summary_totals_stay_internally_consistent", async () => {
+    const result = await runEval({ corpusDir: CORPUS_DIR, extdecompBin: undefined });
+    const summary = result.summary;
+    expect(summary.contractCount).toBe(summary.contracts.length);
+    expect(summary.ownPassRate).toBe((summary.passedCount / summary.contractCount) * 100);
+    expect(summary.spotAgreement).toBe((summary.spotAgreed / summary.spotTotal) * 100);
+    expect(summary.ownPassRate).toBeGreaterThanOrEqual(0);
+    expect(summary.ownPassRate).toBeLessThanOrEqual(100);
+    const corpus = corpusOf();
+    expect(Math.abs(summary.ownPassRate - corpus.expected.ownPassRate)).toBeLessThanOrEqual(
+      EVAL_PASS_TOLERANCE_POINTS,
+    );
+    expect(Math.abs(summary.spotAgreement - corpus.expected.spotAgreement)).toBeLessThanOrEqual(
+      EVAL_PASS_TOLERANCE_POINTS,
+    );
+  });
+
+  test("d09_evaluate_own_scores_frozen_corpus_at_expected_rates", () => {
+    const corpus = corpusOf();
+    const evals: ContractEval[] = corpus.contracts.map((expectation) => {
+      const hex = readFileSync(join(CORPUS_DIR, expectation.file), "utf8").trim();
+      return { ...evaluateOwn(hex, expectation), extdecomp: { status: "not-run" } };
+    });
+    const summary = summarize(evals, corpus.contracts);
+    expect(summary.consistent).toBe(true);
+    expect(summary.ownPassRate).toBe(corpus.expected.ownPassRate);
+    expect(summary.spotAgreement).toBe(corpus.expected.spotAgreement);
+    for (const row of summary.k523) {
+      expect(row.tableHit).toBe(true);
+    }
+  });
+});

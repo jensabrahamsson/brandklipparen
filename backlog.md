@@ -25,12 +25,12 @@ code them now.
 | Parked group | Stories | Note |
 |---|---|---|
 | E-09 Investigate with Muse | S-072–S-077 | S-072–S-077 shipped (K-036, K-520 in `docs/requirements.md`); S-077 recorded-trace library and per-codehash cache with caps included |
-| E-10 own EVM decompiler | S-078–S-085 | Design exists in `docs/adr-evm-decompiler.md`; do not code |
+| E-10 own EVM decompiler | S-078–S-085 | S-078–S-082 shipped green in this session (K-037, K-038, K-521 in `docs/requirements.md`); S-083–S-085 still parked |
 | Adaptive web UI | S-059–S-064 | After plugin core; not started |
 | User-priority personalization | S-065–S-070 | Demo headline candidate; S-065 frontmatter leftovers included if unused |
-| Plugin audit | S-053–S-055, S-058 | S-053–S-055 shipped (K-516 in `docs/requirements.md`); S-058 read view still parked |
-| Registry leftovers | S-048–S-050 | Per-plugin MCP tools, signed allowlist, worker isolation, if unused |
-| Later ideas | — | AI explain/chat/rug, just-deployed feed, REST streaming/snippet/calibration/deploy-time checks, duplicate package.json check, UI P2 |
+| Plugin audit | S-053–S-055, S-058 | S-053–S-055 shipped green in this session (K-516 in `docs/requirements.md`); S-058 read view still parked |
+| Registry leftovers | S-048–S-050 | S-048 shipped green in this session (per-plugin MCP tools); S-049–S-050 still parked |
+| Later ideas | — | AI explain/chat/rug, REST streaming/snippet/calibration/deploy-time checks, duplicate package.json check, UI P2 (just-deployed feed replaced by E-11) |
 
 ## Pre-work
 
@@ -56,6 +56,7 @@ code them now.
 | E-08 | Plugin architecture (design in `docs/adr-plugin-architecture.md`, P-xx) | K-028–K-031 (proposed), K-514, K-515 (proposed), K-102, K-210, K-305, K-309, K-032–K-033, K-516–K-517 (proposed, audit and PLUGIN.md), K-034, K-518 (proposed, adaptive web UI), K-035, K-519 (proposed, user-priority personalization — demo headline innovation) |
 | E-09 | Investigate with Muse: runtime agent loop on open weights (design in `docs/adr-investigate-with-muse.md`, P-29–P-38) | K-036 (proposed), K-520 (proposed), K-305, K-309, K-102, K-507, K-513 |
 | E-10 | Own EVM decompiler, ERC-20 scoped (design in `docs/adr-evm-decompiler.md`, D-xx) | K-037 (proposed), K-038 (proposed), K-521 (proposed), K-008, K-010, K-102, K-501 |
+| E-11 | New LP pairs feed on Ethereum mainnet (K-039) | K-039 (proposed), K-014, K-102, K-505 |
 
 ## Stories
 
@@ -306,6 +307,30 @@ Cut order inside E-10, if time runs short: S-085, S-084, and S-083
 are Stretch and cut first, in that order. S-078–S-082 ship as one
 sequence, so the pipeline never stands half-lifted (CFG without
 SSA, or emission without offset mapping).
+
+### E-11 New LP pairs feed on Ethereum mainnet (K-039)
+
+Scope: Ethereum mainnet only (chainId 1); no multichain support is
+planned. The feed discovers only new LP pairs and pools that receive
+liquidity and emits
+`(chainId=1, tokenAddress, pool address or V4 poolId, blockNumber,
+txHash, logIndex, dex)`. It never affects score or evidence;
+source, latency and liquidity data is operational telemetry only.
+Analysis pins `getCode` at the candidate block. Latency stays a soft
+operational guide per K-101, not a release gate. Scheduling: E-11 runs
+right after the remaining E-09 Investigate work, before plugin audit
+leftovers, S-048–S-050, adaptive UI S-059–S-070 and the E-10 remainder.
+`chainId` fields stay in code but are constrained to 1 where cheap;
+S-091 tracks the remaining multichain cleanup. Quote-token allowlist note: WETH comes from env `BK_WETH_ADDRESS` ('WETH quote not configured' if unset); tests use a synthetic fixture address.
+
+| Story | Title | K-IDs | Priority | Test written first |
+|---|---|---|---|---|
+| S-086 | Feed constants: factories, quote tokens and topic0 values | K-039 (proposed) | MVP | `k039_topic0_match_viem_selector_and_pinned_constants` computes each topic0 with `toEventSelector` (or a pure keccak) and pins the V2 `PairCreated`, V3 `PoolCreated` and V4 `Initialize` constants; `k039_factories_match_mainnet_addresses_without_live_calls` asserts the seven factory addresses with no live calls; `k039_quote_tokens_identify_new_token_side` checks the new token is the non-quote side for WETH, USDC, USDT, DAI and V4 address zero. |
+| S-087 | Etherscan logs source with token bucket and backoff | K-039 (proposed), K-505 | MVP | `k039_etherscan_without_key_reports_not_configured_and_sends_nothing` requires `not configured` with zero sends without `ETHERSCAN_API_KEY`; `k039_etherscan_polls_one_factory_per_call_with_token_bucket` polls one factory address per call over a block range about once a minute against a fake logs transport with recorded fixtures; `k039_etherscan_backs_off_on_rate_limit` requires backoff on rate-limit errors within 3 calls per second and 100k per day. No live calls run in CI. |
+| S-088 | Optional JSON-RPC `eth_getLogs` fallback on the same port | K-039 (proposed) | MVP | `k039_rpc_fallback_without_url_reports_not_configured` requires `not configured` without the env URL; `k039_rpc_fallback_returns_same_port_shape` returns the same candidate shape as the Etherscan adapter through a fake transport. No live calls run in CI. |
+| S-089 | Liquidity gate with same-transaction fast path and pending queue | K-039 (proposed) | MVP | `k039_liquidity_gate_hands_to_analysis_only_after_first_liquidity` holds a pair without liquidity; `k039_same_tx_pair_plus_liquidity_passes_immediately` passes pair creation with liquidity in the same transaction (the `addLiquidityETH` case) on the same-transaction check; `k039_pending_queue_expires_after_ttl` drops stale queued candidates after the TTL. V2 `Mint` or `Sync`, V3 pool `Mint` and V4 `ModifyLiquidity` with delta above zero filtered on topic1 equal to the pool id gate the handoff. |
+| S-090 | Idempotency, reorg handling, quote rules and score neutrality | K-039 (proposed), K-102 | MVP | `k039_candidate_key_dedupes_txhash_logindex` dedupes on `(txHash, logIndex)`; `k039_reorg_marks_orphaned_on_blockhash_change` re-reads the last two to three blocks each poll, stores the block hash per candidate and marks `orphaned` on change; `k039_quote_both_or_neither_logs_and_skips` logs and skips when both or neither sides are quotes; `k039_v4_hooks_stay_context_never_score` passes V4 `hooks` as context only; property `k039_feed_leaves_score_and_evidence_unchanged` requires bit-identical score, probabilities, signals and evidence with the feed on, off or orphaned, and the analysis cache stays deduped per `(chainId, codehash)` with one result per address pointing at it. |
+| S-091 | Mainnet-only chainId 1 cleanup | K-001 | MVP | `k001_chainid_constrained_to_mainnet` requires the RPC configuration to accept 1 and turn any other chain id away with a typed error; a repo search for multichain assumptions returns zero hits outside this story. |
 
 Cut order inside E-08, if time runs short: S-048, S-049, S-050, S-051
 are Stretch and cut first, in that order. S-042–S-047 are the MVP of

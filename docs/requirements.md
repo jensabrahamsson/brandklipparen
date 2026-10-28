@@ -56,7 +56,8 @@ through the can't-tell list in K-012. The list states, per question,
 which data source is required: liquidity locks, owner shares, wallet
 clusters, team and intent belong there. The product's signals build on
 bytecode, proxy and storage reads in the analysis path. The chain in MVP
-is Ethereum mainnet per K-001. The product delivers assessments as
+is Ethereum mainnet only (chainId 1) per K-001; no multichain support
+is planned. The product delivers assessments as
 decision support; trading, alerts and transaction blocking live in the
 user's own systems.
 
@@ -194,6 +195,7 @@ resolution, timeline, current storage values and baseline comparison.
 | K-012 Can't-tell list | MVP | Credibility at low cost |
 | K-013 Cache per code hash | MVP | Response time and cost per K-101, K-107 |
 | K-014 Just-deployed flow | MVP | The demo's main flow |
+| K-039 New LP pairs feed on mainnet | MVP | Discovery only; never moves score or evidence |
 | K-015 Timeline since deploy | Stretch | Builds on event index and re-evaluation |
 | K-016 Current storage values | Stretch | Builds on slot identification first |
 | K-017 Clone matching | MVP | Strong signal against template reuse at low cost |
@@ -207,7 +209,7 @@ resolution, timeline, current storage values and baseline comparison.
 | K-027 Shared application service | MVP | One service gives equal responses in three interfaces |
 | K-028 Typed plugin manifest and static registry | MVP | One typed manifest per plugin and one validated static registry; M-21 |
 | K-030 Assessment plugins behind AssessmentModelPort | MVP | Both assessment adapters registered as assessment plugins with exactly one active; selection by plugin id |
-| K-101 Response time: fast path and deepening | MVP | The demo promises a risk profile in a few seconds |
+| K-101 Response time: fast path and deepening | MVP | Soft guide, not a gate; the goal is innovation, not latency |
 | K-102 Deterministic analysis | MVP | Reproducibility is the product promise |
 | K-103 Accessibility WCAG AA | MVP | Built-in accessibility from the first view |
 | K-104 Observability | MVP | Debugging during the hackathon requires logs |
@@ -263,7 +265,11 @@ resolution, timeline, current storage values and baseline comparison.
 
 The project fetches runtime bytecode for a given Ethereum address via
 its own RPC connection and classifies the address as contract, EOA or
-invalid.
+invalid. Scope is Ethereum mainnet only (chainId 1): no multichain
+support is planned. The RPC configuration keeps its `chainId` field
+for correctness and constrains it to 1; any remaining multichain-capable
+code is flagged as a cleanup item in `backlog.md` and never exercised
+in tests.
 
 - A valid contract address such as `0x1234…` returns its bytecode.
   Verification: contract test `k001_contract_address_returns_bytecode`
@@ -532,6 +538,80 @@ The matching is part of the fast path per K-101.
 - The index version is stated in the response, so hits are reproducible
   per K-102. Verification: integration test
   `k017_response_names_index_version`.
+
+### K-039 New LP pairs feed on Ethereum mainnet (MVP)
+
+The feed discovers only new LP pairs and pools that receive liquidity
+on Ethereum mainnet (chainId 1) and emits one candidate per pair:
+`(chainId=1, tokenAddress, pool address or V4 poolId, blockNumber,
+txHash, logIndex, dex)`. The feed never affects score or evidence;
+source, latency and liquidity data is operational telemetry only.
+Analysis pins `getCode` at the candidate block.
+
+- Event topic0 values are pinned as constants and computed with
+  `toEventSelector` (or a pure keccak) in a test: Uniswap V2 and clones
+  `PairCreated(address,address,address,uint256)` =
+  `0x0d3648bd0f6ba80134a33ba9275ac585d9d315f0ad8355cddefde31afa28d0e9`,
+  Uniswap V3 and clones
+  `PoolCreated(address,address,uint24,int24,address)` =
+  `0x783cca1c0412dd0d695e784568c96da2e9c22ff989357a2e8b1d9b2b4e6b7118`,
+  Uniswap V4 `Initialize(bytes32,address,address,uint24,int24,address,uint160,int24)`
+  on the PoolManager =
+  `0xdd466e674ea557f56295e2d0218a125ea4b4f0f6f3307b95f85e6110838d6438`
+  (pool id is bytes32; `hooks` passes as context to analysis, never as
+  score input; native ETH is address zero, V4 only). Liquidity events:
+  V2 `Mint(address,uint256,uint256)` or `Sync(uint112,uint112)` on the
+  pair, V3 pool
+  `Mint(address,address,int24,int24,uint128,uint256,uint256)` and V4
+  `ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)` with
+  liquidity delta above zero filtered on topic1 equal to the pool id.
+  Verification: unit test
+  `k039_topic0_match_viem_selector_and_pinned_constants`.
+- Factory and quote-token addresses are pinned in a constants module on
+  mainnet with no live calls: Uniswap V2
+  `0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f`, Uniswap V3
+  `0x1F98431c8aD98523631AE4a59f267346ea31F984`, Uniswap V4 PoolManager
+  `0x000000000004444c5dc75cB358380D2e3dE08A90`, Sushi V2
+  `0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac`, Sushi V3
+  `0xbACEB8eC6b9355Dfc0269C18bac9d6E2Bdc29C4F`, PancakeSwap V2
+  `0x1097053Fd2ea711dad45caCcc45Ef7548fCB362`, PancakeSwap V3
+  `0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091`, Fraxswap V2 (optional, off
+  by default)
+  `0x43eC799eAdd63848443E2347C49f5f52e8Fe0F6f`; quote tokens canonical WETH9 (address supplied by operator config `BK_WETH_ADDRESS`, not stored in the repo), USDC
+  `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`, USDT
+  `0xdAC17F958D2ee523a2206206994597C13D831ec7`, DAI
+  `0x6B175474E89094C44Da98b954EedeAC495271d0F` and ETH address zero (V4
+  only). The new token is the side that is not a quote; both or neither
+  sides a quote logs and skips. Verification: unit tests
+  `k039_factories_match_mainnet_addresses_without_live_calls` and
+  `k039_quote_tokens_identify_new_token_side`.
+- The primary source is the Etherscan API V2 logs endpoint
+  (`module=logs&action=getLogs`, chainid 1) with a free key from env
+  `ETHERSCAN_API_KEY` (never in the repo; the adapter reports `not
+  configured` without it). One factory address per call; a block range
+  is polled about once a minute. Free tier 3 calls per second and 100k
+  per day is enforced with a token bucket with backoff on rate-limit
+  errors. An optional free JSON-RPC `eth_getLogs` adapter (env URL)
+  serves as fallback behind the same port. Tests use a fake logs
+  adapter with recorded fixtures; no live calls run in CI.
+  Verification: unit tests
+  `k039_etherscan_without_key_reports_not_configured_and_sends_nothing`,
+  `k039_etherscan_polls_one_factory_per_call_with_token_bucket` and
+  `k039_etherscan_backs_off_on_rate_limit`, plus
+  `k039_rpc_fallback_returns_same_port_shape`.
+- A token reaches analysis only after first liquidity: a pair created
+  with liquidity in the same transaction (common for `addLiquidityETH`)
+  passes on the same-transaction check first, else a pending queue with
+  TTL holds the candidate. Idempotency uses the candidate key
+  `(txHash, logIndex)`; the analysis cache stays deduped per
+  `(chainId, codehash)` with one result per address pointing at it. Each
+  poll re-reads the last two to three blocks, stores the block hash per
+  candidate and marks `orphaned` on hash change. Verification: unit
+  tests `k039_liquidity_gate_hands_to_analysis_only_after_first_liquidity`,
+  `k039_same_tx_pair_plus_liquidity_passes_immediately`,
+  `k039_pending_queue_expires_after_ttl`,
+  `k039_candidate_key_dedupes_txhash_logindex` and
+  `k039_reorg_marks_orphaned_on_blockhash_change`.
 
 ### K-028 Typed plugin manifest, versioned plugin API and static registry (MVP)
 
@@ -877,6 +957,10 @@ probabilities, signals, findings or evidence.
 
 ### K-101 Response time: fast path and deepening (MVP)
 
+The product goal is innovation (agent loop over deterministic bytecode
+analysis, plugin architecture, own decompiler), not low latency. The
+targets below are soft operational guides and non-goals for release: a
+miss never blocks release, and the timing tests remain as measurements.
 The project delivers each analysis in two steps. The fast path
 (bytecode fetch, proxy resolution, selector and pattern extraction,
 clone matching, signals, probabilities and score, plus a template-based
@@ -2100,6 +2184,7 @@ the test per acceptance criterion.
 | K-015 | `k015_each_score_change_links_to_event` (e2e) |
 | K-016 | `k016_value_carries_slot_block_and_time` (integration) |
 | K-017 | `k017_clone_hit_reports_similarity_group_and_count` (golden) |
+| K-039 | `k039_liquidity_gate_hands_to_analysis_only_after_first_liquidity` (unit) |
 | K-020 | `k020_pasted_address_opens_token_page_or_shows_error` (e2e) |
 | K-021 | `k021_fast_path_renders_before_deepening` (e2e) |
 | K-022 | `k022_marker_matches_log_row` (e2e) |
