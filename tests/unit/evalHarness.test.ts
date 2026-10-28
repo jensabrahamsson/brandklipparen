@@ -14,6 +14,7 @@ import {
   buildextdecompArgs,
   checkextdecompVersion,
   evaluateOwn,
+  findMentionedSelectors,
   readextdecompOutputDir,
   runEval,
   summarize,
@@ -33,7 +34,7 @@ describe("decompiler eval harness", () => {
   test("d09_eval_runs_only_on_local_bytecode_without_network_or_llm_flags", () => {
     for (const input of ["0x6001600055", "/tmp/token-simple.hex"]) {
       const args = buildextdecompArgs(input);
-      expect(args).toEqual(["decompile", input]);
+      expect(args).toEqual(["decompile", input, "--include-sol"]);
       for (const arg of args) {
         expect(arg).not.toContain("http");
         expect(arg).not.toContain("-r");
@@ -41,6 +42,25 @@ describe("decompiler eval harness", () => {
         expect(arg).not.toContain("llm");
       }
     }
+  });
+
+  test("d09_extdecomp_selector_match_handles_bare_case_and_unresolved_names", () => {
+    // Recorded synthetic sample shaped like real extdecomp 0.9.1 output:
+    // abi.json carries names only, decompiled.sol carries
+    // `@custom:selector` lines with 0x form, and one fallback function
+    // uses an Unresolved_ name with the bare form in mixed case.
+    const combined = [
+      `[{"type": "function", "name": "transfer"}]`,
+      "/// @custom:selector    0xA9059CBB",
+      "function transfer(address arg0, uint256 arg1) public returns (bool) {",
+      "function Unresolved_70A08231() {",
+      "}",
+    ].join("\n");
+    expect(findMentionedSelectors(combined, ["0xa9059cbb", "0x70a08231"])).toEqual([
+      "0xa9059cbb",
+      "0x70a08231",
+    ]);
+    expect(findMentionedSelectors("switch selector() default {}", ["0xa9059cbb"])).toEqual([]);
   });
 
   test("d10_version_gate_accepts_pinned_and_names_mismatch", () => {
@@ -185,6 +205,42 @@ describe("decompiler eval harness", () => {
 
   test("d09_extdecomp_output_reader_ignores_absent_dir", () => {
     expect(readextdecompOutputDir(join(tmpdir(), "extdecomp-no-such-dir"))).toBe("");
+  });
+
+  test("d09_extdecomp_fake_runner_reads_recorded_sample_layout", async () => {
+    // Recorded layout from extdecomp 0.9.1 with `--include-sol`: abi.json
+    // holds names only while decompiled.sol holds the 0x selector lines
+    // plus one bare Unresolved_ name. The harness must report both.
+    const result = await runEval({
+      corpusDir: CORPUS_DIR,
+      extdecompBin: "/bin/fake-extdecomp",
+      run: (bin, args, options) => {
+        if (args[0] === "--version") {
+          return { status: 0, stdout: "0.9.1", stderr: "" };
+        }
+        expect(args).toEqual(["decompile", args[1] as string, "--include-sol"]);
+        expect(bin).toBe("/bin/fake-extdecomp");
+        mkdirSync(join(options.cwd, "output", "local"), { recursive: true });
+        writeFileSync(
+          join(options.cwd, "output", "local", "abi.json"),
+          `[{"type": "function", "name": "transfer"}]`,
+        );
+        writeFileSync(
+          join(options.cwd, "output", "local", "decompiled.sol"),
+          "/// @custom:selector    0xA9059CBB\n" +
+            "function transfer(address arg0, uint256 arg1) public returns (bool) {}\n" +
+            "function Unresolved_70A08231() {}\n",
+        );
+        return { status: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(result.exitCode).toBe(0);
+    const simple = result.summary.contracts.find((row) => row.id === "token-simple");
+    expect(simple?.extdecomp).toEqual({
+      status: "ok",
+      selectorsMentioned: ["0x70a08231", "0xa9059cbb"],
+      version: "0.9.1",
+    });
   });
 
   test("d09_metrics_table_reports_all_four_metrics_per_contract", async () => {

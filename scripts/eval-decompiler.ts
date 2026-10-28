@@ -2,8 +2,8 @@
 // ERC-20 corpus (S-082, K-038, K-521, D-09, D-10, M-47). Dev/eval only:
 // no runtime code imports this module and the runtime suite passes with
 // `extdecomp_BIN` unset. The harness invokes only the binary named by
-// `extdecomp_BIN` with `extdecomp decompile <hex-or-file>` over local
-// corpus files, checks `extdecomp --version` against the pinned expected
+// `extdecomp_BIN` with `extdecomp decompile <hex-or-file> --include-sol`
+// over local corpus files, checks `extdecomp --version` against the pinned expected
 // `0.9.1`, runs each invocation with its working directory set to a fresh
 // temp dir (and `HOME` set to a second fresh temp dir), reads the
 // generated files from under the work dir's `output/` directory besides
@@ -34,11 +34,35 @@ const RESULTS_DOC = join(repoRoot, "docs", "eval-decompiler-results.md");
 export const EXPECTED_extdecomp_VERSION = "0.9.1";
 export const EVAL_PASS_TOLERANCE_POINTS = 3;
 
-// Local-bytecode-only invocation (D-09, M-47): exactly `decompile` plus
-// the local hex or file input. No RPC flag, no address, no network
-// option, no LLM or naming flag exists on this path by construction.
+// Local-bytecode-only invocation (D-09, M-47): `decompile` plus the
+// local hex or file input plus `--include-sol` so the run also writes
+// `output/local/decompiled.sol` locally (the default run writes only
+// `output/local/abi.json`, which carries names without selector hex).
+// No RPC flag, no address, no network option, no LLM or naming flag
+// exists on this path by construction.
 export function buildextdecompArgs(input: string): readonly string[] {
-  return Object.freeze(["decompile", input]);
+  return Object.freeze(["decompile", input, "--include-sol"]);
+}
+
+// Selector matching over extdecomp output text (stdout plus every file
+// under the work dir `output/`). extdecomp 0.9.1 emits selectors as
+// `/// @custom:selector 0x...` lines in `decompiled.sol`, as
+// `Unresolved_<bare>` function names for unresolved entries, and as
+// bare hex inside `.yul` output; `abi.json` alone carries names without
+// hex. Matching is case-insensitive and accepts the bare form, so each
+// wanted entry matches its `0x` form or its bare form anywhere.
+export function findMentionedSelectors(combined: string, wanted: readonly string[]): readonly string[] {
+  const lowered = combined.toLowerCase();
+  return Object.freeze(
+    wanted.filter((item) => {
+      const norm = item.toLowerCase();
+      const bare = norm.startsWith("0x") ? norm.slice(2) : norm;
+      if (bare.length === 0) {
+        return false;
+      }
+      return lowered.includes(`0x${bare}`) || lowered.includes(bare);
+    }),
+  );
 }
 
 export function checkextdecompVersion(reported: string): { ok: true } | { ok: false; expected: string; reported: string } {
@@ -407,10 +431,10 @@ export async function runEval(options: EvalRunOptions): Promise<EvalRunResult> {
         if (result.status !== 0) {
           outcome = { status: "failed", version: extdecompVersion ?? "unknown", inputDigest: sha256Hex(hex) };
         } else {
-          const lowered = `${result.stdout}\n${readextdecompOutputDir(work)}`.toLowerCase();
+          const combined = `${result.stdout}\n${readextdecompOutputDir(work)}`;
           outcome = {
             status: "ok",
-            selectorsMentioned: expectation.selectors.filter((selector) => lowered.includes(selector.toLowerCase())),
+            selectorsMentioned: findMentionedSelectors(combined, expectation.selectors),
             version: extdecompVersion ?? "unknown",
           };
         }

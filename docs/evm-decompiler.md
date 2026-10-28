@@ -97,14 +97,14 @@ never an analysis input.
 
 ## Local eval run (28/10)
 
-Reran after the output-file fix with `extdecomp_BIN` set: the binary
-reported `extdecomp 0.9.1` (matches the pinned version), every invocation
-ran as `decompile <local-hex-file>` with its working directory set to a
-fresh temp dir (and `HOME` set to a second fresh temp dir), the harness
-read the generated files from under each work dir's `output/` directory
-besides stdout, both temp dirs were deleted afterwards, and no RPC,
-address, LLM or naming flag appeared. Nothing was written into the repo.
-Exit code 0.
+Reran after the parser fix with `extdecomp_BIN` set: the binary reported
+`extdecomp 0.9.1` (matches the pinned version), every invocation ran as
+`decompile <local-hex-file> --include-sol` (local-output flag only) with
+its working directory set to a fresh temp dir (and `HOME` set to a
+second fresh temp dir), the harness read stdout plus every file under
+each work dir's `output/` directory, both temp dirs were deleted
+afterwards, and no RPC, address, LLM or naming flag appeared. Nothing
+was written into the repo. Exit code 0.
 
 | Contract | Own functions | Entries | Patterns | Spot | Own unresolved | extdecomp |
 |---|---|---|---|---|---|---|
@@ -116,8 +116,25 @@ Exit code 0.
 
 Summary: own pass rate 100% (5/5 contracts), spot agreement 13/13,
 offset coverage 100% by construction, 5 extdecomp runs completed. The
-extdecomp runs exited 0 but mentioned none of the expected selectors in
-their output files or stdout (each run wrote only an empty
-`output/local/abi.json` for these hand-assembled fixtures), so metric 2
-(fewer unresolved jumps) is recorded, not decided, on this run. Full
-output lives in `docs/eval-decompiler-results.md`.
+extdecomp `0 selectors` outcome is genuine on these fixtures, not a
+parser miss: with `--include-sol` each run emits a fallback-only
+`decompiled.sol` with a single unresolved entry besides the empty
+`output/local/abi.json`, and the fixed matcher (case-insensitive, with
+and without `0x`, covering `@custom:selector` lines, bare hex and
+`Unresolved_` names, locked by a fake-runner test with a recorded
+sample) still finds none of the expected selectors. The hand-assembled
+fixtures dispatch on a minimal stack pattern with no calldata-load plus
+shift preamble, which the extdecomp tracer logs as `discovered no
+function selectors` with a stack-underflow trace. A control run against
+a realistic Paris (pre-PUSH0) solc runtime confirms the parser counts 4
+functions when extdecomp actually finds them. No larger fixtures added:
+the repo holds no tiny Solidity sources to compile locally, and network
+fetches plus real addresses are out of scope.
+
+Per-metric comparison on this corpus: M1 functions own N versus
+extdecomp 0 mentioned; M2 unresolved own counts (0, 1, 0, 0, 0, labelled
+never guessed) versus extdecomp not reported, so recorded not decided;
+M3 readability own patterns plus spot versus extdecomp fallback-only with
+no token patterns; M4 offsets own 100% exact ranges versus extdecomp
+selector annotations with no PC ranges. Full output lives in
+`docs/eval-decompiler-results.md`.
