@@ -55,6 +55,21 @@ describe("investigation citation checker", () => {
     expect(checked.droppedClaims).toBe(1);
   });
 
+  test("k520_citation_check_splits_newlines_semicolons_and_caps_length", () => {
+    // Newline- and semicolon-joined claims must not ride on one citation:
+    // two uncited claims plus one cited claim drop exactly the two.
+    const draft = "First claim without a marker\nsecond claim without one either; third one [E:sig-1]";
+    const checked = checkCitations(draft, ["sig-1"]);
+    expect(checked.droppedClaims).toBe(2);
+    expect(checked.narrative).toBe("third one [E:sig-1]");
+    // An overlong sentence splits into capped chunks checked on their own:
+    // uncited chunks drop while the cited chunk survives.
+    const longDraft = `${"word ".repeat(200)}[E:sig-1]`;
+    const longChecked = checkCitations(longDraft, ["sig-1"]);
+    expect(longChecked.droppedClaims).toBe(2);
+    expect(longChecked.narrative).toContain("[E:sig-1]");
+  });
+
   test("k520_zero_surviving_sentences_yields_empty_narrative_with_drop_count", () => {
     // The trailing marker attaches to the sentence it trails, so the
     // draft holds two sentences and both drop: no repaired substitute.

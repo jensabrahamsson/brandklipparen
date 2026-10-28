@@ -247,8 +247,10 @@ describe("verified responses and cache entries (K-511, M-14)", () => {
       mustDefaultDetectorSet(),
       addressIndex);
     expect(analysed.ok).toBe(true);
-    // The provider goes down; the same key still serves from the cache
-    // with zero RPC calls.
+    // The provider goes down; the same key still serves the cached
+    // code-derived result. The proxy is re-resolved on every hit, so the
+    // outage degrades the proxy to no proxy info while the cached score,
+    // signals and code hash still serve.
     const outage = new OutageRpcAdapter();
     const served = await analyzeToken(
       { rpc: outage, modelArtifacts: placeholderArtifact(), clock, cache },
@@ -265,9 +267,11 @@ describe("verified responses and cache entries (K-511, M-14)", () => {
       mustDefaultDetectorSet(),
       addressIndex);
     expect(served.ok).toBe(true);
-    expect(outage.getCodeCalls).toBe(0);
     if (analysed.ok && analysed.value.kind === "assessed" && served.ok && served.value.kind === "assessed") {
       expect(served.value.envelope.codeHash).toBe(analysed.value.envelope.codeHash as string);
+      expect(served.value.envelope.score).toBe(analysed.value.envelope.score as number);
+      expect(served.value.envelope.signals).toEqual(analysed.value.envelope.signals);
+      expect(served.value.envelope.proxy).toEqual({ kind: "none" });
     } else {
       throw new Error("expected assessed outcomes before and during the outage");
     }

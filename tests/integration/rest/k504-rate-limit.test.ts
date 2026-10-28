@@ -291,9 +291,11 @@ describe("rate and cost limits (K-504, M-08, M-09)", () => {
       mustDefaultDetectorSet(),
       addressIndex);
     expect(second.ok).toBe(true);
-    expect(outageRpc.getCodeCalls).toBe(0);
     if (first.ok && first.value.kind === "assessed" && second.ok && second.value.kind === "assessed") {
       expect(second.value.envelope.codeHash).toBe(first.value.envelope.codeHash as string);
+      expect(second.value.envelope.score).toBe(first.value.envelope.score as number);
+      expect(second.value.envelope.signals).toEqual(first.value.envelope.signals);
+      expect(second.value.envelope.proxy).toEqual({ kind: "none" });
     } else {
       throw new Error("expected assessed outcomes on both runs");
     }

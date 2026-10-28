@@ -80,6 +80,34 @@ export type PersonalizeContext = {
   readonly flooredSectionIds: readonly string[];
 };
 
+// Floored sections derived from the envelope (P-26), mirroring the server:
+// `summary` and `score` always, plus `signals` whenever a signal raises
+// risk and `signals` beside `evidence` whenever a high-severity signal is
+// present. Specs collapsing a floored section are rejected, so an AI
+// layout can never bury a high finding.
+export function requiredFlooredSections(
+  signals: readonly { readonly severity?: string; readonly direction?: string }[],
+): readonly string[] {
+  let raises = false;
+  let high = false;
+  for (const signal of signals) {
+    if (signal.direction === "raises" || signal.direction === undefined) {
+      raises = true;
+    }
+    if (signal.severity === "high") {
+      high = true;
+    }
+  }
+  const floored = ["summary", "score"];
+  if (raises || high) {
+    floored.push("signals");
+  }
+  if (high) {
+    floored.push("evidence");
+  }
+  return Object.freeze(floored);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -150,7 +178,11 @@ export function parseAiPersonalizeSpec(value: unknown, context: PersonalizeConte
 
 // Apply the validated spec to the section order: placements first in
 // their order, then every standard section the spec never names, in
-// standard relative order. Floored sections clamp ahead (P-26).
+// standard relative order. Floored sections clamp ahead (P-26), with
+// `summary` and `score` pinned first: extending the floor with `signals`
+// or `evidence` must never push a finding section above the pinned cards.
+const PINNED_FIRST: readonly string[] = Object.freeze(["summary", "score"]);
+
 export function applyAiSectionOrder(
   standardIds: readonly string[],
   spec: AiPersonalizeSpec,
@@ -163,7 +195,9 @@ export function applyAiSectionOrder(
   const combined = [...ordered, ...rest];
   const flooredBlock = combined.filter((id) => floored.has(id));
   const openBlock = combined.filter((id) => !floored.has(id));
-  return Object.freeze([...flooredBlock, ...openBlock]);
+  const pinned = PINNED_FIRST.filter((id) => flooredBlock.includes(id));
+  const restFloored = flooredBlock.filter((id) => !PINNED_FIRST.includes(id as string));
+  return Object.freeze([...pinned, ...restFloored, ...openBlock]);
 }
 
 // Parse the mapping route envelope: `{ personalize: { kind: "ok", spec } }`

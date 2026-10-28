@@ -167,6 +167,13 @@ export class EtherscanLogsAdapter implements LpFeedPort {
       if (/rate limit/i.test(resultText)) {
         return err(this.enterBackoff("feed log source rate limited the request", at));
       }
+      // A quiet range answers status "0" with an empty result array (or the
+      // "No records found" text): an empty log list, never an error, so the
+      // default 3-block poll stays green on the mostly quiet factories.
+      if (Array.isArray(body["result"]) || /no records found/i.test(resultText)) {
+        this.bucket.backoffMs = this.backoffBaseMs;
+        return ok(Object.freeze([]));
+      }
       return err({ kind: "invalid-response", message: `feed log source refused the request: ${resultText}` });
     }
     const result = body["result"];

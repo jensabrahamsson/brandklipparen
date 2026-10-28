@@ -4,10 +4,24 @@
 // ids only. Written after the contract (red) as the service-level proof;
 // both use in-memory fakes with no network.
 import { describe, expect, test } from "vitest";
-import { Bytecode, CodeHash, PromptVersion, RequestId, Timestamp } from "../../../src/domain/types.ts";
+import { Evidence } from "../../../src/domain/evidence.ts";
+import { Signal } from "../../../src/domain/signals.ts";
+import {
+  Address,
+  Bytecode,
+  CodeHash,
+  PromptVersion,
+  RequestId,
+  Selector,
+  Timestamp,
+} from "../../../src/domain/types.ts";
 import { NotConfiguredPersonalizeAdapter } from "../../../src/adapters/personalize/hostedPersonalizeAdapter.ts";
-import { createPersonalizeService } from "../../../src/application/personalizeService.ts";
+import {
+  createPersonalizeService,
+  requiredFlooredSections,
+} from "../../../src/application/personalizeService.ts";
 import type { PersonalizeRequestInput } from "../../../src/application/personalizeService.ts";
+import { parsePersonalizeSpec } from "../../../src/plugins/personalizeSpec.ts";
 import { FakePluginPersonalizeModelAdapter } from "../../fakes/fakePluginPersonalizeModel.ts";
 import type { Result } from "../../../src/domain/result.ts";
 
@@ -55,6 +69,29 @@ function contextOf() {
 }
 
 describe("k519_personalize_without_key_reports_not_configured_and_sends_nothing", () => {
+  test("k519_different_priorities_do_not_share_cached_spec", async () => {
+    // The cache key carries a salted hash of the normalised priorities
+    // text: two visitors with different priorities for one code hash must
+    // each trigger an adapter call, so no visitor ever sees another
+    // visitor's layout.
+    const fake = new FakePluginPersonalizeModelAdapter("ordered");
+    const service = createPersonalizeService({ adapter: fake });
+    const first = await service.requestPersonalize(
+      baseInput({ priorities: "Can the owner stop me selling?" }),
+      contextOf(),
+    );
+    const second = await service.requestPersonalize(
+      baseInput({ priorities: "Show me upgrade risks first." }),
+      contextOf(),
+    );
+    if (first.kind !== "ok" || second.kind !== "ok") {
+      throw new Error("expected two ok outcomes");
+    }
+    expect(first.cache).toBe("miss");
+    expect(second.cache).toBe("miss");
+    expect(fake.callCount).toBe(2);
+  });
+
   test("the keyless run reports not-configured with zero sends", async () => {
     const service = createPersonalizeService({ adapter: new NotConfiguredPersonalizeAdapter() });
     const outcome = await service.requestPersonalize(baseInput(), contextOf());
@@ -77,6 +114,50 @@ describe("k519_personalize_without_key_reports_not_configured_and_sends_nothing"
     expect(second.cache).toBe("hit");
     expect(fake.callCount).toBe(1);
     expect(second.spec).toEqual(first.spec);
+  });
+});
+
+describe("k519_floored_sections_follow_the_envelope", () => {
+  function highSignal(): Signal {
+    const code = mustOk(Bytecode.parse("0x6001600055"));
+    const codeHash = mustOk(CodeHash.of(code));
+    const selector = mustOk(Selector.parse("0xa9059cbb"));
+    const evidence = mustOk(Evidence.create({ selector }));
+    const changer = mustOk(Address.parse("0x0102030405060708090a0b0c0d0e0f1011121314"));
+    return mustOk(
+      Signal.createCapability({
+        codeHash,
+        risk: "rug-pull",
+        direction: "raises",
+        severity: "high",
+        temporality: { kind: "can-change", changer },
+        evidence: [evidence],
+      }),
+    );
+  }
+
+  test("a high signal floors signals and evidence, and collapsing specs are rejected", () => {
+    expect(requiredFlooredSections([])).toEqual(["summary", "score"]);
+    const floored = requiredFlooredSections([highSignal()]);
+    expect(floored).toEqual(["summary", "score", "signals", "evidence"]);
+    const collapsing = {
+      specVersion: 1,
+      pluginRanking: ["dev.brandklipparen.capability"],
+      placements: [
+        { sectionId: "signals", emphasis: "normal", collapsed: true },
+        { sectionId: "summary", emphasis: "normal" },
+        { sectionId: "score", emphasis: "normal" },
+      ],
+    };
+    expect(
+      parsePersonalizeSpec(collapsing, {
+        sectionIds: ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell"],
+        pluginIds: ["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"],
+        flooredSectionIds: [...floored],
+        maxPlacements: 16,
+        maxRanking: 16,
+      }).ok,
+    ).toBe(false);
   });
 });
 

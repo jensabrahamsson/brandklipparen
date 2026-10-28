@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
@@ -31,13 +31,22 @@ describe("CI gate enforcement", () => {
     const clean = run("npx", ["depcruise", "--validate", ".dependency-cruiser.cjs", "src/domain"]);
     expect(clean).toBe(0);
 
-    const probe = join(repoRoot, "src", "domain", "__a06_probe__.ts");
-    writeFileSync(probe, 'import fs from "node:fs";\nexport const probe = fs;\n');
+    // The probe runs against a temp copy of the domain, never inside
+    // src/domain itself, so parallel purity scans never observe it.
+    const scratch = mkdtempSync(join(repoRoot, "a06-probe-"));
     try {
-      const broken = run("npx", ["depcruise", "--validate", ".dependency-cruiser.cjs", "src/domain"]);
+      const domainCopy = join(scratch, "src", "domain");
+      cpSync(join(repoRoot, "src", "domain"), domainCopy, { recursive: true });
+      writeFileSync(join(domainCopy, "__a06_probe__.ts"), 'import fs from "node:fs";\nexport const probe = fs;\n');
+      const broken = run("npx", [
+        "depcruise",
+        "--validate",
+        ".dependency-cruiser.cjs",
+        relative(repoRoot, domainCopy),
+      ]);
       expect(broken).not.toBe(0);
     } finally {
-      rmSync(probe, { force: true });
+      rmSync(scratch, { recursive: true, force: true });
     }
   }, GATE_TIMEOUT_MS);
 

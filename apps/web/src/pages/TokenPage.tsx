@@ -15,6 +15,7 @@ import {
   applyAiSectionOrder,
   parsePersonalizeEnvelope,
   readStoredAiPersonalize,
+  requiredFlooredSections,
   writeStoredAiPersonalize,
 } from "../lib/personalize.ts";
 import type { AiPersonalizeSpec, PersonalizeContext } from "../lib/personalize.ts";
@@ -178,10 +179,11 @@ export function TokenPage({
     requestPersonalizeMapping(key, address.trim(), priorities.trim()).then((body) => {
       setAiPending(false);
       const pluginIds = (plugins ?? []).map((plugin) => plugin.id);
+      const assessedSignals = result?.kind === "assessed" ? result.signals : [];
       const context: PersonalizeContext = {
         sectionIds: ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell", "expert-detail"],
         pluginIds,
-        flooredSectionIds: ["summary", "score"],
+        flooredSectionIds: [...requiredFlooredSections(assessedSignals)],
       };
       const spec = parsePersonalizeEnvelope(body, context);
       if (spec === null) {
@@ -742,7 +744,7 @@ function OverviewSections({
   // over the deterministic match; any invalid or missing spec already
   // fell back to null, so the baseline stands unchanged.
   const sectionOrder = aiActive
-    ? applyAiSectionOrder(plan, aiSpec, ["summary", "score"])
+    ? applyAiSectionOrder(plan, aiSpec, requiredFlooredSections(result.signals))
     : plan;
   // Field picker (S-100, K-023): picked sections render in plan order.
   // Only pickable sections are ever hidden; the pinned score and any

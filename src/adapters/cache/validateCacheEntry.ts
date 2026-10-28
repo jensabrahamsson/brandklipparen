@@ -74,15 +74,6 @@ function splitKey(key: CacheKeyType): { codeHash: string; version: string } | nu
 
 const RISKS: readonly string[] = Object.freeze(["rug-pull", "honeypot", "bot-pump"]);
 const SIGNAL_KINDS: readonly string[] = Object.freeze(["capability", "clone-match", "hard-to-analyze"]);
-const PROXY_KINDS: readonly string[] = Object.freeze([
-  "none",
-  "eip1967",
-  "beacon",
-  "eip1167",
-  "uups",
-  "diamond",
-  "eip7702",
-]);
 
 function checkProbabilities(value: unknown): boolean {
   if (!isRecord(value)) {
@@ -190,14 +181,6 @@ function checkExplanation(value: unknown): boolean {
   return Array.isArray(claims) && claims.every(checkClaim);
 }
 
-function checkProxy(value: unknown): boolean {
-  if (!isRecord(value)) {
-    return false;
-  }
-  const kind = field(value, "kind");
-  return typeof kind === "string" && PROXY_KINDS.includes(kind);
-}
-
 const PLUGIN_OUTCOMES: readonly string[] = Object.freeze([
   "ok",
   "invalid-output",
@@ -259,13 +242,10 @@ export function validateCacheEntry(
   if (field(raw, "kind") !== "assessed") {
     return corrupt("cache entry must carry kind assessed");
   }
-  for (const name of ["target", "codeHash", "modelVersion", "artifactChecksum", "indexVersion", "templateVersion"] as const) {
+  for (const name of ["codeHash", "modelVersion", "artifactChecksum", "indexVersion", "templateVersion"] as const) {
     if (!checkString(raw, name)) {
       return corrupt(`cache entry must carry ${name} as text`);
     }
-  }
-  if (!checkNumber(raw, "block") || !checkNumber(raw, "assessedAt")) {
-    return corrupt("cache entry must carry block and assessedAt as numbers");
   }
   const score = field(raw, "score");
   if (typeof score !== "number" || !Number.isInteger(score) || score < 0 || score > 100) {
@@ -277,9 +257,6 @@ export function validateCacheEntry(
   const signals = field(raw, "signals");
   if (!Array.isArray(signals) || !signals.every(checkSignal)) {
     return corrupt("cache entry must carry a signal list with selector evidence");
-  }
-  if (!checkProxy(field(raw, "proxy"))) {
-    return corrupt("cache entry must carry a known proxy branch");
   }
   if (!checkExplanation(field(raw, "explanation"))) {
     return corrupt("cache entry must carry a template explanation with claim links");

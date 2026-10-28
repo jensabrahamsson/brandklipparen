@@ -271,12 +271,17 @@ export const Bytecode = {
   },
 };
 
-// keccak256 of the executable bytecode with CBOR metadata removed through
-// the shared footer helper in ./metadata.ts.
+// keccak256 of the full runtime bytecode, footer included. The cache key
+// derives from this hash, so two deployments that differ only in a
+// trailing blob never share a cache entry: a tail shaped like CBOR
+// metadata can still carry reachable jump targets at runtime, so stripping
+// it from the cache identity would let a poisoned variant inherit a clean
+// score. Executable-template identity stays with SkeletonHash (and selector
+// extraction keeps its own footer exclusion); this hash names exact bytes.
 export type CodeHash = string & { readonly __brand: "CodeHash" };
 export const CodeHash = {
   of(bytecode: Bytecode): Result<CodeHash, DomainError> {
-    return ok(keccak256Hex(stripCborFooter(bytecode)) as CodeHash);
+    return ok(keccak256Hex(bytecode) as CodeHash);
   },
 };
 

@@ -156,26 +156,37 @@ function citedIds(sentence: string): string[] {
   return found;
 }
 
-// Sentence split on `.`, `!` and `?` followed by whitespace or the end of
-// the draft. The split keeps the terminator with its sentence so the
+// Sentence split on `.`, `!`, `?` and `;` followed by whitespace or the end
+// of the draft, plus every newline: a claim joined by a newline or a
+// semicolon with one valid citation must not pass as a single cited
+// sentence. The split keeps the terminator with its sentence so the
 // surviving narrative rejoins with single spaces. A trailing citation
 // fragment (markers only, no words of its own) attaches to the sentence
-// it follows, since drafts cite as `claim. [E:id]`.
+// it follows, since drafts cite as `claim. [E:id]`. Overlong sentences
+// split into capped chunks, so each chunk is citation-checked on its own
+// instead of letting an uncited blob ride on a trailing marker.
+const MAX_SENTENCE_CHARS = 500;
+
 function splitSentences(draft: string): string[] {
   const raw: string[] = [];
   let current = "";
+  const flush = (): void => {
+    const trimmed = current.trim();
+    if (trimmed.length > 0) {
+      raw.push(trimmed);
+    }
+    current = "";
+  };
   for (let index = 0; index < draft.length; index += 1) {
     const char = draft[index] ?? "";
     current += char;
-    if (char === "." || char === "!" || char === "?") {
+    if (char === "." || char === "!" || char === "?" || char === ";") {
       const next = draft[index + 1];
-      if (next === undefined || next === " " || next === "\t" || next === "\n") {
-        const trimmed = current.trim();
-        if (trimmed.length > 0) {
-          raw.push(trimmed);
-        }
-        current = "";
+      if (next === undefined || next === " " || next === "\t" || next === "\n" || next === "\r") {
+        flush();
       }
+    } else if (char === "\n" || char === "\r") {
+      flush();
     }
   }
   const tail = current.trim();
@@ -203,7 +214,20 @@ function splitSentences(draft: string): string[] {
       sentences.push(segment);
     }
   }
-  return sentences;
+  const capped: string[] = [];
+  for (const sentence of sentences) {
+    if (sentence.length <= MAX_SENTENCE_CHARS) {
+      capped.push(sentence);
+      continue;
+    }
+    for (let start = 0; start < sentence.length; start += MAX_SENTENCE_CHARS) {
+      const chunk = sentence.slice(start, start + MAX_SENTENCE_CHARS).trim();
+      if (chunk.length > 0) {
+        capped.push(chunk);
+      }
+    }
+  }
+  return capped;
 }
 
 // Deterministic sentence-level citation check (P-35): a sentence survives

@@ -26,7 +26,7 @@ import { serializeStoredAuditReport } from "../../plugins/auditReport.ts";
 import type { StoredAuditReportMap } from "../../plugins/auditReport.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
-import { serializePersonalizeOutcome } from "../../application/personalizeService.ts";
+import { requiredFlooredSections, serializePersonalizeOutcome } from "../../application/personalizeService.ts";
 import type { PersonalizeService } from "../../application/personalizeService.ts";
 import { EXPLAIN_PROMPT_VERSION, serializeExplainOutcome } from "../../application/explainService.ts";
 import type { ExplainService } from "../../application/explainService.ts";
@@ -1243,7 +1243,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         scoreBand: score >= 60 ? "high" : score >= 30 ? "medium" : "low",
         sectionIds: presentSections,
         pluginIds: analysis.pluginResults.map((entry) => entry.pluginId as string),
-        flooredSectionIds: ["summary", "score"],
+        flooredSectionIds: [...requiredFlooredSections(analysis.signals)],
         priorities: body.priorities,
         plugins: analysis.pluginResults.map((entry) => {
           const docs = pluginDocs.get(entry.pluginId as string);

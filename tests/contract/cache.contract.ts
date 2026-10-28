@@ -9,13 +9,11 @@ import { describe, expect, test } from "vitest";
 import { standardCantTell } from "../../src/domain/cantTell.ts";
 import { Evidence } from "../../src/domain/evidence.ts";
 import { SUPPORTED_TEMPLATE_VERSION, renderExplanation } from "../../src/domain/explain.ts";
-import { noneProxyResolution } from "../../src/domain/proxy.ts";
 import type { Result } from "../../src/domain/result.ts";
 import { Signal } from "../../src/domain/signals.ts";
 import {
   Address,
   ArtifactChecksum,
-  BlockNumber,
   Bytecode,
   CacheKey,
   CodeHash,
@@ -24,7 +22,6 @@ import {
   Probability,
   RiskScore,
   Selector,
-  Timestamp,
 } from "../../src/domain/types.ts";
 import type {
   CacheKey as CacheKeyType,
@@ -52,7 +49,6 @@ export function makeContractEntry(
   score = 50,
 ): CachedAssessment {
   const target = mustOk(Address.parse(TARGET));
-  const block = mustOk(BlockNumber.of(24000000));
   const selector = mustOk(Selector.parse("0xa9059cbb"));
   const evidence = mustOk(Evidence.create({ selector }));
   const temporality = { kind: "can-change", changer: target } as const;
@@ -70,15 +66,11 @@ export function makeContractEntry(
   const explanation = mustOk(renderExplanation({ signals: [signal], templateVersion, observed: temporality }));
   return Object.freeze({
     kind: "assessed",
-    target,
-    block,
-    proxy: noneProxyResolution(),
     codeHash,
     modelVersion,
     artifactChecksum: mustOk(ArtifactChecksum.parse("ab".repeat(32))),
     indexVersion: mustOk(IndexVersion.parse("1.0.0")),
     templateVersion,
-    assessedAt: mustOk(Timestamp.of(1700000000000)),
     probabilities: Object.freeze({
       "rug-pull": mustOk(Probability.ofRounded(0.5)),
       honeypot: mustOk(Probability.ofRounded(0.5)),

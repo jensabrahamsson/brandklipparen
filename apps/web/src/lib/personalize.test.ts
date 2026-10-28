@@ -13,6 +13,7 @@ import {
   parsePersonalizeEnvelope,
   parseStoredAiPersonalize,
   readStoredAiPersonalize,
+  requiredFlooredSections,
 } from "./personalize.ts";
 import type { PersonalizeContext } from "./personalize.ts";
 
@@ -207,5 +208,54 @@ describe("zod AI spec validation against the component whitelist", () => {
       "signals",
       "plugin-findings",
     ]);
+  });
+
+  test("an extended floor never pushes signals above the pinned summary and score", () => {
+    const spec = parseAiPersonalizeSpec(validSpecBody(), CONTEXT);
+    if (spec === null) {
+      throw new Error("expected the spec to parse");
+    }
+    expect(
+      applyAiSectionOrder(
+        ["summary", "score", "signals", "plugin-findings"],
+        spec,
+        ["summary", "score", "signals", "evidence"],
+      ),
+    ).toEqual(["summary", "score", "signals", "plugin-findings"]);
+  });
+
+  test("floored sections follow the envelope: high signals floor signals and evidence", () => {
+    expect(requiredFlooredSections([])).toEqual(["summary", "score"]);
+    expect(requiredFlooredSections([{ severity: "low", direction: "lowers" }])).toEqual(["summary", "score"]);
+    expect(requiredFlooredSections([{ severity: "medium", direction: "raises" }])).toEqual([
+      "summary",
+      "score",
+      "signals",
+    ]);
+    expect(requiredFlooredSections([{ severity: "high", direction: "raises" }])).toEqual([
+      "summary",
+      "score",
+      "signals",
+      "evidence",
+    ]);
+  });
+
+  test("a spec collapsing signals is rejected when a high signal is present", () => {
+    const floored = requiredFlooredSections([{ severity: "high", direction: "raises" }]);
+    const context: PersonalizeContext = { ...CONTEXT, flooredSectionIds: [...floored] };
+    expect(
+      parseAiPersonalizeSpec(
+        {
+          ...validSpecBody(),
+          placements: [
+            { sectionId: "signals", emphasis: "normal", collapsed: true },
+            { sectionId: "summary", emphasis: "normal" },
+            { sectionId: "score", emphasis: "normal" },
+          ],
+        },
+        context,
+      ),
+    ).toBe(null);
+    expect(parseAiPersonalizeSpec(validSpecBody(), context)).not.toBe(null);
   });
 });

@@ -11,6 +11,7 @@
 // per address pointing at the shared handoff key.
 import {
   FEED_FACTORIES,
+  LP_FEED_REORG_WINDOW_BLOCKS,
   V2_PAIR_CREATED_TOPIC0,
   V3_POOL_CREATED_TOPIC0,
   V4_INITIALIZE_TOPIC0,
@@ -152,7 +153,7 @@ export function processFeedPoll(input: FeedPollInput): FeedPollOutput {
   const skipped: FeedSkip[] = [];
   let pending: readonly PendingCandidate[] = input.pending.slice();
 
-  const emit = (entry: {
+  type EmitEntry = {
     tokenAddress: string;
     pool: PoolPointer;
     blockNumber: number;
@@ -161,15 +162,8 @@ export function processFeedPoll(input: FeedPollInput): FeedPollOutput {
     logIndex: number;
     dex: FeedDexId;
     hooks?: string | undefined;
-  }): void => {
-    const key = candidateKeyOf(entry.txHash, entry.logIndex);
-    if (seenKeys.has(key)) {
-      return;
-    }
-    seenKeys.add(key);
-    const stored = blockHashByKey.get(key);
-    const orphaned = stored !== undefined && stored !== entry.blockHash;
-    blockHashByKey.set(key, entry.blockHash);
+  };
+  const pushCandidate = (entry: EmitEntry, orphaned: boolean): void => {
     const candidate: LpCandidate = {
       chainId: 1,
       tokenAddress: entry.tokenAddress,
@@ -183,6 +177,24 @@ export function processFeedPoll(input: FeedPollInput): FeedPollOutput {
       ...(entry.hooks === undefined ? {} : { hooks: entry.hooks }),
     };
     candidates.push(candidate);
+  };
+  const emit = (entry: EmitEntry, orphanedOverride?: boolean | undefined): void => {
+    const key = candidateKeyOf(entry.txHash, entry.logIndex);
+    const stored = blockHashByKey.get(key);
+    const changed = stored !== undefined && stored !== entry.blockHash;
+    if (seenKeys.has(key)) {
+      // A known key whose block hash changed was reorged: re-emit it as an
+      // orphaned update so the caller can mark the earlier candidate,
+      // instead of dropping it silently behind the seen check.
+      if (changed) {
+        blockHashByKey.set(key, entry.blockHash);
+        pushCandidate(entry, true);
+      }
+      return;
+    }
+    seenKeys.add(key);
+    blockHashByKey.set(key, entry.blockHash);
+    pushCandidate(entry, orphanedOverride ?? changed);
   };
 
   for (const log of input.logs) {
@@ -235,6 +247,13 @@ export function processFeedPoll(input: FeedPollInput): FeedPollOutput {
   }
 
   // Later polls promote held candidates once first liquidity appears.
+  // Held creations inside the re-read window whose transaction no longer
+  // appears in the fetched logs were reorged away: emit them once as
+  // orphaned instead of letting them wait out their TTL.
+  const maxObservedBlock = input.logs.reduce(
+    (max, log) => Math.max(max, log.blockNumber),
+    Number.NEGATIVE_INFINITY,
+  );
   const stillPending: PendingCandidate[] = [];
   for (const held of pending) {
     const poolRef: PoolRef =
@@ -252,7 +271,29 @@ export function processFeedPoll(input: FeedPollInput): FeedPollOutput {
         hooks: held.hooks,
       });
     } else {
-      stillPending.push(held);
+      const inWindow =
+        held.blockNumber <= maxObservedBlock &&
+        held.blockNumber >= maxObservedBlock - LP_FEED_REORG_WINDOW_BLOCKS;
+      const creationGone =
+        inWindow &&
+        !input.logs.some((log) => log.txHash.toLowerCase() === held.txHash.toLowerCase());
+      if (creationGone) {
+        emit(
+          {
+            tokenAddress: held.tokenAddress,
+            pool: held.pool,
+            blockNumber: held.blockNumber,
+            blockHash: held.blockHash,
+            txHash: held.txHash,
+            logIndex: held.logIndex,
+            dex: held.dex,
+            hooks: held.hooks,
+          },
+          true,
+        );
+      } else {
+        stillPending.push(held);
+      }
     }
   }
   const swept = sweepPending(stillPending, input.nowMs, input.ttlMs);

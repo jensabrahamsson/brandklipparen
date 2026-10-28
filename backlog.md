@@ -360,6 +360,26 @@ drops counted). Mainnet only: no story adds a chain beyond chainId 1.
 | S-100 | UI P2a: field picker and stream view on the token page | K-020, K-023, K-507 | Stretch | Playwright `s100_field_picker_limits_sections_without_changing_score` requires the picked sections to render and the score to stay byte-identical; Playwright `s100_stream_view_shows_analysis_before_deepening_status` requires the fast-path render ahead of the deepening line. |
 | S-101 | UI P2b: explain panel with not-configured, fallback and inert-text states | K-020, K-507 | Stretch | Playwright `s101_explain_panel_shows_not_configured_without_key` requires the plain not-configured state; Playwright `s101_explain_panel_renders_checked_sentences_as_inert_text` requires script-bearing sentences inert with the drop count shown and scores unchanged. Fake adapter only. |
 
+### Review hardening (S-102 onward)
+
+Follow-ups from the hardening review, ordered by value. Every story is
+worked test-first with the named proving test; fake adapters and recorded
+fixtures only, no live network, Ethereum mainnet only.
+
+| Story | Title | K-IDs | Priority | Test written first |
+|---|---|---|---|---|
+| S-102 | Decompiler: run the real binary through its decompile subcommand with parsed output files, one process per request under a concurrency semaphore and a memory bound | K-008, K-501 | MVP | `a03_main_wires_decompiler_worker` contract test runs the adapter against a recorded real output directory with capped concurrency. |
+| S-103 | Feed: fetch logs for new pair/pool addresses with Mint/Sync topic0 limits (or the creation receipt), persist the block cursor and the pending queue | K-039 | MVP | `s103_feed_fetches_liquidity_for_new_pairs` requires a factory-only fixture poll to promote a same-tx funded V2 creation. |
+| S-104 | Boundaries: run the dependency gate over `src` and `apps`, add the missing port/adapter/composition rules, route plugin exposure through application services | K-027 | MVP | `a06_gate_probes_src_interfaces` requires a probe import under `src/interfaces` to fail the gate. |
+| S-105 | Startup: add the composition main wiring config to services with required rate limiting and worker-routed detectors | K-101, K-104 | MVP | `a03_main_wires_rate_limiter_and_worker` requires the limiter on and non-first-party detectors off the hot path. |
+| S-106 | Overlays: add per-key daily cost caps and cache to the naming/explain/chat/rug/personalize overlays; abort streaming on client disconnect | K-507 | Stretch | `s106_overlay_second_call_within_cap_spends_nothing` requires the second identical call to cost zero. |
+| S-107 | MCP: negotiate with a dated protocol version through the SDK, fail closed without keys | K-021 | Stretch | `m07_initialize_handshake_against_sdk_client` requires a successful SDK handshake. |
+| S-108 | RPC: verify `eth_chainId` is `0x1` once at startup and fail typed otherwise | K-001, K-503 | Stretch | `k503_non_mainnet_chain_blocks_startup` requires a fake transport answering `0x5` to block startup. |
+| S-109 | Docs: correct the capability/clone-match/hard-to-analyze weight claims and the decompiler tags, expose the effective weight, cross-check `## Inputs` against manifests | K-516 | Stretch | `s052_inputs_match_manifest_inputs` requires the validator to reject a doc whose inputs diverge from its manifest. |
+| S-110 | Etherscan: paginate large ranges, parse `0x` as zero, skip and count bad logs, abort on timeout, persist the budget, require WETH for the feed | K-039 | Stretch | `s110_large_range_paginates_without_silent_truncation` requires two pages to merge without loss. |
+| S-111 | Tests: drive the analysis handoff from a real feed poll and compare the envelope before and after | K-039, K-102 | Stretch | `k039_feed_driven_handoff_preserves_envelope` requires the handoff key and envelope stable across the poll. |
+| S-112 | Investigate: label step rationale as unverified or drop it from the user-facing report | K-036, K-520 | Stretch | `k520_rationale_marked_unverified_without_citations` requires uncited rationale to carry the unverified label. |
+
 Later-queue status (28/10, all green): S-092 done — `fields`
 allowlist projection on the analyze routes. S-093 done — SSE analysis
 stream over the existing server with inject-only tests. S-094 done —

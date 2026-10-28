@@ -34,8 +34,9 @@ transport with recorded fixtures under
 ## Rules
 
 - Factories and topic0 values are pinned in
-  `src/domain/lpFeed.ts` (Uniswap V2/V3/V4, Sushi V2/V3,
-  PancakeSwap V2/V3; Fraxswap V2 known but off by default).
+  `src/domain/lpFeed.ts` (Uniswap V2/V3/V4, Sushi V2/V3;
+  Fraxswap V2 known but off by default; PancakeSwap V2/V3 stay
+  out until their full 40-hex addresses are confirmed).
 - Quote side is resolved by address only (USDC, USDT, DAI, WETH
   from `BK_WETH_ADDRESS`, native zero for V4 only). The literal
   WETH address never appears in any tracked file; tests use a

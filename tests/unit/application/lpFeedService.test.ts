@@ -34,6 +34,7 @@ const UNKNOWN = "0x0d8d3941478862c625445c0343e111ae57b1afc8";
 const PAIR = "0x338ab1edd0ebd1d7b065de0398050279c1bcb8d7";
 const FACTORY_V2 = "0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f";
 const TX_A = "0x53dcb2e5ccbeaa8ee43360a826116afb791e69432d80637b5426465234361068";
+const TX_B = "0x53dcb2e5ccbeaa8ee43360a826116afb791e69432d80637b5426465234361009";
 const BLOCK_HASH = "0xcaa11e6b828301b0c1549c1a0b3166ded2acdcfe547cdfd83a9cd5cae98f33c0";
 const REORG_HASH = "0x3ef3fd9991ed930c5c0657934926c0d6901a0958758fa44143c56c03c08d3c65";
 
@@ -101,20 +102,46 @@ describe("feed idempotency and reorg handling", () => {
     expect(first.candidates[0]?.orphaned).toBe(false);
     const reorgHash = REORG_HASH;
     const reorged = logs.map((log) => ({ ...log, blockHash: reorgHash }));
+    // Both maps travel forward, as a real caller keeps them: the known key
+    // whose block hash changed is re-emitted as an orphaned update.
     const second = processFeedPoll({
       ...BASE_INPUT,
       logs: reorged,
+      seenKeys: first.seenKeys,
       blockHashByKey: first.blockHashByKey,
     });
     expect(second.candidates).toHaveLength(1);
     expect(second.candidates[0]?.orphaned).toBe(true);
+    // Once observed, the steady re-poll dedupes silently again.
     const steady = processFeedPoll({
       ...BASE_INPUT,
       logs: reorged,
+      seenKeys: second.seenKeys,
       blockHashByKey: second.blockHashByKey,
     });
-    expect(steady.candidates).toHaveLength(1);
-    expect(steady.candidates[0]?.orphaned).toBe(false);
+    expect(steady.candidates).toHaveLength(0);
+  });
+
+  test("k039_reorg_marks_missing_creation_inside_window_orphaned", () => {
+    // A creation held in pending whose transaction disappears from the
+    // re-read window was reorged away: it is emitted once as orphaned
+    // instead of waiting out its TTL.
+    const held = [v2Creation(TX_A, 0, USDC, ASSET_ADDR)];
+    const first = processFeedPoll({ ...BASE_INPUT, logs: held });
+    expect(first.candidates).toHaveLength(0);
+    expect(first.pending).toHaveLength(1);
+    const other = v2Creation(TX_B, 0, USDC, UNKNOWN);
+    const second = processFeedPoll({
+      ...BASE_INPUT,
+      logs: [other],
+      pending: first.pending,
+      seenKeys: first.seenKeys,
+      blockHashByKey: first.blockHashByKey,
+    });
+    const orphaned = second.candidates.filter((candidate) => candidate.txHash === TX_A);
+    expect(orphaned).toHaveLength(1);
+    expect(orphaned[0]?.orphaned).toBe(true);
+    expect(second.pending.some((held) => held.txHash === TX_A)).toBe(false);
   });
 
   test("k039_quote_both_or_neither_logs_and_skips", () => {

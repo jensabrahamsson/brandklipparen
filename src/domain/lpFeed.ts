@@ -64,15 +64,16 @@ export type FeedFactory = {
 };
 
 // Pinned mainnet factories (K-039). Fraxswap V2 is known but off by
-// default, so the default poll set holds seven factories.
+// default, so the default poll set holds five factories. PancakeSwap V2/V3
+// stay out until their full 40-hex mainnet addresses are confirmed from an
+// authoritative source already present in the repo: the previously pinned
+// values were truncated and every poll rejected them.
 export const FEED_FACTORIES: readonly FeedFactory[] = Object.freeze([
   { dex: "uniswap-v2", address: "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f", kind: "v2", enabledByDefault: true },
   { dex: "uniswap-v3", address: "0x1F98431c8aD98523631AE4a59f267346ea31F984", kind: "v3", enabledByDefault: true },
   { dex: "uniswap-v4", address: "0x000000000004444c5dc75cB358380D2e3dE08A90", kind: "v4", enabledByDefault: true },
   { dex: "sushiswap-v2", address: "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac", kind: "v2", enabledByDefault: true },
   { dex: "sushiswap-v3", address: "0xbACEB8eC6b9355Dfc0269C18bac9d6E2Bdc29C4F", kind: "v3", enabledByDefault: true },
-  { dex: "pancakeswap-v2", address: "0x1097053Fd2ea711dad45caCcc45Ef7548fCB362", kind: "v2", enabledByDefault: true },
-  { dex: "pancakeswap-v3", address: "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091", kind: "v3", enabledByDefault: true },
   { dex: "fraxswap-v2", address: "0x43eC799eAdd63848443E2347C49f5f52e8Fe0F6f", kind: "v2", enabledByDefault: false },
 ]);
 

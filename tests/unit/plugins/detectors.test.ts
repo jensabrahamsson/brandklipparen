@@ -327,10 +327,9 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
       throw new Error("expected an assessed envelope");
     }
     const envelope = analysed.value.envelope;
-    const fallback = hardSignals(envelope.signals);
-    expect(fallback.length).toBe(1);
-    expect(fallback[0]?.cause).toBe("timeout");
-    expect((fallback[0]?.evidence.length ?? 0)).toBeGreaterThan(0);
+    // The wall-clock cause never reaches the score (A-07, K-102): the
+    // timeout finding stays in pluginResults while no signal is emitted.
+    expect(hardSignals(envelope.signals)).toEqual([]);
     const entry = envelope.pluginResults.find(
       (result) => result.pluginId === "dev.brandklipparen.hard-to-analyze",
     );

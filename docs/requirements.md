@@ -576,11 +576,10 @@ Analysis pins `getCode` at the candidate block.
   `0x1F98431c8aD98523631AE4a59f267346ea31F984`, Uniswap V4 PoolManager
   `0x000000000004444c5dc75cB358380D2e3dE08A90`, Sushi V2
   `0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac`, Sushi V3
-  `0xbACEB8eC6b9355Dfc0269C18bac9d6E2Bdc29C4F`, PancakeSwap V2
-  `0x1097053Fd2ea711dad45caCcc45Ef7548fCB362`, PancakeSwap V3
-  `0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091`, Fraxswap V2 (optional, off
+  `0xbACEB8eC6b9355Dfc0269C18bac9d6E2Bdc29C4F`, Fraxswap V2 (optional, off
   by default)
-  `0x43eC799eAdd63848443E2347C49f5f52e8Fe0F6f`; quote tokens canonical WETH9 (address supplied by operator config `BK_WETH_ADDRESS`, not stored in the repo), USDC
+  `0x43eC799eAdd63848443E2347C49f5f52e8Fe0F6f` (PancakeSwap V2/V3 stay out
+  until their full 40-hex addresses are confirmed); quote tokens canonical WETH9 (address supplied by operator config `BK_WETH_ADDRESS`, not stored in the repo), USDC
   `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48`, USDT
   `0xdAC17F958D2ee523a2206206994597C13D831ec7`, DAI
   `0x6B175474E89094C44Da98b954EedeAC495271d0F` and ETH address zero (V4

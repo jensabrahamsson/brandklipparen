@@ -19,6 +19,10 @@ const RATE_LIMIT_BODY = JSON.stringify({
   message: "NOTOK",
   result: "Max rate limit reached, please use API Key for higher rate limit",
 });
+const EMPTY_RANGE_FIXTURE = readFileSync(
+  join(repoRoot, "tests", "fixtures", "lpfeed", "etherscan-empty-range.json"),
+  "utf8",
+);
 
 const FACTORY_V2 = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f";
 
@@ -144,5 +148,32 @@ describe("etherscan logs source", () => {
     const afterBackoff = await adapter.pollLogs(input, ctx);
     expect(afterBackoff.ok).toBe(true);
     expect(sends).toBe(2);
+  });
+
+  test("k039_etherscan_empty_range_returns_empty_list", async () => {
+    // A quiet range answers status "0" with an empty result array (or the
+    // "No records found" text): both are an empty log list, never an
+    // invalid-response error.
+    const bodies = [
+      EMPTY_RANGE_FIXTURE,
+      JSON.stringify({ status: "0", message: "No records found", result: "No records found" }),
+    ];
+    const ctx = { requestId: "req-1", deadlineMs: Number.MAX_SAFE_INTEGER };
+    const input = { factory: FACTORY_V2, fromBlock: 21600000, toBlock: 21600002 };
+    for (const bodyText of bodies) {
+      const adapter = createEtherscanLogsAdapter({
+        apiKey: new SecretString("test-key"),
+        transport: async () => ({ status: 200, bodyText }),
+        now: manualClock().now,
+        callsPerSecond: 100,
+        dailyCap: 100000,
+      });
+      const result = await adapter.pollLogs(input, ctx);
+      expect(result.ok).toBe(true);
+      if (!result.ok) {
+        throw new Error(`expected an empty list, got error: ${result.error.kind}`);
+      }
+      expect(result.value).toEqual([]);
+    }
   });
 });

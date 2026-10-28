@@ -166,6 +166,89 @@ function extendedDetectorSet(): DetectorSet {
   return Object.freeze({ registry });
 }
 
+// A test-only detector that emits a real capability payload
+// (`selfdestruct`) from an unlisted plugin id. Scoring must ignore it:
+// only first-party scoring plugins and artifact-named plugins convert.
+const EVIL_MANIFEST_PARSED = mustOk(
+  PluginManifest.parse({
+    id: "dev.brandklipparen.test-evil",
+    version: "1.0.0",
+    kind: "detector",
+    apiVersion: "1.0.0",
+    displayName: "Test evil detector",
+    description: "Test-only detector that emits an unlisted capability finding.",
+    inputs: ["bytecode"],
+    docs: "PLUGIN.md",
+    outputSchema: {
+      type: "array",
+      maxItems: 4,
+      items: {
+        type: "object",
+        required: ["id", "pluginId", "title", "payload", "evidence"],
+        properties: {
+          id: { type: "string", minLength: 1 },
+          pluginId: { const: "dev.brandklipparen.test-evil" },
+          title: { type: "string", minLength: 1 },
+          payload: {
+            type: "object",
+            required: ["capability"],
+            properties: { capability: { type: "string", minLength: 1 } },
+            additionalProperties: false,
+          },
+          evidence: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              required: ["selector"],
+              properties: {
+                selector: { type: "string", minLength: 1 },
+                offset: { type: ["integer", "null"], minimum: 0 },
+              },
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+    capabilities: {
+      needsNetwork: false,
+      needsSecrets: false,
+      affectsScore: false,
+      runsInFastPath: true,
+    },
+    limits: { maxFindings: 4, maxEvidencePerFinding: 4, maxOutputBytes: 4096 },
+  }),
+);
+
+if (EVIL_MANIFEST_PARSED.kind !== "detector") {
+  throw new Error("test evil manifest carries the wrong kind");
+}
+const EVIL_MANIFEST: DetectorManifest = EVIL_MANIFEST_PARSED;
+
+const EVIL_PLUGIN: DetectorPlugin = Object.freeze({
+  manifest: EVIL_MANIFEST,
+  detect: (input: DetectorInput): readonly PluginFinding[] => {
+    void input;
+    const evidence = mustOk(Evidence.create({ selector: mustOk(Selector.parse("0xa9059cbb")) }));
+    const finding: PluginFinding = {
+      id: "dev.brandklipparen.test-evil:selfdestruct",
+      pluginId: EVIL_MANIFEST.id,
+      title: "Test evil capability finding present on every input",
+      evidence: Object.freeze([evidence]) as NonEmpty<EvidenceType>,
+      payload: Object.freeze({ capability: "selfdestruct" }),
+    };
+    return Object.freeze([finding]);
+  },
+});
+
+function evilDetectorSet(): DetectorSet {
+  const plugins = [...DEFAULT_DETECTOR_PLUGINS, EVIL_PLUGIN] as readonly DetectorPlugin[];
+  const registry = mustOk(buildPluginRegistry(plugins));
+  return Object.freeze({ registry });
+}
+
 function buildServices(bytecodeHex: string, address: AddressType, block: BlockNumberType): AppServices {
   const codes = new Map<string, string>([[address as string, bytecodeHex]]);
   return createAppServices({
@@ -271,5 +354,50 @@ describe("plugin findings leave score and probabilities unchanged", () => {
         (entry) => entry.manifest.id === EXTRA_MANIFEST.id,
       ),
     ).toBe(false);
+  });
+
+  test("unlisted_plugin_capability_finding_leaves_score_unchanged", async () => {
+    const address = mustOk(Address.parse("0x0a0b0c0d0e0f1011121314151617181920212223"));
+    const bytecodeHex = "0x8063a9059cbb1461005b57ff";
+    const block = mustOk(BlockNumber.of(18000000));
+    const input = {
+      address,
+      block,
+      requestId: mustOk(RequestId.parse(REQUEST_ID)),
+      deadline: mustOk(Timestamp.of(1700000005000)),
+      modelVersion: mustOk(ModelVersion.parse("0.1.0")),
+      indexVersion: mustOk(IndexVersion.parse("1.0.0")),
+      templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
+      catalogue: TEST_CATALOGUE,
+    };
+    const base = buildServices(bytecodeHex, address, block);
+    const extended = createAppServices(
+      {
+        rpc: new FakeRpcAdapter(new Map<string, string>([[address as string, bytecodeHex]]), block),
+        modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
+        clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+      },
+      evilDetectorSet(),
+    );
+    const [plain, withEvil] = await Promise.all([base.analyzeToken(input), extended.analyzeToken(input)]);
+    expect(plain.ok && plain.value.kind === "assessed").toBe(true);
+    expect(withEvil.ok && withEvil.value.kind === "assessed").toBe(true);
+    if (
+      !plain.ok ||
+      plain.value.kind !== "assessed" ||
+      !withEvil.ok ||
+      withEvil.value.kind !== "assessed"
+    ) {
+      return;
+    }
+    const left = plain.value.envelope;
+    const right = withEvil.value.envelope;
+    expect(right.probabilities).toEqual(left.probabilities);
+    expect(right.score).toBe(left.score);
+    expect(right.signals).toEqual(left.signals);
+    expect(right.pluginResults.length).toBe(left.pluginResults.length + 1);
+    expect(
+      right.pluginResults.some((entry) => entry.pluginId === EVIL_MANIFEST.id),
+    ).toBe(true);
   });
 });

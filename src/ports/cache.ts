@@ -9,13 +9,10 @@
 import type { Result } from "../domain/result.ts";
 import type { CantTellItem } from "../domain/cantTell.ts";
 import type { Explanation } from "../domain/explain.ts";
-import type { ProxyResolution } from "../domain/proxy.ts";
 import type { RiskType, Signal } from "../domain/signals.ts";
 import type { PluginResultEntry } from "../plugins/detector.ts";
 import type {
-  Address as AddressType,
   ArtifactChecksum as ArtifactChecksumType,
-  BlockNumber as BlockNumberType,
   CacheKey as CacheKeyType,
   CodeHash as CodeHashType,
   IndexVersion as IndexVersionType,
@@ -23,27 +20,25 @@ import type {
   Probability as ProbabilityType,
   RiskScore as RiskScoreType,
   TemplateVersion as TemplateVersionType,
-  Timestamp as TimestampType,
 } from "../domain/types.ts";
 
-// Stored analysis result. The shape mirrors the assessed envelope from the
-// application service field for field, so the service stores its envelope
-// unchanged and serves a hit byte-identical to the original analysis
-// (K-013, A-32). The key binds code hash and model version; the entry
-// repeats both values so a read can reject an impersonating entry (M-14).
-// Plugin findings travel in the additive `pluginResults` field beside the
-// calibrated signals (S-043, P-11).
+// Stored analysis result: the code-derived part of the assessment only
+// (K-013). The entry carries no target, block, proxy or assessed-at: every
+// request rebuilds its envelope from the cached code-derived values plus
+// its own freshly resolved target, block, proxy and timestamp, so two
+// addresses sharing one code hash never exchange targets or proxy details
+// and a `latest` request never inherits a stale block. The key binds code
+// hash and model version; the entry repeats both values so a read can
+// reject an impersonating entry (M-14). Plugin findings travel in the
+// additive `pluginResults` field beside the calibrated signals (S-043,
+// P-11).
 export type CachedAssessment = {
   readonly kind: "assessed";
-  readonly target: AddressType;
-  readonly block: BlockNumberType;
-  readonly proxy: ProxyResolution;
   readonly codeHash: CodeHashType;
   readonly modelVersion: ModelVersionType;
   readonly artifactChecksum: ArtifactChecksumType;
   readonly indexVersion: IndexVersionType;
   readonly templateVersion: TemplateVersionType;
-  readonly assessedAt: TimestampType;
   readonly probabilities: Readonly<Record<RiskType, ProbabilityType>>;
   readonly score: RiskScoreType;
   readonly signals: readonly Signal[];

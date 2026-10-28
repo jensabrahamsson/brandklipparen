@@ -3,8 +3,11 @@
 // the visitor's priorities and the per-plugin frontmatter references,
 // calls the single `PluginPersonalizeModelPort` adapter, validates the
 // envelope, and caches the spec per (code hash, prompt version, provider,
-// model id) — never per priorities text. Errors map to typed outcomes;
-// the deterministic baseline always stands.
+// model id, salted priorities hash) — never per raw priorities text, so
+// one visitor's layout is never served to another visitor. Errors map to
+// typed outcomes; the deterministic baseline always stands.
+import { keccak256HexOfUtf8 } from "../domain/types.ts";
+import type { Signal } from "../domain/signals.ts";
 import { parsePersonalizeSpec } from "../plugins/personalizeSpec.ts";
 import type { PersonalizeSpec } from "../plugins/personalizeSpec.ts";
 import { PersonalizeInput } from "../ports/pluginPersonalizeModel.ts";
@@ -19,20 +22,63 @@ import type {
 } from "../domain/types.ts";
 import { canonicalSerialize } from "../domain/serialize.ts";
 
+// Floored sections derived from the envelope (P-26): `summary` and
+// `score` always, plus `signals` whenever a signal raises risk and
+// `signals` beside `evidence` whenever a high-severity signal is present.
+// Specs collapsing a floored section are rejected, so an AI layout (or
+// injected priorities steering it) can never bury a high finding. The
+// server and the web client compute the same set from the same envelope.
+export function requiredFlooredSections(signals: readonly Signal[]): readonly string[] {
+  let raises = false;
+  let high = false;
+  for (const signal of signals) {
+    if (signal.kind === "hard-to-analyze") {
+      raises = true;
+      continue;
+    }
+    if (signal.direction === "raises") {
+      raises = true;
+    }
+    if (signal.severity === "high") {
+      high = true;
+    }
+  }
+  const floored = ["summary", "score"];
+  if (raises || high) {
+    floored.push("signals");
+  }
+  if (high) {
+    floored.push("evidence");
+  }
+  return Object.freeze(floored);
+}
+
 export type PersonalizeCacheKeyParts = {
   readonly codeHash: CodeHashType;
   readonly promptVersion: PromptVersionType;
   readonly provider: string;
   readonly modelId: string;
+  readonly prioritiesHash: string;
 };
 
 export function personalizeCacheKeyOf(parts: PersonalizeCacheKeyParts): string {
   return canonicalSerialize({
     codeHash: parts.codeHash as string,
     modelId: parts.modelId,
+    prioritiesHash: parts.prioritiesHash,
     promptVersion: parts.promptVersion as string,
     provider: parts.provider,
   });
+}
+
+// Salted hash of the normalised priorities text for the cache key (K-519):
+// the raw text is never stored or keyed on directly, while different
+// priorities never share a cached spec. Normalisation trims the text and
+// collapses inner whitespace, so immaterial keying differences do not
+// cause redundant adapter calls.
+export function prioritiesHashOf(priorities: string): string {
+  const normalised = priorities.trim().replace(/\s+/g, " ");
+  return keccak256HexOfUtf8(`brandklipparen-personalize-priorities-v1:${normalised}`);
 }
 
 export type PersonalizeCacheStore = {
@@ -111,6 +157,7 @@ export function createPersonalizeService(deps: PersonalizeServiceDeps): Personal
         promptVersion: built.value.promptVersion,
         provider: adapter.provider(),
         modelId: adapter.modelId() as string,
+        prioritiesHash: prioritiesHashOf(built.value.priorities),
       });
       const cached = cache.get(key);
       if (cached !== null) {

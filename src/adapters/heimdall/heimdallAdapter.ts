@@ -149,6 +149,10 @@ export class extdecompAdapter implements DecompilerPort {
     codeHash: CodeHashType,
     ctx: CallContext,
   ): Promise<Result<DecompiledContract, DecompilerError>> {
+    // The decompiler runs on its own fixed budget (A-07, K-102): the worker
+    // timeout never derives from the request deadline, so a slow RPC or a
+    // loaded host cannot turn a deterministic analysis into a timeout.
+    void ctx;
     if (bytecode.length > this.maxBytesIn) {
       return Promise.resolve(
         err({
@@ -157,13 +161,7 @@ export class extdecompAdapter implements DecompilerPort {
         }),
       );
     }
-    const remaining = (ctx.deadline as number) - Date.now();
-    if (!Number.isFinite(remaining) || remaining <= 0) {
-      return Promise.resolve(
-        err({ kind: "timeout", message: "decompilation deadline already passed" }),
-      );
-    }
-    return this.runWorker(bytecode, codeHash, Math.min(this.timeoutMs, Math.floor(remaining)));
+    return this.runWorker(bytecode, codeHash, this.timeoutMs);
   }
 
   private runWorker(

@@ -66,8 +66,10 @@ describe("k017 shared CBOR metadata footer", () => {
     const full = codeFromBytes([...DISPATCHER, ...standardFooter()]);
     const prefix = codeFromBytes([...DISPATCHER]);
     expect(Array.from(stripCborFooter(full))).toEqual([...DISPATCHER]);
-    // All three users agree with the footer-free prefix.
-    expect(mustCodeHash(full)).toBe(mustCodeHash(prefix));
+    // The footer stays excluded from template identity and extraction, but
+    // the code hash covers the full bytes so footer variants never share a
+    // cache entry (cache-poisoning guard).
+    expect(mustCodeHash(full)).not.toBe(mustCodeHash(prefix));
     expect(mustSkeletonHash(full)).toBe(mustSkeletonHash(prefix));
     expect(extractSelectors(full)).toEqual(extractSelectors(prefix));
   });
@@ -78,7 +80,7 @@ describe("k017 shared CBOR metadata footer", () => {
     const full = codeFromBytes([...DISPATCHER, ...blob, 0x00, 0x06]);
     const prefix = codeFromBytes([...DISPATCHER]);
     expect(Array.from(stripCborFooter(full))).toEqual([...DISPATCHER]);
-    expect(mustCodeHash(full)).toBe(mustCodeHash(prefix));
+    expect(mustCodeHash(full)).not.toBe(mustCodeHash(prefix));
     expect(mustSkeletonHash(full)).toBe(mustSkeletonHash(prefix));
   });
 
@@ -88,7 +90,7 @@ describe("k017 shared CBOR metadata footer", () => {
     const full = codeFromBytes([...DISPATCHER, ...blob, 0x00, 0x46]);
     const prefix = codeFromBytes([...DISPATCHER]);
     expect(Array.from(stripCborFooter(full))).toEqual([...DISPATCHER]);
-    expect(mustCodeHash(full)).toBe(mustCodeHash(prefix));
+    expect(mustCodeHash(full)).not.toBe(mustCodeHash(prefix));
     expect(mustSkeletonHash(full)).toBe(mustSkeletonHash(prefix));
   });
 

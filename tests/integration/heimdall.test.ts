@@ -97,7 +97,7 @@ function hardToAnalyzeSignals(signals: readonly Signal[]): Extract<Signal, { kin
 
 describe("extdecomp deepening in the application service (K-008, K-501)", () => {
   test(
-    "k008_timeout_yields_hard_to_analyze_signal",
+    "k008_timeout_skips_hard_to_analyze_signal_and_reports_in_plugin_results",
     async () => {
       const target = mustOk(Address.parse(TARGET));
       const block = mustOk(BlockNumber.of(24000000));
@@ -115,7 +115,9 @@ describe("extdecomp deepening in the application service (K-008, K-501)", () => 
       },
   mustDefaultDetectorSet());
       // A decompilation timeout is a domain outcome, not an analysis
-      // failure: the call resolves to an assessed envelope.
+      // failure: the call resolves to an assessed envelope. The wall-clock
+      // cause never reaches the score (A-07, K-102): no hard-to-analyze
+      // signal is emitted, while the finding stays in pluginResults.
       const analysed = await services.analyzeToken({
         address: target,
         block,
@@ -131,14 +133,14 @@ describe("extdecomp deepening in the application service (K-008, K-501)", () => 
         throw new Error("expected an assessed envelope after a decompilation timeout");
       }
       const envelope = analysed.value.envelope;
-      const fallback = hardToAnalyzeSignals(envelope.signals);
-      expect(fallback.length).toBe(1);
-      const signal = fallback[0];
-      if (signal === undefined) {
-        throw new Error("expected one hard-to-analyze signal");
-      }
-      expect(signal.cause).toBe("timeout");
-      expect(signal.evidence.length).toBeGreaterThan(0);
+      expect(hardToAnalyzeSignals(envelope.signals)).toEqual([]);
+      const hardEntry = envelope.pluginResults.find(
+        (entry) => entry.pluginId === "dev.brandklipparen.hard-to-analyze",
+      );
+      expect(hardEntry?.outcome).toBe("ok");
+      expect(
+        hardEntry?.findings.map((finding) => (finding.payload as { cause?: unknown }).cause),
+      ).toEqual(["timeout"]);
       // Scoring still runs on the frozen artifact: probabilities and an
       // integer score travel with the standing fast-path response.
       expect(envelope.probabilities["rug-pull"] as number).toBeGreaterThanOrEqual(0);
@@ -221,8 +223,14 @@ describe("extdecomp deepening in the application service (K-008, K-501)", () => 
       ) {
         throw new Error("expected both parallel analyses to resolve");
       }
+      // The hanging run emits no wall-clock signal (A-07, K-102): the
+      // timeout finding stays in pluginResults only.
+      expect(hardToAnalyzeSignals(hangingResult.value.envelope.signals)).toEqual([]);
+      const hangingEntry = hangingResult.value.envelope.pluginResults.find(
+        (entry) => entry.pluginId === "dev.brandklipparen.hard-to-analyze",
+      );
       expect(
-        hardToAnalyzeSignals(hangingResult.value.envelope.signals).map((signal) => signal.cause),
+        hangingEntry?.findings.map((finding) => (finding.payload as { cause?: unknown }).cause),
       ).toEqual(["timeout"]);
       expect(hardToAnalyzeSignals(workingResult.value.envelope.signals)).toEqual([]);
       // A crashing worker degrades the same way, and a following analysis
@@ -250,7 +258,7 @@ describe("extdecomp deepening in the application service (K-008, K-501)", () => 
   );
 
   test(
-    "k008_fake_timeout_yields_hard_to_analyze_signal_without_spawn",
+    "k008_fake_timeout_skips_signal_without_spawn",
     async () => {
       const target = mustOk(Address.parse(TARGET));
       const block = mustOk(BlockNumber.of(24000000));
@@ -276,8 +284,12 @@ describe("extdecomp deepening in the application service (K-008, K-501)", () => 
       if (!analysed.ok || analysed.value.kind !== "assessed") {
         throw new Error("expected an assessed envelope after a fake decompilation timeout");
       }
+      expect(hardToAnalyzeSignals(analysed.value.envelope.signals)).toEqual([]);
+      const hardEntry = analysed.value.envelope.pluginResults.find(
+        (entry) => entry.pluginId === "dev.brandklipparen.hard-to-analyze",
+      );
       expect(
-        hardToAnalyzeSignals(analysed.value.envelope.signals).map((signal) => signal.cause),
+        hardEntry?.findings.map((finding) => (finding.payload as { cause?: unknown }).cause),
       ).toEqual(["timeout"]);
       expect(fake.callCount).toBe(1);
     },

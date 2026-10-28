@@ -117,6 +117,69 @@ describe("assessment envelope carries proxy information (K-002, K-005)", () => {
     expect(proxyInfo.upgradeAuthority.kind).toBe("single-key");
   });
 
+  test("k002_signals_follow_implementation_bytecode", async () => {
+    // K-002/K-003: a proxy whose implementation contains SELFDESTRUCT must
+    // report that capability signal, even though the proxy bytecode itself
+    // carries no SELFDESTRUCT. The response analyses the implementation.
+    const proxy = mustOk(Address.parse(PROXY));
+    const impl = mustOk(Address.parse(IMPL));
+    const block = mustOk(BlockNumber.of(24000000));
+    const codes = new Map<string, string>([
+      [proxy as string, "0x6001600a600b600c600d600e600f55"],
+      [impl as string, "0x8063a9059cbb1461005b57ff"],
+    ]);
+    const storage = new Map<string, Map<string, string>>([
+      [
+        proxy as string,
+        new Map<string, string>([
+          [(IMPLEMENTATION_SLOT as string).toLowerCase(), addressWord(IMPL).toLowerCase()],
+          [(ADMIN_SLOT as string).toLowerCase(), addressWord(ADMIN).toLowerCase()],
+        ]),
+      ],
+    ]);
+    const services = createAppServices({
+      rpc: new FakeRpcAdapter(codes, block, storage),
+      modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
+      clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+    },
+  mustDefaultDetectorSet());
+    const analysed = await services.analyzeToken({
+      address: proxy,
+      block,
+      requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174000")),
+      deadline: mustOk(Timestamp.of(1700000005000)),
+      modelVersion: mustOk(ModelVersion.parse("0.1.0")),
+      indexVersion: mustOk(IndexVersion.parse("1.0.0")),
+      templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
+      catalogue: TEST_CATALOGUE,
+    });
+    expect(analysed.ok).toBe(true);
+    if (!analysed.ok || analysed.value.kind !== "assessed") {
+      throw new Error("expected an assessed envelope");
+    }
+    const proxyInfo = analysed.value.envelope.proxy;
+    expect(proxyInfo.kind).toBe("eip1967");
+    const capabilitySignals = analysed.value.envelope.signals.filter(
+      (signal) => signal.kind === "capability",
+    );
+    // The implementation's SELFDESTRUCT surfaces as a high-severity
+    // rug-pull signal; the proxy bytecode's own storage write does not.
+    expect(
+      capabilitySignals.some(
+        (signal) =>
+          signal.kind === "capability" &&
+          signal.risk === "rug-pull" &&
+          signal.direction === "raises" &&
+          signal.severity === "high",
+      ),
+    ).toBe(true);
+    expect(
+      capabilitySignals.some(
+        (signal) => signal.kind === "capability" && signal.risk === "bot-pump",
+      ),
+    ).toBe(false);
+  });
+
   test("envelope_reports_no_proxy_for_plain_contracts", async () => {
     const target = mustOk(Address.parse("0x0102030405060708090a0b0c0d0e0f1011121314"));
     const block = mustOk(BlockNumber.of(24000000));

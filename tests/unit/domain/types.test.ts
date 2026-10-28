@@ -97,7 +97,7 @@ describe("k106_invalid_states_fail_construction_or_compilation", () => {
     expect(mustErr(Bytecode.parse("0x600160", 2)).kind).toBe("invalid-bytecode");
   });
 
-  test("code hash: keccak256 of executable bytecode with CBOR removed", () => {
+  test("code hash: keccak256 of the full runtime bytecode", () => {
     // Well-known keccak256 vector for empty input.
     const empty = mustOk(CodeHash.of(mustOk(Bytecode.parse("0x"))));
     expect(empty).toBe("0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470");

@@ -62,7 +62,7 @@ import { Evidence } from "../domain/evidence.ts";
 import type { CodeSnippet as CodeSnippetType } from "../domain/evidence.ts";
 import { HARD_TO_ANALYZE_CAUSES } from "../domain/signals.ts";
 import type { Probability as ProbabilityType } from "../domain/types.ts";
-import type { CachePort } from "../ports/cache.ts";
+import type { CachePort, CachedAssessment } from "../ports/cache.ts";
 import type { ClockPort } from "../ports/clock.ts";
 import type { CloneIndexPort } from "../ports/cloneIndex.ts";
 import type { ModelArtifactError } from "../ports/modelArtifact.ts";
@@ -80,8 +80,9 @@ import type {
 // deepening enriches evidence with snippets and maps every failure branch
 // to the hard-to-analyze signal (K-008). The cache stays optional so the
 // service runs unchanged where no store is bound; where it is bound, a hit
-// returns the stored assessment with zero external calls and a miss stores
-// the fresh envelope under the code hash and model version (K-013).
+// rebuilds the envelope from the cached code-derived part with a freshly
+// resolved proxy, and a miss stores the code-derived part under the code
+// hash and model version (K-013).
 export type AnalyzeTokenPorts = {
   readonly rpc: RpcPort;
   readonly modelArtifacts: ModelArtifactPort;
@@ -322,13 +323,95 @@ function attachSnippets(
 }
 
 // Address index for the cache fast path (K-013): repeat requests for an
-// explicitly pinned block reuse the stored assessment without fetching
-// bytecode. Code at an address is immutable, and the stored key still binds
-// code hash and model version, so a changed artifact misses. Requests at
-// "latest" skip the index and always resolve the head block first, so a
-// new head is never hidden behind a memo entry.
+// explicitly pinned block reuse the stored code-derived result. The proxy
+// is re-resolved on every hit and the envelope rebuilt with the live
+// target, block and timestamp, so a memo entry never serves another
+// address's details. Requests at "latest" skip the index and always
+// resolve the head block first, so a new head is never hidden behind a
+// memo entry.
 function memoKeyOf(input: AnalyzeTokenInput): string {
   return `${input.address as string}|${input.block as number}|${input.modelVersion as string}`;
+}
+
+// Rebuilt envelope from a cached code-derived entry (K-013): the stored
+// part carries signals, probabilities, score and plugin results, while
+// target, block, proxy and assessed-at always come from the live request.
+function envelopeFromCached(
+  cached: CachedAssessment,
+  target: AddressType,
+  block: BlockNumberType,
+  proxy: ProxyResolution,
+  assessedAt: TimestampType,
+): AssessmentEnvelope {
+  return Object.freeze({
+    kind: "assessed",
+    target,
+    block,
+    proxy,
+    codeHash: cached.codeHash,
+    modelVersion: cached.modelVersion,
+    artifactChecksum: cached.artifactChecksum,
+    indexVersion: cached.indexVersion,
+    templateVersion: cached.templateVersion,
+    assessedAt,
+    probabilities: cached.probabilities,
+    score: cached.score,
+    signals: cached.signals,
+    pluginResults: cached.pluginResults,
+    explanation: cached.explanation,
+    cantTell: cached.cantTell,
+  });
+}
+
+// Proxy resolution that degrades to no proxy info on a typed port failure
+// (K-002, K-005): the deterministic analysis still delivers its result.
+async function resolveProxyOrNone(
+  ports: AnalyzeTokenPorts,
+  input: ResolveProxyInput,
+): Promise<ProxyResolution> {
+  const resolved = await resolveProxy(ports, input);
+  return resolved.ok ? resolved.value.resolution : noneProxyResolution();
+}
+
+// Implementation address behind a resolved proxy (K-002, K-003): the EIP-1967
+// or UUPS implementation, the EIP-1167 target or the EIP-7702 delegation, or
+// null when the address holds no recognised proxy pointer.
+function implementationOfProxy(proxy: ProxyResolution): AddressType | null {
+  switch (proxy.kind) {
+    case "eip1967":
+      return proxy.implementation;
+    case "uups":
+      return proxy.implementation;
+    case "eip1167":
+      return proxy.target;
+    case "eip7702":
+      return proxy.delegation;
+    case "none":
+      return null;
+  }
+}
+
+// First-party plugins whose findings convert to scored signals (P-05):
+// the capability, clone-match and hard-to-analyze detectors. Every other
+// plugin (including the decompiler detector, whose `cause` payload key
+// collides in shape with the hard-to-analyze one) converts only when the
+// versioned artifact names it in `pluginWeights` with a weight above 0,
+// so a plugin can never steer its own score and only artifact-named
+// findings shape the result.
+const FIRST_PARTY_SCORING_PLUGIN_IDS: readonly string[] = Object.freeze([
+  "dev.brandklipparen.capability",
+  "dev.brandklipparen.clone-match",
+  "dev.brandklipparen.hard-to-analyze",
+]);
+
+function pluginAllowedForScoring(
+  pluginId: string,
+  pluginWeights: Readonly<Record<string, number>>,
+): boolean {
+  if (FIRST_PARTY_SCORING_PLUGIN_IDS.includes(pluginId)) {
+    return true;
+  }
+  return (pluginWeights[pluginId] ?? 0) > 0;
 }
 
 // Capability key read from a plugin finding payload: the closed catalogue
@@ -352,19 +435,25 @@ function capabilityKeyOf(finding: PluginFinding): CapabilityKey | null {
 // that reads detector output. Risk, direction and severity come from the
 // injected artifact mapping (capability catalogue, clone mapping and the
 // hard-to-analyze fallback), never from the finding, so a plugin cannot
-// steer its own score and only artifact-named findings shape the result.
-// Findings with unknown payloads or failed construction are skipped; the
-// plugin record in `pluginResults` still carries them at weight 0.
-// Conversion order follows the fixed capability key order, matching the
-// legacy sweep: signals sharing one SignalId keep a stable, deterministic
-// order through the final id sort below.
+// steer its own score and only allowlisted findings shape the result.
+// Findings from unlisted plugins, unknown payloads or failed construction
+// are skipped; the plugin record in `pluginResults` still carries them at
+// weight 0. Conversion order follows the fixed capability key order,
+// matching the legacy sweep: signals sharing one SignalId keep a stable,
+// deterministic order through the final id sort below.
 function signalsFromPluginResults(
   results: readonly PluginResultEntry[],
   codeHash: CodeHashType,
   catalogue: CapabilityCatalogue,
   cloneMapping: CloneMapping | undefined,
   temporality: Temporality,
+  pluginWeights: Readonly<Record<string, number>>,
 ): readonly Signal[] {
+  // Scoring reads findings solely from allowlisted plugins (P-05): every
+  // other entry stays in `pluginResults` at weight 0 and never converts.
+  const scored = results.filter(
+    (entry) => entry.outcome === "ok" && pluginAllowedForScoring(entry.pluginId as string, pluginWeights),
+  );
   // Conversion order follows the fixed capability key order, matching the
   // legacy sweep: signals sharing one SignalId keep a stable, deterministic
   // order through the final id sort below.
@@ -372,7 +461,7 @@ function signalsFromPluginResults(
     CAPABILITY_KEYS.map((key, index) => [key, index] as const),
   );
   const ordered: PluginFinding[] = [];
-  for (const entry of results) {
+  for (const entry of scored) {
     if (entry.outcome !== "ok") {
       continue;
     }
@@ -425,7 +514,7 @@ function signalsFromPluginResults(
   });
   const clones: Signal[] = [];
   if (cloneMapping !== undefined) {
-    for (const entry of results) {
+    for (const entry of scored) {
       if (entry.outcome !== "ok") {
         continue;
       }
@@ -450,14 +539,20 @@ function signalsFromPluginResults(
       }
     }
   }
+  // Wall-clock causes (A-07, K-102) never reach the score: `timeout` and
+  // `resource-limit` depend on RPC latency and host load, so the finding
+  // stays in `pluginResults` as a display record while scoring ignores it.
+  // Deterministic causes (`decompiler-error`, `obfuscated-structure`) still
+  // convert, since the same bytecode always maps to the same cause.
+  const TRANSIENT_HARD_CAUSES: readonly HardToAnalyzeCause[] = Object.freeze(["timeout", "resource-limit"]);
   const hard: Signal[] = [];
-  for (const entry of results) {
+  for (const entry of scored) {
     if (entry.outcome !== "ok") {
       continue;
     }
     for (const finding of entry.findings) {
       const cause = hardCauseOf(finding);
-      if (cause === null) {
+      if (cause === null || TRANSIENT_HARD_CAUSES.includes(cause)) {
         continue;
       }
       const signal = Signal.createHardToAnalyze({
@@ -487,8 +582,17 @@ export async function analyzeToken(
 ): Promise<Result<AnalyzeTokenSuccess, ApplicationError>> {
   const rpc = counters === undefined ? ports.rpc : withCountedRpc(ports.rpc, counters);
   const countedPorts = counters === undefined ? ports : { ...ports, rpc };
-  // Cache lookup before any external call (I-14): a remembered key gives a
-  // hit with zero RPC, decompiler and model calls. A miss, a rejected entry
+  const proxyInputFor = (block: BlockNumberType): ResolveProxyInput => ({
+    address: input.address,
+    block,
+    requestId: input.requestId,
+    deadline: input.deadline,
+    ...(input.proxyMaxDepth === undefined ? {} : { maxDepth: input.proxyMaxDepth }),
+  });
+  // Cache lookup before decompilation and the model load (I-14): a
+  // remembered key gives a hit that still re-resolves the proxy and
+  // rebuilds the envelope with the live target, block and timestamp, so a
+  // hit never serves another address's details. A miss, a rejected entry
   // or an unreachable store falls through to the fresh path below (A-15).
   if (ports.cache !== undefined && input.block !== "latest") {
     const memoKey = memoKeyOf(input);
@@ -496,7 +600,11 @@ export async function analyzeToken(
     if (remembered !== undefined) {
       const hit = await ports.cache.get(remembered);
       if (hit.ok && hit.value !== null) {
-        return ok({ kind: "assessed", envelope: hit.value });
+        const proxy = await resolveProxyOrNone(countedPorts, proxyInputFor(input.block));
+        return ok({
+          kind: "assessed",
+          envelope: envelopeFromCached(hit.value, input.address, input.block, proxy, ports.clock.now()),
+        });
       }
       addressIndex.delete(memoKey);
     }
@@ -515,7 +623,23 @@ export async function analyzeToken(
     }
     return err({ kind: "rpc-error", requestId: input.requestId, error: fetched.error });
   }
-  const codeHash = CodeHash.of(fetched.value.bytecode);
+  // Proxy resolution runs on the pinned block through RpcPort; a typed
+  // port failure degrades to no proxy info so the deterministic analysis
+  // still delivers its result (K-002, K-005).
+  const proxy = await resolveProxyOrNone(countedPorts, proxyInputFor(block));
+  // Implementation bytecode (K-002, K-003): when resolution yields an
+  // implementation, detectors run on its code, keyed by its code hash, so
+  // a rug token behind a proxy is scored on the logic that actually runs.
+  // An unreadable implementation degrades to the proxy's own bytecode.
+  const implementation = implementationOfProxy(proxy);
+  let analysisBytecode = fetched.value.bytecode;
+  if (implementation !== null) {
+    const implFetched = await rpc.getCode(implementation, blockCtx);
+    if (implFetched.ok) {
+      analysisBytecode = implFetched.value.bytecode;
+    }
+  }
+  const codeHash = CodeHash.of(analysisBytecode);
   if (!codeHash.ok) {
     return err({ kind: "domain-error", requestId: input.requestId, error: codeHash.error });
   }
@@ -523,32 +647,22 @@ export async function analyzeToken(
   if (!cacheKey.ok) {
     return err({ kind: "domain-error", requestId: input.requestId, error: cacheKey.error });
   }
-  // Second lookup on the code-hash key: a new address with known code and a
-  // request without a memo entry still skip proxy resolution, decompilation
-  // and the model load (K-013).
+  // Second lookup on the code-hash key: a new address with known code and
+  // a request without a memo entry still skips decompilation and the model
+  // load, rebuilding the envelope with its own target, block and timestamp
+  // beside the already resolved proxy (K-013).
   if (ports.cache !== undefined) {
     const hit = await ports.cache.get(cacheKey.value);
     if (hit.ok && hit.value !== null) {
       if (input.block !== "latest") {
         addressIndex.set(memoKeyOf(input), cacheKey.value);
       }
-      return ok({ kind: "assessed", envelope: hit.value });
+      return ok({
+        kind: "assessed",
+        envelope: envelopeFromCached(hit.value, input.address, block, proxy, ports.clock.now()),
+      });
     }
   }
-  // Proxy resolution runs on the pinned block through RpcPort; a typed
-  // port failure degrades to no proxy info so the deterministic analysis
-  // still delivers its result (K-002, K-005).
-  const proxyInput: ResolveProxyInput = {
-    address: input.address,
-    block,
-    requestId: input.requestId,
-    deadline: input.deadline,
-    ...(input.proxyMaxDepth === undefined ? {} : { maxDepth: input.proxyMaxDepth }),
-  };
-  const resolvedProxy = await resolveProxy(countedPorts, proxyInput);
-  const proxy: ProxyResolution = resolvedProxy.ok
-    ? resolvedProxy.value.resolution
-    : noneProxyResolution();
   const loaded = ports.modelArtifacts.load(input.modelVersion);
   if (!loaded.ok) {
     return err({ kind: "model-artifact-error", requestId: input.requestId, error: loaded.error });
@@ -563,7 +677,7 @@ export async function analyzeToken(
   const indexVersion = ports.cloneIndex === undefined ? input.indexVersion : ports.cloneIndex.indexVersion();
   let cloneHit: CloneHit | null = null;
   if (ports.cloneIndex !== undefined && input.cloneMapping !== undefined) {
-    const skeletonHash = SkeletonHash.of(fetched.value.bytecode);
+    const skeletonHash = SkeletonHash.of(analysisBytecode);
     if (!skeletonHash.ok) {
       return err({ kind: "domain-error", requestId: input.requestId, error: skeletonHash.error });
     }
@@ -575,12 +689,16 @@ export async function analyzeToken(
   // Decompilation ahead of detection (K-008): a successful run is kept for
   // snippet enrichment below, while every failure branch maps to the
   // `decompilerCause` input fact for the single registry run below and the
-  // fast path's response stands.
+  // fast path's response stands. Wall-clock failures (timeout,
+  // resource-limit) also mark the run transient: its envelope is never
+  // cached, so a slow host cannot freeze a degraded score under the code
+  // hash (A-07, K-102).
   let decompiled: DecompiledContract | null = null;
   let decompilerCause: HardToAnalyzeCause | null = null;
+  let transientDecompilerFailure = false;
   if (ports.decompiler !== undefined) {
     const outcome = await ports.decompiler.decompile(
-      fetched.value.bytecode,
+      analysisBytecode,
       codeHash.value,
       blockCtx,
     );
@@ -588,6 +706,10 @@ export async function analyzeToken(
       decompiled = outcome.value;
     } else {
       decompilerCause = causeOfDecompilerError(outcome.error);
+      transientDecompilerFailure =
+        outcome.error.kind === "timeout" ||
+        outcome.error.kind === "resource-limit" ||
+        outcome.error.kind === "output-too-large";
     }
   }
   // Single detection run through the registry (S-043 step 1, S-044 step 2,
@@ -600,7 +722,7 @@ export async function analyzeToken(
   // registry/detect path.
   const pluginResults = runRegisteredDetectors(
     detectors.registry,
-    createDetectorInput(fetched.value.bytecode, codeHash.value, {
+    createDetectorInput(analysisBytecode, codeHash.value, {
       cloneMatch: cloneHit,
       decompilerCause,
     }),
@@ -611,6 +733,7 @@ export async function analyzeToken(
     input.catalogue,
     input.cloneMapping,
     observed,
+    loaded.value.artifact.pluginWeights,
   );
   // Snippet enrichment for a successful decompilation (K-008): each
   // evidence entry whose selector the worker decompiled gains its snippet,
@@ -641,11 +764,28 @@ export async function analyzeToken(
     explanation: rendered.value,
     cantTell: standardCantTell(),
   });
-  // Store the fresh envelope under the code-hash key (K-013): best effort,
-  // so a rejected write still returns the analysis. A new model version
-  // keys new entries, so older entries stay unused beside the new one.
-  if (ports.cache !== undefined) {
-    await ports.cache.put(cacheKey.value, envelope);
+  // Store the code-derived part under the code-hash key (K-013): best
+  // effort, so a rejected write still returns the analysis. Target, block,
+  // proxy and assessed-at stay out of the entry and are rebuilt on every
+  // hit. A transient decompiler failure skips the store, so a degraded run
+  // never poisons the shared entry (A-07, K-102). A new model version keys
+  // new entries, so older entries stay unused beside the new one.
+  if (ports.cache !== undefined && !transientDecompilerFailure) {
+    const stored: CachedAssessment = {
+      kind: "assessed",
+      codeHash: envelope.codeHash,
+      modelVersion: envelope.modelVersion,
+      artifactChecksum: envelope.artifactChecksum,
+      indexVersion: envelope.indexVersion,
+      templateVersion: envelope.templateVersion,
+      probabilities: envelope.probabilities,
+      score: envelope.score,
+      signals: envelope.signals,
+      pluginResults: envelope.pluginResults,
+      explanation: envelope.explanation,
+      cantTell: envelope.cantTell,
+    };
+    await ports.cache.put(cacheKey.value, stored);
     if (input.block !== "latest") {
       addressIndex.set(memoKeyOf(input), cacheKey.value);
     }
