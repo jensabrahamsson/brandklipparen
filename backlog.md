@@ -334,6 +334,36 @@ S-091 tracks the remaining multichain cleanup. Quote-token allowlist note: WETH 
 
 E-11 status (28/10, all green): S-086 done — pinned factories, quote tokens and topic0 values with selector recomputation. S-087 done — Etherscan logs adapter with token bucket, daily budget and backoff, not-configured without key. S-088 done — JSON-RPC eth_getLogs fallback on the same port with identical candidate shape. S-089 done — liquidity gate with same-tx fast path and TTL pending queue. S-090 done — candidate-key dedupe, reorg orphaning, quote skips, V4 hooks as context, score-neutral by type plus property. S-091 done — chainId constrained to 1 with typed rejection and feed env wiring (`ETHERSCAN_API_KEY`, `BRANDKLIPPAREN_FEED_RPC_URL`, `BK_WETH_ADDRESS`). CLI `npm run feed:once` performs one poll and exits; design in `docs/lp-pairs-feed.md`, threats H-43–H-45 with M-49–M-51 in `docs/threat-model.md`.
 
+### Later queue (S-092 onward)
+
+Ordered by value for an innovation-focused, mainnet-only product:
+small responses and live delivery first, then the AI plugins that read
+only frozen evidence, then operational hardening, then UI P2. Every AI
+story below is opt-in (absent service or key answers `not-configured`
+with zero provider calls), advisory and display-only (scores, evidence
+and finding text stay bit-identical with the plugin on, off, invalid
+and absent, proven by a named property test), tested through fake
+adapters only (no network in tests), and cites only collected evidence
+ids (every sentence carrying an uncollected id or no id drops, with the
+drops counted). Mainnet only: no story adds a chain beyond chainId 1.
+
+| Story | Title | K-IDs | Priority | Test written first |
+|---|---|---|---|---|
+| S-092 | REST field selection on the analyze routes: `fields` allowlist projection | K-023, K-027 | MVP | `s092_fields_projection_returns_only_listed_sections` requires a two-field request to return exactly those sections plus the envelope kind; `s092_unknown_field_fails_with_validation_error` requires an unknown name to give `validation-error` before analysis; `s092_absent_fields_returns_full_envelope` requires the byte-identical full body without the parameter. |
+| S-093 | REST streaming analysis events over the existing server (SSE body, one send, no open sockets) | K-023, K-027, K-101 | MVP | `s093_stream_emits_analysis_then_deepening_status` requires content type `text/event-stream`, a first `data:` line equal to the analyze body for the same input, and a final `deepening` status line; `s093_stream_leaves_analyze_body_unchanged` requires the analyze response byte-identical before and after streaming; `s093_stream_key_gate_matches_analyze` requires the missing-key request to fail before analysis. Tested with inject, no listener left open. |
+| S-094 | AI explain plugin: one opt-in sentence-level explanation over frozen evidence | K-302, K-305, K-309, K-502, K-513 | MVP | `s094_explain_without_key_reports_not_configured_and_sends_nothing` requires the `not-configured` outcome with zero fake-adapter calls and the deterministic explanation standing; `s094_explain_keeps_only_sentences_citing_collected_evidence` requires a sentence citing only collected ids to survive, an uncollected-id sentence to drop and an uncited factual sentence to drop with drops counted; property `s094_explain_leaves_score_and_evidence_unchanged` requires bit-identical score, probabilities, signals and evidence with the plugin on, off, invalid and absent. Fake adapter only. |
+| S-095 | Snippet deepening per selector from the local pipeline | K-008, K-010 | MVP | `s095_snippet_returns_quoted_text_per_selector` requires each returned snippet to carry its selector, a line number and non-empty quoted text; `s095_unknown_selector_fails_before_decompilation` requires an unknown selector to give `validation-error` with zero pipeline calls. |
+| S-096 | AI chat plugin: opt-in follow-up questions over the frozen analysis | K-302, K-305, K-309, K-502, K-513 | Stretch | `s096_chat_without_key_reports_not_configured_and_sends_nothing`; `s096_chat_keeps_only_answers_citing_collected_evidence` with drop counting; property `s096_chat_leaves_score_and_evidence_unchanged`. Fake adapter only. |
+| S-097 | AI rug narrative plugin: opt-in capability summary for the top risk type | K-302, K-305, K-309, K-502, K-513 | Stretch | `s097_rug_without_key_reports_not_configured_and_sends_nothing`; `s097_rug_keeps_only_sentences_citing_collected_evidence` with drop counting; property `s097_rug_leaves_score_and_evidence_unchanged`. Fake adapter only. |
+| S-098 | Calibration read view: artifact version, checksum and per-class metrics over REST | K-205, K-210, K-211 | Stretch | `s098_calibration_read_matches_frozen_artifact` requires version, checksum and metrics equal to the loaded artifact; `s098_calibration_read_is_read_only` requires zero artifact writes across calls. |
+| S-099 | Deploy-time checks: readiness probe pinning artifact, provider wiring and feed config | K-104, K-402 | Stretch | `s099_readiness_reports_artifact_and_provider_wiring` requires the probe to name the artifact checksum and each AI plugin as configured or not-configured; `s099_readiness_fails_on_checksum_mismatch` requires a mismatched artifact to fail the probe before serving analysis. |
+| S-100 | UI P2a: field picker and stream view on the token page | K-020, K-023, K-507 | Stretch | Playwright `s100_field_picker_limits_sections_without_changing_score` requires the picked sections to render and the score to stay byte-identical; Playwright `s100_stream_view_shows_analysis_before_deepening_status` requires the fast-path render ahead of the deepening line. |
+| S-101 | UI P2b: explain panel with not-configured, fallback and inert-text states | K-020, K-507 | Stretch | Playwright `s101_explain_panel_shows_not_configured_without_key` requires the plain not-configured state; Playwright `s101_explain_panel_renders_checked_sentences_as_inert_text` requires script-bearing sentences inert with the drop count shown and scores unchanged. Fake adapter only. |
+
+Later-queue status: S-092, S-093 and S-094 ship first in that order;
+S-095 follows when green; S-096–S-101 stay planned until the box allows.
+Cut order: S-101, S-100, S-099, S-098, S-097, S-096, in that order.
+
 Cut order inside E-08, if time runs short: S-048, S-049, S-050, S-051
 are Stretch and cut first, in that order. S-042–S-047 are the MVP of
 this epic and ship as one sequence or not at all, so the registry never

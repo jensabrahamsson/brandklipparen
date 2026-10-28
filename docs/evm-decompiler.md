@@ -94,3 +94,25 @@ stay at weight 0 until the calibration artifact names the plugin
 (S-085). Suggested display names arrive only through the optional
 naming overlay (S-083, D-11): opt-in, validated whole, display-only,
 never an analysis input.
+
+## Local eval run (28/10)
+
+Ran once per the rules above with `extdecomp_BIN` set: the binary
+reported `extdecomp 0.9.1` (matches the pinned version), `HOME` went to
+a fresh temp dir, and every invocation was `decompile <local-hex-file>`
+with no RPC, address, LLM or naming flag. Exit code 0.
+
+| Contract | Own functions | Entries | Patterns | Spot | Own unresolved | extdecomp |
+|---|---|---|---|---|---|---|
+| edge-fallback | 0/0 | match | match | 0/0 | 0 | ok, 0 selectors mentioned |
+| edge-invalid | 1/1 | match | match | 2/2 | 1 | ok, 0 selectors mentioned |
+| token-allowance | 4/4 | match | match | 4/4 | 0 | ok, 0 selectors mentioned |
+| token-pausable | 2/2 | match | match | 3/3 | 0 | ok, 0 selectors mentioned |
+| token-simple | 2/2 | match | match | 4/4 | 0 | ok, 0 selectors mentioned |
+
+Summary: own pass rate 100% (5/5 contracts), spot agreement 13/13,
+offset coverage 100% by construction, 5 extdecomp runs completed. The
+extdecomp runs exited 0 but mentioned none of the expected selectors in
+their stdout, so metric 2 (fewer unresolved jumps) is recorded, not
+decided, on this run. Full output lives in
+`docs/eval-decompiler-results.md`.

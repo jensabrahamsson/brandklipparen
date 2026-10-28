@@ -12,8 +12,8 @@
 import Fastify from "fastify";
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { randomUUID } from "node:crypto";
-import { serializeAssessment } from "../../application/analyzeToken.ts";
-import type { AppServices, DetectorSet } from "../../application/analyzeToken.ts";
+import { assessmentToCanonical, serializeAssessment } from "../../application/analyzeToken.ts";
+import type { AppServices, AssessmentEnvelope, DetectorSet } from "../../application/analyzeToken.ts";
 import {
   exposeManifest,
   exposeRegistry,
@@ -28,6 +28,9 @@ import { serializeTokenAssessment } from "../../application/assessmentService.ts
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import { serializePersonalizeOutcome } from "../../application/personalizeService.ts";
 import type { PersonalizeService } from "../../application/personalizeService.ts";
+import { EXPLAIN_PROMPT_VERSION, serializeExplainOutcome } from "../../application/explainService.ts";
+import type { ExplainService } from "../../application/explainService.ts";
+import { ExplainInput } from "../../ports/explainModel.ts";
 import { MAX_NAMING_SELECTORS } from "../../application/decompilerNaming.ts";
 import type { DecompilerNamingService } from "../../application/decompilerNaming.ts";
 import { sectionBodyOf } from "../../plugins/docs.ts";
@@ -133,6 +136,11 @@ export type RestServerOptions = {
   // answers the not-configured envelope and the deterministic
   // pseudo-Solidity stands.
   readonly namingService?: DecompilerNamingService | undefined;
+  // Explain service for the optional sentence-level overlay (S-094,
+  // K-302). Absent service means the overlay stays off: the route answers
+  // the not-configured envelope with zero provider calls and the
+  // deterministic analysis standing.
+  readonly explainService?: ExplainService | undefined;
   // Mapping prompt version for the personalize cache key (P-27): the same
   // version the adapter prompt carries. Absent version disables the route
   // like an absent service.
@@ -154,6 +162,14 @@ export type RestServer = {
   // Binds an ephemeral or fixed local port and resolves the base URL.
   readonly listen: (host: string, port: number) => Promise<string>;
   readonly close: () => Promise<void>;
+  // In-process request injection (S-092): the same routing and gates
+  // without opening a listener, so tests leave no sockets open.
+  readonly inject: (options: {
+    readonly method?: string;
+    readonly url: string;
+    readonly headers?: Record<string, string>;
+    readonly payload?: unknown;
+  }) => Promise<{ readonly statusCode: number; readonly body: string; readonly headers: Record<string, unknown> }>;
 };
 
 // Raw analyse input at the boundary: address plus an optional block, read
@@ -221,6 +237,71 @@ function hasSecretLikeKey(value: unknown): boolean {
     return false;
   }
   return Object.keys(value).some((name) => SECRET_LIKE.test(name));
+}
+
+// Field selection (S-092, K-023): allowlisted projection of the assessed
+// envelope, read from the query string (GET) or the JSON body (POST) beside
+// the address. Absent `fields` means the full envelope byte for byte; a
+// present list names 1 to 16 canonical section names and the response
+// carries the envelope kind plus exactly those sections. Unknown, empty or
+// oversize lists fail as `validation-error` before analysis starts.
+const ANALYZE_FIELD_NAMES = [
+  "target",
+  "block",
+  "proxy",
+  "codeHash",
+  "modelVersion",
+  "artifactChecksum",
+  "indexVersion",
+  "templateVersion",
+  "assessedAt",
+  "probabilities",
+  "score",
+  "signals",
+  "pluginResults",
+  "explanation",
+  "cantTell",
+] as const;
+
+function parseFields(raw: unknown): { ok: true; value: readonly string[] | null } | { ok: false } {
+  if (raw === undefined) {
+    return { ok: true, value: null };
+  }
+  if (typeof raw !== "string") {
+    return { ok: false };
+  }
+  const seen: string[] = [];
+  for (const part of raw.split(",")) {
+    const name = part.trim();
+    if (name.length === 0) {
+      continue;
+    }
+    if (!(ANALYZE_FIELD_NAMES as readonly string[]).includes(name)) {
+      return { ok: false };
+    }
+    if (!seen.includes(name)) {
+      seen.push(name);
+    }
+  }
+  if (seen.length === 0 || seen.length > 16) {
+    return { ok: false };
+  }
+  return { ok: true, value: Object.freeze(seen.slice()) };
+}
+
+// Shared assessed body for the analyze routes (S-092, S-093): the full
+// envelope byte for byte without a field list, or the envelope kind plus
+// exactly the listed sections through the same canonical serializer.
+function assessedBodyOf(envelope: AssessmentEnvelope, fields: readonly string[] | null): string {
+  if (fields === null) {
+    return serializeAssessment(envelope);
+  }
+  const canonical = assessmentToCanonical(envelope) as Record<string, unknown>;
+  const projected: Record<string, unknown> = { kind: "assessed" };
+  for (const name of fields) {
+    projected[name] = canonical[name];
+  }
+  return canonicalSerialize(projected as never);
 }
 
 function parseBlock(raw: string | number | undefined): { ok: true; value: BlockNumberType | "latest" } | { ok: false } {
@@ -385,6 +466,22 @@ export function createRestServer(options: RestServerOptions): RestServer {
     if (!gated.ok) {
       return sendError(reply, gated.error);
     }
+    // Field selection runs before the service call (S-092): a bad list
+    // fails without spending analysis work.
+    const rawFields =
+      typeof rawInput === "object" && rawInput !== null && !Array.isArray(rawInput)
+        ? (rawInput as Record<string, unknown>)["fields"]
+        : undefined;
+    const fields = parseFields(rawFields);
+    if (!fields.ok) {
+      return sendError(
+        reply,
+        validationError(
+          "Invalid fields: expected 1 to 16 comma-separated section names from the documented list.",
+          requestId as string,
+        ),
+      );
+    }
     const { address, block } = gated.value;
     const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
     if (!deadline.ok) {
@@ -429,6 +526,10 @@ export function createRestServer(options: RestServerOptions): RestServer {
         .type("application/json")
         .send(body);
     }
+    // Field projection (S-092): the no-contract branch is unchanged, while
+    // the assessed envelope carries the kind plus exactly the listed
+    // sections through the same canonical serializer.
+    const assessedBody = assessedBodyOf(analysed.value.envelope, fields.value);
     return reply
       .code(200)
       .header(REQUEST_ID_HEADER, requestId)
@@ -436,7 +537,86 @@ export function createRestServer(options: RestServerOptions): RestServer {
       .header(ASSESSMENT_CALLS_HEADER, String(usage.assessmentCalls))
       .header(ASSESSMENT_COST_HEADER, String(usage.assessmentCostUnits))
       .type("application/json")
-      .send(serializeAssessment(analysed.value.envelope));
+      .send(assessedBody);
+  }
+
+  // Streaming analysis events (S-093, K-101): the same gate, field list and
+  // deterministic analysis as the analyze routes, delivered as one SSE body
+  // in a single send — the analysis event first, then the deepening status.
+  // No socket is hijacked and none stays open: the CSP hook still applies
+  // and the analyze response for the same input stays byte-identical.
+  async function handleAnalyzeStream(request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const rawInput = request.query;
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const rawFields =
+      typeof rawInput === "object" && rawInput !== null && !Array.isArray(rawInput)
+        ? (rawInput as Record<string, unknown>)["fields"]
+        : undefined;
+    const fields = parseFields(rawFields);
+    if (!fields.ok) {
+      return sendError(
+        reply,
+        validationError(
+          "Invalid fields: expected 1 to 16 comma-separated section names from the documented list.",
+          requestId as string,
+        ),
+      );
+    }
+    const { address, block } = gated.value;
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const counters = createRequestCounters();
+    const analysed = await options.services.analyzeToken(
+      {
+        address,
+        block,
+        requestId,
+        deadline: deadline.value,
+        modelVersion: options.modelVersion,
+        indexVersion: options.indexVersion,
+        templateVersion: options.templateVersion,
+        catalogue: options.catalogue,
+      },
+      counters,
+    );
+    if (!analysed.ok) {
+      const mapped = toHttpError(analysed.error);
+      return sendError(
+        reply,
+        requestError(mapped.status, mapped.code, mapped.message, requestId),
+      );
+    }
+    const usage = counters.snapshot();
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return reply
+        .code(200)
+        .header(REQUEST_ID_HEADER, requestId)
+        .header(ASSESSMENT_CALLS_HEADER, String(usage.assessmentCalls))
+        .header(ASSESSMENT_COST_HEADER, String(usage.assessmentCostUnits))
+        .type("application/json")
+        .send(body);
+    }
+    const assessedBody = assessedBodyOf(analysed.value.envelope, fields.value);
+    const streamBody = `data: ${assessedBody}\n\ndata: ${JSON.stringify({ kind: "deepening", status: "pending" })}\n\n`;
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .header(ASSESSMENT_CALLS_HEADER, String(usage.assessmentCalls))
+      .header(ASSESSMENT_COST_HEADER, String(usage.assessmentCostUnits))
+      .header("cache-control", "no-cache")
+      .type("text/event-stream")
+      .send(streamBody);
   }
 
   // On-request Muse contract assessment (S-038, K-305, K-309): same gate
@@ -1019,12 +1199,111 @@ export function createRestServer(options: RestServerOptions): RestServer {
     );
   });
 
+  // Optional sentence-level explanation overlay (S-094, K-302): the same
+  // gate and the same deterministic analysis as the analyze routes, then
+  // one overlay call over the frozen envelope. The route always answers
+  // 200 with the outcome envelope: `not-configured` without a wired
+  // service, `invalid-output` for malformed model output, and the checked
+  // narrative otherwise. Citations name collected `signal:<id>` evidence
+  // only; anything else drops with a count. Scores, evidence and finding
+  // text are untouched: the analysis runs first and stands beside the
+  // overlay in every branch.
+  async function handleExplain(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const { address, block } = gated.value;
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const counters = createRequestCounters();
+    const analysed = await options.services.analyzeToken(
+      {
+        address,
+        block,
+        requestId,
+        deadline: deadline.value,
+        modelVersion: options.modelVersion,
+        indexVersion: options.indexVersion,
+        templateVersion: options.templateVersion,
+        catalogue: options.catalogue,
+      },
+      counters,
+    );
+    if (!analysed.ok) {
+      const mapped = toHttpError(analysed.error);
+      return sendError(
+        reply,
+        requestError(mapped.status, mapped.code, mapped.message, requestId),
+      );
+    }
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(body);
+    }
+    const envelope = analysed.value.envelope;
+    const service = options.explainService;
+    if (service === undefined || !service.enabled) {
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          codeHash: envelope.codeHash as string,
+          explain: { kind: "not-configured" },
+        }),
+      );
+    }
+    const input = ExplainInput.create({
+      codeHash: envelope.codeHash as string,
+      evidenceIds: envelope.signals.map((signal) => `signal:${signal.id as string}`),
+      promptVersion: EXPLAIN_PROMPT_VERSION,
+    });
+    if (input === null) {
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          codeHash: envelope.codeHash as string,
+          explain: { kind: "invalid-output" },
+        }),
+      );
+    }
+    const outcome = await service.explain(input);
+    return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+      JSON.stringify({
+        status: "ok",
+        apiVersion: API_VERSION,
+        codeHash: envelope.codeHash as string,
+        explain: JSON.parse(serializeExplainOutcome(outcome)),
+      }),
+    );
+  }
+
   app.get("/v1/analyze", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleAnalyze(request, reply, request.query);
   });
 
   app.post("/v1/analyze", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleAnalyze(request, reply, request.body);
+  });
+
+  app.get("/v1/analyze/stream", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleAnalyzeStream(request, reply);
+  });
+
+  app.get("/v1/explain", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleExplain(request, reply, request.query);
+  });
+
+  app.post("/v1/explain", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleExplain(request, reply, request.body);
   });
 
   app.get("/v1/assessment", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
@@ -1053,6 +1332,19 @@ export function createRestServer(options: RestServerOptions): RestServer {
     },
     close: async (): Promise<void> => {
       await app.close();
+    },
+    inject: async (options: {
+      readonly method?: string;
+      readonly url: string;
+      readonly headers?: Record<string, string>;
+      readonly payload?: unknown;
+    }) => {
+      const response = await app.inject(options as never);
+      return {
+        statusCode: response.statusCode,
+        body: response.body,
+        headers: response.headers as Record<string, unknown>,
+      };
     },
   });
 }
