@@ -62,10 +62,13 @@ function parseTemplate(entry: unknown): CloneTemplate | null {
 }
 
 export class CloneIndexAdapter implements CloneIndexPort {
-  private constructor(
-    private readonly version: IndexVersionType,
-    private readonly templates: readonly CloneTemplate[],
-  ) {}
+  private readonly version: IndexVersionType;
+  private readonly templates: readonly CloneTemplate[];
+
+  private constructor(version: IndexVersionType, templates: readonly CloneTemplate[]) {
+    this.version = version;
+    this.templates = templates;
+  }
 
   // Boundary-validated construction (A-16): a malformed table yields the
   // index-unavailable branch, and a table whose version differs from the

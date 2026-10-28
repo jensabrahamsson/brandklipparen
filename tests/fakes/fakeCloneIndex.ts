@@ -20,11 +20,19 @@ function keyOf(codeHash: CodeHashType, skeletonHash: SkeletonHashType): string {
 export class FakeCloneIndexAdapter implements CloneIndexPort {
   readonly matchCalls: Array<{ codeHash: string; skeletonHash: string }> = [];
 
+  private readonly version: IndexVersionType;
+  private readonly hits: ReadonlyMap<string, CloneMatch>;
+  private readonly failure: CloneIndexError | null;
+
   constructor(
-    private readonly version: IndexVersionType,
-    private readonly hits: ReadonlyMap<string, CloneMatch> = new Map(),
-    private readonly failure: CloneIndexError | null = null,
-  ) {}
+    version: IndexVersionType,
+    hits: ReadonlyMap<string, CloneMatch> = new Map(),
+    failure: CloneIndexError | null = null,
+  ) {
+    this.version = version;
+    this.hits = hits;
+    this.failure = failure;
+  }
 
   static keyFor(codeHash: CodeHashType, skeletonHash: SkeletonHashType): string {
     return keyOf(codeHash, skeletonHash);

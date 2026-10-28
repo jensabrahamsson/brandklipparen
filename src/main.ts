@@ -7,6 +7,7 @@
 // starts no daemon, no watch mode and no timer: REST binds one listener
 // and MCP reads stdin until it closes. Ethereum mainnet only.
 import { readFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { loadConfig } from "./adapters/config/loader.ts";
 import { createextdecompAdapterFromConfig } from "./adapters/extdecomp/extdecompAdapter.ts";
 import {
@@ -116,7 +117,9 @@ async function startupPorts(config: AppConfig): Promise<AnalyzeTokenPorts> {
   });
   return Object.freeze({
     rpc: rpc.value,
-    modelArtifacts: new FileModelArtifactAdapter(config.modelArtifactPath),
+    // The config value names the artifact file (docs/infrastructure.md); the
+    // adapter resolves `artifact-<version>.json` inside its directory.
+    modelArtifacts: new FileModelArtifactAdapter(dirname(config.modelArtifactPath)),
     clock: systemClock(),
     decompiler: extdecomp.ok ? extdecomp.value : undefined,
     cache: new InMemoryCacheAdapter(),

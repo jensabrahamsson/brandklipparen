@@ -19,7 +19,11 @@ import type {
 } from "../../ports/modelArtifact.ts";
 
 export class FileModelArtifactAdapter implements ModelArtifactPort {
-  constructor(private readonly directory: string) {}
+  private readonly directory: string;
+
+  constructor(directory: string) {
+    this.directory = directory;
+  }
 
   load(version: ModelVersionType): Result<LoadedArtifact, ModelArtifactError> {
     const versionText = version as string;

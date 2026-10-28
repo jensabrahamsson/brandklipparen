@@ -14,7 +14,11 @@ import type {
 export class FakeModelArtifactAdapter implements ModelArtifactPort {
   loadCalls = 0;
 
-  constructor(private readonly loaded: LoadedArtifact) {}
+  private readonly loaded: LoadedArtifact;
+
+  constructor(loaded: LoadedArtifact) {
+    this.loaded = loaded;
+  }
 
   load(version: ModelVersionType): Result<LoadedArtifact, ModelArtifactError> {
     this.loadCalls += 1;

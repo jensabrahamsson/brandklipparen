@@ -24,11 +24,19 @@ export class FakeRpcAdapter implements RpcPort {
   readonly getStorageAtCalls: Array<{ address: string; slot: string }> = [];
   getBlockNumberCalls = 0;
 
+  private readonly codes: ReadonlyMap<string, string>;
+  private readonly headBlock: BlockNumberType;
+  private readonly storage: ReadonlyMap<string, ReadonlyMap<string, string>>;
+
   constructor(
-    private readonly codes: ReadonlyMap<string, string>,
-    private readonly headBlock: BlockNumberType,
-    private readonly storage: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map(),
-  ) {}
+    codes: ReadonlyMap<string, string>,
+    headBlock: BlockNumberType,
+    storage: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map(),
+  ) {
+    this.codes = codes;
+    this.headBlock = headBlock;
+    this.storage = storage;
+  }
 
   async getCode(address: AddressType, ctx: CallContext): Promise<Result<BytecodeResult, RpcError>> {
     this.getCodeCalls.push(address as string);

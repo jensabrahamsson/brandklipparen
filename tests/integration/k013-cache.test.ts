@@ -73,10 +73,13 @@ function placeholderLoadedArtifact(version: string): LoadedArtifact {
 class DualArtifactAdapter implements ModelArtifactPort {
   loadCalls = 0;
 
-  constructor(
-    private readonly first: LoadedArtifact,
-    private readonly second: LoadedArtifact,
-  ) {}
+  private readonly first: LoadedArtifact;
+  private readonly second: LoadedArtifact;
+
+  constructor(first: LoadedArtifact, second: LoadedArtifact) {
+    this.first = first;
+    this.second = second;
+  }
 
   load(version: ModelVersionType): Result<LoadedArtifact, ModelArtifactError> {
     this.loadCalls += 1;

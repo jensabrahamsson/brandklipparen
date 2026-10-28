@@ -4,7 +4,11 @@ import type { Timestamp as TimestampType } from "../../src/domain/types.ts";
 import type { ClockPort } from "../../src/ports/clock.ts";
 
 export class FakeClockAdapter implements ClockPort {
-  constructor(private readonly at: TimestampType) {}
+  private readonly at: TimestampType;
+
+  constructor(at: TimestampType) {
+    this.at = at;
+  }
 
   now(): TimestampType {
     return this.at;
