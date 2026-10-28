@@ -13,9 +13,11 @@ Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 ## What it checks
 
 Max-tx and max-wallet limits set by a privileged caller and compared in
-the transfer path. The proof needs both at once: a caller-guarded
-function that stores a constant limit slot, and the transfer path
-loading the same slot beside a less than or greater than compare. One
+the transfer path. The proof needs a caller-guarded writer storing a
+caller-chosen limit (a computed value) or a large constant to a limit
+slot, and the transfer path loading the same slot beside a less than or
+greater than compare. A flag constant (0 or 1) is a pause toggle, never
+a limit. The writer and the reader may share one merged function. One
 finding names the lowest provable slot with its kind: a compare against
 a balance mapping lookup reports `max-wallet`, a compare against a
 calldata value with no mapping read reports `max-tx`, and anything else
@@ -32,8 +34,9 @@ function it constrains, with the kind the reads prove.
 
 The live limit value: the bytecode proves the mechanism, not the number
 in storage. Whether the setter is still callable is also unproven. A
-compare with no privileged writer, or a privileged write the transfer
-path never compares against, stays silent rather than guessed.
+compare with no privileged writer, a privileged write the transfer path
+never compares against beside the loaded slot, or a flag constant that
+belongs to a pause toggle, stays silent rather than guessed.
 
 ## Evidence format
 
@@ -52,9 +55,11 @@ effective weight, which the plugin list exposes per plugin.
 
 The kind is resolved structurally: a mapping read beside the compare
 means a balance lookup, calldata with no mapping read means an amount,
-and anything else means unknown. A limit enforced by arithmetic instead
-of a compare stays silent. A finding never says the limit was enforced,
-only that the bytecode proves the privileged path.
+and anything else means unknown. The compare must sit beside the loaded
+slot value (within a short window), not merely in the same function. A
+limit enforced by arithmetic instead of a compare stays silent. A
+finding never says the limit was enforced, only that the bytecode proves
+the privileged path.
 
 ## Inputs
 
@@ -65,3 +70,7 @@ helpers.
 ## Version and changelog
 
 Version 1.0.0. Initial release.
+
+Specificity update: the writer must store a caller-chosen value or a
+large constant (never a flag), and the compare must sit beside the
+loaded slot.

@@ -14,8 +14,12 @@ Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 
 A transfer gate on a mapping entry that a privileged caller can set.
 The proof needs both at once: the transfer path reads a mapping entry
-and reverts on its value, and a caller-guarded function writes a mapping
-slot. One finding names the first provable pair.
+beside an equality compare, or beside an ISZERO with no range compare
+between the load and the gate, with a conditional jump that can revert;
+and a caller-guarded function writes a mapping slot. The two may share
+one merged function. One finding names the first provable pair. A plain
+balance check or an allowance check never counts: both compile to a
+range compare closed by ISZERO, which the ordered veto excludes.
 
 ## Why it matters to you
 
@@ -45,10 +49,12 @@ effective weight, which the plugin list exposes per plugin.
 ## Limitations / false positives
 
 The mapping shape is resolved structurally: a hash-mixed access counts,
-a direct constant slot read in the transfer path does not. A gate that
-blocks by reverting with no value compare, or by arithmetic instead of
-a compare, stays silent. A finding never says the gate was used, only
-that the bytecode proves the privileged path.
+a direct constant slot read in the transfer path does not. The gate
+compare must sit beside the loaded entry (within a short window), not
+merely in the same function. A gate that blocks by reverting with no
+value compare, or by arithmetic instead of a compare, stays silent. A
+finding never says the gate was used, only that the bytecode proves the
+privileged path.
 
 ## Inputs
 
@@ -59,3 +65,7 @@ helpers.
 ## Version and changelog
 
 Version 1.0.0. Initial release.
+
+Specificity update: the gate compare must sit beside the loaded entry,
+and ISZERO gates with a range compare between the load and the gate
+(balance and allowance checks) no longer count.

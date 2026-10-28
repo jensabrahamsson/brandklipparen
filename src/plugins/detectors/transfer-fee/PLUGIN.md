@@ -12,12 +12,15 @@ Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 
 ## What it checks
 
-A fee slot set by a privileged caller and used arithmetically in the
-transfer path. The proof needs both at once: a caller-guarded function
-that stores a constant slot, and the transfer path loading the same slot
-beside multiply or divide arithmetic. One finding names the lowest
-provable slot and reports the max-fee bound when the setter bounds it
-with a constant compare, or an unknown bound when it does not.
+A fee rate set by a privileged caller and deducted in the transfer path.
+The proof needs a caller-guarded writer storing a caller-chosen rate (a
+computed, non-constant value) to a constant slot, and the transfer path
+loading the same slot beside multiply or divide arithmetic (the rate
+application) with a subtraction in the region (the deduction from the
+transfer amount). The writer and the reader may share one merged
+function. One finding names the lowest provable slot and reports the
+max-fee bound when the setter bounds it with a constant compare, or an
+unknown bound when it does not.
 
 ## Why it matters to you
 
@@ -31,8 +34,9 @@ the setter proves, so you can see the worst case.
 The true maximum when the setter carries no constant compare: then the
 bound is reported unknown rather than guessed. Whether the setter is
 still callable, or whether the slot really is a fee, is also unproven.
-A fee slot the transfer path never computes with, or fee arithmetic
-with no privileged writer, stays silent rather than guessed.
+A fee slot the transfer path never computes with beside the loaded slot,
+a hardcoded constant rate no caller can change, or fee arithmetic with
+no privileged writer, stays silent rather than guessed.
 
 ## Evidence format
 
@@ -51,9 +55,12 @@ effective weight, which the plugin list exposes per plugin.
 
 The bound is the largest sane constant in a bounding setter, capped at
 one hundred percent: an exotic cap shape stays unknown. The fee shape is
-resolved structurally: a direct constant slot read with multiply or
-divide counts, anything else stays silent. A finding never says the fee
-was charged, only that the bytecode proves the privileged path.
+resolved structurally: the rate computation must sit beside the loaded
+slot value (within a short window), not merely in the same function, and
+the writer must store a caller-chosen value. A fee through a hashed
+mapping slot, or a rate the linear scan does not recognise, stays
+silent. A finding never says the fee was charged, only that the bytecode
+proves the privileged path.
 
 ## Inputs
 
@@ -64,3 +71,7 @@ helpers.
 ## Version and changelog
 
 Version 1.0.0. Initial release.
+
+Specificity update: the writer must store a caller-chosen rate and the
+rate arithmetic must sit beside the loaded slot, with a subtraction for
+the deduction.

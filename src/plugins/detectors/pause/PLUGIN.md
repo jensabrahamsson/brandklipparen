@@ -13,12 +13,14 @@ Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 ## What it checks
 
 A boolean flag set by a privileged caller that gates the transfer path.
-The proof needs both at once: a caller-guarded function that stores a
-constant slot, and the transfer path loading the same slot beside a
-compare and a conditional jump that can revert. One finding names the
-lowest provable slot with its mode: a one-way enable reports
-`trading-toggle`, a flag that also writes zero reports `pause`, and
-anything else reports `unknown`.
+The proof needs a caller-guarded writer storing a flag value (zero or a
+small boolean constant) to a constant slot, and the transfer path
+loading the same slot beside an equality compare, or beside an ISZERO
+with no range compare between the load and the gate, plus a conditional
+jump that can revert. The writer and the gate may share one merged
+function. One finding names the lowest provable slot with its mode: a
+one-way enable reports `trading-toggle`, a flag that also writes zero
+reports `pause`, and anything else reports `unknown`.
 
 ## Why it matters to you
 
@@ -31,8 +33,9 @@ stores prove, so you can see whether the flag flips both ways.
 
 Whether the setter is still callable, or whether the flag currently
 blocks transfers: the bytecode proves the mechanism, not the live state.
-An ungated flag, or a gate with no privileged writer, stays silent
-rather than guessed.
+An ungated flag, a gate with no privileged writer, an amount comparison,
+or a computed rate or limit write that shares the setter shape, stays
+silent rather than guessed.
 
 ## Evidence format
 
@@ -51,9 +54,13 @@ effective weight, which the plugin list exposes per plugin.
 
 The mode is resolved structurally: a zero write anywhere means the flag
 flips both ways, a nonzero constant write with no zero write means a
-one-way enable, and a computed value means unknown. A gate that blocks
-without a constant slot read stays silent. A finding never says the flag
-was set, only that the bytecode proves the privileged path.
+one-way enable, and a computed value means unknown. A range compare
+between the load and an ISZERO gate disqualifies the boolean reading, so
+balance checks never count, while unrelated bounds elsewhere never veto
+it. A setter that takes the flag as an argument (a computed write) is
+not proven a flag setter. A gate that blocks without a constant slot
+read stays silent. A finding never says the flag was set, only that the
+bytecode proves the privileged path.
 
 ## Inputs
 
@@ -64,3 +71,7 @@ helpers.
 ## Version and changelog
 
 Version 1.0.0. Initial release.
+
+Specificity update: the writer must store a flag value, the compare must
+sit beside the loaded slot, and an ISZERO gate with a range compare
+between the load and the gate no longer counts.

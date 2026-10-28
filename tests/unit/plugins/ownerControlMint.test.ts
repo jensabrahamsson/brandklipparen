@@ -15,7 +15,9 @@ import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
 import {
   ADD,
   CALLDATALOAD,
+  KECCAK,
   SLOAD,
+  SSTORE,
   STOP,
   ownerGuard,
   push1,
@@ -34,7 +36,8 @@ const MINT = "0x40c10f19";
 const TRANSFER = "0xa9059cbb";
 
 function mintBody(): number[] {
-  // onlyOwner guard over slot 0, then supply slot 1 grows by the amount.
+  // onlyOwner guard over slot 0, then supply slot 1 grows by the amount
+  // with a balance credit to a caller-chosen address.
   return [
     ...ownerGuard(0, 200),
     CALLDATALOAD,
@@ -42,6 +45,10 @@ function mintBody(): number[] {
     SLOAD,
     ADD,
     ...sstoreConstSlot(1, []),
+    CALLDATALOAD,
+    ...push1(2),
+    KECCAK,
+    SSTORE,
     STOP,
   ];
 }

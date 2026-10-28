@@ -2,9 +2,10 @@
 // `dev.brandklipparen.transfer-hooks`. Written first (red) per A-21. The
 // shared detector contract proves determinism, schema agreement, evidence
 // presence and unchanged inputs; the tests below prove the behaviour:
-// external calls reachable in the transfer path report one finding per
-// call site with the call kind and the best-effort target source, while a
-// transfer path with no calls stays silent.
+// external CALLs to non-constant targets in the transfer path report one
+// finding with the best-effort target source, while static calls,
+// delegatecalls, constant-target calls and a transfer path with no calls
+// stay silent.
 import { describe, expect, test } from "vitest";
 import { Bytecode, CodeHash } from "../../../src/domain/types.ts";
 import type { DetectorInput } from "../../../src/plugins/detector.ts";
@@ -101,30 +102,16 @@ runDetectorPluginContract(
 );
 
 describe("transfer-hooks detector plugin", () => {
-  test("calls in the transfer path report one finding per site", () => {
+  test("calls to non-constant targets report one finding; staticcall and delegatecall stay silent", () => {
     const findings = transferHooksDetectorPlugin.detect(makeInput());
-    expect(findings).toHaveLength(3);
+    expect(findings).toHaveLength(1);
     const ids = findings.map((finding) => finding.id).sort();
-    expect(ids).toEqual([
-      "dev.brandklipparen.transfer-hooks:call",
-      "dev.brandklipparen.transfer-hooks:delegatecall",
-      "dev.brandklipparen.transfer-hooks:staticcall",
-    ]);
+    expect(ids).toEqual(["dev.brandklipparen.transfer-hooks:call"]);
     const byId = new Map(findings.map((finding) => [finding.id, finding.payload]));
     expect(byId.get("dev.brandklipparen.transfer-hooks:call")).toEqual({
       feature: "transfer-hooks",
       callKind: "call",
       target: "storage",
-    });
-    expect(byId.get("dev.brandklipparen.transfer-hooks:staticcall")).toEqual({
-      feature: "transfer-hooks",
-      callKind: "staticcall",
-      target: "constant",
-    });
-    expect(byId.get("dev.brandklipparen.transfer-hooks:delegatecall")).toEqual({
-      feature: "transfer-hooks",
-      callKind: "delegatecall",
-      target: "unknown",
     });
     for (const finding of findings) {
       expect(finding.evidence).toHaveLength(1);

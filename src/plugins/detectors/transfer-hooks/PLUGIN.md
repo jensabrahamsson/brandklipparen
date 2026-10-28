@@ -12,12 +12,14 @@ Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 
 ## What it checks
 
-External calls reachable in the transfer path. One finding per call
-kind present in a transfer region carries every call site of that kind
-as selector evidence with PC offsets, with the best-effort target source
-of the first site: an address loaded from storage, a pushed constant
-address, an argument from calldata, or unknown when the window shows
-none of these.
+External calls reachable in the transfer path. One finding carries every
+external CALL site in a transfer region as selector evidence with PC
+offsets, with the best-effort target source of the first site: an
+address loaded from storage, an argument from calldata, or unknown when
+the window shows neither. Only the `call` kind to a non-constant target
+counts: static calls to precompiles (such as ecrecover in permit) or
+balance lookups, delegatecalls, and calls to hardcoded constant
+addresses never prove a hook.
 
 ## Why it matters to you
 
@@ -35,15 +37,13 @@ transfer path with no external calls stays silent.
 
 ## Evidence format
 
-A list with at most one finding per call kind with the namespaced id
-`dev.brandklipparen.transfer-hooks:call`,
-`dev.brandklipparen.transfer-hooks:staticcall` or
-`dev.brandklipparen.transfer-hooks:delegatecall`, each with a short
-English title, selector evidence with the PC offset wherever derivable,
-and the payload holding `feature`, `callKind` and `target`. The payload
-carries three fields, `feature`, `callKind` and `target`, where the kind
-and the target each name one of the listed outcomes, and every finding
-carries at least one `evidence` entry with a `selector`.
+A list with at most one finding with the namespaced id
+`dev.brandklipparen.transfer-hooks:call`, a short English title,
+selector evidence with the PC offset wherever derivable, and the payload
+holding `feature`, `callKind` and `target`. The payload carries three
+fields, `feature`, `callKind` (always "call") and `target` (one of
+"storage", "argument" or "unknown"), and every finding carries at least
+one `evidence` entry with a `selector`.
 As a first-party detector, its findings convert to calibrated signals
 through the versioned model artifact, and the artifact sets their
 effective weight, which the plugin list exposes per plugin.
@@ -65,3 +65,7 @@ helpers.
 ## Version and changelog
 
 Version 1.0.0. Initial release.
+
+Specificity update: only external CALLs to non-constant targets prove
+a hook; static calls, delegatecalls and constant-target calls stay
+silent, and at most one finding is reported.

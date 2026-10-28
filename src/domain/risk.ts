@@ -57,11 +57,33 @@ const SCORE_SCALE = 100;
 // with: the single artifact-carried catalogue the conversion reads, so a
 // plugin still cannot steer its own score. Absent entries convert
 // nothing; older artifacts carry no entry and verify unchanged.
+// `detectorHeadWeights` (S-115 calibration) maps a detector plugin id to
+// its fitted weight per risk head: converted signals carrying that plugin
+// id score with the head weight instead of the severity weight, so the
+// fitted per-plugin magnitudes shape the totals. Absent means every
+// signal scores through the severity weights.
 export type PluginFeatureMapping = {
   readonly risk: RiskType;
   readonly direction: Direction;
   readonly severity: Severity;
 };
+
+export type ScoreBands = {
+  readonly elevated: number;
+  readonly high: number;
+};
+
+// Calibrated per-plugin per-head weights (S-115 calibration): a detector
+// plugin id mapped to its fitted weight per risk head. The weights come
+// from L2-regularised logistic regression on TRAIN with a non-negative
+// constraint for detectors whose documented semantics are risk-increasing,
+// followed by a monotone (slope at least 0) Platt map per head. Only the
+// fitted rug-pull and honeypot heads carry weights; a missing plugin id or
+// head scores through the severity weights. Absent means no detector
+// carries a calibrated head weight.
+export type CalibratedHead = "rug-pull" | "honeypot";
+
+export type DetectorHeadWeights = Readonly<Record<string, Readonly<Record<CalibratedHead, number>>>>;
 
 export type ModelArtifact = {
   readonly version: ModelVersionType;
@@ -72,6 +94,9 @@ export type ModelArtifact = {
   readonly scoreWeights: Readonly<Record<RiskType, number>>;
   readonly pluginWeights: Readonly<Record<string, number>>;
   readonly pluginFeatureCatalogue: Readonly<Record<string, PluginFeatureMapping>>;
+  readonly detectorHeadWeights?: DetectorHeadWeights | undefined;
+  readonly scoreBands?: ScoreBands | undefined;
+  readonly uncalibratedHeads?: readonly RiskType[] | undefined;
 };
 
 export type CalibrationParams = {
@@ -143,13 +168,13 @@ export function parseModelArtifact(input: unknown): Result<ModelArtifact, Domain
   }
   const topKeys = Object.keys(input).sort();
   const expectedBase = ["biases", "calibration", "causeWeights", "scoreWeights", "severityWeights", "version"].sort();
-  const optionalTop = ["pluginWeights", "pluginFeatureCatalogue"];
+  const optionalTop = ["pluginWeights", "pluginFeatureCatalogue", "detectorHeadWeights", "scoreBands", "uncalibratedHeads"];
   const matchesExpected =
     expectedBase.every((key) => topKeys.includes(key)) &&
     topKeys.every((key) => expectedBase.includes(key) || optionalTop.includes(key));
   if (!matchesExpected) {
     return invalidArtifact(
-      "model artifact must carry exactly version, severityWeights, causeWeights, biases, calibration and scoreWeights with optional pluginWeights and pluginFeatureCatalogue",
+      "model artifact must carry exactly version, severityWeights, causeWeights, biases, calibration and scoreWeights with optional pluginWeights, pluginFeatureCatalogue, detectorHeadWeights, scoreBands and uncalibratedHeads",
     );
   }
   if (typeof input["version"] !== "string") {
@@ -204,6 +229,20 @@ export function parseModelArtifact(input: unknown): Result<ModelArtifact, Domain
       "model artifact pluginFeatureCatalogue must map plugin ids to risk, direction and severity",
     );
   }
+  const detectorHeadWeights = readDetectorHeadWeights(input["detectorHeadWeights"]);
+  if (detectorHeadWeights === null) {
+    return invalidArtifact(
+      "model artifact detectorHeadWeights must map plugin ids to finite per-head weights at least 0",
+    );
+  }
+  const scoreBands = readScoreBands(input["scoreBands"]);
+  if (scoreBands === null) {
+    return invalidArtifact("model artifact scoreBands must carry integer elevated and high cutoffs with elevated below high");
+  }
+  const uncalibratedHeads = readUncalibratedHeads(input["uncalibratedHeads"]);
+  if (uncalibratedHeads === null) {
+    return invalidArtifact("model artifact uncalibratedHeads must list known risk types");
+  }
   return ok(
     Object.freeze({
       version: version.value,
@@ -214,6 +253,9 @@ export function parseModelArtifact(input: unknown): Result<ModelArtifact, Domain
       scoreWeights: Object.freeze(scoreWeights),
       pluginWeights: Object.freeze(pluginWeights),
       pluginFeatureCatalogue: Object.freeze(pluginFeatureCatalogue),
+      ...(detectorHeadWeights === undefined ? {} : { detectorHeadWeights: Object.freeze(detectorHeadWeights) }),
+      ...(scoreBands === undefined ? {} : { scoreBands: Object.freeze(scoreBands) }),
+      ...(uncalibratedHeads === undefined ? {} : { uncalibratedHeads: Object.freeze(uncalibratedHeads) }),
     }),
   );
 }
@@ -238,6 +280,59 @@ function readPluginWeights(raw: unknown): Record<string, number> | null {
 const FEATURE_RISKS: readonly string[] = Object.freeze(["rug-pull", "honeypot", "bot-pump"]);
 const FEATURE_DIRECTIONS: readonly string[] = Object.freeze(["raises", "lowers"]);
 const FEATURE_SEVERITIES: readonly string[] = Object.freeze(["low", "medium", "high"]);
+
+// Optional score bands (real calibration): integer cutoffs for
+// Elevated and High with Elevated below High. Absent means the
+// documented 30/60 defaults. Unknown input gives null.
+function readScoreBands(raw: unknown): ScoreBands | undefined | null {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  if (keys.length !== 2 || keys[0] !== "elevated" || keys[1] !== "high") {
+    return null;
+  }
+  const elevated = record["elevated"];
+  const high = record["high"];
+  if (
+    typeof elevated !== "number" ||
+    typeof high !== "number" ||
+    !Number.isInteger(elevated) ||
+    !Number.isInteger(high) ||
+    elevated < 0 ||
+    high < 0 ||
+    elevated > 100 ||
+    high > 100 ||
+    !(elevated < high)
+  ) {
+    return null;
+  }
+  return { elevated, high };
+}
+
+// Optional uncalibrated heads (real calibration): names risk types with
+// no positives in fitting, kept on prior parameters. Absent means every
+// head is calibrated. Unknown input gives null.
+function readUncalibratedHeads(raw: unknown): readonly RiskType[] | undefined | null {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (typeof entry !== "string" || !FEATURE_RISKS.includes(entry) || seen.has(entry)) {
+      return null;
+    }
+    seen.add(entry);
+  }
+  return Object.freeze([...raw] as RiskType[]);
+}
 
 // Optional per-plugin feature catalogue (S-115): absent means no feature
 // finding converts. Unknown input gives null; valid input gives the frozen
@@ -307,14 +402,51 @@ function toScore(value: number): RiskScoreType {
   return 0 as RiskScoreType;
 }
 
+// Optional per-plugin per-head weights (S-115 calibration): absent means
+// no detector carries a calibrated head weight. When present every plugin
+// id maps to finite per-head weights at least 0; unknown input gives null.
+function readDetectorHeadWeights(raw: unknown): DetectorHeadWeights | undefined | null {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!isRecord(raw)) {
+    return null;
+  }
+  const out: Record<string, Record<CalibratedHead, number>> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key.length === 0 || !isRecord(value)) {
+      return null;
+    }
+    const valueKeys = Object.keys(value).sort();
+    if (valueKeys.length !== 2 || valueKeys[0] !== "honeypot" || valueKeys[1] !== "rug-pull") {
+      return null;
+    }
+    const rug = value["rug-pull"];
+    const honey = value["honeypot"];
+    if (!isFiniteNumber(rug) || rug < 0 || !isFiniteNumber(honey) || honey < 0) {
+      return null;
+    }
+    out[key] = Object.freeze({ "rug-pull": rug, honeypot: honey });
+  }
+  return out;
+}
+
 // Signed contribution of one signal to its own risk bucket. Direction steers
 // the sign (raises adds, lowers subtracts); hard-to-analyze signals carry no
 // direction and count as raising. Clone-match magnitudes scale with the
-// reported similarity. All magnitudes come from the artifact.
+// reported similarity. All magnitudes come from the artifact: a capability
+// signal converted from a calibrated detector plugin uses the artifact
+// per-plugin per-head weight for its risk head, and every other signal
+// uses the severity weights.
 function contributionOf(signal: Signal, artifact: ModelArtifact): SignalContribution {
   switch (signal.kind) {
     case "capability": {
-      const magnitude = artifact.severityWeights[signal.severity] ?? 0;
+      const head = signal.risk === "bot-pump" ? undefined : (signal.risk as CalibratedHead);
+      const calibrated =
+        signal.sourcePlugin === undefined || head === undefined
+          ? undefined
+          : artifact.detectorHeadWeights?.[signal.sourcePlugin]?.[head];
+      const magnitude = calibrated ?? artifact.severityWeights[signal.severity] ?? 0;
       const sign = signal.direction === "raises" ? 1 : -1;
       return { signalId: signal.id, risk: signal.risk, direction: signal.direction, weight: sign * magnitude };
     }

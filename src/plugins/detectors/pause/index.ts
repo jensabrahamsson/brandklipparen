@@ -1,18 +1,20 @@
 // Pause detector plugin `dev.brandklipparen.pause` (S-115, P-12 step 1).
 // First-party detector behind the registry: proves a privileged pause or
-// trading toggle from code paths. A finding needs both: a privileged
-// region (a caller guard) that stores a constant flag slot, and a
-// transfer path that loads the same slot and reverts through a compare
-// and a conditional jump. The mode is `trading-toggle` when no store to
-// the slot ever writes zero and some store writes a nonzero constant
-// (a one-way enable), `pause` when a zero write exists (the flag flips
-// both ways), and `unknown` otherwise. An ungated flag, or a gate with no
-// privileged writer, stays silent. Pure and synchronous: this module
-// imports solely the plugin API and domain types and pure functions
-// (P-03).
+// trading toggle from code paths. A finding needs a privileged writer
+// (a caller guard) storing a flag slot, and a transfer path that loads the
+// same slot beside an equality compare (or an ISZERO with no range compare
+// between the load and the gate, so a balance check `balance >= amount`
+// never counts) with a conditional jump that can revert. The writer and
+// the gate may live in the same function when solc merges code. The mode
+// is `trading-toggle` when no store to the slot ever writes zero and some
+// store writes a nonzero constant (a one-way enable), `pause` when a zero
+// write exists (the flag flips both ways), and `unknown` otherwise. An
+// ungated flag, a gate with no privileged writer, or an amount comparison
+// stays silent. Pure and synchronous: this module imports solely the
+// plugin API and domain types and pure functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { analyzeOwnerControl } from "../../../domain/ownerControl.ts";
+import { analyzeOwnerControl, constSlotLoadNearFlavor, flavorBetween } from "../../../domain/ownerControl.ts";
 import type { RegionFacts } from "../../../domain/ownerControl.ts";
 import { containingSelector, extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
@@ -107,23 +109,27 @@ function evidenceFor(
 }
 
 // A transfer gate on a constant flag slot: the slot loads beside an
-// equality compare and a conditional jump that can revert. Ordered
-// compares (LT, GT) belong to limit checks, not boolean flags, so a
-// region carrying them never proves a pause gate.
+// equality compare, or beside an ISZERO with no range compare between the
+// load and the gate, plus a conditional jump that can revert. A bounded
+// amount check in the same region keeps its own LT or GT, but the veto is
+// positional: only a compare between this load and this gate disqualifies
+// the boolean reading, so an unrelated bound elsewhere never vetoes it.
 function gatedFlagRead(region: RegionFacts, slot: number): number | null {
   if (!region.hasJumpi || !region.hasRevert) {
     return null;
   }
-  if (region.hasLt || region.hasGt) {
+  const eqProof = constSlotLoadNearFlavor(region, slot, ["eq"]);
+  if (eqProof !== null) {
+    return eqProof.loadPc;
+  }
+  const zeroProof = constSlotLoadNearFlavor(region, slot, ["iszero"]);
+  if (zeroProof === null) {
     return null;
   }
-  if (!region.hasEq && !region.hasIsZero) {
+  if (flavorBetween(region, ["lt", "gt"], zeroProof.loadPc, zeroProof.gatePc)) {
     return null;
   }
-  const read = region.loads.find(
-    (load) => load.slot.kind === "const" && load.slot.value === slot,
-  );
-  return read === undefined ? null : read.pc;
+  return zeroProof.loadPc;
 }
 
 function toggleMode(regions: readonly RegionFacts[], slot: number): "pause" | "trading-toggle" | "unknown" {
@@ -155,6 +161,26 @@ function toggleMode(regions: readonly RegionFacts[], slot: number): "pause" | "t
 // slots scan ascending and the lowest provable slot wins. Bytecode without
 // selectors yields no findings, since a finding without selector evidence
 // is unrepresentable.
+// A flag write: the writer stores zero (disabling) or a small boolean
+// constant (enabling), never a computed amount or a large constant. A
+// computed or large store is a rate or a limit, not a boolean flag, so a
+// fee or limits setter never doubles as a pause setter.
+function flagWriter(region: RegionFacts, slot: number): number | null {
+  const store = region.stores.find(
+    (candidate) => candidate.slot.kind === "const" && candidate.slot.value === slot,
+  );
+  if (store === undefined) {
+    return null;
+  }
+  if (store.valueIsZero) {
+    return store.pc;
+  }
+  if (store.valueConst !== null && store.valueConst <= 1) {
+    return store.pc;
+  }
+  return null;
+}
+
 function detect(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -169,7 +195,10 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       continue;
     }
     for (const store of region.stores) {
-      if (store.slot.kind === "const") {
+      if (store.slot.kind !== "const") {
+        continue;
+      }
+      if (store.valueIsZero || (store.valueConst !== null && store.valueConst <= 1)) {
         candidates.add(store.slot.value);
       }
     }
@@ -180,16 +209,26 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       if (!privilegedSet.has(region.selector)) {
         continue;
       }
-      const store = region.stores.find(
-        (candidate) => candidate.slot.kind === "const" && candidate.slot.value === slot,
-      );
-      if (store === undefined) {
+      const writePc = flagWriter(region, slot);
+      if (writePc === null) {
         continue;
       }
-      for (const transferSelector of transferSet) {
-        if (transferSelector === region.selector) {
-          continue;
+      const orderedTransfers = [...transferSet].sort();
+      orderedTransfers.sort((left, right) => {
+        const leftSame = left === region.selector ? 1 : 0;
+        const rightSame = right === region.selector ? 1 : 0;
+        if (leftSame !== rightSame) {
+          return leftSame - rightSame;
         }
+        if (left < right) {
+          return -1;
+        }
+        if (left > right) {
+          return 1;
+        }
+        return 0;
+      });
+      for (const transferSelector of orderedTransfers) {
         const transfer = view.regions.find((candidate) => candidate.selector === transferSelector);
         if (transfer === undefined) {
           continue;
@@ -198,10 +237,10 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
         if (gatePc === null) {
           continue;
         }
-        const holder = containingSelector(entries, store.pc) ?? region.selector;
+        const holder = containingSelector(entries, writePc) ?? region.selector;
         const gateHolder = containingSelector(entries, gatePc) ?? transfer.selector;
         const evidence: EvidenceType[] = [];
-        const written = evidenceFor(input.bytecode, holder, store.pc);
+        const written = evidenceFor(input.bytecode, holder, writePc);
         if (written !== null) {
           evidence.push(written);
         }

@@ -1,18 +1,23 @@
 // Transfer-fee detector plugin `dev.brandklipparen.transfer-fee` (S-115,
 // P-12 step 1). First-party detector behind the registry: proves an
-// owner-settable transfer fee from code paths. A finding needs both: a
-// privileged region (a caller guard) that stores a constant fee slot, and
-// a transfer path that loads the same slot beside multiply or divide
-// arithmetic. The max-fee bound is the largest constant the setter
+// owner-settable transfer fee from code paths. A finding needs a
+// privileged writer storing a caller-chosen rate (a computed, non-constant
+// value) to a constant fee slot, and a transfer path that loads the same
+// slot beside multiply or divide arithmetic (the rate application) with a
+// subtraction in the region (the deduction from the transfer amount). The
+// writer and the reader may share one merged function.
+// The max-fee bound is the largest constant the setter
 // compares with while bounding (LT or GT present), capped at basis-point
 // sense: a bound above 10000, or no bounding compare at all, reports a
 // null bound instead of a guess. A fee slot the transfer path never
-// computes with, or fee arithmetic with no privileged writer, stays
-// silent. Pure and synchronous: this module imports solely the plugin API
-// and domain types and pure functions (P-03).
+// computes with, a hardcoded constant rate, or fee arithmetic with no
+// privileged writer, stays silent. Pure and synchronous: this module
+// imports solely the plugin API and domain types and pure functions
+// (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { analyzeOwnerControl } from "../../../domain/ownerControl.ts";
+import { analyzeOwnerControl, constSlotLoadNearFlavor } from "../../../domain/ownerControl.ts";
+import type { RegionFacts } from "../../../domain/ownerControl.ts";
 import { containingSelector, disassemble, extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
@@ -149,6 +154,22 @@ function maxFeeBound(bytecode: DetectorInput["bytecode"], entryPc: number, endPc
 // slots scan ascending and the lowest provable slot wins. Bytecode without
 // selectors yields no findings, since a finding without selector evidence
 // is unrepresentable.
+// An owner-settable rate: the writer stores a computed value (from the
+// caller's argument), never a hardcoded constant, so the owner can change
+// the rate after deployment.
+function feeWriter(region: RegionFacts, slot: number): number | null {
+  const store = region.stores.find(
+    (candidate) => candidate.slot.kind === "const" && candidate.slot.value === slot && !candidate.valueIsZero,
+  );
+  if (store === undefined) {
+    return null;
+  }
+  if (store.valueConst !== null) {
+    return null;
+  }
+  return store.pc;
+}
+
 function detect(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -163,7 +184,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       continue;
     }
     for (const store of region.stores) {
-      if (store.slot.kind === "const" && !store.valueIsZero) {
+      if (store.slot.kind === "const" && !store.valueIsZero && store.valueConst === null) {
         candidates.add(store.slot.value);
       }
     }
@@ -181,37 +202,48 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       if (!privilegedSet.has(region.selector)) {
         continue;
       }
-      const store = region.stores.find(
-        (candidate) => candidate.slot.kind === "const" && candidate.slot.value === slot,
-      );
-      if (store === undefined) {
+      const writePc = feeWriter(region, slot);
+      if (writePc === null) {
         continue;
       }
-      for (const transferSelector of transferSet) {
-        if (transferSelector === region.selector) {
-          continue;
+      const orderedTransfers = [...transferSet].sort();
+      orderedTransfers.sort((left, right) => {
+        const leftSame = left === region.selector ? 1 : 0;
+        const rightSame = right === region.selector ? 1 : 0;
+        if (leftSame !== rightSame) {
+          return leftSame - rightSame;
         }
+        if (left < right) {
+          return -1;
+        }
+        if (left > right) {
+          return 1;
+        }
+        return 0;
+      });
+      for (const transferSelector of orderedTransfers) {
         const transfer = view.regions.find((candidate) => candidate.selector === transferSelector);
         if (transfer === undefined) {
           continue;
         }
-        const read = transfer.loads.find(
-          (load) => load.slot.kind === "const" && load.slot.value === slot,
-        );
-        if (read === undefined) {
+        const proof = constSlotLoadNearFlavor(transfer, slot, ["mul", "div"]);
+        if (proof === null) {
           continue;
         }
-        if (!transfer.hasMul && !transfer.hasDiv) {
+        if (writePc === proof.loadPc) {
           continue;
         }
-        const holder = containingSelector(entries, store.pc) ?? region.selector;
-        const readerHolder = containingSelector(entries, read.pc) ?? transfer.selector;
+        if (!transfer.hasSub) {
+          continue;
+        }
+        const holder = containingSelector(entries, writePc) ?? region.selector;
+        const readerHolder = containingSelector(entries, proof.loadPc) ?? transfer.selector;
         const evidence: EvidenceType[] = [];
-        const write = evidenceFor(input.bytecode, holder, store.pc);
+        const write = evidenceFor(input.bytecode, holder, writePc);
         if (write !== null) {
           evidence.push(write);
         }
-        const seen = evidenceFor(input.bytecode, readerHolder, read.pc);
+        const seen = evidenceFor(input.bytecode, readerHolder, proof.loadPc);
         if (seen !== null) {
           evidence.push(seen);
         }

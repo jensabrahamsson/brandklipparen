@@ -1,16 +1,19 @@
 // Blacklist detector plugin `dev.brandklipparen.blacklist` (S-115, P-12
 // step 1). First-party detector behind the registry: proves an
 // owner-controlled transfer gate from code paths. A finding needs both: a
-// transfer path that reads a mapping entry and reverts on its value, and a
-// privileged region (a caller guard) that writes a mapping slot. A gated
-// read with no privileged writer, or a privileged mapping write the
-// transfer path never gates on, stays silent: the proof is incomplete, so
-// no positive finding is reported. Pure and synchronous: this module
-// imports solely the plugin API and domain types and pure functions
-// (P-03).
+// transfer path that reads a mapping entry beside an equality compare (or
+// an ISZERO with no range compare between the load and the gate, so a
+// plain balance check `balance >= amount` or an allowance check never
+// counts) with a conditional jump that can revert, and a privileged region
+// (a caller guard) that writes a mapping slot. The two may share one
+// merged function. A gated read with no privileged writer, or a privileged
+// mapping write the transfer path never gates on, stays silent: the proof
+// is incomplete, so no positive finding is reported. Pure and
+// synchronous: this module imports solely the plugin API and domain types
+// and pure functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { analyzeOwnerControl } from "../../../domain/ownerControl.ts";
+import { analyzeOwnerControl, flavorBetween, mappingLoadNearFlavor } from "../../../domain/ownerControl.ts";
 import type { RegionFacts } from "../../../domain/ownerControl.ts";
 import { containingSelector, extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
@@ -102,18 +105,29 @@ function evidenceFor(
   return created.ok ? created.value : null;
 }
 
-// A transfer gate: a mapping read whose value steers a revert through a
-// compare and a conditional jump. The mapping hash marks the read as an
-// address-keyed lookup rather than a plain slot read.
+// A transfer gate on a mapping entry: the mapping load sits beside an
+// equality compare, or beside an ISZERO with no range compare between the
+// load and the gate, plus a conditional jump that can revert. A balance
+// check (`balances[from] >= amount`) or an allowance check compiles to a
+// range compare closed by ISZERO, so ISZERO counts only when no LT or GT
+// sits between the load and the gate. The mapping hash marks the read as
+// an address-keyed lookup rather than a plain slot read.
 function gatedMappingRead(region: RegionFacts): number | null {
   if (!region.hasKeccak || !region.hasJumpi || !region.hasRevert) {
     return null;
   }
-  if (!region.hasEq && !region.hasIsZero) {
+  const eqProof = mappingLoadNearFlavor(region, ["eq"]);
+  if (eqProof !== null) {
+    return eqProof.loadPc;
+  }
+  const zeroProof = mappingLoadNearFlavor(region, ["iszero"]);
+  if (zeroProof === null) {
     return null;
   }
-  const read = region.loads.find((load) => load.slot.kind === "mapping");
-  return read === undefined ? null : read.pc;
+  if (flavorBetween(region, ["lt", "gt"], zeroProof.loadPc, zeroProof.gatePc)) {
+    return null;
+  }
+  return zeroProof.loadPc;
 }
 
 // Privileged mapping write proof over the frozen input. Total: arbitrary
@@ -137,10 +151,22 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
     if (write === undefined) {
       continue;
     }
-    for (const transferSelector of transferSet) {
-      if (transferSelector === region.selector) {
-        continue;
+    const orderedTransfers = [...transferSet].sort();
+    orderedTransfers.sort((left, right) => {
+      const leftSame = left === region.selector ? 1 : 0;
+      const rightSame = right === region.selector ? 1 : 0;
+      if (leftSame !== rightSame) {
+        return leftSame - rightSame;
       }
+      if (left < right) {
+        return -1;
+      }
+      if (left > right) {
+        return 1;
+      }
+      return 0;
+    });
+    for (const transferSelector of orderedTransfers) {
       const transfer = view.regions.find((candidate) => candidate.selector === transferSelector);
       if (transfer === undefined) {
         continue;

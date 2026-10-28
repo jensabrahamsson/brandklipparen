@@ -6,11 +6,11 @@
 // records per-region facts the owner-control detectors prove their
 // findings from: privileged caller guards, storage reads and writes with
 // best-effort slot resolution, transfer-path markers and external calls.
-// Slot resolution is deliberately conservative: a direct PUSH slot with no
-// KECCAK256 between the PUSH and the access resolves to a constant slot,
-// a KECCAK256 in between marks mapping-derived access, and anything else
-// stays unknown. Where the proof is incomplete the detectors emit no
-// positive finding rather than a guessed one.
+// Slot resolution is deliberately conservative: a PUSH slot directly
+// beside the access resolves to a constant slot, a KECCAK256 in the
+// short window marks mapping-derived access, and anything else stays
+// unknown. Where the proof is incomplete the detectors emit no positive
+// finding rather than a guessed one.
 import { disassemble, extractSelectors } from "./selectors.ts";
 import type { Instruction, SelectorEntry } from "./selectors.ts";
 import type { Bytecode as BytecodeType, Selector as SelectorType } from "./types.ts";
@@ -56,6 +56,7 @@ export type RegionFacts = {
   readonly selector: SelectorType;
   readonly entryPc: number;
   readonly hasCaller: boolean;
+  readonly callerPcs: readonly number[];
   readonly hasCalldataLoad: boolean;
   readonly hasEq: boolean;
   readonly hasIsZero: boolean;
@@ -71,7 +72,22 @@ export type RegionFacts = {
   readonly stores: readonly StoreOp[];
   readonly loads: readonly LoadOp[];
   readonly calls: readonly ExternalCallOp[];
+  // PC lists per arithmetic/compare opcode class (S-115 specificity):
+  // the linear-scan positions of each operation, so detectors can prove
+  // the operation works on the loaded slot value (best-effort dataflow:
+  // the opcode must sit within a short window of the slot load) instead
+  // of merely sharing the region. Sorted ascending by construction.
+  readonly opPcs: Readonly<Record<FlavorOp, readonly number[]>>;
 };
+
+// Arithmetic/compare opcode classes a slot-linked proof can require.
+export type FlavorOp = "add" | "sub" | "mul" | "div" | "lt" | "gt" | "eq" | "iszero";
+
+// Best-effort dataflow window (S-115 specificity): an opcode within this
+// many PCs of a slot load counts as operating on the loaded value.
+// Stack-machine code keeps a load and its first use close; a distant
+// opcode belongs to other logic in merged output and must not count.
+export const SLOT_FLAVOR_WINDOW_PC = 16;
 
 export type OwnerControlView = {
   readonly regions: readonly RegionFacts[];
@@ -103,7 +119,21 @@ function pushNumber(immediate: Uint8Array): number | null {
 }
 
 function resolveSlot(insns: readonly Instruction[], index: number): SlotRef {
-  let sawKeccak = false;
+  // Conservative slot proof: a constant slot counts only when the slot
+  // push sits directly beside the access (PUSH0 or PUSH slot, SLOAD or
+  // SSTORE). A distant PUSH belongs to other code in merged solc output
+  // and must not be guessed. Mapping access still needs a KECCAK256 in
+  // the short window, since hashed lookups never sit adjacent.
+  const adjacent = insns[index - 1];
+  if (adjacent !== undefined) {
+    if (adjacent.opcode === 0x5f) {
+      return { kind: "const", value: 0 };
+    }
+    if (adjacent.opcode >= 0x60 && adjacent.opcode <= 0x7f) {
+      const value = pushNumber(adjacent.immediate);
+      return value === null ? { kind: "unknown" } : { kind: "const", value };
+    }
+  }
   let steps = 0;
   for (let back = index - 1; back >= 0 && steps < LOOKBACK; back -= 1, steps += 1) {
     const candidate = insns[back];
@@ -111,17 +141,7 @@ function resolveSlot(insns: readonly Instruction[], index: number): SlotRef {
       break;
     }
     if (candidate.opcode === 0x20) {
-      sawKeccak = true;
-    }
-    if (candidate.opcode === 0x5f) {
-      return sawKeccak ? { kind: "mapping" } : { kind: "const", value: 0 };
-    }
-    if (candidate.opcode >= 0x60 && candidate.opcode <= 0x7f) {
-      if (sawKeccak) {
-        return { kind: "mapping" };
-      }
-      const value = pushNumber(candidate.immediate);
-      return value === null ? { kind: "unknown" } : { kind: "const", value };
+      return { kind: "mapping" };
     }
   }
   return { kind: "unknown" };
@@ -203,6 +223,7 @@ function regionOf(
   insns: readonly Instruction[],
 ): RegionFacts {
   let hasCaller = false;
+  const callerPcs: number[] = [];
   let hasCalldataLoad = false;
   let hasEq = false;
   let hasIsZero = false;
@@ -215,6 +236,16 @@ function regionOf(
   let hasDiv = false;
   let hasLt = false;
   let hasGt = false;
+  const opPcs: Record<FlavorOp, number[]> = {
+    add: [],
+    sub: [],
+    mul: [],
+    div: [],
+    lt: [],
+    gt: [],
+    eq: [],
+    iszero: [],
+  };
   const stores: StoreOp[] = [];
   const loads: LoadOp[] = [];
   const calls: ExternalCallOp[] = [];
@@ -226,15 +257,18 @@ function regionOf(
     switch (instruction.opcode) {
       case 0x33:
         hasCaller = true;
+        callerPcs.push(instruction.pc);
         break;
       case 0x35:
         hasCalldataLoad = true;
         break;
       case 0x14:
         hasEq = true;
+        opPcs["eq"].push(instruction.pc);
         break;
       case 0x15:
         hasIsZero = true;
+        opPcs["iszero"].push(instruction.pc);
         break;
       case 0x57:
         hasJumpi = true;
@@ -247,21 +281,27 @@ function regionOf(
         break;
       case 0x01:
         hasAdd = true;
+        opPcs["add"].push(instruction.pc);
         break;
       case 0x03:
         hasSub = true;
+        opPcs["sub"].push(instruction.pc);
         break;
       case 0x02:
         hasMul = true;
+        opPcs["mul"].push(instruction.pc);
         break;
       case 0x04:
         hasDiv = true;
+        opPcs["div"].push(instruction.pc);
         break;
       case 0x10:
         hasLt = true;
+        opPcs["lt"].push(instruction.pc);
         break;
       case 0x11:
         hasGt = true;
+        opPcs["gt"].push(instruction.pc);
         break;
       case 0x55: {
         const slot = resolveSlot(insns, index);
@@ -283,10 +323,21 @@ function regionOf(
         break;
     }
   }
+  const frozenOpPcs = {
+    add: Object.freeze(opPcs["add"].slice()),
+    sub: Object.freeze(opPcs["sub"].slice()),
+    mul: Object.freeze(opPcs["mul"].slice()),
+    div: Object.freeze(opPcs["div"].slice()),
+    lt: Object.freeze(opPcs["lt"].slice()),
+    gt: Object.freeze(opPcs["gt"].slice()),
+    eq: Object.freeze(opPcs["eq"].slice()),
+    iszero: Object.freeze(opPcs["iszero"].slice()),
+  };
   return {
     selector,
     entryPc,
     hasCaller,
+    callerPcs: Object.freeze(callerPcs.slice()),
     hasCalldataLoad,
     hasEq,
     hasIsZero,
@@ -302,7 +353,106 @@ function regionOf(
     stores: Object.freeze(stores),
     loads: Object.freeze(loads),
     calls: Object.freeze(calls),
+    opPcs: Object.freeze(frozenOpPcs),
   };
+}
+
+// Slot-linked flavor proof (S-115 specificity): the load of a constant
+// slot beside one of the given opcode classes, or null when no load of
+// the slot sits near such an opcode. Loads scan in ascending PC order and
+// the gate is the nearest flavor PC, so equal inputs always name the same
+// pair. A region presence check alone would credit unrelated merged
+// logic; the window keeps the proof on the value the slot actually
+// loaded.
+export type SlotFlavorProof = {
+  readonly loadPc: number;
+  readonly gatePc: number;
+  readonly flavor: FlavorOp;
+};
+
+export function constSlotLoadNearFlavor(
+  region: RegionFacts,
+  slot: number,
+  flavors: readonly FlavorOp[],
+  windowPc: number = SLOT_FLAVOR_WINDOW_PC,
+): SlotFlavorProof | null {
+  for (const load of region.loads) {
+    if (load.slot.kind !== "const" || load.slot.value !== slot) {
+      continue;
+    }
+    const gate = nearestFlavorPc(region, flavors, load.pc, windowPc);
+    if (gate !== null) {
+      return Object.freeze({ loadPc: load.pc, gatePc: gate.pc, flavor: gate.flavor });
+    }
+  }
+  return null;
+}
+
+// Slot-linked flavor proof for mapping reads (blacklist gates): the load
+// of a mapping entry beside one of the given opcode classes, or null when
+// no mapping load sits near such an opcode.
+export function mappingLoadNearFlavor(
+  region: RegionFacts,
+  flavors: readonly FlavorOp[],
+  windowPc: number = SLOT_FLAVOR_WINDOW_PC,
+): SlotFlavorProof | null {
+  for (const load of region.loads) {
+    if (load.slot.kind !== "mapping") {
+      continue;
+    }
+    const gate = nearestFlavorPc(region, flavors, load.pc, windowPc);
+    if (gate !== null) {
+      return Object.freeze({ loadPc: load.pc, gatePc: gate.pc, flavor: gate.flavor });
+    }
+  }
+  return null;
+}
+
+// Nearest opcode of the given classes to a PC within the window, or null
+// when none sits near. Ties break toward the smaller PC, so equal inputs
+// always name the same gate.
+export function nearestFlavorPc(
+  region: RegionFacts,
+  flavors: readonly FlavorOp[],
+  nearPc: number,
+  windowPc: number = SLOT_FLAVOR_WINDOW_PC,
+): { readonly pc: number; readonly flavor: FlavorOp } | null {
+  let best: { pc: number; flavor: FlavorOp } | null = null;
+  for (const flavor of flavors) {
+    for (const pc of region.opPcs[flavor] ?? []) {
+      const distance = Math.abs(pc - nearPc);
+      if (distance > windowPc) {
+        continue;
+      }
+      if (best === null || distance < Math.abs(best.pc - nearPc) || (distance === Math.abs(best.pc - nearPc) && pc < best.pc)) {
+        best = { pc, flavor };
+      }
+    }
+  }
+  return best === null ? null : Object.freeze(best);
+}
+
+// Ordered veto for boolean gates (S-115 specificity): true when one of the
+// given opcode classes fires strictly between the load and the gate. A
+// balance or allowance check (`balance >= amount`) compiles to a range
+// compare closed by ISZERO, so ISZERO counts as a boolean gate only when
+// no LT or GT sits between the load and the gate.
+export function flavorBetween(
+  region: RegionFacts,
+  flavors: readonly FlavorOp[],
+  fromPc: number,
+  toPc: number,
+): boolean {
+  const low = Math.min(fromPc, toPc);
+  const high = Math.max(fromPc, toPc);
+  for (const flavor of flavors) {
+    for (const pc of region.opPcs[flavor] ?? []) {
+      if (pc > low && pc < high) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // Structural owner-control view over frozen bytecode. Total: any bytecode

@@ -1,0 +1,367 @@
+{
+  "artifactVersion": "1.0.1",
+  "artifactChecksum": "cffc0c0c5c9e302e4efa91ff5a7189d87166e9da0376b8c13534f0a421d1ae2e",
+  "dataVersion": "calibration-v1",
+  "seed": 42,
+  "calibrationMethod": "detector-logistic-l2-v1",
+  "labelPolicy": "0.1.0-provisional with RPHunter rug as rug-pull; Do-not-rug scam weakest (0.5); corroborated and incident-report strongest (3); dataset and token-list legit at dataset level (2); unknown excluded",
+  "regularisation": "L2 lambda 0.1, 500 iterations, step 0.5, per-head non-negative constraint on all nine risk-increasing detectors, monotone Platt slope floor at 0, deterministic from zero",
+  "split": {
+    "train": 343,
+    "test": 117,
+    "trainByLabel": [
+      {
+        "label": "legit",
+        "train": 172,
+        "test": 58
+      },
+      {
+        "label": "rug",
+        "train": 96,
+        "test": 33
+      },
+      {
+        "label": "honeypot",
+        "train": 46,
+        "test": 16
+      },
+      {
+        "label": "scam",
+        "train": 29,
+        "test": 10
+      }
+    ]
+  },
+  "dedupe": {
+    "calibrationTotal": 546,
+    "droppedHoldoutOverlap": 27,
+    "droppedDuplicates": 4,
+    "kept": 515,
+    "fitted": 460,
+    "unknown": 55,
+    "holdoutTotal": 39
+  },
+  "bands": {
+    "applied": {
+      "elevated": 30,
+      "high": 60
+    },
+    "fitted": {
+      "elevated": 19,
+      "high": 60
+    }
+  },
+  "bandRule": "Fitted bands chosen on TRAIN for 80 percent recall of bad (Elevated) and 80 percent precision (High); product surfaces (API, MCP, UI, smoke) apply 30/60 per design, stored fitted bands are diagnostics only",
+  "featureWeights": {
+    "rugHead": {
+      "bias": -0.876454,
+      "slope": 1.6279044327024963,
+      "intercept": 0.3783541017143327,
+      "uncalibrated": false,
+      "coefficients": [
+        {
+          "detector": "mint",
+          "weight": 0.028072
+        },
+        {
+          "detector": "blacklist",
+          "weight": 0
+        },
+        {
+          "detector": "transfer-fee",
+          "weight": 0
+        },
+        {
+          "detector": "pause",
+          "weight": 0.015099
+        },
+        {
+          "detector": "transfer-limits",
+          "weight": 0.051595
+        },
+        {
+          "detector": "ownership",
+          "weight": 0.25709
+        },
+        {
+          "detector": "transfer-hooks",
+          "weight": 0.060846
+        },
+        {
+          "detector": "sell-block",
+          "weight": 0.029517
+        },
+        {
+          "detector": "proxy-upgrade",
+          "weight": 0
+        }
+      ],
+      "unconstrained": [
+        {
+          "detector": "mint",
+          "weight": 0.031231
+        },
+        {
+          "detector": "blacklist",
+          "weight": -0.078454
+        },
+        {
+          "detector": "transfer-fee",
+          "weight": -0.038708
+        },
+        {
+          "detector": "pause",
+          "weight": 0.015748
+        },
+        {
+          "detector": "transfer-limits",
+          "weight": 0.058907
+        },
+        {
+          "detector": "ownership",
+          "weight": 0.253203
+        },
+        {
+          "detector": "transfer-hooks",
+          "weight": 0.06635
+        },
+        {
+          "detector": "sell-block",
+          "weight": 0.032545
+        },
+        {
+          "detector": "proxy-upgrade",
+          "weight": -0.168532
+        }
+      ]
+    },
+    "honeyHead": {
+      "bias": -2.159481,
+      "slope": 1.5577375857698659,
+      "intercept": 0.9605345756514932,
+      "uncalibrated": false,
+      "coefficients": [
+        {
+          "detector": "mint",
+          "weight": 0
+        },
+        {
+          "detector": "blacklist",
+          "weight": 0.336859
+        },
+        {
+          "detector": "transfer-fee",
+          "weight": 0
+        },
+        {
+          "detector": "pause",
+          "weight": 0
+        },
+        {
+          "detector": "transfer-limits",
+          "weight": 0
+        },
+        {
+          "detector": "ownership",
+          "weight": 0.15636
+        },
+        {
+          "detector": "transfer-hooks",
+          "weight": 0
+        },
+        {
+          "detector": "sell-block",
+          "weight": 0
+        },
+        {
+          "detector": "proxy-upgrade",
+          "weight": 0
+        }
+      ],
+      "unconstrained": [
+        {
+          "detector": "mint",
+          "weight": -0.044221
+        },
+        {
+          "detector": "blacklist",
+          "weight": 0.343758
+        },
+        {
+          "detector": "transfer-fee",
+          "weight": -0.027193
+        },
+        {
+          "detector": "pause",
+          "weight": -0.017674
+        },
+        {
+          "detector": "transfer-limits",
+          "weight": -0.030291
+        },
+        {
+          "detector": "ownership",
+          "weight": 0.156635
+        },
+        {
+          "detector": "transfer-hooks",
+          "weight": -0.168485
+        },
+        {
+          "detector": "sell-block",
+          "weight": -0.008887
+        },
+        {
+          "detector": "proxy-upgrade",
+          "weight": -0.085982
+        }
+      ]
+    },
+    "projectedToZero": [
+      "mint",
+      "blacklist",
+      "transfer-fee",
+      "pause",
+      "transfer-limits",
+      "transfer-hooks",
+      "sell-block",
+      "proxy-upgrade"
+    ],
+    "trainAblationBadAucDelta": {
+      "mint": -0.006851,
+      "blacklist": 0,
+      "transfer-fee": 0,
+      "pause": -0.000017,
+      "transfer-limits": -0.008415,
+      "ownership": 0.08641,
+      "transfer-hooks": -0.039831,
+      "sell-block": -0.001207,
+      "proxy-upgrade": 0
+    },
+    "uncalibratedHeads": [
+      "bot-pump"
+    ]
+  },
+  "metrics": {
+    "train": {
+      "count": 343,
+      "badAuc": 0.542551,
+      "rugAuc": 0.555927,
+      "honeyAuc": 0.711938
+    },
+    "test": {
+      "count": 117,
+      "bands": {
+        "Low": 117,
+        "Elevated": 0,
+        "High": 0
+      },
+      "fittedBands": {
+        "Low": 0,
+        "Elevated": 117,
+        "High": 0
+      },
+      "badAuc": 0.555523,
+      "badAucCI95": {
+        "lower": 0.491303,
+        "upper": 0.619489,
+        "resamples": 1000
+      },
+      "rugAuc": 0.5022,
+      "honeyAuc": 0.675124,
+      "badBrier": 0.273652,
+      "rugBrier": 0.232486,
+      "honeyBrier": 0.115196,
+      "deciles": [
+        {
+          "count": 11,
+          "meanPredicted": 0.259527,
+          "observed": 0.272727
+        },
+        {
+          "count": 12,
+          "meanPredicted": 0.347531,
+          "observed": 0.5
+        },
+        {
+          "count": 12,
+          "meanPredicted": 0.347531,
+          "observed": 0.5
+        },
+        {
+          "count": 11,
+          "meanPredicted": 0.347531,
+          "observed": 0.636364
+        },
+        {
+          "count": 12,
+          "meanPredicted": 0.347531,
+          "observed": 0.416667
+        },
+        {
+          "count": 12,
+          "meanPredicted": 0.347531,
+          "observed": 0.333333
+        },
+        {
+          "count": 11,
+          "meanPredicted": 0.347531,
+          "observed": 0.545455
+        },
+        {
+          "count": 12,
+          "meanPredicted": 0.347531,
+          "observed": 0.5
+        },
+        {
+          "count": 12,
+          "meanPredicted": 0.347531,
+          "observed": 0.75
+        },
+        {
+          "count": 12,
+          "meanPredicted": 0.354486,
+          "observed": 0.583333
+        }
+      ]
+    },
+    "holdout": {
+      "count": 39,
+      "bands": {
+        "Low": 39,
+        "Elevated": 0,
+        "High": 0
+      },
+      "fittedBands": {
+        "Low": 0,
+        "Elevated": 39,
+        "High": 0
+      },
+      "badAuc": 0.585561,
+      "badBrier": 0.249836
+    },
+    "unknown": {
+      "count": 55,
+      "bands": {
+        "Low": 55,
+        "Elevated": 0,
+        "High": 0
+      },
+      "fittedBands": {
+        "Low": 0,
+        "Elevated": 55,
+        "High": 0
+      }
+    }
+  },
+  "uncalibratedHeads": [
+    "bot-pump"
+  ],
+  "limitations": [
+    "bot-pump has no positives in calibration; prior bias, calibration, score weight kept and head marked uncalibrated",
+    "Strict slot-linked proofs cut broad fire rates (sell-block legit 118/172 to 7/172, blacklist 143/172 to 88/172); the four supply/fee/pause/limit detectors no longer share row sets, and the strongest TRAIN signal is the ownership detector",
+    "Test bad AUC is 0.56 with a bootstrap 95 percent interval of 0.49 to 0.62; rug-pull head test AUC is 0.50 and honeypot head is 0.68",
+    "With the applied 30/60 product bands every test, holdout and unknown score lands Low; the TRAIN-fitted diagnostic bands 19/60 would place them Elevated",
+    "Prior cause weights, score weights, severity weights and feature catalogue kept; fitted per-plugin per-head weights, biases, monotone calibration maps, bands and uncalibrated heads"
+  ]
+}

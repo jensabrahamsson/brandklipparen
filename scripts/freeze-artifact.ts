@@ -142,6 +142,13 @@ let artifactJson: unknown = {
   ...(Object.keys(trained.value.artifact.pluginFeatureCatalogue).length === 0
     ? {}
     : { pluginFeatureCatalogue: trained.value.artifact.pluginFeatureCatalogue }),
+  ...(trained.value.artifact.scoreBands === undefined ? {} : { scoreBands: trained.value.artifact.scoreBands }),
+  ...(trained.value.artifact.detectorHeadWeights === undefined
+    ? {}
+    : { detectorHeadWeights: trained.value.artifact.detectorHeadWeights }),
+  ...(trained.value.artifact.uncalibratedHeads === undefined
+    ? {}
+    : { uncalibratedHeads: trained.value.artifact.uncalibratedHeads }),
 };
 if (priorsPath !== undefined) {
   // Prior overlay (S-115): principled default weights for the
@@ -160,6 +167,8 @@ if (priorsPath !== undefined) {
     ...(record["pluginFeatureCatalogue"] === undefined
       ? {}
       : { pluginFeatureCatalogue: record["pluginFeatureCatalogue"] }),
+    ...(record["scoreBands"] === undefined ? {} : { scoreBands: record["scoreBands"] }),
+    ...(record["uncalibratedHeads"] === undefined ? {} : { uncalibratedHeads: record["uncalibratedHeads"] }),
   };
 }
 const parsed = parseModelArtifact(artifactJson);

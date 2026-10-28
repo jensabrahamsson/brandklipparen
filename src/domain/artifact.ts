@@ -135,22 +135,24 @@ export function artifactToCanonical(artifact: ModelArtifact): CanonicalValue {
   for (const pluginId of Object.keys(artifact.pluginWeights ?? {}).sort()) {
     pluginWeights[pluginId] = artifact.pluginWeights[pluginId] ?? 0;
   }
-  // The feature catalogue serializes only when it names at least one
-  // plugin (S-115): older frozen files carry no entry, and their bytes
-  // must keep verifying bit-identically.
-  const catalogue = artifact.pluginFeatureCatalogue ?? {};
-  const catalogueIds = Object.keys(catalogue).sort();
-  if (catalogueIds.length === 0) {
-    return {
-      biases,
-      calibration,
-      causeWeights,
-      pluginWeights,
-      scoreWeights,
-      severityWeights,
-      version: artifact.version as string,
+  const headWeights = artifact.detectorHeadWeights ?? {};
+  const headWeightIds = Object.keys(headWeights).sort();
+  const detectorHeadWeights: Record<string, CanonicalValue> = {};
+  for (const pluginId of headWeightIds) {
+    const entry = headWeights[pluginId];
+    if (entry === undefined) {
+      continue;
+    }
+    detectorHeadWeights[pluginId] = {
+      honeypot: entry.honeypot ?? 0,
+      "rug-pull": entry["rug-pull"] ?? 0,
     };
   }
+  // Optional sections serialize only when present, so older frozen files
+  // without them keep verifying bit-identically (S-115 catalogue rule
+  // extended to head weights, bands and uncalibrated heads).
+  const catalogue = artifact.pluginFeatureCatalogue ?? {};
+  const catalogueIds = Object.keys(catalogue).sort();
   const pluginFeatureCatalogue: Record<string, CanonicalValue> = {};
   for (const pluginId of catalogueIds) {
     const mapping = catalogue[pluginId];
@@ -163,16 +165,31 @@ export function artifactToCanonical(artifact: ModelArtifact): CanonicalValue {
       severity: mapping.severity,
     };
   }
-  return {
+  const base: Record<string, CanonicalValue> = {
     biases,
     calibration,
     causeWeights,
-    pluginFeatureCatalogue,
     pluginWeights,
     scoreWeights,
     severityWeights,
     version: artifact.version as string,
   };
+  if (catalogueIds.length > 0) {
+    base["pluginFeatureCatalogue"] = pluginFeatureCatalogue;
+  }
+  if (headWeightIds.length > 0) {
+    base["detectorHeadWeights"] = detectorHeadWeights;
+  }
+  if (artifact.scoreBands !== undefined) {
+    base["scoreBands"] = {
+      elevated: artifact.scoreBands.elevated,
+      high: artifact.scoreBands.high,
+    };
+  }
+  if (artifact.uncalibratedHeads !== undefined && artifact.uncalibratedHeads.length > 0) {
+    base["uncalibratedHeads"] = [...artifact.uncalibratedHeads].sort() as unknown as CanonicalValue;
+  }
+  return base;
 }
 
 // SHA-256 over the canonical artifact bytes (A-20). The digest always holds

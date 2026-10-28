@@ -1,16 +1,20 @@
 // Mint detector plugin `dev.brandklipparen.mint` (S-115, P-12 step 1).
 // First-party detector behind the registry: proves a privileged mint from
-// code paths instead of matching admin selectors. A finding needs all
-// three: a privileged region (a caller guard, see ownerControl.ts) that
-// stores to a constant slot, a transfer path that loads the same slot,
-// and addition arithmetic beside the supply flow. A guarded write to a
-// slot the transfer path never reads, or an unguarded write, stays
-// silent: the proof is incomplete, so no positive finding is reported.
-// Pure and synchronous: this module imports solely the plugin API and
-// domain types and pure functions (P-03).
+// code paths instead of matching admin selectors. A finding needs a
+// privileged writer that increases a constant supply slot (addition beside
+// the store) and credits a caller-chosen balance (a mapping store beside
+// calldata in the same writer region), plus a transfer path that loads the
+// same slot beside addition arithmetic. The writer and the reader may live
+// in the same function when solc merges code into one region; evidence
+// still names each containing function. A guarded write with no supply
+// increase, no balance credit, or no transfer read stays silent: the proof
+// is incomplete, so no positive finding is reported. Pure and synchronous:
+// this module imports solely the plugin API and domain types and pure
+// functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { analyzeOwnerControl } from "../../../domain/ownerControl.ts";
+import { analyzeOwnerControl, constSlotLoadNearFlavor, nearestFlavorPc } from "../../../domain/ownerControl.ts";
+import type { RegionFacts } from "../../../domain/ownerControl.ts";
 import { containingSelector, extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
@@ -139,6 +143,30 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   return Object.freeze([]);
 }
 
+// A privileged supply increase with a balance credit to a caller-chosen
+// address: the writer region stores to the constant slot with addition
+// beside the store (the increase), and carries a mapping store beside
+// calldata (the balance credit keyed by an address the caller chose).
+function mintWriter(
+  region: RegionFacts,
+  slot: number,
+): number | null {
+  const store = region.stores.find(
+    (candidate) => candidate.slot.kind === "const" && candidate.slot.value === slot && !candidate.valueIsZero,
+  );
+  if (store === undefined) {
+    return null;
+  }
+  if (nearestFlavorPc(region, ["add"], store.pc) === null) {
+    return null;
+  }
+  const credits = region.stores.some((candidate) => candidate.slot.kind === "mapping");
+  if (!credits || !region.hasCalldataLoad) {
+    return null;
+  }
+  return store.pc;
+}
+
 function proveMint(
   bytecode: DetectorInput["bytecode"],
   entries: ReturnType<typeof extractSelectors>,
@@ -151,37 +179,48 @@ function proveMint(
     if (!privilegedSet.has(region.selector)) {
       continue;
     }
-    const store = region.stores.find(
-      (candidate) => candidate.slot.kind === "const" && candidate.slot.value === slot,
-    );
-    if (store === undefined) {
+    const writePc = mintWriter(region, slot);
+    if (writePc === null) {
       continue;
     }
-    for (const transferSelector of transferSet) {
-      if (transferSelector === region.selector) {
-        continue;
+    // Distinct functions first, merged same-function proofs last: keeps
+    // the two-function evidence stable while still proving merged solc
+    // output where the writer and the reader share one region.
+    const orderedTransfers = [...transferSet].sort();
+    orderedTransfers.sort((left, right) => {
+      const leftSame = left === region.selector ? 1 : 0;
+      const rightSame = right === region.selector ? 1 : 0;
+      if (leftSame !== rightSame) {
+        return leftSame - rightSame;
       }
+      if (left < right) {
+        return -1;
+      }
+      if (left > right) {
+        return 1;
+      }
+      return 0;
+    });
+    for (const transferSelector of orderedTransfers) {
       const transfer = view.regions.find((candidate) => candidate.selector === transferSelector);
       if (transfer === undefined) {
         continue;
       }
-      const read = transfer.loads.find(
-        (load) => load.slot.kind === "const" && load.slot.value === slot,
-      );
-      if (read === undefined) {
+      const proof = constSlotLoadNearFlavor(transfer, slot, ["add"]);
+      if (proof === null) {
         continue;
       }
-      if (!region.hasAdd && !transfer.hasAdd) {
+      if (writePc === proof.loadPc) {
         continue;
       }
-      const holder = containingSelector(entries, store.pc) ?? region.selector;
-      const readerHolder = containingSelector(entries, read.pc) ?? transfer.selector;
+      const holder = containingSelector(entries, writePc) ?? region.selector;
+      const readerHolder = containingSelector(entries, proof.loadPc) ?? transfer.selector;
       const evidence: EvidenceType[] = [];
-      const write = evidenceFor(bytecode, holder, store.pc);
+      const write = evidenceFor(bytecode, holder, writePc);
       if (write !== null) {
         evidence.push(write);
       }
-      const seen = evidenceFor(bytecode, readerHolder, read.pc);
+      const seen = evidenceFor(bytecode, readerHolder, proof.loadPc);
       if (seen !== null) {
         evidence.push(seen);
       }

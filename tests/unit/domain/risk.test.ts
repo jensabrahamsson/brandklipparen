@@ -280,6 +280,52 @@ describe("k011 risk model from signals and artifact", () => {
     expect(heavyResult.modelVersion as string).toBe("0.0.0-synthetic.2");
   });
 
+  test("k011_calibrated_head_weights_steer_sourced_signals", () => {
+    const base = syntheticArtifactJson("0.0.0-synthetic.1") as Record<string, unknown>;
+    base["detectorHeadWeights"] = {
+      "dev.brandklipparen.mint": { "rug-pull": 2.0, honeypot: 0.0 },
+    };
+    const artifact = mustOk(parseModelArtifact(base));
+    const sourced = mustOk(
+      Signal.createCapability({
+        codeHash: CODE_HASH,
+        risk: "rug-pull",
+        direction: "raises",
+        severity: "low",
+        temporality: { kind: "can-change", changer: CHANGER },
+        evidence: [evidenceFor("0xa9059cbb")] as unknown as NonEmpty<EvidenceType>,
+        sourcePlugin: "dev.brandklipparen.mint",
+      }),
+    );
+    const unsourced = capabilitySignal("rug-pull", "raises", "low", "0x70a08231");
+    const sourcedResult = score([sourced], artifact);
+    const unsourcedResult = score([unsourced], artifact);
+    // The sourced signal scores with the head weight 2.0, not the low
+    // severity weight 0.25, so its contribution and probability exceed the
+    // severity path.
+    expect(sourcedResult.contributions[0]?.weight).toBe(2.0);
+    expect(unsourcedResult.contributions[0]?.weight).toBe(0.25);
+    expect(sourcedResult.probabilities["rug-pull"] as number).toBeGreaterThan(
+      unsourcedResult.probabilities["rug-pull"] as number,
+    );
+  });
+
+  test("k011_head_weights_reject_negatives_and_unknown_shapes", () => {
+    const negative = syntheticArtifactJson("0.0.0-synthetic.1") as Record<string, unknown>;
+    negative["detectorHeadWeights"] = {
+      "dev.brandklipparen.mint": { "rug-pull": -0.5, honeypot: 0.0 },
+    };
+    expect(parseModelArtifact(negative).ok).toBe(false);
+    const missing = syntheticArtifactJson("0.0.0-synthetic.1") as Record<string, unknown>;
+    missing["detectorHeadWeights"] = {
+      "dev.brandklipparen.mint": { "rug-pull": 1.0 },
+    };
+    expect(parseModelArtifact(missing).ok).toBe(false);
+    const uncalibrated = syntheticArtifactJson("0.0.0-synthetic.1") as Record<string, unknown>;
+    uncalibrated["detectorHeadWeights"] = {};
+    expect(parseModelArtifact(uncalibrated).ok).toBe(true);
+  });
+
   test("k011_response_names_model_version_and_top_contributors", () => {
     const signals: readonly SignalType[] = [
       capabilitySignal("rug-pull", "raises", "high", "0xa9059cbb"),

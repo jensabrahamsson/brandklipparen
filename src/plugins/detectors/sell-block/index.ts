@@ -1,19 +1,24 @@
 // Sell-block detector plugin `dev.brandklipparen.sell-block` (S-115,
 // P-12 step 1). First-party detector behind the registry: proves
-// sell-blocking honeypot branching from code paths. A finding needs all
-// of the following in one transfer path: an equality compare, calldata
-// beside it (the recipient under test), a stored address compare (a
-// constant or hashed storage read of the pair or router), and a
-// conditional jump that can revert (the sell branch). The condition is
-// `pair-mapping` when a mapping read sits beside the branch (an isPair
-// or balance family lookup), else `recipient-equals-stored`. An equality
-// check with no stored address stays silent, since amount and allowance
-// compares look the same without it. Pure and synchronous: this module
-// imports solely the plugin API and domain types and pure functions
-// (P-03).
+// sell-blocking honeypot branching from code paths. A finding needs a
+// privileged writer storing a pair or router address to a constant slot,
+// and a transfer path that loads the same slot beside an equality compare
+// against the recipient (calldata) with a conditional jump that can
+// revert: the sell branch blocks non-privileged sellers while the owner
+// controls the gated address. The condition is `pair-mapping` when a
+// mapping read also sits in the transfer (a balance lookup beside the
+// pair gate), and `recipient-equals-stored` otherwise. A plain balance
+// check, an equality with no stored address, or a stored address no
+// privileged writer controls stays silent. Pure and synchronous: this
+// module imports solely the plugin API and domain types and pure
+// functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { analyzeOwnerControl } from "../../../domain/ownerControl.ts";
+import {
+  SLOT_FLAVOR_WINDOW_PC,
+  analyzeOwnerControl,
+  constSlotLoadNearFlavor,
+} from "../../../domain/ownerControl.ts";
 import type { RegionFacts } from "../../../domain/ownerControl.ts";
 import { containingSelector, extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
@@ -108,46 +113,77 @@ function evidenceFor(
   return created.ok ? created.value : null;
 }
 
-// A sell branch in the transfer path: calldata beside an equality compare
-// against a stored address (constant or hashed), with a conditional jump
-// that can revert. Returns the compared storage reads proving the branch.
+// A sell branch in the transfer path: a privileged writer stores the gated
+// address to a constant slot, and the transfer loads that slot beside an
+// equality compare against the recipient with a conditional jump that can
+// revert. The writer link is what separates an owner-controlled pair gate
+// from a plain balance check: without a privileged store to the same slot
+// the branch is ordinary transfer logic, not a sell block. The condition
+// is `pair-mapping` when a mapping read also sits in the transfer, and
+// `recipient-equals-stored` otherwise.
 function sellBranch(
+  view: ReturnType<typeof analyzeOwnerControl>,
+  privilegedSet: ReadonlySet<string>,
   region: RegionFacts,
 ): { condition: "recipient-equals-stored" | "pair-mapping"; reads: number[] } | null {
-  if (!region.hasEq || !region.hasCalldataLoad || !region.hasJumpi || !region.hasRevert) {
+  if (!region.hasCalldataLoad || !region.hasJumpi || !region.hasRevert) {
     return null;
   }
-  const stored = region.loads.filter(
-    (load) => load.slot.kind === "const" || load.slot.kind === "mapping",
-  );
-  if (stored.length === 0) {
-    return null;
+  const candidates = new Set<number>();
+  for (const writer of view.regions) {
+    if (!privilegedSet.has(writer.selector)) {
+      continue;
+    }
+    for (const store of writer.stores) {
+      if (store.slot.kind === "const") {
+        candidates.add(store.slot.value);
+      }
+    }
   }
-  const mapping = stored.some((load) => load.slot.kind === "mapping");
-  return {
-    condition: mapping ? "pair-mapping" : "recipient-equals-stored",
-    reads: stored.map((load) => load.pc),
-  };
+  const orderedSlots = [...candidates].sort((left, right) => left - right);
+  for (const slot of orderedSlots) {
+    const proof = constSlotLoadNearFlavor(region, slot, ["eq"]);
+    if (proof === null) {
+      continue;
+    }
+    // Access control is not a sell block: an equality beside CALLER
+    // checks the sender's authority (onlyOwner), while a sell branch
+    // discriminates on the recipient against the stored address.
+    const guardsSender = region.callerPcs.some((pc) => Math.abs(pc - proof.gatePc) <= SLOT_FLAVOR_WINDOW_PC);
+    if (guardsSender) {
+      continue;
+    }
+    const hasMapping = region.loads.some((load) => load.slot.kind === "mapping");
+    return {
+      condition: hasMapping ? "pair-mapping" : "recipient-equals-stored",
+      reads: [proof.loadPc],
+    };
+  }
+  return null;
 }
 
 // Sell-block proof over the frozen input. Total: arbitrary bytecode
 // yields a finding list, never an exception. Deterministic: transfer
-// regions scan in selector order and the first provable region wins.
-// Bytecode without selectors yields no findings, since a finding without
-// selector evidence is unrepresentable.
+// regions scan in selector order, candidate slots ascending, and the first
+// provable pair wins. Bytecode without selectors yields no findings, since
+// a finding without selector evidence is unrepresentable.
 function detect(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
     return Object.freeze([]);
   }
   const view = analyzeOwnerControl(input.bytecode);
+  const privilegedSet = new Set(view.privileged);
+  if (privilegedSet.size === 0) {
+    return Object.freeze([]);
+  }
   const transferSet = new Set(view.transfers);
   for (const transferSelector of [...transferSet].sort()) {
     const transfer = view.regions.find((candidate) => candidate.selector === transferSelector);
     if (transfer === undefined) {
       continue;
     }
-    const branch = sellBranch(transfer);
+    const branch = sellBranch(view, privilegedSet, transfer);
     if (branch === null) {
       continue;
     }

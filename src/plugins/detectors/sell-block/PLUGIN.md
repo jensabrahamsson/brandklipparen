@@ -13,12 +13,15 @@ Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 ## What it checks
 
 Sell-blocking honeypot branching in the transfer path. The proof needs
-all of the following in one transfer path: an equality compare with
-calldata beside it, a stored address compare through a constant or
-hashed storage read, and a conditional jump that can revert. One finding
-names the first provable region with its condition: a mapping read
-beside the branch reports `pair-mapping`, otherwise the branch reports
-`recipient-equals-stored`.
+a caller-guarded writer storing a pair or router address to a constant
+slot, and a transfer path that loads the same slot beside an equality
+compare against the recipient, with calldata and a conditional jump that
+can revert. An equality beside CALLER is access control, never a sell
+branch. One finding names the first provable pair with its condition: a
+mapping read beside the transfer reports `pair-mapping`, and no mapping
+read reports `recipient-equals-stored`. A lone balance mapping read, an
+equality with no stored address, or a stored address no privileged
+writer controls never proves a sell block.
 
 ## Why it matters to you
 
@@ -31,8 +34,9 @@ sale.
 
 Which direction blocks: the bytecode proves a recipient-dependent
 branch with a revert, not which side is the sell. An equality check
-with no stored address stays silent, since amount and allowance compares
-look the same without it.
+with no stored address, or with no privileged writer behind the stored
+address, stays silent, since amount and allowance compares look the same
+without it.
 
 ## Evidence format
 
@@ -49,9 +53,10 @@ effective weight, which the plugin list exposes per plugin.
 
 ## Limitations / false positives
 
-The branch is resolved structurally: a stored read beside an equality
-compare with calldata and a reachable revert counts. A fee that differs
-per direction without a revert stays silent today. A finding never says
+The branch is resolved structurally: the equality must sit beside the
+loaded pair slot (within a short window) and away from CALLER, and a
+privileged writer must store that slot. A fee that differs per
+direction without a revert stays silent today. A finding never says
 sales were blocked, only that the bytecode proves the branching shape.
 
 ## Inputs
@@ -63,3 +68,7 @@ helpers.
 ## Version and changelog
 
 Version 1.0.0. Initial release.
+
+Specificity update: the gated address needs a privileged writer, the
+equality must sit beside the loaded slot, and caller-adjacent equality
+(access control) no longer counts.

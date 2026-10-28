@@ -77,6 +77,14 @@ export type Signal =
       readonly severity: Severity;
       readonly temporality: Temporality;
       readonly evidence: NonEmpty<EvidenceType>;
+      // Plugin that produced the finding this signal converts (S-115
+      // per-plugin weights): the namespaced plugin id, present only on
+      // signals converted from owner-control feature findings through
+      // the artifact feature catalogue. The risk model reads the
+      // calibrated per-plugin per-head weight for this plugin; signals
+      // without it score through the severity weights. Never set from
+      // the finding payload, only from the registry entry id.
+      readonly sourcePlugin?: string | undefined;
     }
   | {
       readonly kind: "clone-match";
@@ -125,6 +133,7 @@ export const Signal = {
     readonly severity: Severity;
     readonly temporality: Temporality;
     readonly evidence: readonly EvidenceType[];
+    readonly sourcePlugin?: string | undefined;
   }): Result<Signal, DomainError> {
     const evidence = toNonEmpty(input.evidence);
     if (evidence === null) {
@@ -143,6 +152,7 @@ export const Signal = {
         severity: input.severity,
         temporality: input.temporality,
         evidence,
+        ...(input.sourcePlugin === undefined ? {} : { sourcePlugin: input.sourcePlugin }),
       }) as Signal,
     );
   },

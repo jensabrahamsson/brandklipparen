@@ -22,6 +22,7 @@ import {
   REVERT,
   SLOAD,
   STOP,
+  SUB,
   ownerGuard,
   push1,
   sstoreConstSlot,
@@ -59,12 +60,13 @@ function setterBody(): number[] {
 }
 
 function feeTransferBody(): number[] {
-  // Transfer path multiplies by fee slot 5.
+  // Transfer path multiplies by fee slot 5 and subtracts the fee.
   return [
     CALLDATALOAD,
     ...push1(5),
     SLOAD,
     MUL,
+    SUB,
     ...sstoreConstSlot(2, [CALLDATALOAD]),
     STOP,
   ];

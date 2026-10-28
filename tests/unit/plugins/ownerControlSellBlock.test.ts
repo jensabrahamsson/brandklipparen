@@ -21,6 +21,7 @@ import {
   REVERT,
   SLOAD,
   STOP,
+  ownerGuard,
   push1,
   sstoreConstSlot,
   tokenBytecode,
@@ -34,6 +35,7 @@ function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
 }
 
 const TRANSFER = "0xa9059cbb";
+const SET_PAIR = "0x0a9c6c1e";
 
 function pairGatedTransferBody(): number[] {
   // Transfer path compares the recipient against stored pair slot 9 and
@@ -60,7 +62,13 @@ function pairGatedTransferBody(): number[] {
 }
 
 function makeInput(): DetectorInput {
-  const bytecode = tokenBytecode([{ selector: TRANSFER, body: pairGatedTransferBody() }]);
+  const bytecode = tokenBytecode([
+    {
+      selector: SET_PAIR,
+      body: [...ownerGuard(0, 200), ...sstoreConstSlot(9, [CALLDATALOAD]), STOP],
+    },
+    { selector: TRANSFER, body: pairGatedTransferBody() },
+  ]);
   return Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
 }
 
@@ -84,8 +92,13 @@ describe("sell-block detector plugin", () => {
   });
 
   test("stored compare with no mapping read reports the stored kind", () => {
-    // Same gate with no balance mapping traffic: a stored address compare.
+    // Same gate with no balance mapping traffic: a stored address compare
+    // behind a privileged writer.
     const bytecode = tokenBytecode([
+      {
+        selector: SET_PAIR,
+        body: [...ownerGuard(0, 200), ...sstoreConstSlot(9, [CALLDATALOAD]), STOP],
+      },
       {
         selector: TRANSFER,
         body: [

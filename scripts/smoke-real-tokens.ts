@@ -54,8 +54,9 @@ const extdecomp_TIMEOUT_MS = 25000;
 const ZERO_WORD = `0x${"0".repeat(64)}`;
 
 // Frozen model, index and template versions the offline run pins (K-102):
-// the same artifact the repo ships in model/, never a caller default.
-const MODEL_VERSION_TEXT = "0.0.0-synthetic.1";
+// an artifact the repo ships in model/. BK_SMOKE_MODEL_VERSION selects
+// another shipped artifact; the default is the documented default artifact.
+const DEFAULT_MODEL_VERSION_TEXT = "1.0.1";
 const INDEX_VERSION_TEXT = "1.0.0";
 const TEMPLATE_VERSION_TEXT = "1.0.0";
 
@@ -101,6 +102,7 @@ export type SmokeOutcome =
       readonly score: number;
       readonly band: SmokeBand;
       readonly topEvidence: readonly string[];
+      readonly firedPlugins?: readonly string[] | undefined;
       readonly runtimeMs: number;
       readonly ownSelectors: number;
       readonly extdecomp?: extdecompOutcome | undefined;
@@ -342,6 +344,7 @@ export function buildReport(input: {
     lines.push(`| ${label} | ${scores.length} | ${mean(scores).toFixed(1)} | ${median(scores).toFixed(1)} |`);
   }
   lines.push("");
+  lines.push(...detectorFireRateLines(ok));
   lines.push("## Crashes and timeouts");
   lines.push("");
   const failures = outcomes.filter((outcome) => outcome.status !== "ok");
@@ -385,7 +388,34 @@ export function buildReport(input: {
 // Injected runners keep runSmoke testable: tests pass a mock analyze
 // function and a mock decompiler, while main wires the real application
 // service and the real extdecomp adapter.
-export type AnalyzeFn = (token: SmokeToken) => Promise<{ score: number; topEvidence: string[] }>;
+// Per-label share of scored tokens on which each detector plugin reported
+// at least one finding.
+export function detectorFireRateLines(ok: readonly SmokeOutcome[]): string[] {
+  const labels = ["legit", "rug", "honeypot", "scam", "unknown"] as const;
+  const plugins = [...new Set(ok.flatMap((outcome) => (outcome.status === "ok" ? (outcome.firedPlugins ?? []) : [])))].sort();
+  const lines = ["## Detector fire rates by label", ""];
+  if (plugins.length === 0) {
+    lines.push("No detector findings were reported.", "");
+    return lines;
+  }
+  lines.push(`| Plugin | ${labels.join(" | ")} |`);
+  lines.push(`|---|${labels.map(() => "---").join("|")}|`);
+  for (const plugin of plugins) {
+    const cells = labels.map((label) => {
+      const group = ok.filter((outcome) => outcome.label === label);
+      if (group.length === 0) {
+        return "-";
+      }
+      const fired = group.filter((outcome) => outcome.status === "ok" && (outcome.firedPlugins ?? []).includes(plugin)).length;
+      return `${fired}/${group.length}`;
+    });
+    lines.push(`| ${sanitize(plugin)} | ${cells.join(" | ")} |`);
+  }
+  lines.push("");
+  return lines;
+}
+
+export type AnalyzeFn = (token: SmokeToken) => Promise<{ score: number; topEvidence: string[]; firedPlugins?: string[] }>;
 export type DecompileFn = (bytecodeHex: string) => Promise<{ success: boolean; functions: number }>;
 
 export type RunSmokeDeps = {
@@ -449,6 +479,7 @@ export async function runSmoke(
         score,
         band: bandOf(score),
         topEvidence: Object.freeze(analyzed.topEvidence.slice(0, 3).map(sanitize)),
+        firedPlugins: Object.freeze([...(analyzed.firedPlugins ?? [])].map(sanitize)),
         runtimeMs: clock() - tokenStarted,
         ownSelectors,
         ...(extdecomp === undefined ? {} : { extdecomp }),
@@ -594,10 +625,10 @@ function createOfflineAnalyzer(tokens: readonly SmokeToken[]): AnalyzeFn {
       return built.value;
     })(),
   );
-  const modelVersion = mustParse(ModelVersion.parse(MODEL_VERSION_TEXT), "model version");
+  const modelVersion = mustParse(ModelVersion.parse(process.env["BK_SMOKE_MODEL_VERSION"] ?? DEFAULT_MODEL_VERSION_TEXT), "model version");
   const indexVersion = mustParse(IndexVersion.parse(INDEX_VERSION_TEXT), "index version");
   const templateVersion = mustParse(TemplateVersion.parse(TEMPLATE_VERSION_TEXT), "template version");
-  return async (token: SmokeToken): Promise<{ score: number; topEvidence: string[] }> => {
+  return async (token: SmokeToken): Promise<{ score: number; topEvidence: string[]; firedPlugins: string[] }> => {
     const target = token.implementation?.address ?? token.address;
     const address = mustParse(Address.parse(target), "token address");
     const block = mustParse(BlockNumber.of(token.block), "token block");
@@ -637,7 +668,10 @@ function createOfflineAnalyzer(tokens: readonly SmokeToken[]): AnalyzeFn {
       const selector = first === undefined ? "no selector" : (first.selector as string);
       return `${signal.kind}:${signal.risk} via selector ${selector}`;
     });
-    return { score: envelope.score as number, topEvidence };
+    const firedPlugins = envelope.pluginResults
+      .filter((entry) => entry.findings.length > 0)
+      .map((entry) => (entry.pluginId as string).replace(/^dev\.brandklipparen\./, ""));
+    return { score: envelope.score as number, topEvidence, firedPlugins };
   };
 }
 

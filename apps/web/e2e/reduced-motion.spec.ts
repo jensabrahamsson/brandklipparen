@@ -112,7 +112,11 @@ test("reduced_motion_stays_flat_2d", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
 
-  const transforms = await page.locator("[data-tilt]").evaluateAll((elements) =>
+  // evaluateAll does not auto-wait, so wait until the token view has rendered its tilt cards.
+  const tiltCards = page.locator("[data-tilt]");
+  await expect(tiltCards.first()).toBeVisible();
+
+  const transforms = await tiltCards.evaluateAll((elements) =>
     elements.map((element) => getComputedStyle(element).transform),
   );
   expect(transforms.length).toBeGreaterThan(0);

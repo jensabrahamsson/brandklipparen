@@ -28,7 +28,9 @@ import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 import {
   ADD,
   CALLDATALOAD,
+  KECCAK,
   SLOAD,
+  SSTORE,
   STOP,
   ownerGuard,
   push1,
@@ -60,7 +62,19 @@ function mintTokenHex(): string {
   const bytecode = tokenBytecode([
     {
       selector: MINT,
-      body: [...ownerGuard(0, 200), CALLDATALOAD, ...push1(1), SLOAD, ADD, ...sstoreConstSlot(1, []), STOP],
+      body: [
+        ...ownerGuard(0, 200),
+        CALLDATALOAD,
+        ...push1(1),
+        SLOAD,
+        ADD,
+        ...sstoreConstSlot(1, []),
+        CALLDATALOAD,
+        ...push1(2),
+        KECCAK,
+        SSTORE,
+        STOP,
+      ],
     },
     {
       selector: TRANSFER,

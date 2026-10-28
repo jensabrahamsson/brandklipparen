@@ -12,11 +12,14 @@ Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 
 ## What it checks
 
-A privileged caller-gated write that grows a supply-like slot read in
-the transfer path. The proof needs all three at once: a function guarded
-by a caller check that stores to a constant slot, the transfer path
-loading the same slot, and addition arithmetic beside the supply flow.
-One finding names the lowest provable slot.
+A privileged mint that grows supply and credits a caller-chosen balance.
+The proof needs a caller-guarded writer that stores to a constant slot
+with addition beside the store (the supply increase) and a mapping store
+beside calldata in the same writer region (the balance credit keyed by
+an address the caller chose), plus a transfer path that loads the same
+slot beside addition arithmetic. The writer and the reader may share one
+merged function, with distinct functions preferred when both prove the
+same slot. One finding names the lowest provable slot.
 
 ## Why it matters to you
 
@@ -28,8 +31,10 @@ supply and the transfer function that reads it, so you can see both ends.
 
 Whether the privileged function is still callable: ownership may be
 renounced, the function may be unreachable, or the slot may track
-something other than supply. An unguarded write, or a guarded write to
-a slot the transfer path never reads, stays silent rather than guessed.
+something other than supply. A guarded write with no supply increase, no
+balance credit, or no transfer read of the slot stays silent rather than
+guessed, as does a fee, pause or limit pattern that shares the same
+writer shape.
 
 ## Evidence format
 
@@ -44,11 +49,14 @@ effective weight, which the plugin list exposes per plugin.
 
 ## Limitations / false positives
 
-The slot is resolved structurally: a direct constant store with no hash
-mixing counts, anything else stays unknown. A mint through a hashed
-mapping slot, or arithmetic the linear scan does not recognise, stays
-silent. A finding never says the mint was used, only that the bytecode
-proves the privileged path.
+The slot is resolved structurally: a push directly beside the access
+counts as a constant slot, a hash in the short window counts as a
+mapping slot, and anything else stays unknown. The arithmetic must sit
+beside the loaded slot value (within a short window), not merely in the
+same function. A mint through a hashed mapping slot, a credit the linear
+scan does not recognise, or arithmetic the linear scan does not
+recognise, stays silent. A finding never says the mint was used, only
+that the bytecode proves the privileged path.
 
 ## Inputs
 
@@ -59,3 +67,7 @@ helpers.
 ## Version and changelog
 
 Version 1.0.0. Initial release.
+
+Specificity update: the proof now needs a supply increase (addition
+beside the store) with a balance credit to a caller-chosen address, and
+the transfer arithmetic must sit beside the loaded slot.

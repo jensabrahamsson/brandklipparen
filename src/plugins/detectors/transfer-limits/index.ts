@@ -1,9 +1,11 @@
 // Transfer-limits detector plugin `dev.brandklipparen.transfer-limits`
 // (S-115, P-12 step 1). First-party detector behind the registry: proves
 // owner-changeable max-tx and max-wallet limits from code paths. A finding
-// needs both: a privileged region (a caller guard) that stores a constant
-// limit slot, and a transfer path that loads the same slot beside a less
-// than or greater than compare. The kind is `max-wallet` when the
+// needs a privileged writer storing a caller-chosen limit (a computed
+// value) or a large constant to a limit slot, and a transfer path that
+// loads the same slot beside a less than or greater than compare. A flag
+// constant (0 or 1) is a pause toggle, never a limit. The writer and the
+// reader may share one merged function. The kind is `max-wallet` when the
 // transfer path also reads a mapping entry (a balance lookup),
 // `max-tx` when it compares a calldata value with no mapping read, and
 // `unknown` otherwise. A compare with no privileged writer, or a
@@ -12,7 +14,7 @@
 // and domain types and pure functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { analyzeOwnerControl } from "../../../domain/ownerControl.ts";
+import { analyzeOwnerControl, constSlotLoadNearFlavor } from "../../../domain/ownerControl.ts";
 import type { RegionFacts } from "../../../domain/ownerControl.ts";
 import { containingSelector, extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
@@ -109,13 +111,28 @@ function evidenceFor(
 // A limit compare in the transfer path: the slot loads beside LT or GT.
 // The proof returns the read PC.
 function limitCompare(region: RegionFacts, slot: number): number | null {
-  if (!region.hasLt && !region.hasGt) {
+  const proof = constSlotLoadNearFlavor(region, slot, ["lt", "gt"]);
+  return proof === null ? null : proof.loadPc;
+}
+
+// A limit write: the writer stores a caller-chosen (computed) value or a
+// large constant. A zero write or a boolean constant is a pause toggle,
+// never an amount limit, so a pause setter never doubles as a limit
+// setter.
+function limitWriter(region: RegionFacts, slot: number): number | null {
+  const store = region.stores.find(
+    (candidate) => candidate.slot.kind === "const" && candidate.slot.value === slot,
+  );
+  if (store === undefined) {
     return null;
   }
-  const read = region.loads.find(
-    (load) => load.slot.kind === "const" && load.slot.value === slot,
-  );
-  return read === undefined ? null : read.pc;
+  if (!store.valueIsZero && store.valueConst === null) {
+    return store.pc;
+  }
+  if (store.valueConst !== null && store.valueConst > 1) {
+    return store.pc;
+  }
+  return null;
 }
 
 function kindOf(region: RegionFacts): "max-tx" | "max-wallet" | "unknown" {
@@ -148,7 +165,10 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       continue;
     }
     for (const store of region.stores) {
-      if (store.slot.kind === "const" && !store.valueIsZero) {
+      if (store.slot.kind !== "const") {
+        continue;
+      }
+      if ((!store.valueIsZero && store.valueConst === null) || (store.valueConst !== null && store.valueConst > 1)) {
         candidates.add(store.slot.value);
       }
     }
@@ -159,16 +179,26 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       if (!privilegedSet.has(region.selector)) {
         continue;
       }
-      const store = region.stores.find(
-        (candidate) => candidate.slot.kind === "const" && candidate.slot.value === slot,
-      );
-      if (store === undefined) {
+      const writePc = limitWriter(region, slot);
+      if (writePc === null) {
         continue;
       }
-      for (const transferSelector of transferSet) {
-        if (transferSelector === region.selector) {
-          continue;
+      const orderedTransfers = [...transferSet].sort();
+      orderedTransfers.sort((left, right) => {
+        const leftSame = left === region.selector ? 1 : 0;
+        const rightSame = right === region.selector ? 1 : 0;
+        if (leftSame !== rightSame) {
+          return leftSame - rightSame;
         }
+        if (left < right) {
+          return -1;
+        }
+        if (left > right) {
+          return 1;
+        }
+        return 0;
+      });
+      for (const transferSelector of orderedTransfers) {
         const transfer = view.regions.find((candidate) => candidate.selector === transferSelector);
         if (transfer === undefined) {
           continue;
@@ -177,10 +207,10 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
         if (readPc === null) {
           continue;
         }
-        const holder = containingSelector(entries, store.pc) ?? region.selector;
+        const holder = containingSelector(entries, writePc) ?? region.selector;
         const readerHolder = containingSelector(entries, readPc) ?? transfer.selector;
         const evidence: EvidenceType[] = [];
-        const written = evidenceFor(input.bytecode, holder, store.pc);
+        const written = evidenceFor(input.bytecode, holder, writePc);
         if (written !== null) {
           evidence.push(written);
         }

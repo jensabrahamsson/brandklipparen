@@ -314,6 +314,7 @@ function attachSnippets(
             severity: signal.severity,
             temporality: signal.temporality,
             evidence,
+            ...(signal.sourcePlugin === undefined ? {} : { sourcePlugin: signal.sourcePlugin }),
           })
         : Signal.createCloneMatch({
             codeHash,
@@ -478,6 +479,7 @@ function signalsFromPluginResults(
   temporality: Temporality,
   pluginWeights: Readonly<Record<string, number>>,
   featureCatalogue: Readonly<Record<string, PluginFeatureMapping>>,
+  detectorHeadWeights?: Readonly<Record<string, Readonly<Record<string, number>>>> | undefined,
 ): readonly Signal[] {
   // Scoring reads findings solely from allowlisted plugins (P-05): every
   // other entry stays in `pluginResults` at weight 0 and never converts.
@@ -533,7 +535,11 @@ function signalsFromPluginResults(
   }
   // Owner-control features join the capability bucket: each converts with
   // the artifact mapping for its plugin id, in registry order and finding
-  // order, so equal inputs give the same signals on every run.
+  // order, so equal inputs give the same signals on every run. A signal
+  // carries its source plugin id only when the artifact holds a calibrated
+  // head weight for that plugin and risk head, so artifacts without head
+  // weights keep producing bit-identical signals while calibrated ones
+  // score with the fitted per-plugin magnitudes.
   for (const entry of scored) {
     if (entry.outcome !== "ok") {
       continue;
@@ -543,6 +549,8 @@ function signalsFromPluginResults(
       if (mapping === null) {
         continue;
       }
+      const pluginId = entry.pluginId as string;
+      const headWeight = detectorHeadWeights?.[pluginId]?.[mapping.risk];
       const signal = Signal.createCapability({
         codeHash,
         risk: mapping.risk,
@@ -550,6 +558,7 @@ function signalsFromPluginResults(
         severity: mapping.severity,
         temporality,
         evidence: finding.evidence,
+        ...(typeof headWeight !== "number" || !Number.isFinite(headWeight) ? {} : { sourcePlugin: pluginId }),
       });
       if (signal.ok) {
         capability.push(signal.value);
@@ -630,10 +639,11 @@ function signalsFromPluginResults(
 // when the owner-slot finding exists and its signal converts (the prior
 // artifact names the plugin with a weight above 0 and carries its feature
 // mapping); otherwise no storage read happens and scoring stays
-// untouched. A failed read keeps the can-change temporality: the live
-// value is unknown, never guessed. The enriched signal carries
-// applies-now; enriched analyses skip the code-hash cache because the
-// value is live chain state, not code-derived.
+// untouched. A failed read or a zero word keeps the can-change
+// temporality: the live value is unknown, never guessed as renounced.
+// The enriched signal carries applies-now; enriched analyses skip the
+// code-hash cache because the value is live chain state, not
+// code-derived.
 const OWNERSHIP_PLUGIN_ID = "dev.brandklipparen.ownership";
 
 function ownerSlotProof(
@@ -702,6 +712,12 @@ async function attachOwnerState(
   if (!stored.ok) {
     return { signals, enriched: false };
   }
+  // A zero word is ambiguous: it may mean a renounced owner, an unwritten
+  // slot or a stubbed offline read. Missing data yields can't-tell, never
+  // a renounced claim, so the run keeps its can-change temporality.
+  if (/^0+$/.test((stored.value as string).slice(2))) {
+    return { signals, enriched: false };
+  }
   const observed: Temporality = {
     kind: "applies-now",
     measuredValue: { value: stored.value, slot: parsed.value, block, at },
@@ -728,6 +744,7 @@ async function attachOwnerState(
       severity: signal.severity,
       temporality: observed,
       evidence: signal.evidence,
+      ...(signal.sourcePlugin === undefined ? {} : { sourcePlugin: signal.sourcePlugin }),
     });
     if (!rebuilt.ok) {
       return signal;
@@ -906,6 +923,7 @@ export async function analyzeToken(
     observed,
     loaded.value.artifact.pluginWeights,
     loaded.value.artifact.pluginFeatureCatalogue,
+    loaded.value.artifact.detectorHeadWeights,
   );
   // Owner state through RpcPort (S-115, K-016): enriches the converted
   // owner-slot signal with the live value where the proof and the
