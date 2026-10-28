@@ -1,19 +1,13 @@
 import type { JSX } from "react";
-// Chain selector (S-029): Ethereum mainnet today, ready for more chains
-// later. No wallet connection: the UI is read-only analysis.
-export function ChainSelector({
-  chain,
-  onChange,
-}: {
-  readonly chain: string;
-  readonly onChange: (chain: string) => void;
-}): JSX.Element {
+// Chain badge (S-029): Ethereum mainnet only (chainId 1). No wallet
+// connection and no chain picker: the UI is read-only analysis on
+// mainnet, and the backend turns every other chain id away with a typed
+// error (S-091).
+export function ChainSelector(): JSX.Element {
   return (
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14 }} className="muted">
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14 }} className="muted">
       Chain
-      <select
-        value={chain}
-        onChange={(event) => onChange(event.target.value)}
+      <span
         aria-label="Chain"
         style={{
           background: "var(--surface)",
@@ -25,8 +19,8 @@ export function ChainSelector({
           fontSize: 14,
         }}
       >
-        <option value="ethereum">Ethereum mainnet</option>
-      </select>
-    </label>
+        Ethereum mainnet
+      </span>
+    </span>
   );
 }

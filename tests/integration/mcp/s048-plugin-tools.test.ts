@@ -175,6 +175,7 @@ describe("per-plugin MCP tools", () => {
     expect(names).toContain(pluginToolNameFor("dev.brandklipparen.capability"));
     expect(names).toContain(pluginToolNameFor("dev.brandklipparen.clone-match"));
     expect(names).toContain(pluginToolNameFor("dev.brandklipparen.hard-to-analyze"));
+    expect(names).toContain(pluginToolNameFor("dev.brandklipparen.decompiler"));
     expect(new Set(names).size).toBe(names.length);
   });
 });

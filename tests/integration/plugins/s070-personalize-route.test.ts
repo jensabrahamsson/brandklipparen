@@ -142,6 +142,7 @@ describe("POST /v1/personalize mapping route", () => {
       expect(body.personalize?.kind).toBe("ok");
       expect(body.personalize?.spec?.pluginRanking).toEqual([
         "dev.brandklipparen.hard-to-analyze",
+        "dev.brandklipparen.decompiler",
         "dev.brandklipparen.clone-match",
         "dev.brandklipparen.capability",
       ]);

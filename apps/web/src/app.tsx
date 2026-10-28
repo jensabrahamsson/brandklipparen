@@ -13,7 +13,6 @@ function loadApiKey(): string {
 
 export function App(): JSX.Element {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
-  const [chain, setChain] = useState("ethereum");
   const [apiKey, setApiKey] = useState(loadApiKey);
 
   useEffect(() => {
@@ -65,13 +64,7 @@ export function App(): JSX.Element {
       </header>
       <main id="main" tabIndex={-1}>
         {route.name === "start" ? (
-          <StartPage
-            chain={chain}
-            apiKey={apiKey}
-            onChainChange={setChain}
-            onApiKeyChange={storeApiKey}
-            onAnalyze={goToken}
-          />
+          <StartPage apiKey={apiKey} onApiKeyChange={storeApiKey} onAnalyze={goToken} />
         ) : (
           <TokenPage address={route.address} apiKey={apiKey} onHome={goHome} />
         )}

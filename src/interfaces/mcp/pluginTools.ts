@@ -122,4 +122,10 @@ export const TOOL_SECURITY_REVIEWS: Readonly<Record<string, PluginToolSecurityRe
     scope: "read-only detector tool over the shared service, findings filtered to one plugin",
     verdict: "approved",
   }),
+  plugin_dev_brandklipparen_decompiler: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only detector tool over the shared service, findings filtered to one plugin",
+    verdict: "approved",
+  }),
 });

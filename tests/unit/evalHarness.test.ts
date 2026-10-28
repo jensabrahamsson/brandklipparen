@@ -130,4 +130,28 @@ describe("decompiler eval harness", () => {
       expect(row.tableHit).toBe(true);
     }
   });
+
+  test("d09_metrics_table_reports_all_four_metrics_per_contract", async () => {
+    const result = await runEval({ corpusDir: CORPUS_DIR, extdecompBin: undefined });
+    expect(result.exitCode).toBe(0);
+    expect(result.extdecompVersion).toBe(null);
+    const corpus = corpusOf();
+    expect(result.summary.contracts.length).toBe(corpus.contracts.length);
+    for (const [index, row] of result.summary.contracts.entries()) {
+      // Metric 1 (CFG/function boundaries), metric 2 (unresolved jumps),
+      // metric 3 (token-pattern readability) and metric 4 (offset mapping)
+      // are all present per corpus contract, for the own pipeline now and
+      // for extdecomp when a binary is named.
+      expect(row.id).toBe(corpus.contracts[index]?.id);
+      expect(typeof row.entriesMatch).toBe("boolean");
+      expect(typeof row.ownUnresolved).toBe("number");
+      expect(typeof row.patternsMatch).toBe("boolean");
+      expect(typeof row.spotAgreed).toBe("number");
+      expect(typeof row.spotTotal).toBe("number");
+      expect(typeof row.offsetCoverage).toBe("number");
+      expect(typeof row.passed).toBe("boolean");
+      expect(row.extdecomp.status).toBe("not-run");
+    }
+    expect(result.summary.extdecompRuns).toBe(0);
+  });
 });

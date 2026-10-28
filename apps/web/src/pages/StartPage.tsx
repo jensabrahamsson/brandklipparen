@@ -2,9 +2,10 @@ import { useState, type JSX } from "react";
 import { ChainSelector } from "../components/ChainSelector.tsx";
 import { isValidAddress, normalizeAddress, validationMessage } from "../lib/validate.ts";
 
-// Start page: one search field for a contract address, chain selector,
-// and the Just-deployed list. The deployment feed is not wired yet, so
-// the list renders an honest empty state instead of fake chain data.
+// Start page: one search field for a contract address, the mainnet-only
+// chain badge, and the Just-deployed list. The deployment feed is not
+// wired yet, so the list renders an honest empty state instead of fake
+// chain data.
 // Filter chips stay visible but inert until the feed connects
 // (design review P1-1): disabled with a reason, never filtering fake rows.
 const FILTERS = ["All", "High risk", "Low risk"] as const;
@@ -44,15 +45,11 @@ function loadRecent(): RecentEntry[] {
 }
 
 export function StartPage({
-  chain,
   apiKey,
-  onChainChange,
   onApiKeyChange,
   onAnalyze,
 }: {
-  readonly chain: string;
   readonly apiKey: string;
-  readonly onChainChange: (chain: string) => void;
   readonly onApiKeyChange: (key: string) => void;
   readonly onAnalyze: (address: string) => void;
 }): JSX.Element {
@@ -109,7 +106,7 @@ export function StartPage({
       <div
         style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 16, flexWrap: "wrap", alignItems: "center" }}
       >
-        <ChainSelector chain={chain} onChange={onChainChange} />
+        <ChainSelector />
         <details className="muted" style={{ fontSize: 14 }}>
           <summary style={{ cursor: "pointer" }}>Settings</summary>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, marginTop: 8 }} className="muted">

@@ -101,6 +101,101 @@ describe("AI spec validation falls back to the deterministic baseline", () => {
     expect(parsePersonalizeEnvelope(null, CONTEXT)).toBe(null);
   });
 
+describe("zod AI spec validation against the component whitelist", () => {
+  test("unknown top-level and placement fields fall back to null", () => {
+    expect(parseAiPersonalizeSpec({ ...validSpecBody(), style: "dark" }, CONTEXT)).toBe(null);
+    expect(parseAiPersonalizeSpec({ ...validSpecBody(), code: "x" }, CONTEXT)).toBe(null);
+    expect(
+      parseAiPersonalizeSpec(
+        {
+          ...validSpecBody(),
+          placements: [{ sectionId: "signals", emphasis: "high", href: "https://example.invalid" }],
+        },
+        CONTEXT,
+      ),
+    ).toBe(null);
+  });
+
+  test("wrong shapes fall back to null", () => {
+    expect(parseAiPersonalizeSpec({ ...validSpecBody(), specVersion: "1" }, CONTEXT)).toBe(null);
+    expect(parseAiPersonalizeSpec({ ...validSpecBody(), specVersion: 2 }, CONTEXT)).toBe(null);
+    expect(
+      parseAiPersonalizeSpec({ ...validSpecBody(), pluginRanking: ["dev.brandklipparen.capability", 42] }, CONTEXT),
+    ).toBe(null);
+    expect(parseAiPersonalizeSpec({ ...validSpecBody(), pluginRanking: [""] }, CONTEXT)).toBe(null);
+    expect(
+      parseAiPersonalizeSpec(
+        { ...validSpecBody(), placements: [{ sectionId: "signals", emphasis: "urgent" }] },
+        CONTEXT,
+      ),
+    ).toBe(null);
+    expect(
+      parseAiPersonalizeSpec(
+        { ...validSpecBody(), placements: [{ sectionId: "signals", emphasis: "high", collapsed: "yes" }] },
+        CONTEXT,
+      ),
+    ).toBe(null);
+    expect(parseAiPersonalizeSpec({ ...validSpecBody(), placements: "signals" }, CONTEXT)).toBe(null);
+    expect(parseAiPersonalizeSpec(null, CONTEXT)).toBe(null);
+    expect(parseAiPersonalizeSpec([], CONTEXT)).toBe(null);
+  });
+
+  test("unknown or duplicate components fall back to null", () => {
+    expect(
+      parseAiPersonalizeSpec(
+        { ...validSpecBody(), pluginRanking: ["dev.brandklipparen.no-such-plugin"] },
+        CONTEXT,
+      ),
+    ).toBe(null);
+    expect(
+      parseAiPersonalizeSpec(
+        {
+          ...validSpecBody(),
+          pluginRanking: ["dev.brandklipparen.capability", "dev.brandklipparen.capability"],
+        },
+        CONTEXT,
+      ),
+    ).toBe(null);
+    expect(
+      parseAiPersonalizeSpec(
+        { ...validSpecBody(), placements: [{ sectionId: "no-such-section", emphasis: "high" }] },
+        CONTEXT,
+      ),
+    ).toBe(null);
+    expect(
+      parseAiPersonalizeSpec(
+        {
+          ...validSpecBody(),
+          placements: [
+            { sectionId: "signals", emphasis: "high" },
+            { sectionId: "signals", emphasis: "low" },
+            { sectionId: "summary", emphasis: "normal" },
+            { sectionId: "score", emphasis: "normal" },
+          ],
+        },
+        CONTEXT,
+      ),
+    ).toBe(null);
+  });
+
+  test("oversize specs and missing summary or score fall back to null", () => {
+    const manyPlugins = Array.from({ length: 17 }, (_, index) => `dev.brandklipparen.p${index}`);
+    expect(parseAiPersonalizeSpec({ ...validSpecBody(), pluginRanking: manyPlugins }, CONTEXT)).toBe(null);
+    const manyPlacements = Array.from({ length: 17 }, () => ({ sectionId: "signals", emphasis: "high" }));
+    expect(parseAiPersonalizeSpec({ ...validSpecBody(), placements: manyPlacements }, CONTEXT)).toBe(null);
+    expect(
+      parseAiPersonalizeSpec(
+        { ...validSpecBody(), placements: [{ sectionId: "signals", emphasis: "high" }] },
+        CONTEXT,
+      ),
+    ).toBe(null);
+  });
+
+  test("the deterministic fallback stands: null parses to the baseline order", () => {
+    expect(parseAiPersonalizeSpec({ ...validSpecBody(), pluginRanking: ["unknown"] }, CONTEXT)).toBe(null);
+  });
+});
+
   test("section order applies placements with the floor clamped first", () => {
     const spec = parseAiPersonalizeSpec(validSpecBody(), CONTEXT);
     if (spec === null) {

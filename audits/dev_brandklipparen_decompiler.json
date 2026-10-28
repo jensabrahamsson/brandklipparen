@@ -1,0 +1,11 @@
+{
+  "pluginId": "dev.brandklipparen.decompiler",
+  "version": "1.0.0",
+  "deterministic": {
+    "kind": "pass"
+  },
+  "ai": {
+    "kind": "not-run"
+  },
+  "humanReview": "missing"
+}

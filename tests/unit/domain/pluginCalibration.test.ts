@@ -55,12 +55,20 @@ describe("calibration promotion (S-047, K-210)", () => {
     const emptyNamed = mustArtifact({ ...baseArtifactInput(), pluginWeights: {} });
     expect(pluginWeightOf(emptyNamed, CAPABILITY_ID)).toBe(UNCALIBRATED_PLUGIN_WEIGHT);
 
+    // The decompiler plugin (S-085, D-08) reads its weight from the same
+    // artifact mapping: weight 0 with an unnamed artifact, calibrated
+    // weight with a naming artifact, across two artifact versions.
+    const DECOMPILER_ID = "dev.brandklipparen.decompiler";
+    expect(pluginWeightOf(unnamed, DECOMPILER_ID)).toBe(UNCALIBRATED_PLUGIN_WEIGHT);
+    expect(pluginWeightOf(emptyNamed, DECOMPILER_ID)).toBe(UNCALIBRATED_PLUGIN_WEIGHT);
+
     // An artifact that names the plugin carries its calibrated weight.
     const calibrated = mustArtifact({
       ...baseArtifactInput(),
-      pluginWeights: { [CAPABILITY_ID]: 1.5 },
+      pluginWeights: { [CAPABILITY_ID]: 1.5, [DECOMPILER_ID]: 0.75 },
     });
     expect(pluginWeightOf(calibrated, CAPABILITY_ID)).toBe(1.5);
+    expect(pluginWeightOf(calibrated, DECOMPILER_ID)).toBe(0.75);
     expect(pluginWeightOf(calibrated, "dev.brandklipparen.example-fee-capability")).toBe(
       UNCALIBRATED_PLUGIN_WEIGHT,
     );
@@ -96,5 +104,10 @@ describe("calibration promotion (S-047, K-210)", () => {
       throw new Error("expected the clone-match detector in the exposure");
     }
     expect(other.weight).toBe(0);
+    const decompilerUnweighted = unweighted.find((entry) => entry.id === "dev.brandklipparen.decompiler");
+    if (decompilerUnweighted?.kind !== "detector") {
+      throw new Error("expected the decompiler detector in the exposure");
+    }
+    expect(decompilerUnweighted.weight).toBe(0);
   });
 });

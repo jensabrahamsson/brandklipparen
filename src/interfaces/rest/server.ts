@@ -28,6 +28,8 @@ import { serializeTokenAssessment } from "../../application/assessmentService.ts
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import { serializePersonalizeOutcome } from "../../application/personalizeService.ts";
 import type { PersonalizeService } from "../../application/personalizeService.ts";
+import { MAX_NAMING_SELECTORS } from "../../application/decompilerNaming.ts";
+import type { DecompilerNamingService } from "../../application/decompilerNaming.ts";
 import { sectionBodyOf } from "../../plugins/docs.ts";
 import { serializeTokenInvestigation } from "../../application/investigationService.ts";
 import type { InvestigationService } from "../../application/investigationService.ts";
@@ -126,6 +128,11 @@ export type RestServerOptions = {
   // answers the not-configured envelope with the deterministic baseline
   // standing.
   readonly personalizeService?: PersonalizeService | undefined;
+  // Decompiler naming service for the optional suggested-names overlay
+  // (S-083, D-11). Absent service means the overlay stays off: the route
+  // answers the not-configured envelope and the deterministic
+  // pseudo-Solidity stands.
+  readonly namingService?: DecompilerNamingService | undefined;
   // Mapping prompt version for the personalize cache key (P-27): the same
   // version the adapter prompt carries. Absent version disables the route
   // like an absent service.
@@ -944,6 +951,72 @@ export function createRestServer(options: RestServerOptions): RestServer {
           personalize: JSON.parse(serializePersonalizeOutcome(outcome)),
         }),
       );
+  });
+
+  // Optional suggested-names overlay for decompiled functions (S-083, D-11):
+  // one explicit per-request POST carrying the selectors the Expert view
+  // already shows. The route always answers 200 with the outcome envelope:
+  // `not-configured` without a wired naming service, `invalid-output` for
+  // malformed selectors or unparsable model output, and the labelled
+  // display-only names otherwise. Scores, evidence and emitted structure
+  // are untouched: this route runs no analysis.
+  app.post("/v1/naming", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    const requestId = issueRequestId();
+    const gated = gateKeyOnly(request, request.body, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const body = (request.body ?? {}) as { selectors?: unknown };
+    const selectors = body.selectors;
+    if (
+      !Array.isArray(selectors) ||
+      selectors.length === 0 ||
+      selectors.length > MAX_NAMING_SELECTORS ||
+      !selectors.every(
+        (entry): entry is string => typeof entry === "string" && /^0x[0-9a-fA-F]{8}$/.test(entry),
+      )
+    ) {
+      return sendError(
+        reply,
+        validationError(
+          "Invalid selectors: expected 1 to 64 entries shaped 0x plus 8 hex characters.",
+          requestId as string,
+        ),
+      );
+    }
+    const service = options.namingService;
+    if (service === undefined || !service.enabled) {
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          naming: { kind: "not-configured" },
+        }),
+      );
+    }
+    const outcome = await service.resolve(selectors);
+    if (outcome.kind === "ok") {
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          naming: {
+            kind: "ok",
+            names: outcome.names.map((entry) => ({
+              selector: entry.selector,
+              suggestedName: entry.suggestedName,
+            })),
+          },
+        }),
+      );
+    }
+    return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+      JSON.stringify({
+        status: "ok",
+        apiVersion: API_VERSION,
+        naming: { kind: outcome.kind },
+      }),
+    );
   });
 
   app.get("/v1/analyze", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {

@@ -22,6 +22,9 @@ import {
   createInvestigationService,
 } from "../application/investigationService.ts";
 import type { InvestigationService } from "../application/investigationService.ts";
+import { createDecompilerNamingService } from "../application/decompilerNaming.ts";
+import type { DecompilerNamingService } from "../application/decompilerNaming.ts";
+import type { DecompilerNamingPort } from "../ports/decompilerNaming.ts";
 import { createhostedInvestigateAdapterFromConfig } from "../adapters/investigation/hostedInvestigateAdapter.ts";
 import type { hostedInvestigateTransport } from "../adapters/investigation/hostedInvestigateAdapter.ts";
 import { DEFAULT_INVESTIGATION_LIMITS } from "../application/investigateToken.ts";
@@ -315,6 +318,17 @@ export function createAssessmentServiceFromConfig(
       dailyCapPerKey,
     }),
   );
+}
+
+// Builds the decompiler naming service (S-083, D-11): the default wiring
+// carries no port, so the suggested-names overlay stays off and the
+// deterministic pseudo-Solidity stands. A future hosted naming adapter (or
+// the fake in tests) passes its port here explicitly to opt in; the
+// overlay never enters scoring, evidence or emitted structure.
+export function buildDecompilerNamingService(
+  port: DecompilerNamingPort | null = null,
+): DecompilerNamingService {
+  return createDecompilerNamingService(port);
 }
 
 // Builds the investigation service from the validated configuration

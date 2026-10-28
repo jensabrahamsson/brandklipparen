@@ -143,6 +143,7 @@ describe("registry reconciliation with the reviewed ADR (S-071)", () => {
     expect(built.value.registry.entries.map((entry) => entry.manifest.id)).toEqual([
       "dev.brandklipparen.capability",
       "dev.brandklipparen.clone-match",
+      "dev.brandklipparen.decompiler",
       "dev.brandklipparen.hard-to-analyze",
     ]);
     expect(Object.isFrozen(built.value.registry)).toBe(true);

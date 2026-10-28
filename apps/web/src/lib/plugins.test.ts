@@ -72,6 +72,40 @@ describe("plugin parsing for the schema-driven panel", () => {
     expect(views[1]?.findings).toEqual([]);
   });
 
+  test("decompiler findings keep ranges, annotations and unresolved counts for the Expert view", () => {
+    const views = toPluginResultViews([
+      {
+        pluginId: "dev.brandklipparen.decompiler",
+        pluginVersion: "1.0.0",
+        outcome: "ok",
+        findings: [
+          {
+            id: "dev.brandklipparen.decompiler:0xa9059cbb",
+            title: "Decompiled function transfer (0xa9059cbb)",
+            payload: {
+              selector: "0xa9059cbb",
+              name: "transfer",
+              entryPc: 45,
+              startPc: 45,
+              endPc: 120,
+              annotations: ["token-pattern: guarded-state-update"],
+              cause: "no-plain-return",
+              unresolvedJumps: 0,
+            },
+            evidence: [{ selector: "0xa9059cbb", offset: 45 }],
+          },
+        ],
+      },
+    ]);
+    expect(views).toHaveLength(1);
+    expect(views[0]?.findings).toHaveLength(1);
+    const payload = views[0]?.findings[0]?.payload as Record<string, unknown>;
+    expect(payload["entryPc"]).toBe(45);
+    expect(payload["annotations"]).toEqual(["token-pattern: guarded-state-update"]);
+    expect(payload["unresolvedJumps"]).toBe(0);
+    expect(views[0]?.findings[0]?.evidence).toEqual([{ selector: "0xa9059cbb", offset: 45 }]);
+  });
+
   test("hostile payloads stay data and hostile evidence is contained", () => {
     const views = toPluginResultViews([
       {

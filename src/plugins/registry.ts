@@ -19,6 +19,7 @@ import { hostedOpenWeightsAssessmentPlugin } from "./assessments/hosted-open-wei
 import { metaModelApiAssessmentPlugin } from "./assessments/meta-model-api/index.ts";
 import { capabilityDetectorPlugin } from "./detectors/capability/index.ts";
 import { cloneMatchDetectorPlugin } from "./detectors/clone-match/index.ts";
+import { decompilerDetectorPlugin } from "./detectors/decompiler/index.ts";
 import { hardToAnalyzeDetectorPlugin } from "./detectors/hard-to-analyze/index.ts";
 
 // Typed startup errors (P-02, P-08). Each error names the plugin id, and
@@ -227,9 +228,10 @@ export function registeredPluginIds(registry: PluginRegistry): readonly PluginId
   return registry.entries.map((entry) => entry.manifest.id);
 }
 
-// First-party detector set (S-043, P-12 step 1; S-044, P-12 step 2): the
-// capability detector is the first registered detector plugin, followed
-// by the clone-match and hard-to-analyze detectors. The list is a frozen
+// First-party detector set (S-043, P-12 step 1; S-044, P-12 step 2; S-081,
+// D-07): the capability detector is the first registered detector plugin,
+// followed by the clone-match, decompiler and hard-to-analyze detectors.
+// The list is a frozen
 // static value; configuration selects among registered entries only and
 // never names code to load (P-07). Each entry carries its manifest beside
 // its implementation, so a manifest without an implementation is
@@ -237,5 +239,6 @@ export function registeredPluginIds(registry: PluginRegistry): readonly PluginId
 export const DEFAULT_DETECTOR_PLUGINS: readonly DetectorPlugin[] = Object.freeze([
   capabilityDetectorPlugin,
   cloneMatchDetectorPlugin,
+  decompilerDetectorPlugin,
   hardToAnalyzeDetectorPlugin,
 ]);

@@ -196,6 +196,9 @@ resolution, timeline, current storage values and baseline comparison.
 | K-013 Cache per code hash | MVP | Response time and cost per K-101, K-107 |
 | K-014 Just-deployed flow | MVP | The demo's main flow |
 | K-039 New LP pairs feed on mainnet | MVP | Discovery only; never moves score or evidence |
+| K-037 Own ERC-20 EVM decompiler | MVP | Deterministic token-scoped pipeline beside extdecomp |
+| K-038 Differential eval and naming overlay | MVP | Local-only harness; opt-in display-only names |
+| K-521 Decompiler output safety | MVP | Resolve or record, never guess; labelled fallback |
 | K-015 Timeline since deploy | Stretch | Builds on event index and re-evaluation |
 | K-016 Current storage values | Stretch | Builds on slot identification first |
 | K-017 Clone matching | MVP | Strong signal against template reuse at low cost |
@@ -2243,6 +2246,84 @@ P-38); this story enters the ID with the implementation.
   `k520_citation_check_keeps_only_sentences_citing_collected_evidence`
   and the redacted-logging pattern of the hosted adapters.
 
+### K-037 Own ERC-20 EVM decompiler (MVP)
+
+The own pipeline decompiles ERC-20 token contracts deterministically:
+existing disassembly into a CFG with stack-value jump-target resolution,
+stack-to-SSA lifting, structuring into if/loops with a labelled
+goto-form fallback, and a pseudo-Solidity emitter with exact bytecode
+offsets. Proposed in `docs/adr-evm-decompiler.md` (D-01–D-08); this
+story enters the ID with the implementation. The pipeline ships as the
+detector plugin `dev.brandklipparen.decompiler`, consumed through the
+shared service in REST, MCP and the Expert view at weight 0 until the
+calibration artifact names it.
+
+- Disassembly partitions every swept instruction into exactly one basic
+  block, and dispatcher jumps resolve from proven constants only.
+  Verification: unit tests `k521_lift_partitions_blocks_with_validated_jump_targets`,
+  `k521_dispatch_coverage_on_erc20_fixture` and
+  `k522_function_entries_cover_sixteen_valid_cases`.
+- Lifting is semantics-preserving on straight-line code and names every
+  stack value exactly once. Verification: unit tests
+  `k524_store_and_return_operands_follow_pop_order` and the
+  `d12_pathological_bytecode_yields_typed_outcome_or_labelled_fallback`
+  property over mutated bytecode.
+- Structuring renders token patterns as readable pseudo-Solidity with
+  every item carrying its exact `[startPc, endPc)` range; irreducible
+  regions emit the labelled fallback. Verification: unit tests
+  `k524_three_published_case_fixtures_render_expected_pseudo_solidity_and_docs_snippet`,
+  `d07_decompiler_output_consumed_identically_in_rest_mcp_and_expert_ui`
+  (payload ranges equal the lifted ranges) and the
+  `d12_pathological_bytecode_yields_typed_outcome_or_labelled_fallback`
+  property (every emitted range stays inside its function range).
+- The detector plugin exposes the same functions, offsets and
+  unresolved-jump count in REST, MCP and the Expert view, and score,
+  probabilities and signals stay bit-identical with the plugin enabled,
+  disabled and absent. Verification: contract
+  `runDetectorPluginContract` for the decompiler plugin and unit tests
+  `d07_decompiler_output_consumed_identically_in_rest_mcp_and_expert_ui`
+  and `d08_decompiler_findings_leave_score_and_evidence_unchanged`.
+
+### K-038 Differential eval and naming overlay (MVP)
+
+The dev/eval-only harness compares the own pipeline against extdecomp on
+the frozen ERC-20 corpus over local bytecode only, and suggested
+function names arrive solely through an opt-in display-only overlay.
+Proposed in `docs/adr-evm-decompiler.md` (D-09–D-11); this story enters
+the ID with the implementation.
+
+- The harness invokes only the binary named by `extdecomp_BIN` as
+  `extdecomp decompile <hex-or-file>` with `HOME` set to a fresh temp
+  dir, checks `extdecomp --version` against the pinned expected `0.9.1`,
+  and reports the four metrics (CFG/function boundaries, unresolved
+  jumps, token-pattern readability, offset mapping) per corpus contract
+  for both decompilers. Verification: unit tests
+  `d09_eval_runs_only_on_local_bytecode_without_network_or_llm_flags`,
+  `d10_version_check_expects_extdecomp_0_9_1` and
+  `d09_metrics_table_reports_all_four_metrics_per_contract`.
+- The naming overlay suggests display names only, behind an explicit
+  opt-in, validated whole and rendered as a labelled overlay; without a
+  wired port it answers `not-configured` with zero provider calls.
+  Verification: unit tests
+  `d11_naming_without_key_reports_not_configured_and_sends_nothing` and
+  property `d11_suggested_names_never_affect_analysis`, plus the
+  `POST /v1/naming` route tests.
+
+### K-521 Decompiler output safety (MVP)
+
+Decompiler output is safe by construction: a jump target is resolved
+only from proven stack values and otherwise recorded as one unresolved
+jump — never guessed, never dropped — and out-of-scope input is a
+normal result with zero token-pattern annotations, never an error.
+Proposed in `docs/adr-evm-decompiler.md` (D-01, D-03, D-12); this story
+enters the ID with the implementation.
+
+- Mutated bytecode ends in a structured result, a labelled fallback or
+  a typed error within the per-port limits; non-token input emits plain
+  pseudo-Solidity. Verification: property tests
+  `d12_pathological_bytecode_yields_typed_outcome_or_labelled_fallback`
+  and `d12_non_erc20_input_decompiles_without_token_annotations`.
+
 ## 12. Traceability
 
 ### 12.1 Requirement to named test or measurement
@@ -2344,6 +2425,9 @@ the test per acceptance criterion.
 | K-514 | `k514_registry_has_no_dynamic_loading` (CI check) |
 | K-516 | `k516_deterministic_audit_fails_forbidden_import_and_capability_mismatch` (unit) |
 | K-520 | `k520_investigation_leaves_score_and_evidence_unchanged` (property) |
+| K-037 | `d07_decompiler_output_consumed_identically_in_rest_mcp_and_expert_ui` (unit) |
+| K-038 | `d09_eval_runs_only_on_local_bytecode_without_network_or_llm_flags` (unit) |
+| K-521 | `d12_pathological_bytecode_yields_typed_outcome_or_labelled_fallback` (property) |
 
 ### 12.2 Security requirements to threats and countermeasures
 

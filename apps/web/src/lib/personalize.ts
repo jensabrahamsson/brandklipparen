@@ -4,9 +4,11 @@
 // through one explicit per-request POST carrying priorities plus quoted
 // plugin references, and any invalid or missing model output falls back
 // to the deterministic baseline with scores, evidence and text unchanged.
-// The client re-validates every model response with plain checks before
-// applying it: whitelisted sections only, no collapse of the floored
-// sections, ranking names only offered plugin ids.
+// The client re-validates every model response with zod before applying
+// it: the closed component shape first, then whitelisted sections only,
+// no collapse of the floored sections, ranking names only offered plugin
+// ids.
+import { z } from "zod";
 
 export const AI_PERSONALIZE_KEY = "brandklipparen-ai-personalize:v1";
 
@@ -82,64 +84,60 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// Client-side plain-check parse (P-28): mirrors the server contract over
-// the offered context. Any failure means the deterministic baseline
-// stands; no partial spec is ever applied.
+// Client-side zod parse: the model JSON is validated against the closed
+// component shape first (spec version, ranking and placement lists,
+// whitelisted field names only), then against the offered context
+// (whitelisted section and plugin ids, no duplicates, no collapse of the
+// floored sections, `summary` and `score` always present). Any failure
+// means the deterministic baseline stands; no partial spec is ever
+// applied. The deterministic fallback is unchanged: null in, baseline out.
+const emphasisSchema = z.enum(["normal", "high", "low"]);
+
+const placementSchema = z
+  .object({
+    sectionId: z.string(),
+    emphasis: emphasisSchema,
+    collapsed: z.boolean().optional(),
+  })
+  .strict();
+
+const aiSpecSchema = z
+  .object({
+    specVersion: z.literal(1),
+    pluginRanking: z.array(z.string().min(1)).max(16),
+    placements: z.array(placementSchema).max(16),
+  })
+  .strict();
+
 export function parseAiPersonalizeSpec(value: unknown, context: PersonalizeContext): AiPersonalizeSpec | null {
-  if (!isRecord(value) || value["specVersion"] !== 1) {
+  const shaped = aiSpecSchema.safeParse(value);
+  if (!shaped.success) {
     return null;
   }
-  const allowed = new Set(["specVersion", "pluginRanking", "placements"]);
-  for (const key of Object.keys(value)) {
-    if (!allowed.has(key)) {
-      return null;
-    }
-  }
-  const ranking = value["pluginRanking"];
-  if (!Array.isArray(ranking) || ranking.length > 16) {
-    return null;
-  }
+  const ranking = shaped.data.pluginRanking;
   const presentPlugins = new Set(context.pluginIds);
   const seenPlugins = new Set<string>();
   for (const entry of ranking) {
-    if (typeof entry !== "string" || entry.length === 0 || !presentPlugins.has(entry) || seenPlugins.has(entry)) {
+    if (!presentPlugins.has(entry) || seenPlugins.has(entry)) {
       return null;
     }
     seenPlugins.add(entry);
-  }
-  const placements = value["placements"];
-  if (!Array.isArray(placements) || placements.length > 16) {
-    return null;
   }
   const presentSections = new Set(context.sectionIds);
   const floored = new Set(context.flooredSectionIds);
   const seenSections = new Set<string>();
   const parsed: PersonalizePlacement[] = [];
-  for (const placement of placements) {
-    if (!isRecord(placement)) {
-      return null;
-    }
-    const keys = Object.keys(placement);
-    if (keys.length > 3 || !keys.every((key) => key === "sectionId" || key === "emphasis" || key === "collapsed")) {
-      return null;
-    }
-    const sectionId = placement["sectionId"];
-    const emphasis = placement["emphasis"];
-    if (typeof sectionId !== "string" || !presentSections.has(sectionId) || seenSections.has(sectionId)) {
+  for (const placement of shaped.data.placements) {
+    const sectionId = placement.sectionId;
+    if (!presentSections.has(sectionId) || seenSections.has(sectionId)) {
       return null;
     }
     seenSections.add(sectionId);
-    if (emphasis !== "normal" && emphasis !== "high" && emphasis !== "low") {
-      return null;
-    }
-    const collapsed = placement["collapsed"] ?? false;
-    if (typeof collapsed !== "boolean") {
-      return null;
-    }
+    const collapsed = placement.collapsed ?? false;
     if (collapsed && floored.has(sectionId)) {
       return null;
     }
-    parsed.push({ sectionId, emphasis, collapsed });
+    parsed.push({ sectionId, emphasis: placement.emphasis, collapsed });
   }
   if (!seenSections.has("summary") || !seenSections.has("score")) {
     return null;

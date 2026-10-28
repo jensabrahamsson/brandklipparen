@@ -26,6 +26,7 @@ const PLUGIN_DIRS: Readonly<Record<string, string>> = Object.freeze({
   "dev.brandklipparen.capability": "src/plugins/detectors/capability",
   "dev.brandklipparen.clone-match": "src/plugins/detectors/clone-match",
   "dev.brandklipparen.hard-to-analyze": "src/plugins/detectors/hard-to-analyze",
+  "dev.brandklipparen.decompiler": "src/plugins/detectors/decompiler",
   "dev.brandklipparen.example-fee-capability": "examples/plugins/fee-capability",
 });
 

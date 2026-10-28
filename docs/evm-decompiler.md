@@ -28,3 +28,69 @@ Reading the emission: `calldata[0x00]` is the first calldata word,
 assignment reads the slot back on its right-hand side. Every line maps
 to the exact `[startPc, endPc)` range it was lifted from; the
 structured function value carries those ranges per statement.
+
+## Differential eval: results format and metrics
+
+The dev/eval-only harness (`scripts/eval-decompiler.ts`, S-082, D-09,
+D-10) compares the own pipeline against extdecomp on the frozen ERC-20
+corpus (`tests/fixtures/evm/corpus/`). It runs only on local bytecode:
+the binary named by `extdecomp_BIN` is invoked as
+`extdecomp decompile <hex-or-file>` with `HOME` set to a fresh temp dir,
+`extdecomp --version` is checked against the pinned expected `0.9.1`
+(a mismatch fails the eval and installs nothing), and no `-r`, RPC
+URL, address, LLM or naming flag may appear in the invocation. Without
+`extdecomp_BIN` the harness evaluates the own pipeline, marks every
+extdecomp column `not-run`, and exits 0, so the runtime suite stays
+green with the variable unset and CI never runs extdecomp.
+
+### Per-contract results format
+
+One row per corpus contract, for both decompilers:
+
+| Field | Meaning |
+|---|---|
+| `id` | Corpus contract id (for example `token-simple`) |
+| `ownFunctions` / `expectedFunctions` | Emitted function count versus the corpus ground truth |
+| `entriesMatch` | Every emitted entry agrees on selector, name, entry PC and cause |
+| `patternsMatch` | Every expected token pattern appears in the emission |
+| `spotAgreed` / `spotTotal` | Golden text fragments present exactly as expected |
+| `ownUnresolved` | Unresolved-jump count (lower is better; a guess counts as an error) |
+| `offsetCoverage` | Share of emitted statements carrying an exact `[startPc, endPc)` range (target 100%) |
+| `passed` | `entriesMatch` and `patternsMatch` and full spot agreement and 100% offset coverage |
+| `extdecomp` | `not-run`, or `ok` with the reported version and mentioned selectors, or `failed` with version and input digest |
+
+The summary totals the contracts, the pass rate, the spot agreement
+(the frozen corpus expects `ownPassRate` 100 and `spotAgreement` 100),
+the extdecomp run count, the K-523 published-selector table coverage and
+an opcode profile, plus a `consistent` flag proving the evaluated set
+is exactly the frozen corpus in order.
+
+### The four metrics
+
+| # | Metric | Decided by |
+|---|---|---|
+| 1 | Correct CFG / function boundaries | `entriesMatch`: dispatcher selector entries against the corpus ground truth |
+| 2 | Fewer unresolved jumps | `ownUnresolved` versus extdecomp's count; a guessed target counts as an error, never as resolved |
+| 3 | Readable pseudo-Solidity for token patterns | `patternsMatch` plus spot checks on the golden readable shapes (transfer guard, allowance check, mint/burn, pause flag, owner gate) |
+| 4 | Evidence mapped to exact bytecode offsets | `offsetCoverage` at 100% by construction; any item without a range fails the contract |
+
+The own pipeline wins a contract when it is at least as good on every
+metric and strictly better on at least one; the epic wins when it wins
+the median corpus contract without losing any metric on more than a
+stated minority of contracts. An unresolved jump the own pipeline
+labels and extdecomp guesses counts in the own pipeline's favour only
+when the guess is wrong against ground truth.
+
+### Runtime consumption
+
+The pipeline ships as the detector plugin
+`dev.brandklipparen.decompiler` (S-081, D-07, D-08): one finding per
+decompiled function with selector and entry-PC evidence, the exact
+`[startPc, endPc)` range, token-pattern annotations, cause label and
+contract-wide unresolved-jump count in the payload. The shared service
+carries it in `pluginResults`, so the REST, MCP and Expert UI surfaces
+consume the same functions, offsets and unresolved-jump count; findings
+stay at weight 0 until the calibration artifact names the plugin
+(S-085). Suggested display names arrive only through the optional
+naming overlay (S-083, D-11): opt-in, validated whole, display-only,
+never an analysis input.

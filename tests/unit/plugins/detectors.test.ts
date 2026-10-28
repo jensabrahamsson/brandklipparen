@@ -153,7 +153,7 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
     expect(hardToAnalyzeDetectorPlugin.manifest.inputs).toEqual(["bytecode", "decompilerCause"]);
   });
 
-  test("default registry holds all three first-party detectors", () => {
+  test("default registry holds all four first-party detectors", () => {
     const built = buildPluginRegistry(DEFAULT_DETECTOR_PLUGINS);
     expect(built.ok).toBe(true);
     if (!built.ok) {
@@ -162,6 +162,7 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
     expect(built.value.entries.map((entry) => entry.manifest.id)).toEqual([
       "dev.brandklipparen.capability",
       "dev.brandklipparen.clone-match",
+      "dev.brandklipparen.decompiler",
       "dev.brandklipparen.hard-to-analyze",
     ]);
   });
