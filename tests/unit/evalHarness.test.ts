@@ -4,8 +4,9 @@
 // frozen corpus with an injected process stub, and the skip path runs
 // with `extdecomp_BIN` unset.
 import { describe, expect, test } from "vitest";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   EVAL_PASS_TOLERANCE_POINTS,
@@ -13,6 +14,7 @@ import {
   buildextdecompArgs,
   checkextdecompVersion,
   evaluateOwn,
+  readextdecompOutputDir,
   runEval,
   summarize,
 } from "../../scripts/eval-decompiler.ts";
@@ -129,6 +131,60 @@ describe("decompiler eval harness", () => {
     for (const row of summary.k523) {
       expect(row.tableHit).toBe(true);
     }
+  });
+
+  test("d09_extdecomp_file_output_is_read_from_temp_workdir_and_cleaned_up", async () => {
+    // extdecomp writes its decompiled output to files under an `output/`
+    // directory rather than stdout. The fake runner below records a small
+    // synthetic output sample (shaped like a decompiled source file naming
+    // two selectors) into the work dir it is handed with empty stdout, so
+    // the harness must still report both selectors as mentioned.
+    const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+    const seenDirs: string[] = [];
+    const result = await runEval({
+      corpusDir: CORPUS_DIR,
+      extdecompBin: "/bin/fake-extdecomp",
+      run: (bin, args, options) => {
+        if (args[0] === "--version") {
+          return { status: 0, stdout: "0.9.1", stderr: "" };
+        }
+        expect(bin).toBe("/bin/fake-extdecomp");
+        expect(args[0]).toBe("decompile");
+        // The input hex and the working directory both stay out of the
+        // repo: the input path sits inside the handed work dir, and both
+        // temp dirs sit below the OS temp root.
+        expect(args[1]?.startsWith(options.cwd)).toBe(true);
+        expect(options.cwd.startsWith(tmpdir())).toBe(true);
+        expect(options.home.startsWith(tmpdir())).toBe(true);
+        expect(options.cwd.startsWith(`${repoRoot}${sep}tests`)).toBe(false);
+        seenDirs.push(options.cwd, options.home);
+        mkdirSync(join(options.cwd, "output", "local"), { recursive: true });
+        writeFileSync(
+          join(options.cwd, "output", "local", "decompiled.sol"),
+          "function transfer(address arg0, uint256 arg1) /* selector 0xa9059cbb */ {}\n" +
+            "function balanceOf(address arg0) /* selector 0x70a08231 */ {}\n",
+        );
+        return { status: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(result.exitCode).toBe(0);
+    const simple = result.summary.contracts.find((row) => row.id === "token-simple");
+    expect(simple?.extdecomp).toEqual({
+      status: "ok",
+      selectorsMentioned: ["0x70a08231", "0xa9059cbb"],
+      version: "0.9.1",
+    });
+    const fallback = result.summary.contracts.find((row) => row.id === "edge-fallback");
+    expect(fallback?.extdecomp).toEqual({ status: "ok", selectorsMentioned: [], version: "0.9.1" });
+    // Both temp dirs per contract are deleted before the eval returns.
+    expect(seenDirs.length).toBeGreaterThan(0);
+    for (const dir of seenDirs) {
+      expect(existsSync(dir)).toBe(false);
+    }
+  });
+
+  test("d09_extdecomp_output_reader_ignores_absent_dir", () => {
+    expect(readextdecompOutputDir(join(tmpdir(), "extdecomp-no-such-dir"))).toBe("");
   });
 
   test("d09_metrics_table_reports_all_four_metrics_per_contract", async () => {

@@ -97,10 +97,14 @@ never an analysis input.
 
 ## Local eval run (28/10)
 
-Ran once per the rules above with `extdecomp_BIN` set: the binary
-reported `extdecomp 0.9.1` (matches the pinned version), `HOME` went to
-a fresh temp dir, and every invocation was `decompile <local-hex-file>`
-with no RPC, address, LLM or naming flag. Exit code 0.
+Reran after the output-file fix with `extdecomp_BIN` set: the binary
+reported `extdecomp 0.9.1` (matches the pinned version), every invocation
+ran as `decompile <local-hex-file>` with its working directory set to a
+fresh temp dir (and `HOME` set to a second fresh temp dir), the harness
+read the generated files from under each work dir's `output/` directory
+besides stdout, both temp dirs were deleted afterwards, and no RPC,
+address, LLM or naming flag appeared. Nothing was written into the repo.
+Exit code 0.
 
 | Contract | Own functions | Entries | Patterns | Spot | Own unresolved | extdecomp |
 |---|---|---|---|---|---|---|
@@ -113,6 +117,7 @@ with no RPC, address, LLM or naming flag. Exit code 0.
 Summary: own pass rate 100% (5/5 contracts), spot agreement 13/13,
 offset coverage 100% by construction, 5 extdecomp runs completed. The
 extdecomp runs exited 0 but mentioned none of the expected selectors in
-their stdout, so metric 2 (fewer unresolved jumps) is recorded, not
-decided, on this run. Full output lives in
-`docs/eval-decompiler-results.md`.
+their output files or stdout (each run wrote only an empty
+`output/local/abi.json` for these hand-assembled fixtures), so metric 2
+(fewer unresolved jumps) is recorded, not decided, on this run. Full
+output lives in `docs/eval-decompiler-results.md`.

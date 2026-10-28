@@ -3,6 +3,7 @@
 Corpus contracts: 5. Own pass rate: 100.0% (expected 100 ± 3).
 Spot agreement: 13/13 (100.0%, expected 100 ± 3).
 extdecomp runs: 5 (binary extdecomp 0.9.1).
+extdecomp method: each run used a fresh temp work dir (HOME a second fresh temp dir); stdout plus files under the work dir output/ parsed; both temp dirs deleted; nothing written into the repo.
 
 | Contract | Own functions | Entries match | Patterns match | Spot | Unresolved | extdecomp |
 |---|---|---|---|---|---|---|

@@ -31,6 +31,17 @@ import type { PersonalizeService } from "../../application/personalizeService.ts
 import { EXPLAIN_PROMPT_VERSION, serializeExplainOutcome } from "../../application/explainService.ts";
 import type { ExplainService } from "../../application/explainService.ts";
 import { ExplainInput } from "../../ports/explainModel.ts";
+import { snippetForSelector } from "../../application/snippetService.ts";
+import type { SnippetDecompile } from "../../application/snippetService.ts";
+import { decompileContract } from "../../domain/evmSsa.ts";
+import { CHAT_PROMPT_VERSION, serializeChatOutcome } from "../../application/chatService.ts";
+import type { ChatService } from "../../application/chatService.ts";
+import { ChatInput } from "../../ports/chatModel.ts";
+import { RUG_PROMPT_VERSION, serializeRugOutcome } from "../../application/rugService.ts";
+import type { RugService } from "../../application/rugService.ts";
+import { RugInput } from "../../ports/rugModel.ts";
+import type { RugRisk } from "../../ports/rugModel.ts";
+import type { CalibrationView } from "../../application/calibrationView.ts";
 import { MAX_NAMING_SELECTORS } from "../../application/decompilerNaming.ts";
 import type { DecompilerNamingService } from "../../application/decompilerNaming.ts";
 import { sectionBodyOf } from "../../plugins/docs.ts";
@@ -40,7 +51,7 @@ import {
   PLACEHOLDER_COST_UNIT,
   createRequestCounters,
 } from "../../application/observability.ts";
-import { Address, BlockNumber, RequestId, Timestamp } from "../../domain/types.ts";
+import { Address, BlockNumber, CodeHash, RequestId, Timestamp } from "../../domain/types.ts";
 import type {
   Address as AddressType,
   BlockNumber as BlockNumberType,
@@ -54,6 +65,7 @@ import { canonicalSerialize } from "../../domain/serialize.ts";
 import { createApiKeyStore } from "./apiKeys.ts";
 import type { ApiKeyStore } from "./apiKeys.ts";
 import type { SecretString } from "../../ports/config.ts";
+import type { RpcPort } from "../../ports/rpc.ts";
 import {
   assessmentNotConfigured,
   invalidApiKey,
@@ -141,6 +153,41 @@ export type RestServerOptions = {
   // the not-configured envelope with zero provider calls and the
   // deterministic analysis standing.
   readonly explainService?: ExplainService | undefined;
+  // Bytecode source for snippet deepening (S-095, K-008): the route reads
+  // the contract code through this port and quotes the local pipeline's
+  // emission per selector. Tests inject the fake RPC adapter; an absent
+  // port answers 500 without touching the pipeline.
+  readonly snippetRpc?: RpcPort | undefined;
+  // Injectable decompile pipeline for snippet deepening (S-095): defaults
+  // to the local `decompileContract` pipeline. Tests inject a counting
+  // wrapper to prove unknown selectors fail before any pipeline call.
+  readonly snippetDecompile?: SnippetDecompile | undefined;
+  // Chat service for opt-in follow-up questions over the frozen analysis
+  // (S-096, K-302). Absent service means the overlay stays off: the route
+  // answers the not-configured envelope with zero provider calls and the
+  // deterministic analysis standing.
+  readonly chatService?: ChatService | undefined;
+  // Rug narrative service for the opt-in top-risk capability summary
+  // (S-097, K-302). Absent service means the overlay stays off: the route
+  // answers the not-configured envelope with zero provider calls and the
+  // deterministic analysis standing.
+  readonly rugService?: RugService | undefined;
+  // Frozen calibration snapshot for the read view (S-098, K-205, K-210):
+  // built once at wiring time from the loaded artifact and its checksum.
+  // The route serves this snapshot byte for byte and never loads or
+  // writes the artifact. An absent snapshot answers 500.
+  readonly calibration?: CalibrationView | undefined;
+  // Deploy-time readiness pinning (S-099, K-104): the loaded artifact
+  // checksum beside the expected checksum and the feed wiring flag. The
+  // probe fails with 503 on a checksum mismatch before the plane can
+  // serve analysis as ready. An absent pin answers 503 not-ready.
+  readonly readiness?:
+    | {
+        readonly artifactChecksum: string;
+        readonly expectedArtifactChecksum: string;
+        readonly feedConfigured: boolean;
+      }
+    | undefined;
   // Mapping prompt version for the personalize cache key (P-27): the same
   // version the adapter prompt carries. Absent version disables the route
   // like an absent service.
@@ -373,6 +420,101 @@ export function createRestServer(options: RestServerOptions): RestServer {
           apiVersion: API_VERSION,
           assessment,
           costUnits: PLACEHOLDER_COST_UNIT,
+        }),
+      );
+  });
+
+  // Calibration read view (S-098, K-205, K-210): the frozen snapshot
+  // built at wiring time from the loaded artifact and its checksum,
+  // served byte for byte behind the same API-key gate as the plugin list.
+  // The route never loads or writes the artifact, so repeated reads are
+  // byte-identical with zero artifact calls.
+  app.get("/v1/calibration", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    const requestId = issueRequestId();
+    const gated = gateKeyOnly(request, request.query, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const view = options.calibration;
+    if (view === undefined) {
+      return sendError(reply, requestError(500, "internal-error", "Calibration view is not available on this server.", requestId as string));
+    }
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(JSON.stringify({ status: "ok", apiVersion: API_VERSION, calibration: view }));
+  });
+
+  // Deploy-time readiness probe (S-099, K-104, K-402): keyless like the
+  // health check so orchestrators can poll it. It names the loaded
+  // artifact checksum, each AI plugin as configured or not-configured
+  // from the actual wiring, and the feed flag. A checksum mismatch — or
+  // a missing pin — fails with 503 instead of reporting ready, so a bad
+  // artifact can never serve analysis as ready.
+  app.get("/ready", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    void request;
+    const requestId = issueRequestId();
+    const pin = options.readiness;
+    const assessment = options.assessmentService;
+    const aiPlugins = [
+      {
+        id: "assessment",
+        configured: assessment !== undefined && assessment.provider !== null && assessment.modelId !== null,
+      },
+      { id: "investigation", configured: options.investigationService !== undefined },
+      { id: "personalize", configured: options.personalizeService !== undefined },
+      {
+        id: "naming",
+        configured: options.namingService !== undefined && options.namingService.enabled,
+      },
+      {
+        id: "explain",
+        configured: options.explainService !== undefined && options.explainService.enabled,
+      },
+      {
+        id: "chat",
+        configured: options.chatService !== undefined && options.chatService.enabled,
+      },
+      {
+        id: "rug",
+        configured: options.rugService !== undefined && options.rugService.enabled,
+      },
+    ];
+    if (pin === undefined) {
+      return reply
+        .code(503)
+        .header(REQUEST_ID_HEADER, requestId)
+        .type("application/json")
+        .send(JSON.stringify({ status: "not-ready", apiVersion: API_VERSION, reason: "readiness-not-configured" }));
+    }
+    if (pin.artifactChecksum !== pin.expectedArtifactChecksum) {
+      return reply
+        .code(503)
+        .header(REQUEST_ID_HEADER, requestId)
+        .type("application/json")
+        .send(
+          JSON.stringify({
+            status: "not-ready",
+            apiVersion: API_VERSION,
+            artifactChecksum: pin.artifactChecksum,
+            reason: "artifact-checksum-mismatch",
+            aiPlugins,
+            feed: { configured: pin.feedConfigured },
+          }),
+        );
+    }
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(
+        JSON.stringify({
+          status: "ready",
+          apiVersion: API_VERSION,
+          artifactChecksum: pin.artifactChecksum,
+          aiPlugins,
+          feed: { configured: pin.feedConfigured },
         }),
       );
   });
@@ -1298,12 +1440,322 @@ export function createRestServer(options: RestServerOptions): RestServer {
     return handleAnalyzeStream(request, reply);
   });
 
+  // Snippet deepening per selector (S-095, K-008, K-010): the same key
+  // and address gate as the analyze routes, then the selector shape check,
+  // then one bytecode fetch, then the fast-path dispatcher gate, and only
+  // then the local decompilation pipeline. A malformed selector fails
+  // before any fetch; an unknown selector fails before any pipeline call.
+  // The quoted lines come from the pipeline's own emission for the
+  // selector, each carrying its selector, 1-based line number and text.
+  async function handleSnippet(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const rawSelector =
+      typeof rawInput === "object" && rawInput !== null && !Array.isArray(rawInput)
+        ? (rawInput as Record<string, unknown>)["selector"]
+        : undefined;
+    if (typeof rawSelector !== "string" || !/^0x[0-9a-fA-F]{8}$/.test(rawSelector)) {
+      return sendError(
+        reply,
+        validationError("Invalid selector: expected 0x followed by 8 hex characters.", requestId as string),
+      );
+    }
+    const rpc = options.snippetRpc;
+    if (rpc === undefined) {
+      return sendError(reply, requestError(500, "internal-error", "Snippet deepening is not available on this server.", requestId));
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const fetched = await rpc.getCode(gated.value.address, {
+      requestId,
+      deadline: deadline.value,
+      block: gated.value.block,
+    });
+    if (!fetched.ok) {
+      if (fetched.error.kind === "no-code") {
+        return sendError(reply, notFound(requestId));
+      }
+      return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
+    }
+    const codeHash = CodeHash.of(fetched.value.bytecode);
+    if (!codeHash.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const snippet = snippetForSelector(
+      fetched.value.bytecode,
+      rawSelector,
+      options.snippetDecompile ?? decompileContract,
+    );
+    if (!snippet.ok) {
+      return sendError(
+        reply,
+        validationError("Unknown selector: the contract dispatcher carries no such entry.", requestId as string),
+      );
+    }
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          codeHash: codeHash.value as string,
+          snippet: {
+            selector: snippet.value.selector,
+            entryPc: snippet.value.entryPc,
+            lines: snippet.value.lines.map((line) => ({
+              selector: line.selector,
+              lineNumber: line.lineNumber,
+              text: line.text,
+            })),
+          },
+        }),
+      );
+  }
+
   app.get("/v1/explain", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleExplain(request, reply, request.query);
   });
 
   app.post("/v1/explain", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleExplain(request, reply, request.body);
+  });
+
+  // Opt-in follow-up questions over the frozen analysis (S-096, K-302):
+  // the same gate and the same deterministic analysis as the analyze
+  // routes, then one overlay call carrying the caller's question. The
+  // route always answers 200 with the outcome envelope: `not-configured`
+  // without a wired service, `invalid-output` for malformed model output,
+  // and the checked answers otherwise. A missing or oversize question
+  // fails as `validation-error` before analysis starts. Citations name
+  // collected `signal:<id>` evidence only; anything else drops with a
+  // count. Scores, evidence and finding text are untouched.
+  async function handleChat(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const rawQuestion =
+      typeof rawInput === "object" && rawInput !== null && !Array.isArray(rawInput)
+        ? (rawInput as Record<string, unknown>)["question"]
+        : undefined;
+    if (typeof rawQuestion !== "string" || rawQuestion.length === 0 || rawQuestion.length > 500) {
+      return sendError(
+        reply,
+        validationError("Invalid question: expected a non-empty string of at most 500 characters.", requestId as string),
+      );
+    }
+    const { address, block } = gated.value;
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const counters = createRequestCounters();
+    const analysed = await options.services.analyzeToken(
+      {
+        address,
+        block,
+        requestId,
+        deadline: deadline.value,
+        modelVersion: options.modelVersion,
+        indexVersion: options.indexVersion,
+        templateVersion: options.templateVersion,
+        catalogue: options.catalogue,
+      },
+      counters,
+    );
+    if (!analysed.ok) {
+      const mapped = toHttpError(analysed.error);
+      return sendError(
+        reply,
+        requestError(mapped.status, mapped.code, mapped.message, requestId),
+      );
+    }
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(body);
+    }
+    const envelope = analysed.value.envelope;
+    const service = options.chatService;
+    if (service === undefined || !service.enabled) {
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          codeHash: envelope.codeHash as string,
+          chat: { kind: "not-configured" },
+        }),
+      );
+    }
+    const input = ChatInput.create({
+      codeHash: envelope.codeHash as string,
+      evidenceIds: envelope.signals.map((signal) => `signal:${signal.id as string}`),
+      question: rawQuestion,
+      promptVersion: CHAT_PROMPT_VERSION,
+    });
+    if (input === null) {
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          codeHash: envelope.codeHash as string,
+          chat: { kind: "invalid-output" },
+        }),
+      );
+    }
+    const outcome = await service.chat(input);
+    return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+      JSON.stringify({
+        status: "ok",
+        apiVersion: API_VERSION,
+        codeHash: envelope.codeHash as string,
+        chat: JSON.parse(serializeChatOutcome(outcome)),
+      }),
+    );
+  }
+
+  // Opt-in capability summary for the top risk type (S-097, K-302): the
+  // same gate and the same deterministic analysis as the analyze routes,
+  // then one overlay call with the top risk read from the frozen
+  // envelope's probabilities (strict maximum; ties keep the fixed
+  // rug-pull, honeypot, bot-pump order). The route always answers 200
+  // with the outcome envelope: `not-configured` without a wired service,
+  // `invalid-output` for malformed model output, and the checked narrative
+  // otherwise. Citations name collected `signal:<id>` evidence only;
+  // anything else drops with a count. Scores, evidence and finding text
+  // are untouched.
+  function topRiskOf(probabilities: { readonly "rug-pull": unknown; readonly honeypot: unknown; readonly "bot-pump": unknown }): RugRisk {
+    const rug = probabilities["rug-pull"] as number;
+    const honey = probabilities.honeypot as number;
+    const bot = probabilities["bot-pump"] as number;
+    let top: RugRisk = "rug-pull";
+    let best: number = rug;
+    if (honey > best) {
+      top = "honeypot";
+      best = honey;
+    }
+    if (bot > best) {
+      top = "bot-pump";
+    }
+    return top;
+  }
+
+  async function handleRug(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const { address, block } = gated.value;
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const counters = createRequestCounters();
+    const analysed = await options.services.analyzeToken(
+      {
+        address,
+        block,
+        requestId,
+        deadline: deadline.value,
+        modelVersion: options.modelVersion,
+        indexVersion: options.indexVersion,
+        templateVersion: options.templateVersion,
+        catalogue: options.catalogue,
+      },
+      counters,
+    );
+    if (!analysed.ok) {
+      const mapped = toHttpError(analysed.error);
+      return sendError(
+        reply,
+        requestError(mapped.status, mapped.code, mapped.message, requestId),
+      );
+    }
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(body);
+    }
+    const envelope = analysed.value.envelope;
+    const topRisk = topRiskOf(envelope.probabilities as { readonly "rug-pull": unknown; readonly honeypot: unknown; readonly "bot-pump": unknown });
+    const service = options.rugService;
+    if (service === undefined || !service.enabled) {
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          codeHash: envelope.codeHash as string,
+          topRisk,
+          rug: { kind: "not-configured" },
+        }),
+      );
+    }
+    const input = RugInput.create({
+      codeHash: envelope.codeHash as string,
+      evidenceIds: envelope.signals.map((signal) => `signal:${signal.id as string}`),
+      topRisk,
+      promptVersion: RUG_PROMPT_VERSION,
+    });
+    if (input === null) {
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          codeHash: envelope.codeHash as string,
+          topRisk,
+          rug: { kind: "invalid-output" },
+        }),
+      );
+    }
+    const outcome = await service.narrate(input);
+    return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+      JSON.stringify({
+        status: "ok",
+        apiVersion: API_VERSION,
+        codeHash: envelope.codeHash as string,
+        topRisk,
+        rug: JSON.parse(serializeRugOutcome(outcome)),
+      }),
+    );
+  }
+
+  app.get("/v1/snippet", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleSnippet(request, reply, request.query);
+  });
+
+  app.post("/v1/snippet", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleSnippet(request, reply, request.body);
+  });
+
+  app.get("/v1/chat", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleChat(request, reply, request.query);
+  });
+
+  app.post("/v1/chat", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleChat(request, reply, request.body);
+  });
+
+  app.get("/v1/rug", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleRug(request, reply, request.query);
+  });
+
+  app.post("/v1/rug", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleRug(request, reply, request.body);
   });
 
   app.get("/v1/assessment", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {

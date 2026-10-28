@@ -21,6 +21,9 @@ import type { AiPersonalizeSpec, PersonalizeContext } from "../lib/personalize.t
 import { riskWord } from "../lib/risk.ts";
 import { combinedScoreLine, emptyGaugeReason, plainReason, signalTitle, sortByImpact, strongestSignal } from "../lib/signals.ts";
 import { AssessmentPanel } from "../components/AssessmentPanel.tsx";
+import { ExplainPanel } from "../components/ExplainPanel.tsx";
+import { FieldPicker, PICKABLE_SECTIONS } from "../components/FieldPicker.tsx";
+import { StreamView } from "../components/StreamView.tsx";
 import { InvestigationPanel } from "../components/InvestigationPanel.tsx";
 import { CantTellPanel } from "../components/CantTellPanel.tsx";
 import { ExplanationList } from "../components/ExplanationList.tsx";
@@ -71,6 +74,11 @@ export function TokenPage({
   const [aiPending, setAiPending] = useState(false);
   const [aiProvider, setAiProvider] = useState<{ provider: string; modelId: string } | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
+  // Field picker (S-100, K-023): picked overview sections render, cleared
+  // ones hide; the score stays pinned and is never pickable.
+  const [visibleSections, setVisibleSections] = useState<ReadonlySet<string>>(
+    () => new Set(["score", ...PICKABLE_SECTIONS.map((section) => section.id)]),
+  );
   const [attempt, setAttempt] = useState(0);
   const [elapsed, setElapsed] = useState<number | null>(null);
   const [openSignals, setOpenSignals] = useState<ReadonlySet<string>>(new Set());
@@ -287,6 +295,20 @@ export function TokenPage({
     });
   }, []);
 
+  // Field picker (S-100, K-023): picked sections render, cleared ones
+  // hide; the score section is never offered so it always stays.
+  const toggleSection = useCallback((sectionId: string) => {
+    setVisibleSections((previous) => {
+      const next = new Set(previous);
+      if (next.has(sectionId)) {
+        next.delete(sectionId);
+      } else {
+        next.add(sectionId);
+      }
+      return next;
+    });
+  }, []);
+
   const jumpToSignal = useCallback(
     (signalId: string) => {
       setTab("overview");
@@ -473,6 +495,10 @@ export function TokenPage({
           openSignals={openSignals}
           onToggleSignal={toggleSignal}
           onSignalLink={jumpToSignal}
+          address={address}
+          apiKey={apiKey}
+          visibleSections={visibleSections}
+          onToggleSection={toggleSection}
         />
       ) : null}
     </div>
@@ -501,6 +527,10 @@ function AssessedView({
   openSignals,
   onToggleSignal,
   onSignalLink,
+  address,
+  apiKey,
+  visibleSections,
+  onToggleSection,
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
   readonly elapsed: number | null;
@@ -523,6 +553,10 @@ function AssessedView({
   readonly openSignals: ReadonlySet<string>;
   readonly onToggleSignal: (signalId: string) => void;
   readonly onSignalLink: (signalId: string) => void;
+  readonly address: string;
+  readonly apiKey: string;
+  readonly visibleSections: ReadonlySet<string>;
+  readonly onToggleSection: (sectionId: string) => void;
 }): JSX.Element {
   const sorted = sortByImpact(result.signals);
   const templateBySignal = new Map<string, string>();
@@ -597,24 +631,30 @@ function AssessedView({
       </div>
       <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" hidden={tab !== "overview"}>
         {tab === "overview" ? (
-          <OverviewSections
-            result={result}
-            elapsed={elapsed}
-            plugins={plugins}
-            mode={mode}
-            aiSpec={aiSpec}
-            priorities={priorities}
-            onPrioritiesChange={onPrioritiesChange}
-            onPrioritiesClear={onPrioritiesClear}
-            standardOrder={standardOrder}
-            onShowStandardOrder={onShowStandardOrder}
-            sorted={sorted}
-            templateLine={templateLine}
-            openSignals={openSignals}
-            onToggleSignal={onToggleSignal}
-            onSignalLink={onSignalLink}
-            ringRef={ringRef}
-          />
+          <>
+            <FieldPicker visible={visibleSections} onToggle={onToggleSection} />
+            <OverviewSections
+              result={result}
+              elapsed={elapsed}
+              plugins={plugins}
+              mode={mode}
+              aiSpec={aiSpec}
+              priorities={priorities}
+              onPrioritiesChange={onPrioritiesChange}
+              onPrioritiesClear={onPrioritiesClear}
+              standardOrder={standardOrder}
+              onShowStandardOrder={onShowStandardOrder}
+              sorted={sorted}
+              templateLine={templateLine}
+              openSignals={openSignals}
+              onToggleSignal={onToggleSignal}
+              onSignalLink={onSignalLink}
+              ringRef={ringRef}
+              visibleSections={visibleSections}
+            />
+            <StreamView address={address} apiKey={apiKey} />
+            <ExplainPanel address={address} apiKey={apiKey} />
+          </>
         ) : null}
       </div>
       <div role="tabpanel" id="panel-assessment" aria-labelledby="tab-assessment" hidden={tab !== "assessment"}>
@@ -652,6 +692,7 @@ function OverviewSections({
   onToggleSignal,
   onSignalLink,
   ringRef,
+  visibleSections,
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
   readonly elapsed: number | null;
@@ -669,6 +710,7 @@ function OverviewSections({
   readonly onToggleSignal: (signalId: string) => void;
   readonly onSignalLink: (signalId: string) => void;
   readonly ringRef: React.RefObject<HTMLElement | null>;
+  readonly visibleSections: ReadonlySet<string>;
 }): JSX.Element {
   const pluginViews = result.pluginResults === undefined ? [] : toPluginResultViews(result.pluginResults);
   const plan = planLayout({
@@ -702,6 +744,13 @@ function OverviewSections({
   const sectionOrder = aiActive
     ? applyAiSectionOrder(plan, aiSpec, ["summary", "score"])
     : plan;
+  // Field picker (S-100, K-023): picked sections render in plan order.
+  // Only pickable sections are ever hidden; the pinned score and any
+  // non-pickable id (AI layouts may order extra ids) always pass through.
+  const pickableIds = new Set(PICKABLE_SECTIONS.map((section) => section.id));
+  const shownSections = sectionOrder.filter(
+    (sectionId) => !pickableIds.has(sectionId) || visibleSections.has(sectionId),
+  );
   const emphasisOf = new Map((aiSpec?.placements ?? []).map((placement) => [placement.sectionId, placement.emphasis]));
   const collapsed = new Set(
     (aiSpec?.placements ?? []).filter((placement) => placement.collapsed).map((placement) => placement.sectionId),
@@ -803,7 +852,7 @@ function OverviewSections({
       <PrioritiesField value={priorities} onChange={onPrioritiesChange} onClear={onPrioritiesClear} />
       <div className="token-grid">
         <div>
-          {sectionOrder.map((sectionId) => {
+          {shownSections.map((sectionId) => {
             const collapsedByAi = collapsed.has(sectionId) && !aiExpanded.has(sectionId);
             if (collapsedByAi) {
               return (

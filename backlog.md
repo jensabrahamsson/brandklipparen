@@ -360,9 +360,23 @@ drops counted). Mainnet only: no story adds a chain beyond chainId 1.
 | S-100 | UI P2a: field picker and stream view on the token page | K-020, K-023, K-507 | Stretch | Playwright `s100_field_picker_limits_sections_without_changing_score` requires the picked sections to render and the score to stay byte-identical; Playwright `s100_stream_view_shows_analysis_before_deepening_status` requires the fast-path render ahead of the deepening line. |
 | S-101 | UI P2b: explain panel with not-configured, fallback and inert-text states | K-020, K-507 | Stretch | Playwright `s101_explain_panel_shows_not_configured_without_key` requires the plain not-configured state; Playwright `s101_explain_panel_renders_checked_sentences_as_inert_text` requires script-bearing sentences inert with the drop count shown and scores unchanged. Fake adapter only. |
 
-Later-queue status: S-092, S-093 and S-094 ship first in that order;
-S-095 follows when green; S-096–S-101 stay planned until the box allows.
-Cut order: S-101, S-100, S-099, S-098, S-097, S-096, in that order.
+Later-queue status (28/10, all green): S-092 done — `fields`
+allowlist projection on the analyze routes. S-093 done — SSE analysis
+stream over the existing server with inject-only tests. S-094 done —
+opt-in explain plugin with citation-checked sentences. S-095 done —
+snippet deepening per selector from the local pipeline with the
+unknown-selector gate ahead of decompilation. S-096 done — opt-in chat
+plugin over frozen evidence with drop counting. S-097 done — opt-in rug
+narrative for the top risk type with drop counting. S-098 done —
+calibration read view (version, checksum, per-class metrics) over REST,
+read-only. S-099 done — `/ready` probe pinning the artifact checksum,
+AI-plugin wiring and feed flag, 503 on mismatch. S-100 done — UI field
+picker (score pinned) and stream view showing analysis ahead of the
+deepening line. S-101 done — UI explain panel with not-configured,
+fallback and inert-text states. Eval harness fix shipped in the same
+session: extdecomp runs in a fresh temp work dir (HOME a second fresh
+temp dir), output files under `output/` are parsed besides stdout, both
+temp dirs are deleted, and a fake-runner test covers the parsing.
 
 Cut order inside E-08, if time runs short: S-048, S-049, S-050, S-051
 are Stretch and cut first, in that order. S-042–S-047 are the MVP of

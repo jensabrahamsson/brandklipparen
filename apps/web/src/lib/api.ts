@@ -287,6 +287,91 @@ export async function requestInvestigation(
 // Enhancement only: any failure maps to null and the panel renders the
 // analysis findings without registry names or output schemas, falling back
 // to canonical JSON text per P-10.
+// Streamed analysis events (S-100, K-101): one SSE body read as text —
+// the analysis event first, then the deepening status. The caller renders
+// the analysis before the deepening line; the analyze response for the
+// same input stays byte-identical. Null on any failure.
+export type AnalyzeStream = {
+  readonly analysis: { readonly kind: string; readonly score?: unknown };
+  readonly deepening: string;
+};
+
+export async function fetchAnalyzeStream(address: string, apiKey: string | null): Promise<AnalyzeStream | null> {
+  try {
+    const response = await fetch(`/v1/analyze/stream?address=${encodeURIComponent(address)}`, {
+      headers: apiHeaders(apiKey),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const text = await response.text();
+    const payloads: unknown[] = [];
+    for (const chunk of text.split("\n\n")) {
+      for (const line of chunk.split("\n")) {
+        if (line.startsWith("data:")) {
+          try {
+            payloads.push(JSON.parse(line.slice("data:".length).trim()) as unknown);
+          } catch {
+            return null;
+          }
+        }
+      }
+    }
+    const first = payloads[0] as { kind?: unknown; score?: unknown } | undefined;
+    if (first === undefined || typeof first !== "object" || first === null) {
+      return null;
+    }
+    let deepening = "pending";
+    for (const payload of payloads.slice(1)) {
+      const record = payload as { kind?: unknown; status?: unknown } | null;
+      if (record !== null && typeof record === "object" && record.kind === "deepening" && typeof record.status === "string") {
+        deepening = record.status;
+      }
+    }
+    return { analysis: { kind: String(first.kind ?? ""), score: first.score }, deepening };
+  } catch {
+    return null;
+  }
+}
+
+// Sentence-level explanation overlay (S-101, K-302): fetched only when
+// the visitor asks. Sentences render as inert text; the drop count names
+// how many model sentences failed the evidence check.
+export type ExplainState =
+  | { readonly status: "not-configured" }
+  | { readonly status: "ready"; readonly narrative: readonly string[]; readonly droppedClaims: number }
+  | { readonly status: "fallback" }
+  | { readonly status: "failed" };
+
+export async function fetchExplain(address: string, apiKey: string | null): Promise<ExplainState> {
+  try {
+    const response = await fetch(`/v1/explain?address=${encodeURIComponent(address)}`, {
+      headers: apiHeaders(apiKey),
+    });
+    if (!response.ok) {
+      return { status: "failed" };
+    }
+    const body = (await response.json()) as { explain?: unknown };
+    const explain = body.explain as { kind?: unknown; narrative?: unknown; droppedClaims?: unknown } | null;
+    if (explain === null || explain === undefined || typeof explain !== "object") {
+      return { status: "fallback" };
+    }
+    if (explain.kind === "not-configured") {
+      return { status: "not-configured" };
+    }
+    if (explain.kind === "ok" && Array.isArray(explain.narrative) && typeof explain.droppedClaims === "number") {
+      const narrative = explain.narrative.filter((entry): entry is string => typeof entry === "string");
+      if (narrative.length !== explain.narrative.length) {
+        return { status: "fallback" };
+      }
+      return { status: "ready", narrative, droppedClaims: explain.droppedClaims };
+    }
+    return { status: "fallback" };
+  } catch {
+    return { status: "failed" };
+  }
+}
+
 export async function fetchPlugins(apiKey: string | null): Promise<readonly PluginListEntry[] | null> {
   try {
     const response = await fetch("/v1/plugins", { headers: apiHeaders(apiKey) });

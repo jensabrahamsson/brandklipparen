@@ -4,8 +4,11 @@
 // `extdecomp_BIN` unset. The harness invokes only the binary named by
 // `extdecomp_BIN` with `extdecomp decompile <hex-or-file>` over local
 // corpus files, checks `extdecomp --version` against the pinned expected
-// `0.9.1`, sets `HOME` to a fresh temp directory for the run, and never
-// passes RPC, target-address, LLM or naming flags of any kind. The
+// `0.9.1`, runs each invocation with its working directory set to a fresh
+// temp dir (and `HOME` set to a second fresh temp dir), reads the
+// generated files from under the work dir's `output/` directory besides
+// stdout, deletes both temp dirs afterwards, and never passes RPC,
+// target-address, LLM or naming flags of any kind. The
 // binary's location on the operator machine is operator-local: tracked
 // files name only the `extdecomp_BIN` variable, never a path. Usage:
 //   extdecomp_BIN=/path/to/extdecomp node --experimental-strip-types scripts/eval-decompiler.ts
@@ -13,7 +16,7 @@
 // every extdecomp column `not-run`, and exits 0.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -245,16 +248,74 @@ export function summarize(evals: readonly ContractEval[], expectations: readonly
 export type RunProcess = (
   bin: string,
   args: readonly string[],
-  options: { home: string; timeoutMs: number },
+  options: { home: string; cwd: string; timeoutMs: number },
 ) => { status: number | null; stdout: string; stderr: string };
 
-function defaultRun(bin: string, args: readonly string[], options: { home: string; timeoutMs: number }) {
+function defaultRun(bin: string, args: readonly string[], options: { home: string; cwd: string; timeoutMs: number }) {
   const result = spawnSync(bin, args.slice(), {
+    cwd: options.cwd,
     env: { ...process.env, HOME: options.home },
     timeout: options.timeoutMs,
     encoding: "utf8",
   });
   return { status: result.status, stdout: String(result.stdout ?? ""), stderr: String(result.stderr ?? "") };
+}
+
+// Cap on collected extdecomp file bytes per contract: the corpus fixtures
+// are small, so anything larger is truncated rather than read unbounded.
+const MAX_extdecomp_FILE_BYTES = 1048576;
+
+function removeTempDir(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // Best effort: a leftover temp dir never fails the eval.
+  }
+}
+
+// extdecomp writes its decompiled output to files under an `output/`
+// directory below its working directory rather than to stdout, so selector
+// matching runs over both: the process output plus every file under
+// `<workdir>/output`, concatenated in deterministic (sorted) order. An
+// absent `output/`
+// directory contributes nothing and stdout alone decides. Unreadable or
+// empty files contribute nothing.
+export function readextdecompOutputDir(workdir: string): string {
+  const parts: string[] = [];
+  let budget = MAX_extdecomp_FILE_BYTES;
+  const stack: string[] = [join(workdir, "output")];
+  while (stack.length > 0 && budget > 0) {
+    const current = stack.pop() as string;
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    const sorted = entries.slice().sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+    for (const entry of sorted) {
+      const full = join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+        continue;
+      }
+      if (!entry.isFile() || budget <= 0) {
+        continue;
+      }
+      try {
+        const size = statSync(full).size;
+        if (!Number.isFinite(size) || size <= 0 || size > budget) {
+          continue;
+        }
+        const text = readFileSync(full, "utf8");
+        budget -= size;
+        parts.push(text);
+      } catch {
+        continue;
+      }
+    }
+  }
+  return parts.join("\n");
 }
 
 function sha256Hex(text: string): string {
@@ -294,25 +355,33 @@ export async function runEval(options: EvalRunOptions): Promise<EvalRunResult> {
   let extdecompVersion: string | null = null;
   let extdecompUsable = false;
   if (options.extdecompBin !== undefined) {
-    const probed = run(options.extdecompBin, ["--version"], { home: mkdtempSync(join(tmpdir(), "extdecomp-home-")), timeoutMs });
-    const reported = `${probed.stdout}${probed.stderr}`.trim();
-    const checked = checkextdecompVersion(reported);
-    if (!checked.ok) {
-      const summary = summarize([], corpus.contracts);
-      const markdown = [
-        "# Decompiler eval: version gate",
-        ``,
-        `Expected extdecomp ${checked.expected}, reported \`${checked.reported}\`.`,
-        `The eval fails here and records no metrics: nothing installs or upgrades a binary.`,
-        ``,
-      ].join("\n");
-      return { exitCode: 1, summary, extdecompVersion: checked.reported, markdown };
+    // The version probe runs in fresh temp dirs like every decompile run,
+    // so the probe never writes into the repo either; both dirs go away.
+    const probeHome = mkdtempSync(join(tmpdir(), "extdecomp-home-"));
+    const probeCwd = mkdtempSync(join(tmpdir(), "extdecomp-work-"));
+    try {
+      const probed = run(options.extdecompBin, ["--version"], { home: probeHome, cwd: probeCwd, timeoutMs });
+      const reported = `${probed.stdout}${probed.stderr}`.trim();
+      const checked = checkextdecompVersion(reported);
+      if (!checked.ok) {
+        const summary = summarize([], corpus.contracts);
+        const markdown = [
+          "# Decompiler eval: version gate",
+          ``,
+          `Expected extdecomp ${checked.expected}, reported \`${checked.reported}\`.`,
+          `The eval fails here and records no metrics: nothing installs or upgrades a binary.`,
+          ``,
+        ].join("\n");
+        return { exitCode: 1, summary, extdecompVersion: checked.reported, markdown };
+      }
+      extdecompVersion = reported;
+      extdecompUsable = true;
+    } finally {
+      removeTempDir(probeHome);
+      removeTempDir(probeCwd);
     }
-    extdecompVersion = reported;
-    extdecompUsable = true;
   }
 
-  const home = mkdtempSync(join(tmpdir(), "extdecomp-home-"));
   const evals: ContractEval[] = [];
   for (const expectation of corpus.contracts) {
     const hex = readFileSync(join(corpusDir, expectation.file), "utf8").trim();
@@ -321,25 +390,38 @@ export async function runEval(options: EvalRunOptions): Promise<EvalRunResult> {
       evals.push({ ...own, extdecomp: { status: "not-run" } });
       continue;
     }
-    const inputFile = join(home, `${expectation.id}.hex`);
-    writeFileSync(inputFile, hex);
-    let outcome: ContractEval["extdecomp"];
+    // extdecomp writes its decompiled output to files under an `output/`
+    // directory below its working directory rather than to stdout, so each
+    // contract runs with the working directory set to a fresh temp dir
+    // (and HOME set to a second fresh temp dir): the input hex, the
+    // process output and the generated files all stay out of the repo, and
+    // both temp dirs are deleted before the next contract runs.
+    const home = mkdtempSync(join(tmpdir(), "extdecomp-home-"));
+    const work = mkdtempSync(join(tmpdir(), "extdecomp-work-"));
     try {
-      const result = run(options.extdecompBin, buildextdecompArgs(inputFile), { home, timeoutMs });
-      if (result.status !== 0) {
+      const inputFile = join(work, `${expectation.id}.hex`);
+      writeFileSync(inputFile, hex);
+      let outcome: ContractEval["extdecomp"];
+      try {
+        const result = run(options.extdecompBin, buildextdecompArgs(inputFile), { home, cwd: work, timeoutMs });
+        if (result.status !== 0) {
+          outcome = { status: "failed", version: extdecompVersion ?? "unknown", inputDigest: sha256Hex(hex) };
+        } else {
+          const lowered = `${result.stdout}\n${readextdecompOutputDir(work)}`.toLowerCase();
+          outcome = {
+            status: "ok",
+            selectorsMentioned: expectation.selectors.filter((selector) => lowered.includes(selector.toLowerCase())),
+            version: extdecompVersion ?? "unknown",
+          };
+        }
+      } catch {
         outcome = { status: "failed", version: extdecompVersion ?? "unknown", inputDigest: sha256Hex(hex) };
-      } else {
-        const lowered = result.stdout.toLowerCase();
-        outcome = {
-          status: "ok",
-          selectorsMentioned: expectation.selectors.filter((selector) => lowered.includes(selector.toLowerCase())),
-          version: extdecompVersion ?? "unknown",
-        };
       }
-    } catch {
-      outcome = { status: "failed", version: extdecompVersion ?? "unknown", inputDigest: sha256Hex(hex) };
+      evals.push({ ...own, extdecomp: outcome });
+    } finally {
+      removeTempDir(home);
+      removeTempDir(work);
     }
-    evals.push({ ...own, extdecomp: outcome });
   }
 
   const partial = summarize(evals, corpus.contracts);
@@ -353,6 +435,11 @@ export async function runEval(options: EvalRunOptions): Promise<EvalRunResult> {
   lines.push(`Corpus contracts: ${summary.contractCount}. Own pass rate: ${summary.ownPassRate.toFixed(1)}% (expected ${corpus.expected.ownPassRate} ± ${EVAL_PASS_TOLERANCE_POINTS}).`);
   lines.push(`Spot agreement: ${summary.spotAgreed}/${summary.spotTotal} (${summary.spotAgreement.toFixed(1)}%, expected ${corpus.expected.spotAgreement} ± ${EVAL_PASS_TOLERANCE_POINTS}).`);
   lines.push(`extdecomp runs: ${summary.extdecompRuns} (binary ${extdecompVersion ?? "not configured; columns marked not-run"}).`);
+  if (extdecompUsable) {
+    lines.push(
+      "extdecomp method: each run used a fresh temp work dir (HOME a second fresh temp dir); stdout plus files under the work dir output/ parsed; both temp dirs deleted; nothing written into the repo.",
+    );
+  }
   lines.push("");
   lines.push("| Contract | Own functions | Entries match | Patterns match | Spot | Unresolved | extdecomp |");
   lines.push("|---|---|---|---|---|---|---|");
