@@ -153,17 +153,26 @@ describe("clone-match and hard-to-analyze detector plugins", () => {
     expect(hardToAnalyzeDetectorPlugin.manifest.inputs).toEqual(["bytecode", "decompilerCause"]);
   });
 
-  test("default registry holds all four first-party detectors", () => {
+  test("default registry holds all first-party detectors", () => {
     const built = buildPluginRegistry(DEFAULT_DETECTOR_PLUGINS);
     expect(built.ok).toBe(true);
     if (!built.ok) {
       return;
     }
     expect(built.value.entries.map((entry) => entry.manifest.id)).toEqual([
+      "dev.brandklipparen.blacklist",
       "dev.brandklipparen.capability",
       "dev.brandklipparen.clone-match",
       "dev.brandklipparen.decompiler",
       "dev.brandklipparen.hard-to-analyze",
+      "dev.brandklipparen.mint",
+      "dev.brandklipparen.ownership",
+      "dev.brandklipparen.pause",
+      "dev.brandklipparen.proxy-upgrade",
+      "dev.brandklipparen.sell-block",
+      "dev.brandklipparen.transfer-fee",
+      "dev.brandklipparen.transfer-hooks",
+      "dev.brandklipparen.transfer-limits",
     ]);
   });
 

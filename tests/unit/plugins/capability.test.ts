@@ -80,10 +80,19 @@ describe("capability detector plugin", () => {
       return;
     }
     expect(built.value.entries.map((entry) => entry.manifest.id)).toEqual([
+      "dev.brandklipparen.blacklist",
       "dev.brandklipparen.capability",
       "dev.brandklipparen.clone-match",
       "dev.brandklipparen.decompiler",
       "dev.brandklipparen.hard-to-analyze",
+      "dev.brandklipparen.mint",
+      "dev.brandklipparen.ownership",
+      "dev.brandklipparen.pause",
+      "dev.brandklipparen.proxy-upgrade",
+      "dev.brandklipparen.sell-block",
+      "dev.brandklipparen.transfer-fee",
+      "dev.brandklipparen.transfer-hooks",
+      "dev.brandklipparen.transfer-limits",
     ]);
     expect(Object.isFrozen(built.value)).toBe(true);
   });
@@ -156,8 +165,10 @@ describe("capability detector plugin", () => {
       throw new Error("expected an assessed envelope");
     }
     const envelope = analysed.value.envelope;
-    expect(envelope.pluginResults.length).toBe(4);
-    const entry = envelope.pluginResults[0];
+    expect(envelope.pluginResults.length).toBe(13);
+    const entry = envelope.pluginResults.find(
+      (candidate) => candidate.pluginId === "dev.brandklipparen.capability",
+    );
     expect(entry?.pluginId).toBe("dev.brandklipparen.capability");
     expect(entry?.outcome).toBe("ok");
     const capabilities = envelope.signals.filter((signal) => signal.kind === "capability");

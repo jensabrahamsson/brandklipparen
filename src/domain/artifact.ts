@@ -135,10 +135,39 @@ export function artifactToCanonical(artifact: ModelArtifact): CanonicalValue {
   for (const pluginId of Object.keys(artifact.pluginWeights ?? {}).sort()) {
     pluginWeights[pluginId] = artifact.pluginWeights[pluginId] ?? 0;
   }
+  // The feature catalogue serializes only when it names at least one
+  // plugin (S-115): older frozen files carry no entry, and their bytes
+  // must keep verifying bit-identically.
+  const catalogue = artifact.pluginFeatureCatalogue ?? {};
+  const catalogueIds = Object.keys(catalogue).sort();
+  if (catalogueIds.length === 0) {
+    return {
+      biases,
+      calibration,
+      causeWeights,
+      pluginWeights,
+      scoreWeights,
+      severityWeights,
+      version: artifact.version as string,
+    };
+  }
+  const pluginFeatureCatalogue: Record<string, CanonicalValue> = {};
+  for (const pluginId of catalogueIds) {
+    const mapping = catalogue[pluginId];
+    if (mapping === undefined) {
+      continue;
+    }
+    pluginFeatureCatalogue[pluginId] = {
+      direction: mapping.direction,
+      risk: mapping.risk,
+      severity: mapping.severity,
+    };
+  }
   return {
     biases,
     calibration,
     causeWeights,
+    pluginFeatureCatalogue,
     pluginWeights,
     scoreWeights,
     severityWeights,

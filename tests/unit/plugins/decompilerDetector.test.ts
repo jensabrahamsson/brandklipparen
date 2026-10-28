@@ -32,12 +32,9 @@ import { decompileContract } from "../../../src/domain/evmSsa.ts";
 import { canonicalSerialize } from "../../../src/domain/serialize.ts";
 import { pluginResultToCanonical } from "../../../src/plugins/detector.ts";
 import type { DetectorInput } from "../../../src/plugins/detector.ts";
-import { capabilityDetectorPlugin } from "../../../src/plugins/detectors/capability/index.ts";
-import { cloneMatchDetectorPlugin } from "../../../src/plugins/detectors/clone-match/index.ts";
 import { decompilerDetectorPlugin } from "../../../src/plugins/detectors/decompiler/index.ts";
-import { hardToAnalyzeDetectorPlugin } from "../../../src/plugins/detectors/hard-to-analyze/index.ts";
 import type { DetectorSet } from "../../../src/application/analyzeToken.ts";
-import { buildPluginRegistry } from "../../../src/plugins/registry.ts";
+import { buildPluginRegistry, DEFAULT_DETECTOR_PLUGINS } from "../../../src/plugins/registry.ts";
 import { FakeClockAdapter } from "../../fakes/fakeClock.ts";
 import { FakeRpcAdapter } from "../../fakes/fakeRpc.ts";
 import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
@@ -135,11 +132,9 @@ describe("d07_decompiler_output_consumed_identically_in_rest_mcp_and_expert_ui",
 
 describe("d08_decompiler_findings_leave_score_and_evidence_unchanged", () => {
   test("bit-identical score, probabilities and signals with the plugin enabled and absent", async () => {
-    const withoutBuilt = buildPluginRegistry([
-      capabilityDetectorPlugin,
-      cloneMatchDetectorPlugin,
-      hardToAnalyzeDetectorPlugin,
-    ]);
+    const withoutBuilt = buildPluginRegistry(
+      DEFAULT_DETECTOR_PLUGINS.filter((entry) => entry.manifest.id !== DECOMPILER_ID),
+    );
     if (!withoutBuilt.ok) {
       throw new Error(`registry without decompiler failed: ${withoutBuilt.error.kind}`);
     }

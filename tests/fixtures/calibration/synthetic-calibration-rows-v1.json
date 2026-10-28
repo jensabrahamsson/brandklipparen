@@ -1,0 +1,42 @@
+[
+  {
+    "address": "0x0102030405060708090a0b0c0d0e0f1011121314",
+    "symbol": "SYN-LEGIT",
+    "name": "Synthetic Legit",
+    "label": "legit",
+    "labelSource": "synthetic",
+    "block": 23100001,
+    "bytecode": "0x6001600055"
+  },
+  {
+    "address": "0x0202030405060708090a0b0c0d0e0f1011121314",
+    "symbol": "SYN-RUG",
+    "name": "Synthetic Rug",
+    "label": "rug",
+    "labelSource": "synthetic incident report",
+    "labelBasis": "incident-report",
+    "block": 23100002,
+    "bytecode": "0x6001600055"
+  },
+  {
+    "address": "0x0302030405060708090a0b0c0d0e0f1011121314",
+    "symbol": "SYN-HONEYPOT",
+    "name": "Synthetic Honeypot",
+    "label": "honeypot",
+    "labelSource": "synthetic token list",
+    "labelBasis": "token-list",
+    "block": 23100003,
+    "bytecode": "0x6001600055"
+  },
+  {
+    "address": "0x0402030405060708090a0b0c0d0e0f1011121314",
+    "symbol": "SYN-SCAM",
+    "name": "Synthetic Scam",
+    "label": "scam",
+    "labelSource": "synthetic incident report",
+    "labelBasis": "incident-report",
+    "labelNote": "synthetic exit scam",
+    "block": 23100004,
+    "bytecode": "0x6001600055"
+  }
+]

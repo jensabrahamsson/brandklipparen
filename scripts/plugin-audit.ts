@@ -27,6 +27,15 @@ const PLUGIN_DIRS: Readonly<Record<string, string>> = Object.freeze({
   "dev.brandklipparen.clone-match": "src/plugins/detectors/clone-match",
   "dev.brandklipparen.hard-to-analyze": "src/plugins/detectors/hard-to-analyze",
   "dev.brandklipparen.decompiler": "src/plugins/detectors/decompiler",
+  "dev.brandklipparen.mint": "src/plugins/detectors/mint",
+  "dev.brandklipparen.blacklist": "src/plugins/detectors/blacklist",
+  "dev.brandklipparen.transfer-fee": "src/plugins/detectors/transfer-fee",
+  "dev.brandklipparen.pause": "src/plugins/detectors/pause",
+  "dev.brandklipparen.transfer-limits": "src/plugins/detectors/transfer-limits",
+  "dev.brandklipparen.ownership": "src/plugins/detectors/ownership",
+  "dev.brandklipparen.transfer-hooks": "src/plugins/detectors/transfer-hooks",
+  "dev.brandklipparen.sell-block": "src/plugins/detectors/sell-block",
+  "dev.brandklipparen.proxy-upgrade": "src/plugins/detectors/proxy-upgrade",
   "dev.brandklipparen.example-fee-capability": "examples/plugins/fee-capability",
 });
 

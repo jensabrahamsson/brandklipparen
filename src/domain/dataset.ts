@@ -41,6 +41,14 @@ export type DatasetLabel = {
   readonly rationale: string;
 };
 
+// Provenance weight class for one datapoint (S-115 calibration
+// readiness): curated dataset rows outrank incident reports, which
+// outrank token listings. The field is optional and defaults to
+// `dataset`; the note is free text under the rationale cap.
+export type LabelBasis = "dataset" | "incident-report" | "token-list";
+
+export const LABEL_BASES: readonly LabelBasis[] = Object.freeze(["dataset", "incident-report", "token-list"]);
+
 export type DatasetDataPoint = {
   readonly address: AddressType;
   readonly bytecode: BytecodeType;
@@ -48,7 +56,82 @@ export type DatasetDataPoint = {
   readonly source: string;
   readonly codeHash: CodeHashType;
   readonly label: DatasetLabel;
+  readonly labelBasis?: LabelBasis | undefined;
+  readonly labelNote?: string | undefined;
 };
+
+// Default per-row weights by provenance (S-115): curated dataset rows
+// count triple, incident reports double, token listings single. The
+// ordering is principled (verified rows above write-ups above hearsay
+// listings) and every entry point accepts overrides; the values steer
+// counts only, never thresholds.
+export const BASIS_WEIGHT_DEFAULTS: Readonly<Record<LabelBasis, number>> = Object.freeze({
+  dataset: 3,
+  "incident-report": 2,
+  "token-list": 1,
+});
+
+// Bounds for configured basis weights (format limits, not model values):
+// positive integers, so expansion by replication stays finite and exact.
+export const MAX_BASIS_WEIGHT = 100;
+
+function basisWeightError(message: string): Result<never, DatasetError> {
+  return err({ kind: "invalid-dataset", message });
+}
+
+// Validated basis-weight overrides (S-115): a partial mapping fills from
+// the defaults, so callers override one class without restating the
+// others. Unknown classes, non-integer or out-of-range weights fail.
+export function parseBasisWeights(input: unknown): Result<Readonly<Record<LabelBasis, number>>, DatasetError> {
+  const weights: Record<LabelBasis, number> = {
+    dataset: BASIS_WEIGHT_DEFAULTS.dataset ?? 3,
+    "incident-report": BASIS_WEIGHT_DEFAULTS["incident-report"] ?? 2,
+    "token-list": BASIS_WEIGHT_DEFAULTS["token-list"] ?? 1,
+  };
+  if (input === undefined) {
+    return ok(Object.freeze(weights));
+  }
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return basisWeightError("basis weights must be an object mapping label bases to weights");
+  }
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (!LABEL_BASES.includes(key as LabelBasis)) {
+      return basisWeightError(`unknown label basis in weights: ${key}`);
+    }
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > MAX_BASIS_WEIGHT) {
+      return basisWeightError(`basis weight for ${key} must be an integer from 1 to ${MAX_BASIS_WEIGHT}`);
+    }
+    weights[key as LabelBasis] = value;
+  }
+  return ok(Object.freeze(weights));
+}
+
+// Weight of one datapoint under the given (or default) weights: the
+// datapoint's own basis, or `dataset` when it carries none.
+export function basisWeightOf(
+  point: Pick<DatasetDataPoint, "labelBasis">,
+  weights: Readonly<Record<LabelBasis, number>> = BASIS_WEIGHT_DEFAULTS,
+): number {
+  return weights[point.labelBasis ?? "dataset"] ?? 1;
+}
+
+// Expansion by replication (S-115): each datapoint repeats its basis
+// weight times in input order, so weighted counts and weighted metrics
+// follow from the plain unweighted pipeline with no fractional
+// arithmetic anywhere.
+export function expandByBasisWeight(
+  points: readonly DatasetDataPoint[],
+  weights: Readonly<Record<LabelBasis, number>> = BASIS_WEIGHT_DEFAULTS,
+): readonly DatasetDataPoint[] {
+  const out: DatasetDataPoint[] = [];
+  for (const point of points) {
+    const times = basisWeightOf(point, weights);
+    for (let copy = 0; copy < times; copy += 1) {
+      out.push(point);
+    }
+  }
+  return Object.freeze(out);
+}
 
 export type Dataset = {
   readonly dataVersion: string;
@@ -159,6 +242,24 @@ function parseDataPoint(raw: unknown): DatasetDataPoint | null {
   if (label === null) {
     return null;
   }
+  let labelBasis: LabelBasis | undefined;
+  if (raw["labelBasis"] !== undefined) {
+    if (typeof raw["labelBasis"] !== "string" || !LABEL_BASES.includes(raw["labelBasis"] as LabelBasis)) {
+      return null;
+    }
+    labelBasis = raw["labelBasis"] as LabelBasis;
+  }
+  let labelNote: string | undefined;
+  if (raw["labelNote"] !== undefined) {
+    if (
+      typeof raw["labelNote"] !== "string" ||
+      raw["labelNote"].length < 1 ||
+      raw["labelNote"].length > MAX_RATIONALE_CHARS
+    ) {
+      return null;
+    }
+    labelNote = raw["labelNote"];
+  }
   return {
     address: address.value,
     bytecode: bytecode.value,
@@ -166,6 +267,8 @@ function parseDataPoint(raw: unknown): DatasetDataPoint | null {
     source: raw["source"],
     codeHash: codeHash.value,
     label,
+    ...(labelBasis === undefined ? {} : { labelBasis }),
+    ...(labelNote === undefined ? {} : { labelNote }),
   };
 }
 
@@ -270,6 +373,12 @@ function pointHasIssue(
     }
   }
   if (point.label.rationale.length < 1 || point.label.rationale.length > MAX_RATIONALE_CHARS) {
+    return true;
+  }
+  if (point.labelBasis !== undefined && !LABEL_BASES.includes(point.labelBasis)) {
+    return true;
+  }
+  if (point.labelNote !== undefined && (point.labelNote.length < 1 || point.labelNote.length > MAX_RATIONALE_CHARS)) {
     return true;
   }
   return false;

@@ -22,9 +22,10 @@ import type { CantTellItem } from "../domain/cantTell.ts";
 import { explanationToCanonical, renderExplanation } from "../domain/explain.ts";
 import type { Explanation, ExplainError } from "../domain/explain.ts";
 import { score } from "../domain/risk.ts";
+import type { PluginFeatureMapping } from "../domain/risk.ts";
 import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
-import { CacheKey, CodeHash } from "../domain/types.ts";
+import { CacheKey, CodeHash, Slot } from "../domain/types.ts";
 import type {
   Address as AddressType,
   ArtifactChecksum as ArtifactChecksumType,
@@ -448,6 +449,27 @@ function capabilityKeyOf(finding: PluginFinding): CapabilityKey | null {
 // weight 0. Conversion order follows the fixed capability key order,
 // matching the legacy sweep: signals sharing one SignalId keep a stable,
 // deterministic order through the final id sort below.
+// Owner-control `feature` findings convert beside the capability keys
+// (S-115): the artifact `pluginFeatureCatalogue` maps the plugin id to
+// the risk, direction and severity the finding converts with, and the
+// finding's own `feature` value stays display data. A plugin the
+// catalogue does not name converts nothing, whatever its finding says.
+function featureMappingOf(
+  finding: PluginFinding,
+  pluginId: string,
+  featureCatalogue: Readonly<Record<string, PluginFeatureMapping>>,
+): PluginFeatureMapping | null {
+  const payload: unknown = finding.payload;
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return null;
+  }
+  const feature: unknown = (payload as { readonly [field: string]: unknown })["feature"];
+  if (typeof feature !== "string" || feature.length === 0) {
+    return null;
+  }
+  return featureCatalogue[pluginId] ?? null;
+}
+
 function signalsFromPluginResults(
   results: readonly PluginResultEntry[],
   codeHash: CodeHashType,
@@ -455,6 +477,7 @@ function signalsFromPluginResults(
   cloneMapping: CloneMapping | undefined,
   temporality: Temporality,
   pluginWeights: Readonly<Record<string, number>>,
+  featureCatalogue: Readonly<Record<string, PluginFeatureMapping>>,
 ): readonly Signal[] {
   // Scoring reads findings solely from allowlisted plugins (P-05): every
   // other entry stays in `pluginResults` at weight 0 and never converts.
@@ -506,6 +529,31 @@ function signalsFromPluginResults(
     });
     if (signal.ok) {
       capability.push(signal.value);
+    }
+  }
+  // Owner-control features join the capability bucket: each converts with
+  // the artifact mapping for its plugin id, in registry order and finding
+  // order, so equal inputs give the same signals on every run.
+  for (const entry of scored) {
+    if (entry.outcome !== "ok") {
+      continue;
+    }
+    for (const finding of entry.findings) {
+      const mapping = featureMappingOf(finding, entry.pluginId as string, featureCatalogue);
+      if (mapping === null) {
+        continue;
+      }
+      const signal = Signal.createCapability({
+        codeHash,
+        risk: mapping.risk,
+        direction: mapping.direction,
+        severity: mapping.severity,
+        temporality,
+        evidence: finding.evidence,
+      });
+      if (signal.ok) {
+        capability.push(signal.value);
+      }
     }
   }
   capability.sort((left, right) => {
@@ -574,6 +622,120 @@ function signalsFromPluginResults(
     }
   }
   return Object.freeze([...capability, ...clones, ...hard]);
+}
+
+// Live owner value through RpcPort (S-115, K-016): the ownership detector
+// identifies the owner slot from bytecode, and this step reads the current
+// word at the analysed address on the pinned block. The read happens only
+// when the owner-slot finding exists and its signal converts (the prior
+// artifact names the plugin with a weight above 0 and carries its feature
+// mapping); otherwise no storage read happens and scoring stays
+// untouched. A failed read keeps the can-change temporality: the live
+// value is unknown, never guessed. The enriched signal carries
+// applies-now; enriched analyses skip the code-hash cache because the
+// value is live chain state, not code-derived.
+const OWNERSHIP_PLUGIN_ID = "dev.brandklipparen.ownership";
+
+function ownerSlotProof(
+  results: readonly PluginResultEntry[],
+): { slot: number; evidenceKey: string } | null {
+  for (const entry of results) {
+    if (entry.outcome !== "ok" || (entry.pluginId as string) !== OWNERSHIP_PLUGIN_ID) {
+      continue;
+    }
+    for (const finding of entry.findings) {
+      const payload: unknown = finding.payload;
+      if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+        continue;
+      }
+      const record = payload as { readonly [field: string]: unknown };
+      if (record["feature"] !== "owner-slot") {
+        continue;
+      }
+      const slot: unknown = record["slot"];
+      if (typeof slot !== "number" || !Number.isInteger(slot) || slot < 0) {
+        continue;
+      }
+      return { slot, evidenceKey: evidenceKeyOf(finding.evidence) };
+    }
+  }
+  return null;
+}
+
+function evidenceKeyOf(
+  list: readonly { readonly selector: unknown; readonly offset?: unknown }[],
+): string {
+  return list
+    .map((entry) => `${entry.selector as string}:${entry.offset === undefined ? "none" : String(entry.offset as number)}`)
+    .sort()
+    .join(",");
+}
+
+async function attachOwnerState(
+  rpc: RpcPort,
+  input: AnalyzeTokenInput,
+  block: BlockNumberType,
+  at: TimestampType,
+  codeHash: CodeHashType,
+  pluginResults: readonly PluginResultEntry[],
+  signals: readonly Signal[],
+  pluginWeights: Readonly<Record<string, number>>,
+  featureCatalogue: Readonly<Record<string, PluginFeatureMapping>>,
+): Promise<{ signals: readonly Signal[]; enriched: boolean }> {
+  const proof = ownerSlotProof(pluginResults);
+  if (proof === null) {
+    return { signals, enriched: false };
+  }
+  const mapping = featureCatalogue[OWNERSHIP_PLUGIN_ID] ?? null;
+  if (mapping === null || !pluginAllowedForScoring(OWNERSHIP_PLUGIN_ID, pluginWeights)) {
+    return { signals, enriched: false };
+  }
+  const parsed = Slot.parse(`0x${proof.slot.toString(16).padStart(64, "0")}`);
+  if (!parsed.ok) {
+    return { signals, enriched: false };
+  }
+  const stored = await rpc.getStorageAt(input.address, parsed.value, {
+    requestId: input.requestId,
+    deadline: input.deadline,
+    block,
+  });
+  if (!stored.ok) {
+    return { signals, enriched: false };
+  }
+  const observed: Temporality = {
+    kind: "applies-now",
+    measuredValue: { value: stored.value, slot: parsed.value, block, at },
+    block,
+    at,
+  };
+  let enriched = false;
+  const out = signals.map((signal) => {
+    if (signal.kind !== "capability") {
+      return signal;
+    }
+    if (
+      signal.risk !== mapping.risk ||
+      signal.direction !== mapping.direction ||
+      signal.severity !== mapping.severity ||
+      evidenceKeyOf(signal.evidence) !== proof.evidenceKey
+    ) {
+      return signal;
+    }
+    const rebuilt = Signal.createCapability({
+      codeHash,
+      risk: signal.risk,
+      direction: signal.direction,
+      severity: signal.severity,
+      temporality: observed,
+      evidence: signal.evidence,
+    });
+    if (!rebuilt.ok) {
+      return signal;
+    }
+    enriched = true;
+    return rebuilt.value;
+  });
+  return { signals: Object.freeze(out), enriched };
 }
 
 // Numbers first, text second: scoring and the template render run before the
@@ -743,7 +905,23 @@ export async function analyzeToken(
     input.cloneMapping,
     observed,
     loaded.value.artifact.pluginWeights,
+    loaded.value.artifact.pluginFeatureCatalogue,
   );
+  // Owner state through RpcPort (S-115, K-016): enriches the converted
+  // owner-slot signal with the live value where the proof and the
+  // artifact mapping allow it, and stays silent otherwise.
+  const ownerState = await attachOwnerState(
+    countedPorts.rpc,
+    input,
+    block,
+    ports.clock.now(),
+    codeHash.value,
+    pluginResults,
+    signals,
+    loaded.value.artifact.pluginWeights,
+    loaded.value.artifact.pluginFeatureCatalogue,
+  );
+  signals = ownerState.signals;
   // Snippet enrichment for a successful decompilation (K-008): each
   // evidence entry whose selector the worker decompiled gains its snippet,
   // keeping every other field bit-identical.
@@ -777,9 +955,12 @@ export async function analyzeToken(
   // effort, so a rejected write still returns the analysis. Target, block,
   // proxy and assessed-at stay out of the entry and are rebuilt on every
   // hit. A transient decompiler failure skips the store, so a degraded run
-  // never poisons the shared entry (A-07, K-102). A new model version keys
-  // new entries, so older entries stay unused beside the new one.
-  if (ports.cache !== undefined && !transientDecompilerFailure) {
+  // never poisons the shared entry (A-07, K-102). An owner-state enriched
+  // run skips the store too: the live value is chain state, not
+  // code-derived, and must never serve another block from the cache. A new
+  // model version keys new entries, so older entries stay unused beside
+  // the new one.
+  if (ports.cache !== undefined && !transientDecompilerFailure && !ownerState.enriched) {
     const stored: CachedAssessment = {
       kind: "assessed",
       codeHash: envelope.codeHash,

@@ -179,6 +179,16 @@ function pushValueBelow(immediate: Uint8Array, limit: number): number | null {
 // data is already skipped:
 //   A: DUP1 PUSH4 <selector> EQ PUSHn <destination> JUMPI
 //   B: PUSH4 <selector> DUP2 EQ PUSHn <destination> JUMPI
+//   V1 (Vyper chained reuse): PUSH4 <selector> EQ PUSHn <destination>
+//       JUMPI, with the compared selector left on the stack by the previous
+//       window instead of re-duplicated.
+//   V2 (Vyper XOR compare): DUP1 PUSH4 <selector> XOR ISZERO PUSHn
+//       <destination> JUMPI, or the DUP2 mirror. Without ISZERO the jump
+//       enters on mismatch, so it never proves a function entry and the
+//       selector is reported unknown.
+// Newer Vyper sparse and bucketed jump tables (computed JUMP after range
+// checks) carry no per-selector PUSH4 compare window, so they stay out of
+// extraction: no selector there is ever guessed (S-115).
 // A PUSH4 beside EQ without a following PUSH plus JUMPI still reports the
 // selector, with the target explicitly marked unknown. Repeated selectors
 // keep their first occurrence in PC order; the result sorts by selector.
@@ -205,6 +215,19 @@ export function extractSelectors(bytecode: Bytecode): readonly SelectorEntry[] {
     } else {
       found.push({ kind: "paired", selector: parsed.value, target });
     }
+  };
+
+  // XOR-compare tail: only ISZERO before the PUSH plus JUMPI proves the
+  // jump enters on a selector match. A bare PUSH plus JUMPI after XOR
+  // enters on mismatch (the next-compare branch), and any other tail
+  // proves nothing, so both report the selector as explicitly unknown.
+  const handleXorCandidate = (selectorBytes: Uint8Array, nextIndex: number): void => {
+    const iszero = code[nextIndex];
+    if (iszero !== undefined && iszero.opcode === 0x15) {
+      handleCandidate(selectorBytes, nextIndex + 1);
+      return;
+    }
+    record(selectorBytes, null);
   };
 
   const handleCandidate = (selectorBytes: Uint8Array, nextIndex: number): void => {
@@ -245,12 +268,32 @@ export function extractSelectors(bytecode: Bytecode): readonly SelectorEntry[] {
         eq.opcode === 0x14
       ) {
         handleCandidate(push.immediate, i + 3);
+      } else if (
+        push !== undefined &&
+        eq !== undefined &&
+        push.opcode === 0x63 &&
+        push.immediate.length === 4 &&
+        eq.opcode === 0x18
+      ) {
+        // DUP1 PUSH4 <selector> XOR ... (Vyper V2).
+        handleXorCandidate(push.immediate, i + 3);
       }
     } else if (first.opcode === 0x63 && first.immediate.length === 4) {
       const dup = code[i + 1];
       const eq = code[i + 2];
       if (dup !== undefined && eq !== undefined && dup.opcode === 0x81 && eq.opcode === 0x14) {
         handleCandidate(first.immediate, i + 3);
+      } else if (dup !== undefined && dup.opcode === 0x81) {
+        // PUSH4 <selector> DUP2 XOR ... (Vyper V2 mirror): only an ISZERO
+        // before the PUSH plus JUMPI proves a match entry.
+        const xor = code[i + 2];
+        if (xor !== undefined && xor.opcode === 0x18) {
+          handleXorCandidate(first.immediate, i + 3);
+        }
+      } else if (dup !== undefined && dup.opcode === 0x14) {
+        // PUSH4 <selector> EQ ... (Vyper V1 chained reuse): the compared
+        // selector stays on the stack from the previous window.
+        handleCandidate(first.immediate, i + 2);
       }
     }
   }

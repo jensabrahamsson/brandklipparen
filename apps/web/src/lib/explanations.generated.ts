@@ -5,10 +5,19 @@
 export const GENERATED_FROM = Object.freeze([
   "src/plugins/assessments/hosted-open-weights/PLUGIN.md",
   "src/plugins/assessments/meta-model-api/PLUGIN.md",
+  "src/plugins/detectors/blacklist/PLUGIN.md",
   "src/plugins/detectors/capability/PLUGIN.md",
   "src/plugins/detectors/clone-match/PLUGIN.md",
   "src/plugins/detectors/decompiler/PLUGIN.md",
   "src/plugins/detectors/hard-to-analyze/PLUGIN.md",
+  "src/plugins/detectors/mint/PLUGIN.md",
+  "src/plugins/detectors/ownership/PLUGIN.md",
+  "src/plugins/detectors/pause/PLUGIN.md",
+  "src/plugins/detectors/proxy-upgrade/PLUGIN.md",
+  "src/plugins/detectors/sell-block/PLUGIN.md",
+  "src/plugins/detectors/transfer-fee/PLUGIN.md",
+  "src/plugins/detectors/transfer-hooks/PLUGIN.md",
+  "src/plugins/detectors/transfer-limits/PLUGIN.md",
   "src/domain/explain.ts",
   "src/domain/evidence.ts",
   "src/domain/cantTell.ts",
@@ -28,6 +37,10 @@ export const EXPLANATIONS = Object.freeze({
     "title": "Meta Model API assessment",
     "body": "What it checks: An opt-in Muse contract assessment of the analysed token: a short generated text beside the deterministic probabilities, score and evidence. The text never changes scores, signals or evidence. Why it matters: The deterministic page tells you what the bytecode contains; the assessment reads like a second opinion in plain words, useful when the signals alone do not answer whether you should buy."
   },
+  "plugin:dev.brandklipparen.blacklist": {
+    "title": "Blacklist detector",
+    "body": "What it checks: A transfer gate on a mapping entry that a privileged caller can set. The proof needs both at once: the transfer path reads a mapping entry and reverts on its value, and a caller-guarded function writes a mapping slot. One finding names the first provable pair. Why it matters: A privileged block list lets the owner stop your sale while letting other transfers through. The finding names the function that writes the entry and the transfer function that reads it, so you can see both ends."
+  },
   "plugin:dev.brandklipparen.capability": {
     "title": "Capability detector",
     "body": "What it checks: Structural ERC-20 bytecode capabilities, one finding per capability key: - `selfdestruct`: the contract can destroy itself and redirect funds. - `delegatecall`: the contract can run foreign code in local storage context. - `call`: the contract can forward calls to an outside contract. - `storage-write`: the contract can write storage. Detection fires solely on opcode presence in the linear disassembly with PUSH data skipped, so constants never count as opcodes. No count, share, or size cutoff steers detection: one occurrence is enough. Why it matters: These capabilities decide what the owner can still do after you buy. A selfdestruct or delegatecall capability can drain or redirect funds, and a storage-write capability can change the rules under you."
@@ -43,6 +56,38 @@ export const EXPLANATIONS = Object.freeze({
   "plugin:dev.brandklipparen.hard-to-analyze": {
     "title": "Hard-to-analyze detector",
     "body": "What it checks: A failed decompilation: at most one finding per analysis, naming the cause the host derived from the decompiler failure (`timeout`, `resource-limit`, `decompiler-error` or `obfuscated-structure`). Why it matters: When the analyzer cannot read the contract, neither can you. An `obfuscated-structure` cause can mean deliberate hiding, and any cause means the rest of the page reasons from less evidence than usual."
+  },
+  "plugin:dev.brandklipparen.mint": {
+    "title": "Mint detector",
+    "body": "What it checks: A privileged caller-gated write that grows a supply-like slot read in the transfer path. The proof needs all three at once: a function guarded by a caller check that stores to a constant slot, the transfer path loading the same slot, and addition arithmetic beside the supply flow. One finding names the lowest provable slot. Why it matters: A privileged mint lets the owner create new tokens from nothing and sell them into your position. The finding names the function that writes the supply and the transfer function that reads it, so you can see both ends."
+  },
+  "plugin:dev.brandklipparen.ownership": {
+    "title": "Ownership detector",
+    "body": "What it checks: The owner slot, the privileged functions and the renounce path. The owner slot is the lowest constant slot loaded beside a caller compare; privileged functions are the caller-guarded regions; a renounce path is any store of zero to the owner slot. One finding names the owner slot with the privileged function count, and a second finding names the renounce store when one exists. Why it matters: Every other owner power in this pack flows from the owner seat: who holds it decides who can mint, block, tax or pause you. A renounce path shows the seat can be given up. The findings name the functions that check the seat, so you can count the powers behind it."
+  },
+  "plugin:dev.brandklipparen.pause": {
+    "title": "Pause detector",
+    "body": "What it checks: A boolean flag set by a privileged caller that gates the transfer path. The proof needs both at once: a caller-guarded function that stores a constant slot, and the transfer path loading the same slot beside a compare and a conditional jump that can revert. One finding names the lowest provable slot with its mode: a one-way enable reports `trading-toggle`, a flag that also writes zero reports `pause`, and anything else reports `unknown`. Why it matters: A pause switch lets the owner freeze every transfer, and a trading toggle that never opens again locks the same door. The finding names the setter function and the transfer function it gates, with the mode the stores prove, so you can see whether the flag flips both ways."
+  },
+  "plugin:dev.brandklipparen.proxy-upgrade": {
+    "title": "Proxy-upgrade detector",
+    "body": "What it checks: Proxy upgradeability as a privileged capability, reusing the domain proxy helpers. An upgrade entry behind a caller guard reports the UUPS kind; a delegatecall-behind-storage region beside an upgrade entry reports the EIP-1967 kind. One finding names the first provable shape with the upgrade selector it proves. Why it matters: An upgradeable proxy can swap the token logic after you buy: today's rules are not tomorrow's. The finding names the upgrade function and, for the delegatecall shape, the forwarding call site, so you can see who holds the upgrade path."
+  },
+  "plugin:dev.brandklipparen.sell-block": {
+    "title": "Sell-block detector",
+    "body": "What it checks: Sell-blocking honeypot branching in the transfer path. The proof needs all of the following in one transfer path: an equality compare with calldata beside it, a stored address compare through a constant or hashed storage read, and a conditional jump that can revert. One finding names the first provable region with its condition: a mapping read beside the branch reports `pair-mapping`, otherwise the branch reports `recipient-equals-stored`. Why it matters: A sell block lets you buy but never sell: the transfer succeeds one way and reverts the other. The finding names the transfer function and the compared storage reads, so you can see which stored address decides your sale."
+  },
+  "plugin:dev.brandklipparen.transfer-fee": {
+    "title": "Transfer-fee detector",
+    "body": "What it checks: A fee slot set by a privileged caller and used arithmetically in the transfer path. The proof needs both at once: a caller-guarded function that stores a constant slot, and the transfer path loading the same slot beside multiply or divide arithmetic. One finding names the lowest provable slot and reports the max-fee bound when the setter bounds it with a constant compare, or an unknown bound when it does not. Why it matters: A fee on every transfer takes a cut of your sale, and a 100 percent fee is a honeypot: you can buy but never sell for value. The finding names the setter function and the transfer function it feeds, with the bound the setter proves, so you can see the worst case."
+  },
+  "plugin:dev.brandklipparen.transfer-hooks": {
+    "title": "Transfer-hooks detector",
+    "body": "What it checks: External calls reachable in the transfer path. One finding per call kind present in a transfer region carries every call site of that kind as selector evidence with PC offsets, with the best-effort target source of the first site: an address loaded from storage, a pushed constant address, an argument from calldata, or unknown when the window shows none of these. Why it matters: A transfer that calls out can run foreign logic on your sale: a hook contract, an oracle, or a drain. The finding names the transfer function and the call site, with where the target address comes from, so you can see whether the destination is fixed or itself changeable."
+  },
+  "plugin:dev.brandklipparen.transfer-limits": {
+    "title": "Transfer-limits detector",
+    "body": "What it checks: Max-tx and max-wallet limits set by a privileged caller and compared in the transfer path. The proof needs both at once: a caller-guarded function that stores a constant limit slot, and the transfer path loading the same slot beside a less than or greater than compare. One finding names the lowest provable slot with its kind: a compare against a balance mapping lookup reports `max-wallet`, a compare against a calldata value with no mapping read reports `max-tx`, and anything else reports `unknown`. Why it matters: A max-tx limit caps how much you can sell at once, and a max-wallet limit caps how much you can hold: both let the owner shape the market against you. The finding names the setter function and the transfer function it constrains, with the kind the reads prove."
   },
   "template:capability:rug-pull": {
     "title": "Template wording for rug-pull",
@@ -152,6 +197,10 @@ export const EXPLANATION_PAYLOAD = {
       "title": "Meta Model API assessment",
       "body": "What it checks: An opt-in Muse contract assessment of the analysed token: a short generated text beside the deterministic probabilities, score and evidence. The text never changes scores, signals or evidence. Why it matters: The deterministic page tells you what the bytecode contains; the assessment reads like a second opinion in plain words, useful when the signals alone do not answer whether you should buy."
     },
+    "plugin:dev.brandklipparen.blacklist": {
+      "title": "Blacklist detector",
+      "body": "What it checks: A transfer gate on a mapping entry that a privileged caller can set. The proof needs both at once: the transfer path reads a mapping entry and reverts on its value, and a caller-guarded function writes a mapping slot. One finding names the first provable pair. Why it matters: A privileged block list lets the owner stop your sale while letting other transfers through. The finding names the function that writes the entry and the transfer function that reads it, so you can see both ends."
+    },
     "plugin:dev.brandklipparen.capability": {
       "title": "Capability detector",
       "body": "What it checks: Structural ERC-20 bytecode capabilities, one finding per capability key: - `selfdestruct`: the contract can destroy itself and redirect funds. - `delegatecall`: the contract can run foreign code in local storage context. - `call`: the contract can forward calls to an outside contract. - `storage-write`: the contract can write storage. Detection fires solely on opcode presence in the linear disassembly with PUSH data skipped, so constants never count as opcodes. No count, share, or size cutoff steers detection: one occurrence is enough. Why it matters: These capabilities decide what the owner can still do after you buy. A selfdestruct or delegatecall capability can drain or redirect funds, and a storage-write capability can change the rules under you."
@@ -167,6 +216,38 @@ export const EXPLANATION_PAYLOAD = {
     "plugin:dev.brandklipparen.hard-to-analyze": {
       "title": "Hard-to-analyze detector",
       "body": "What it checks: A failed decompilation: at most one finding per analysis, naming the cause the host derived from the decompiler failure (`timeout`, `resource-limit`, `decompiler-error` or `obfuscated-structure`). Why it matters: When the analyzer cannot read the contract, neither can you. An `obfuscated-structure` cause can mean deliberate hiding, and any cause means the rest of the page reasons from less evidence than usual."
+    },
+    "plugin:dev.brandklipparen.mint": {
+      "title": "Mint detector",
+      "body": "What it checks: A privileged caller-gated write that grows a supply-like slot read in the transfer path. The proof needs all three at once: a function guarded by a caller check that stores to a constant slot, the transfer path loading the same slot, and addition arithmetic beside the supply flow. One finding names the lowest provable slot. Why it matters: A privileged mint lets the owner create new tokens from nothing and sell them into your position. The finding names the function that writes the supply and the transfer function that reads it, so you can see both ends."
+    },
+    "plugin:dev.brandklipparen.ownership": {
+      "title": "Ownership detector",
+      "body": "What it checks: The owner slot, the privileged functions and the renounce path. The owner slot is the lowest constant slot loaded beside a caller compare; privileged functions are the caller-guarded regions; a renounce path is any store of zero to the owner slot. One finding names the owner slot with the privileged function count, and a second finding names the renounce store when one exists. Why it matters: Every other owner power in this pack flows from the owner seat: who holds it decides who can mint, block, tax or pause you. A renounce path shows the seat can be given up. The findings name the functions that check the seat, so you can count the powers behind it."
+    },
+    "plugin:dev.brandklipparen.pause": {
+      "title": "Pause detector",
+      "body": "What it checks: A boolean flag set by a privileged caller that gates the transfer path. The proof needs both at once: a caller-guarded function that stores a constant slot, and the transfer path loading the same slot beside a compare and a conditional jump that can revert. One finding names the lowest provable slot with its mode: a one-way enable reports `trading-toggle`, a flag that also writes zero reports `pause`, and anything else reports `unknown`. Why it matters: A pause switch lets the owner freeze every transfer, and a trading toggle that never opens again locks the same door. The finding names the setter function and the transfer function it gates, with the mode the stores prove, so you can see whether the flag flips both ways."
+    },
+    "plugin:dev.brandklipparen.proxy-upgrade": {
+      "title": "Proxy-upgrade detector",
+      "body": "What it checks: Proxy upgradeability as a privileged capability, reusing the domain proxy helpers. An upgrade entry behind a caller guard reports the UUPS kind; a delegatecall-behind-storage region beside an upgrade entry reports the EIP-1967 kind. One finding names the first provable shape with the upgrade selector it proves. Why it matters: An upgradeable proxy can swap the token logic after you buy: today's rules are not tomorrow's. The finding names the upgrade function and, for the delegatecall shape, the forwarding call site, so you can see who holds the upgrade path."
+    },
+    "plugin:dev.brandklipparen.sell-block": {
+      "title": "Sell-block detector",
+      "body": "What it checks: Sell-blocking honeypot branching in the transfer path. The proof needs all of the following in one transfer path: an equality compare with calldata beside it, a stored address compare through a constant or hashed storage read, and a conditional jump that can revert. One finding names the first provable region with its condition: a mapping read beside the branch reports `pair-mapping`, otherwise the branch reports `recipient-equals-stored`. Why it matters: A sell block lets you buy but never sell: the transfer succeeds one way and reverts the other. The finding names the transfer function and the compared storage reads, so you can see which stored address decides your sale."
+    },
+    "plugin:dev.brandklipparen.transfer-fee": {
+      "title": "Transfer-fee detector",
+      "body": "What it checks: A fee slot set by a privileged caller and used arithmetically in the transfer path. The proof needs both at once: a caller-guarded function that stores a constant slot, and the transfer path loading the same slot beside multiply or divide arithmetic. One finding names the lowest provable slot and reports the max-fee bound when the setter bounds it with a constant compare, or an unknown bound when it does not. Why it matters: A fee on every transfer takes a cut of your sale, and a 100 percent fee is a honeypot: you can buy but never sell for value. The finding names the setter function and the transfer function it feeds, with the bound the setter proves, so you can see the worst case."
+    },
+    "plugin:dev.brandklipparen.transfer-hooks": {
+      "title": "Transfer-hooks detector",
+      "body": "What it checks: External calls reachable in the transfer path. One finding per call kind present in a transfer region carries every call site of that kind as selector evidence with PC offsets, with the best-effort target source of the first site: an address loaded from storage, a pushed constant address, an argument from calldata, or unknown when the window shows none of these. Why it matters: A transfer that calls out can run foreign logic on your sale: a hook contract, an oracle, or a drain. The finding names the transfer function and the call site, with where the target address comes from, so you can see whether the destination is fixed or itself changeable."
+    },
+    "plugin:dev.brandklipparen.transfer-limits": {
+      "title": "Transfer-limits detector",
+      "body": "What it checks: Max-tx and max-wallet limits set by a privileged caller and compared in the transfer path. The proof needs both at once: a caller-guarded function that stores a constant limit slot, and the transfer path loading the same slot beside a less than or greater than compare. One finding names the lowest provable slot with its kind: a compare against a balance mapping lookup reports `max-wallet`, a compare against a calldata value with no mapping read reports `max-tx`, and anything else reports `unknown`. Why it matters: A max-tx limit caps how much you can sell at once, and a max-wallet limit caps how much you can hold: both let the owner shape the market against you. The finding names the setter function and the transfer function it constrains, with the kind the reads prove."
     },
     "template:capability:rug-pull": {
       "title": "Template wording for rug-pull",
@@ -268,10 +349,19 @@ export const EXPLANATION_PAYLOAD = {
   "from": [
     "src/plugins/assessments/hosted-open-weights/PLUGIN.md",
     "src/plugins/assessments/meta-model-api/PLUGIN.md",
+    "src/plugins/detectors/blacklist/PLUGIN.md",
     "src/plugins/detectors/capability/PLUGIN.md",
     "src/plugins/detectors/clone-match/PLUGIN.md",
     "src/plugins/detectors/decompiler/PLUGIN.md",
     "src/plugins/detectors/hard-to-analyze/PLUGIN.md",
+    "src/plugins/detectors/mint/PLUGIN.md",
+    "src/plugins/detectors/ownership/PLUGIN.md",
+    "src/plugins/detectors/pause/PLUGIN.md",
+    "src/plugins/detectors/proxy-upgrade/PLUGIN.md",
+    "src/plugins/detectors/sell-block/PLUGIN.md",
+    "src/plugins/detectors/transfer-fee/PLUGIN.md",
+    "src/plugins/detectors/transfer-hooks/PLUGIN.md",
+    "src/plugins/detectors/transfer-limits/PLUGIN.md",
     "src/domain/explain.ts",
     "src/domain/evidence.ts",
     "src/domain/cantTell.ts",

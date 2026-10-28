@@ -128,4 +128,58 @@ export const TOOL_SECURITY_REVIEWS: Readonly<Record<string, PluginToolSecurityRe
     scope: "read-only detector tool over the shared service, findings filtered to one plugin",
     verdict: "approved",
   }),
+  plugin_dev_brandklipparen_mint: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only detector tool over the shared service, findings filtered to one plugin",
+    verdict: "approved",
+  }),
+  plugin_dev_brandklipparen_blacklist: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only detector tool over the shared service, findings filtered to one plugin",
+    verdict: "approved",
+  }),
+  plugin_dev_brandklipparen_transfer_fee: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only detector tool over the shared service, findings filtered to one plugin",
+    verdict: "approved",
+  }),
+  plugin_dev_brandklipparen_pause: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only detector tool over the shared service, findings filtered to one plugin",
+    verdict: "approved",
+  }),
+  plugin_dev_brandklipparen_transfer_limits: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only detector tool over the shared service, findings filtered to one plugin",
+    verdict: "approved",
+  }),
+  plugin_dev_brandklipparen_ownership: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only detector tool over the shared service, findings filtered to one plugin",
+    verdict: "approved",
+  }),
+  plugin_dev_brandklipparen_transfer_hooks: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only detector tool over the shared service, findings filtered to one plugin",
+    verdict: "approved",
+  }),
+  plugin_dev_brandklipparen_sell_block: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only detector tool over the shared service, findings filtered to one plugin",
+    verdict: "approved",
+  }),
+  plugin_dev_brandklipparen_proxy_upgrade: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only detector tool over the shared service, findings filtered to one plugin",
+    verdict: "approved",
+  }),
 });

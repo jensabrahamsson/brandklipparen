@@ -18,9 +18,18 @@ import type { DetectorPlugin } from "./detector.ts";
 import { hostedOpenWeightsAssessmentPlugin } from "./assessments/hosted-open-weights/index.ts";
 import { metaModelApiAssessmentPlugin } from "./assessments/meta-model-api/index.ts";
 import { capabilityDetectorPlugin } from "./detectors/capability/index.ts";
+import { blacklistDetectorPlugin } from "./detectors/blacklist/index.ts";
 import { cloneMatchDetectorPlugin } from "./detectors/clone-match/index.ts";
 import { decompilerDetectorPlugin } from "./detectors/decompiler/index.ts";
 import { hardToAnalyzeDetectorPlugin } from "./detectors/hard-to-analyze/index.ts";
+import { mintDetectorPlugin } from "./detectors/mint/index.ts";
+import { ownershipDetectorPlugin } from "./detectors/ownership/index.ts";
+import { pauseDetectorPlugin } from "./detectors/pause/index.ts";
+import { proxyUpgradeDetectorPlugin } from "./detectors/proxy-upgrade/index.ts";
+import { sellBlockDetectorPlugin } from "./detectors/sell-block/index.ts";
+import { transferFeeDetectorPlugin } from "./detectors/transfer-fee/index.ts";
+import { transferHooksDetectorPlugin } from "./detectors/transfer-hooks/index.ts";
+import { transferLimitsDetectorPlugin } from "./detectors/transfer-limits/index.ts";
 
 // Typed startup errors (P-02, P-08). Each error names the plugin id, and
 // the version error names both versions, with values kept outside the
@@ -229,16 +238,26 @@ export function registeredPluginIds(registry: PluginRegistry): readonly PluginId
 }
 
 // First-party detector set (S-043, P-12 step 1; S-044, P-12 step 2; S-081,
-// D-07): the capability detector is the first registered detector plugin,
-// followed by the clone-match, decompiler and hard-to-analyze detectors.
-// The list is a frozen
+// D-07; S-115 owner-control pack): the capability detector is the first
+// registered detector plugin, followed by the clone-match, decompiler and
+// hard-to-analyze detectors and the nine owner-control detectors. The list
+// is a frozen
 // static value; configuration selects among registered entries only and
 // never names code to load (P-07). Each entry carries its manifest beside
 // its implementation, so a manifest without an implementation is
 // unrepresentable past the startup builder above.
 export const DEFAULT_DETECTOR_PLUGINS: readonly DetectorPlugin[] = Object.freeze([
   capabilityDetectorPlugin,
+  blacklistDetectorPlugin,
   cloneMatchDetectorPlugin,
   decompilerDetectorPlugin,
   hardToAnalyzeDetectorPlugin,
+  mintDetectorPlugin,
+  ownershipDetectorPlugin,
+  pauseDetectorPlugin,
+  proxyUpgradeDetectorPlugin,
+  sellBlockDetectorPlugin,
+  transferFeeDetectorPlugin,
+  transferHooksDetectorPlugin,
+  transferLimitsDetectorPlugin,
 ]);

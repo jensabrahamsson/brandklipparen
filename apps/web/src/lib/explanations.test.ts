@@ -22,6 +22,15 @@ describe("explanation lookup (S-113)", () => {
       "dev.brandklipparen.clone-match",
       "dev.brandklipparen.decompiler",
       "dev.brandklipparen.hard-to-analyze",
+      "dev.brandklipparen.mint",
+      "dev.brandklipparen.blacklist",
+      "dev.brandklipparen.transfer-fee",
+      "dev.brandklipparen.pause",
+      "dev.brandklipparen.transfer-limits",
+      "dev.brandklipparen.ownership",
+      "dev.brandklipparen.transfer-hooks",
+      "dev.brandklipparen.sell-block",
+      "dev.brandklipparen.proxy-upgrade",
     ]) {
       const entry = explanationFor(`plugin:${id}`);
       expect(entry.title.length).toBeGreaterThan(0);

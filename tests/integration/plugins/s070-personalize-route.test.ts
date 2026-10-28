@@ -141,10 +141,19 @@ describe("POST /v1/personalize mapping route", () => {
       const body = json as { personalize?: { kind?: unknown; spec?: { pluginRanking?: unknown; placements?: unknown[] } } };
       expect(body.personalize?.kind).toBe("ok");
       expect(body.personalize?.spec?.pluginRanking).toEqual([
+        "dev.brandklipparen.transfer-limits",
+        "dev.brandklipparen.transfer-hooks",
+        "dev.brandklipparen.transfer-fee",
+        "dev.brandklipparen.sell-block",
+        "dev.brandklipparen.proxy-upgrade",
+        "dev.brandklipparen.pause",
+        "dev.brandklipparen.ownership",
+        "dev.brandklipparen.mint",
         "dev.brandklipparen.hard-to-analyze",
         "dev.brandklipparen.decompiler",
         "dev.brandklipparen.clone-match",
         "dev.brandklipparen.capability",
+        "dev.brandklipparen.blacklist",
       ]);
       expect(body.personalize?.spec?.placements?.length).toBeGreaterThan(0);
     } finally {

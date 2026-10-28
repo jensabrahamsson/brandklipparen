@@ -141,10 +141,19 @@ describe("registry reconciliation with the reviewed ADR (S-071)", () => {
       throw new Error("expected the composition detector set to build");
     }
     expect(built.value.registry.entries.map((entry) => entry.manifest.id)).toEqual([
+      "dev.brandklipparen.blacklist",
       "dev.brandklipparen.capability",
       "dev.brandklipparen.clone-match",
       "dev.brandklipparen.decompiler",
       "dev.brandklipparen.hard-to-analyze",
+      "dev.brandklipparen.mint",
+      "dev.brandklipparen.ownership",
+      "dev.brandklipparen.pause",
+      "dev.brandklipparen.proxy-upgrade",
+      "dev.brandklipparen.sell-block",
+      "dev.brandklipparen.transfer-fee",
+      "dev.brandklipparen.transfer-hooks",
+      "dev.brandklipparen.transfer-limits",
     ]);
     expect(Object.isFrozen(built.value.registry)).toBe(true);
     expect(wireAppServices.length).toBe(2);

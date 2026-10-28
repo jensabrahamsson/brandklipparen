@@ -79,17 +79,26 @@ export type DetectorPlugin = {
   readonly modulePath?: string | undefined;
 };
 
-// First-party detector ids (S-105): the reviewed in-tree detectors that
-// run on the hot path. Every other registered detector id is
-// non-first-party and the composition routes it through the plugin worker
-// behind the allowlist. This is an execution-routing set, distinct from
-// the scoring set in the application service (only allowlisted findings
-// convert, whatever the route).
+// First-party detector ids (S-105; S-115 owner-control pack): the reviewed
+// in-tree detectors that run on the hot path. Every other registered
+// detector id is non-first-party and the composition routes it through
+// the plugin worker behind the allowlist. This is an execution-routing
+// set, distinct from the scoring set in the application service (only
+// allowlisted findings convert, whatever the route).
 export const FIRST_PARTY_DETECTOR_IDS: readonly string[] = Object.freeze([
   "dev.brandklipparen.capability",
   "dev.brandklipparen.clone-match",
   "dev.brandklipparen.hard-to-analyze",
   "dev.brandklipparen.decompiler",
+  "dev.brandklipparen.mint",
+  "dev.brandklipparen.blacklist",
+  "dev.brandklipparen.transfer-fee",
+  "dev.brandklipparen.pause",
+  "dev.brandklipparen.transfer-limits",
+  "dev.brandklipparen.ownership",
+  "dev.brandklipparen.transfer-hooks",
+  "dev.brandklipparen.sell-block",
+  "dev.brandklipparen.proxy-upgrade",
 ]);
 
 // Isolated worker run behind an injected runner (S-105): the plugin layer

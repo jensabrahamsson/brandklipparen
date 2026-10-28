@@ -1,0 +1,24 @@
+{
+  "pluginWeights": {
+    "dev.brandklipparen.mint": 1.0,
+    "dev.brandklipparen.blacklist": 0.9,
+    "dev.brandklipparen.transfer-fee": 0.6,
+    "dev.brandklipparen.pause": 0.8,
+    "dev.brandklipparen.transfer-limits": 0.5,
+    "dev.brandklipparen.ownership": 0.4,
+    "dev.brandklipparen.transfer-hooks": 0.7,
+    "dev.brandklipparen.sell-block": 1.0,
+    "dev.brandklipparen.proxy-upgrade": 0.9
+  },
+  "pluginFeatureCatalogue": {
+    "dev.brandklipparen.mint": { "risk": "rug-pull", "direction": "raises", "severity": "high" },
+    "dev.brandklipparen.blacklist": { "risk": "honeypot", "direction": "raises", "severity": "high" },
+    "dev.brandklipparen.transfer-fee": { "risk": "honeypot", "direction": "raises", "severity": "medium" },
+    "dev.brandklipparen.pause": { "risk": "honeypot", "direction": "raises", "severity": "high" },
+    "dev.brandklipparen.transfer-limits": { "risk": "honeypot", "direction": "raises", "severity": "medium" },
+    "dev.brandklipparen.ownership": { "risk": "rug-pull", "direction": "raises", "severity": "medium" },
+    "dev.brandklipparen.transfer-hooks": { "risk": "honeypot", "direction": "raises", "severity": "medium" },
+    "dev.brandklipparen.sell-block": { "risk": "honeypot", "direction": "raises", "severity": "high" },
+    "dev.brandklipparen.proxy-upgrade": { "risk": "rug-pull", "direction": "raises", "severity": "high" }
+  }
+}

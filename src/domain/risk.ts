@@ -52,6 +52,17 @@ const SCORE_SCALE = 100;
 // not name carries weight 0 and its findings stay display records; the
 // weight is read from the artifact only, never from the manifest or the
 // finding, so a plugin cannot raise its own influence.
+// `pluginFeatureCatalogue` (S-115) maps an owner-control detector plugin
+// id to the risk, direction and severity its `feature` findings convert
+// with: the single artifact-carried catalogue the conversion reads, so a
+// plugin still cannot steer its own score. Absent entries convert
+// nothing; older artifacts carry no entry and verify unchanged.
+export type PluginFeatureMapping = {
+  readonly risk: RiskType;
+  readonly direction: Direction;
+  readonly severity: Severity;
+};
+
 export type ModelArtifact = {
   readonly version: ModelVersionType;
   readonly severityWeights: Readonly<Record<Severity, number>>;
@@ -60,6 +71,7 @@ export type ModelArtifact = {
   readonly calibration: Readonly<Record<RiskType, CalibrationParams>>;
   readonly scoreWeights: Readonly<Record<RiskType, number>>;
   readonly pluginWeights: Readonly<Record<string, number>>;
+  readonly pluginFeatureCatalogue: Readonly<Record<string, PluginFeatureMapping>>;
 };
 
 export type CalibrationParams = {
@@ -130,16 +142,14 @@ export function parseModelArtifact(input: unknown): Result<ModelArtifact, Domain
     return invalidArtifact("model artifact must be an object");
   }
   const topKeys = Object.keys(input).sort();
-  const expectedTop = ["biases", "calibration", "causeWeights", "scoreWeights", "severityWeights", "version"].sort();
-  const expectedTopWithWeights = [...expectedTop, "pluginWeights"].sort();
+  const expectedBase = ["biases", "calibration", "causeWeights", "scoreWeights", "severityWeights", "version"].sort();
+  const optionalTop = ["pluginWeights", "pluginFeatureCatalogue"];
   const matchesExpected =
-    (topKeys.length === expectedTop.length &&
-      topKeys.every((key, index) => key === expectedTop[index])) ||
-    (topKeys.length === expectedTopWithWeights.length &&
-      topKeys.every((key, index) => key === expectedTopWithWeights[index]));
+    expectedBase.every((key) => topKeys.includes(key)) &&
+    topKeys.every((key) => expectedBase.includes(key) || optionalTop.includes(key));
   if (!matchesExpected) {
     return invalidArtifact(
-      "model artifact must carry exactly version, severityWeights, causeWeights, biases, calibration and scoreWeights with optional pluginWeights",
+      "model artifact must carry exactly version, severityWeights, causeWeights, biases, calibration and scoreWeights with optional pluginWeights and pluginFeatureCatalogue",
     );
   }
   if (typeof input["version"] !== "string") {
@@ -188,6 +198,12 @@ export function parseModelArtifact(input: unknown): Result<ModelArtifact, Domain
   if (pluginWeights === null) {
     return invalidArtifact("model artifact pluginWeights must map plugin ids to finite numbers at least 0");
   }
+  const pluginFeatureCatalogue = readPluginFeatureCatalogue(input["pluginFeatureCatalogue"]);
+  if (pluginFeatureCatalogue === null) {
+    return invalidArtifact(
+      "model artifact pluginFeatureCatalogue must map plugin ids to risk, direction and severity",
+    );
+  }
   return ok(
     Object.freeze({
       version: version.value,
@@ -197,6 +213,7 @@ export function parseModelArtifact(input: unknown): Result<ModelArtifact, Domain
       calibration: Object.freeze(calibration),
       scoreWeights: Object.freeze(scoreWeights),
       pluginWeights: Object.freeze(pluginWeights),
+      pluginFeatureCatalogue: Object.freeze(pluginFeatureCatalogue),
     }),
   );
 }
@@ -214,6 +231,51 @@ function readPluginWeights(raw: unknown): Record<string, number> | null {
       return null;
     }
     out[key] = value;
+  }
+  return out;
+}
+
+const FEATURE_RISKS: readonly string[] = Object.freeze(["rug-pull", "honeypot", "bot-pump"]);
+const FEATURE_DIRECTIONS: readonly string[] = Object.freeze(["raises", "lowers"]);
+const FEATURE_SEVERITIES: readonly string[] = Object.freeze(["low", "medium", "high"]);
+
+// Optional per-plugin feature catalogue (S-115): absent means no feature
+// finding converts. Unknown input gives null; valid input gives the frozen
+// mapping keyed by plugin id.
+function readPluginFeatureCatalogue(raw: unknown): Record<string, PluginFeatureMapping> | null {
+  if (raw === undefined) {
+    return {};
+  }
+  if (!isRecord(raw)) {
+    return null;
+  }
+  const out: Record<string, PluginFeatureMapping> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key.length === 0 || !isRecord(value)) {
+      return null;
+    }
+    const valueKeys = Object.keys(value).sort();
+    if (valueKeys.length !== 3 || valueKeys[0] !== "direction" || valueKeys[1] !== "risk" || valueKeys[2] !== "severity") {
+      return null;
+    }
+    const risk: unknown = value["risk"];
+    const direction: unknown = value["direction"];
+    const severity: unknown = value["severity"];
+    if (
+      typeof risk !== "string" ||
+      typeof direction !== "string" ||
+      typeof severity !== "string" ||
+      !FEATURE_RISKS.includes(risk) ||
+      !FEATURE_DIRECTIONS.includes(direction) ||
+      !FEATURE_SEVERITIES.includes(severity)
+    ) {
+      return null;
+    }
+    out[key] = Object.freeze({
+      risk: risk as PluginFeatureMapping["risk"],
+      direction: direction as PluginFeatureMapping["direction"],
+      severity: severity as PluginFeatureMapping["severity"],
+    });
   }
   return out;
 }
