@@ -462,6 +462,23 @@ B3 and adds no flow. The harness runs on the operator machine only.
 | D | Pathological bytecode binds or crashes the in-process pipeline. | Bounded pure stages under A-17 limits with typed outcomes and labelled fallbacks (H-40, M-46). |
 | E | A suggested AI name feeds back into analysis, or the plugin output steers the score. | Display-only overlay with no field the analysis reads; weight 0 until the artifact names the plugin (H-42, M-48; H-35 discipline). |
 
+### 4.19 New-LP-pairs feed on mainnet (operator polling; candidates never enter analysis)
+
+The feed polls Etherscan API V2 logs (primary) or a JSON-RPC
+`eth_getLogs` fallback, decodes creation events from the pinned
+factories, and emits candidates after first liquidity. Candidates carry
+operational data only; score and evidence are unreachable from the feed
+envelope.
+
+| Cat. | Threat | Handling |
+|---|---|---|
+| S | The Etherscan key or the fallback RPC URL leaks through logs, errors, serialized config, or a checked-in file. | Keys arrive from the environment only, travel as `SecretString`, never appear in errors or serialized config, and the literal WETH address never appears in any tracked file (H-43, M-49). |
+| T | Crafted logs impersonate a factory, quote token, or liquidity event and inject a hostile token into discovery. | Only the seven pinned factories decode, every field passes the strict boundary codec, quote matches are by address never by symbol or name, and handoff waits for first liquidity with reorg orphaning (H-44, H-45, M-50, M-51). |
+| R | A candidate is disputed afterwards (wrong pool, vanished after a reorg). | Every candidate carries block, tx hash, log index, block hash, and dex; re-reads mark `orphaned` on hash change and the candidate key dedupes repeats (H-44, M-50). |
+| I | Feed traffic discloses the operator key or analysis content to a third party. | Key and RPC URL stay server-side, requests carry only factory, block range, and key; responses are validated logs, and candidates hold no score, evidence, or bytecode (H-43, M-49). |
+| D | Polling exceeds the free tier, or backoff failure hammers the provider. | Token bucket (3/s), daily budget (100k), and backoff on rate-limit answers bound every poll; one factory per call and a one-shot CLI with no daemon (H-43, M-49). |
+| E | A feed candidate steers the score, or a fake quote token promotes a hostile pair. | The candidate type has no score, probability, signal, or evidence field; analysis pins `getCode` at the candidate block, and both-or-neither-quote pairs log and skip (H-45, M-51; H-35 discipline). |
+
 ## 5. Threats with countermeasure, requirement ID and test
 
 Every threat states affected flows and boundaries. Every countermeasure states
@@ -1987,6 +2004,83 @@ through plausible naming.
   evidence with naming on, off, invalid, and absent; the unit test
   `d11_naming_without_key_reports_not_configured_and_sends_nothing`.
 
+**H-43 Feed key or fallback URL leaks to logs, errors, or history
+(operator polling, S-087, S-088).**
+The Etherscan key and the fallback RPC URL are bearer credentials;
+a key that reaches a log line, an error message, serialized
+configuration, a recorded fixture, or a tracked file hands a third
+party the operator's quota and request identity. Query-parameter
+transport is required by the Etherscan API, so the secret travels
+in the URL of an HTTPS GET.
+
+- M-49 Env-only key handling with redacted display and paced
+  polling: both values arrive from the environment only
+  (`ETHERSCAN_API_KEY`, `BRANDKLIPPAREN_FEED_RPC_URL`), travel as
+  `SecretString` with the M-11 redaction, and never appear in
+  errors, logs, or serialized configuration (the config error
+  names the variable with values outside the text). The literal
+  WETH address never appears in any tracked file, not even
+  obfuscated; tests use a synthetic fixture address. Polling is
+  paced with a token bucket (3/s), a daily budget (100k), and
+  backoff on rate-limit answers, one factory per call, and the
+  one-shot CLI runs no daemon. Requirement: K-039, K-505,
+  K-504. Test: the unit tests
+  `k039_etherscan_without_key_reports_not_configured_and_sends_nothing`
+  (zero sends without a key),
+  `k039_etherscan_polls_one_factory_per_call_with_token_bucket`,
+  `k039_etherscan_backs_off_on_rate_limit`, and
+  `k039_feed_config_reads_env_keys_without_values_in_errors`.
+
+**H-44 Crafted logs impersonate a factory, pair, or liquidity event
+(untrusted log data, S-089, S-090).**
+Anyone can emit events with factory-like topics; a log that
+decodes as a PairCreated, PoolCreated, or Initialize from an
+unlisted address, a liquidity event without liquidity, or a
+reorged block would inject a hostile or vanished token into
+discovery and waste analysis quota.
+
+- M-50 Pinned factories, strict decoders, gated handoff, and
+  reorg orphaning: only the seven pinned mainnet factories
+  decode (Fraxswap stays opt-in); every log field passes the
+  boundary codec (address, topic, and hash shapes; hex or decimal
+  block fields). Handoff waits for first liquidity (V2 Mint or
+  Sync, V3 Mint, V4 ModifyLiquidity with delta above zero
+  filtered on topic1 equal to the pool id), with a
+  same-transaction fast path and a TTL pending queue otherwise.
+  The candidate key `(txHash, logIndex)` dedupes repeats, each
+  poll re-reads the last blocks, and a block-hash change marks
+  the candidate `orphaned`. Analysis pins `getCode` at the
+  candidate block. Requirement: K-039, K-102. Test: the unit
+  tests
+  `k039_factories_match_mainnet_addresses_without_live_calls`,
+  `k039_liquidity_gate_hands_to_analysis_only_after_first_liquidity`,
+  `k039_same_tx_pair_plus_liquidity_passes_immediately`,
+  `k039_pending_queue_expires_after_ttl`,
+  `k039_candidate_key_dedupes_txhash_logindex`, and
+  `k039_reorg_marks_orphaned_on_blockhash_change`.
+
+**H-45 Fake quote tokens or spoofed quote sides promote a hostile
+pair (untrusted token data, S-086, S-090).**
+Token symbols and names are attacker-controlled, so a hostile
+token named like a stablecoin must never read as the quote side;
+the same holds for an operator-misconfigured WETH quote or a
+native-zero side outside V4.
+
+- M-51 Address-only quote resolution with logged skips: quotes
+  match by pinned address only (USDC, USDT, DAI, operator-set
+  WETH, native zero for V4 only) — never by symbol or name.
+  `BK_WETH_ADDRESS` is validated as an address at startup and
+  reports `WETH quote not configured` when unset. Pairs where
+  both or neither sides are quotes log and skip with a typed
+  reason; V4 `hooks` pass as analysis context only. The feed
+  candidate type carries no score, probability, signal, or
+  evidence field, so promotion can never steer the grade.
+  Requirement: K-039, K-307. Test: the unit tests
+  `k039_quote_tokens_identify_new_token_side`,
+  `k039_quote_both_or_neither_logs_and_skips`,
+  `k039_v4_hooks_stay_context_never_score`, and the property
+  test `k039_feed_leaves_score_and_evidence_unchanged`.
+
 ## 6. Muse contract assessment: bounded MVP feature with both providers
 
 The MVP feature is the button or tab "Muse contract assessment" in
@@ -2397,6 +2491,9 @@ K-5xx to its threats and countermeasures, is in section 12.2 in
 | M-46 Bounded pure pipeline with typed outcomes under the detector limits | H-40 | K-521 (proposed), K-501, K-515 (proposed) | `d12_pathological_bytecode_yields_typed_outcome_or_labelled_fallback` (fuzz) |
 | M-47 Local-bytecode-only harness with a pinned expected version and an isolated home | H-41 | K-521 (proposed), K-506 | `d09_eval_runs_only_on_local_bytecode_without_network_or_llm_flags` (unit) |
 | M-48 Display-only naming overlay, opt-in, never an analysis input | H-42 | K-521 (proposed), K-519 (proposed), K-513 | `d11_suggested_names_never_affect_analysis` (property) |
+| M-49 Env-only feed key handling with redacted display and paced polling | H-43 | K-039, K-505, K-504 | `k039_etherscan_without_key_reports_not_configured_and_sends_nothing` (unit) |
+| M-50 Pinned factories, strict decoders, gated handoff, and reorg orphaning | H-44 | K-039, K-102 | `k039_liquidity_gate_hands_to_analysis_only_after_first_liquidity` (unit) |
+| M-51 Address-only quote resolution with logged skips, score-neutral by type | H-45 | K-039, K-307 | `k039_feed_leaves_score_and_evidence_unchanged` (property) |
 
 Every row in the table is included in the suite or the gate as per A-22
 and I-01. A change that activates a new component, port or

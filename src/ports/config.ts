@@ -2,7 +2,7 @@
 // The schema mirrors the variable table in docs/infrastructure.md (I-08).
 // Secrets travel wrapped in SecretString so they can never be printed or
 // serialized by accident; only an explicit reveal() call exposes the value.
-import type { ChainId, IndexVersion, ModelId, ModelVersion, PromptVersion } from "../domain/types.ts";
+import type { Address, ChainId, IndexVersion, ModelId, ModelVersion, PromptVersion } from "../domain/types.ts";
 
 // Fixed marker written wherever a secret value would otherwise appear.
 export const REDACTED = "[REDACTED]";
@@ -119,6 +119,14 @@ export type AppConfig = {
   readonly investigateToolTimeoutMs?: number;
   readonly investigatePromptVersion?: PromptVersion;
   readonly investigateDailyCapPerKey?: number;
+  // New-LP-pairs feed on mainnet (S-087, S-088, K-039, K-505): all
+  // optional in every setup. An absent Etherscan key or fallback URL
+  // leaves the feed answering `not-configured` with zero sends instead
+  // of failing startup; an absent WETH quote leaves the WETH side
+  // unresolvable with the same typed outcome.
+  readonly feedEtherscanApiKey?: SecretString;
+  readonly feedRpcUrl?: SecretString;
+  readonly feedWethAddress?: Address;
 };
 
 // Kept for traceability: docs/architecture.md (A-05) names this value DriftConfig.

@@ -6,6 +6,7 @@
 // lookup, no filesystem reads, no network calls. Startup errors name the
 // variable with values kept outside the error text (threat-model M-11).
 import {
+  Address,
   ChainId,
   IndexVersion,
   ModelId,
@@ -85,6 +86,19 @@ function mapDomain<T>(name: string, reason: string, parsed: Result<T, DomainErro
     return ok(parsed.value);
   }
   return err(invalid(name, reason));
+}
+
+// Chain ids are constrained to Ethereum mainnet (S-091, K-001): the
+// declared return type keeps the parse callback single-expression, so
+// the requiredWhen inference stays exact.
+function mapChainId(parsed: Result<number, ConfigError>): Result<ChainId, ConfigError> {
+  if (!parsed.ok) {
+    return parsed;
+  }
+  if (parsed.value !== 1) {
+    return err(invalid(V.chainId, "must be 1 (Ethereum mainnet only)"));
+  }
+  return mapDomain(V.chainId, "must be a positive integer", ChainId.of(parsed.value));
 }
 
 function parseEnum<T extends string>(
@@ -271,6 +285,9 @@ const V = {
   investigateMaxSteps: "BRANDKLIPPAREN_INVESTIGATE_MAX_STEPS",
   investigatePromptVersion: "BRANDKLIPPAREN_INVESTIGATE_PROMPT_VERSION",
   investigateDailyCapPerKey: "BRANDKLIPPAREN_INVESTIGATE_DAILY_CAP_PER_KEY",
+  feedEtherscanApiKey: "ETHERSCAN_API_KEY",
+  feedRpcUrl: "BRANDKLIPPAREN_FEED_RPC_URL",
+  feedWethAddress: "BK_WETH_ADDRESS",
   investigateMaxTokens: "BRANDKLIPPAREN_INVESTIGATE_MAX_TOKENS",
   investigateToolTimeoutMs: "BRANDKLIPPAREN_INVESTIGATE_TOOL_TIMEOUT_MS",
 } as const;
@@ -361,13 +378,12 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     return apiKeys;
   }
 
-  const chainId = requiredWhen(env, V.chainId, isDemo, (raw) => {
-    const asInt = parseInteger(V.chainId, raw, 1, 2147483647);
-    if (!asInt.ok) {
-      return asInt;
-    }
-    return mapDomain(V.chainId, "must be a positive integer", ChainId.of(asInt.value));
-  });
+  // Mainnet only (S-091, K-001): the product analyses Ethereum
+  // mainnet (chainId 1) and turns every other chain id away with a
+  // typed error naming the variable.
+  const chainId = requiredWhen(env, V.chainId, isDemo, (raw) =>
+    mapChainId(parseInteger(V.chainId, raw, 1, 2147483647)),
+  );
   if (!chainId.ok) {
     return chainId;
   }
@@ -689,6 +705,32 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!investigateDailyCapPerKey.ok) {
     return investigateDailyCapPerKey;
   }
+  // New-LP-pairs feed keys (S-087, S-088, K-039, K-505): optional in
+  // every setup, so local and CI runs stay key-free with the feed
+  // answering `not-configured`. The WETH quote arrives from operator
+  // configuration and is validated as an address at startup.
+  const feedEtherscanApiKey = optionalField(env, V.feedEtherscanApiKey, (raw) =>
+    parseSecret(V.feedEtherscanApiKey, raw),
+  );
+  if (!feedEtherscanApiKey.ok) {
+    return feedEtherscanApiKey;
+  }
+  const feedRpcUrl = optionalField(env, V.feedRpcUrl, (raw) => {
+    const parsed = parseHttpsUrl(V.feedRpcUrl, raw);
+    if (!parsed.ok) {
+      return parsed;
+    }
+    return ok(new SecretString(parsed.value));
+  });
+  if (!feedRpcUrl.ok) {
+    return feedRpcUrl;
+  }
+  const feedWethAddress = optionalField(env, V.feedWethAddress, (raw) =>
+    mapDomain(V.feedWethAddress, "must be a 0x address", Address.parse(raw)),
+  );
+  if (!feedWethAddress.ok) {
+    return feedWethAddress;
+  }
 
   const config: AppConfig = {
     env: envName,
@@ -821,6 +863,11 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(investigateDailyCapPerKey.value === undefined
       ? {}
       : { investigateDailyCapPerKey: investigateDailyCapPerKey.value }),
+    ...(feedEtherscanApiKey.value === undefined
+      ? {}
+      : { feedEtherscanApiKey: feedEtherscanApiKey.value }),
+    ...(feedRpcUrl.value === undefined ? {} : { feedRpcUrl: feedRpcUrl.value }),
+    ...(feedWethAddress.value === undefined ? {} : { feedWethAddress: feedWethAddress.value }),
   };
 
   if (config.rpcUrls !== undefined) {

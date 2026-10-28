@@ -256,7 +256,7 @@ describe("typed config and secret handling at startup (K-505, K-510)", () => {
       if (trimmed === "" || trimmed.startsWith("#")) {
         continue;
       }
-      const match = /^(BRANDKLIPPAREN_[A-Z0-9_]+)=$/.exec(trimmed);
+      const match = /^((?:BRANDKLIPPAREN|BK)_[A-Z0-9_]+|ETHERSCAN_API_KEY)=$/.exec(trimmed);
       expect(match).not.toBeNull();
       names.add(match?.[1] ?? "");
     }

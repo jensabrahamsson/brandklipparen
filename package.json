@@ -10,6 +10,7 @@
     "freeze-artifact": "node --experimental-strip-types scripts/freeze-artifact.ts",
     "evaluate-metrics": "node --experimental-strip-types scripts/evaluate-metrics.ts",
     "audit:plugins": "node --experimental-strip-types scripts/plugin-audit.ts --all",
+    "feed:once": "node --experimental-strip-types scripts/feed-once.ts",
     "check": "npm run lint && npm run typecheck && npm test",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
