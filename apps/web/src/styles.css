@@ -514,3 +514,134 @@ pre.code {
     animation: none !important;
   }
 }
+
+/* Explanations (S-113): a small trigger beside the explained item. The
+   text opens below the trigger so it never covers the numbers beside it,
+   and renders as plain text on a panel background. */
+.explain {
+  position: relative;
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: baseline;
+}
+
+.explain-trigger {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--brand);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.explain-trigger:hover {
+  border-color: var(--brand);
+}
+
+.explain-trigger:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.explain-tooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -8px;
+  z-index: 20;
+  width: max-content;
+  max-width: 280px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  text-align: left;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.explain-tooltip strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Calm default depth (S-114): layered soft shadows on cards. Tilt only
+   applies while the tilt hook marks the hovered card .tilt-live, so an
+   untouched card always computes to transform none. Only the card plane
+   rotates a few degrees; glyphs inside stay untransformed and readable. */
+.card {
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 35%),
+    0 10px 28px rgb(0 0 0 / 28%);
+}
+
+.card[data-tilt],
+.cant-tell[data-tilt] {
+  transform: none;
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease;
+  will-change: transform;
+}
+
+.card[data-tilt].tilt-live,
+.cant-tell[data-tilt].tilt-live {
+  transform: perspective(900px) rotateX(var(--tilt-rx, 0deg)) rotateY(var(--tilt-ry, 0deg));
+  box-shadow:
+    0 2px 4px rgb(0 0 0 / 40%),
+    0 18px 44px rgb(0 0 0 / 38%);
+}
+
+/* Shared scene depth for tilted cards on wide layouts. */
+@media (min-width: 901px) {
+  .token-grid.parallax {
+    perspective: 1400px;
+  }
+}
+
+/* Investigate-loop graph (S-114): the step list is the 3D scene. Steps
+   recede along the depth axis while every node faces the reader, so the
+   labels stay flat. Without 3D support the same list renders flat. */
+ol.graph3d {
+  list-style: none;
+  padding-left: 0;
+  perspective: 900px;
+  transform-style: preserve-3d;
+}
+
+ol.graph3d .graph3d-node {
+  transform: translateZ(var(--depth, 0px));
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 35%),
+    0 8px 22px rgb(0 0 0 / 30%);
+}
+
+@supports not (transform-style: preserve-3d) {
+  ol.graph3d {
+    perspective: none;
+  }
+
+  ol.graph3d .graph3d-node {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card[data-tilt],
+  .card[data-tilt].tilt-live,
+  .cant-tell[data-tilt],
+  .cant-tell[data-tilt].tilt-live,
+  ol.graph3d,
+  ol.graph3d .graph3d-node {
+    transform: none !important;
+  }
+}

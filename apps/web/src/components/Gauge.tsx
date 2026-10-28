@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { riskBand } from "../lib/risk.ts";
 import type { RiskKind } from "../types.ts";
+import { Explain } from "./Explain.tsx";
 
 // One risk gauge (K-021): probability as a half-arc, signal count and one
 // plain-text reason. No needle, no gradients: an arc in the band color.
@@ -26,8 +27,10 @@ export function Gauge({
   const color = band.word === "Low" ? "var(--low)" : band.word === "Elevated" ? "var(--elevated)" : "var(--high)";
   const signalWord = signalCount === 1 ? "signal" : "signals";
   return (
-    <section className="card gauge" aria-label={`${TITLES[kind]} gauge: ${percent} percent`}>
-      <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>{TITLES[kind]}</h3>
+    <section className="card gauge" data-tilt aria-label={`${TITLES[kind]} gauge: ${percent} percent`}>
+      <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>
+        <span>{TITLES[kind]}</span> <Explain explainKey={`score:gauge:${kind}`} label={`${TITLES[kind]} gauge`} />
+      </h3>
       <p className="quiet numeric" style={{ margin: "0 0 12px" }}>
         {signalCount} {signalWord}
       </p>

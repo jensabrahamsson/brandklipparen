@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import type { ExplanationClaim } from "../types.ts";
+import { Explain } from "./Explain.tsx";
 
 // Full template explanation (design review P0-4): every claim renders,
 // labelled with its template version. Temporality uses plain words, and
@@ -14,8 +15,10 @@ export function ExplanationList({
   readonly onSignalLink: (signalId: string) => void;
 }): JSX.Element {
   return (
-    <section className="card" aria-label={`Template explanation · v${templateVersion}`} style={{ marginBottom: 20 }}>
-      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Why this score</h2>
+    <section className="card" data-tilt aria-label={`Template explanation · v${templateVersion}`} style={{ marginBottom: 20 }}>
+      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
+        <span>Why this score</span> <Explain explainKey="explanation:claim" label="Template claims" />
+      </h2>
       <p className="quiet numeric" style={{ margin: "0 0 12px" }}>
         Template explanation · v{templateVersion} · {claims.length} {claims.length === 1 ? "claim" : "claims"}
       </p>

@@ -1,6 +1,7 @@
 import { useState, type JSX } from "react";
 import { signalTitle } from "../lib/signals.ts";
 import type { Signal } from "../types.ts";
+import { Explain } from "./Explain.tsx";
 
 // Expandable signal and evidence list. Every contract-derived string
 // renders as React text only, so hostile content stays inert: no HTML
@@ -85,12 +86,14 @@ export function SignalList({
             </p>
             {line !== undefined ? (
               <p className="muted" style={{ margin: "4px 0 0", fontSize: 14 }}>
-                Template: {line}
+                Template: {line} <Explain explainKey="explanation:claim" label="Template sentence" />
               </p>
             ) : null}
             {expanded ? (
               <div>
-                <h4 className="quiet">EVIDENCE IN BYTECODE</h4>
+                <h4 className="quiet">
+                  EVIDENCE IN BYTECODE <Explain explainKey="evidence:selector" label="Evidence rows" />
+                </h4>
                 <ul className="mono numeric" style={{ listStyle: "none", padding: 0, fontSize: 13 }}>
                   {signal.evidence.map((entry, index) => (
                     <li key={`${entry.selector}-${index}`}>
@@ -99,7 +102,9 @@ export function SignalList({
                     </li>
                   ))}
                 </ul>
-                <h4 className="quiet">DECOMPILED SNIPPET</h4>
+                <h4 className="quiet">
+                  DECOMPILED SNIPPET <Explain explainKey="evidence:snippet" label="Decompiled snippet" />
+                </h4>
                 <p className="muted" style={{ fontSize: 13, margin: "0 0 8px" }}>
                   {snippetText}
                 </p>

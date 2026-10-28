@@ -33,6 +33,8 @@ import { ScoreRing } from "../components/ScoreRing.tsx";
 import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
 import { Sidebar } from "../components/Sidebar.tsx";
 import { SignalList } from "../components/SignalList.tsx";
+import { Explain } from "../components/Explain.tsx";
+import { useTiltGroup } from "../lib/tilt.ts";
 import type { AnalyzeResult, AssessmentState, InvestigationState, InvestigationStep, ProviderInfo, RiskKind } from "../types.ts";
 
 const RISKS: readonly RiskKind[] = ["rug-pull", "honeypot", "bot-pump"];
@@ -578,13 +580,15 @@ function AssessedView({
   const ringRef = useRef<HTMLElement | null>(null);
   const ringGone = useRingOutOfView(ringRef, tab);
   const stripVisible = tab === "assessment" || tab === "investigate" || ringGone;
+  const tiltRef = useTiltGroup<HTMLDivElement>();
   return (
-    <div>
+    <div ref={tiltRef}>
       {stripVisible ? (
         <div className="compact-strip" aria-label="Result summary" data-testid="result-summary">
           <span className="numeric">
             <strong>{result.score}</strong> {riskWord(result.score)}
           </span>
+          <Explain explainKey="score:strip" label="Result summary" />
           <span className="numeric compact-strip-probs">
             {RISKS.map((risk) => `${RISK_SHORT[risk]} ${Math.round(result.probabilities[risk] * 100)}%`).join(" · ")}
           </span>
@@ -767,12 +771,12 @@ function OverviewSections({
   const blocks: Record<string, JSX.Element> = {
     score: (
       <>
-        <section className="card" aria-label="Combined score" ref={ringRef} style={{ marginBottom: 20 }}>
+        <section className="card" data-tilt aria-label="Combined score" ref={ringRef} style={{ marginBottom: 20 }}>
           <div className="score-ring-wrap">
             <ScoreRing score={result.score} />
             <div style={{ flex: "1 1 240px" }}>
               <p className="risk-meaning" style={{ fontSize: 22, fontWeight: 600, margin: "0 0 8px" }}>
-                {meaningSentence(result)}
+                <span>{meaningSentence(result)}</span> <Explain explainKey="score:combined" label="Combined score" />
               </p>
               <p className="muted" style={{ margin: "0 0 8px" }}>
                 {combinedScoreLine(result.score, result.probabilities)}
@@ -819,8 +823,10 @@ function OverviewSections({
       />
     ),
     signals: (
-      <section className="card" aria-label="Signals" style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Signals</h2>
+      <section className="card" data-tilt aria-label="Signals" style={{ marginBottom: 20 }}>
+        <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
+          <span>Signals</span> <Explain explainKey="evidence:selector" label="Signals" />
+        </h2>
         <p className="quiet numeric" style={{ margin: "0 0 8px" }}>
           {result.signals.length} found · sorted by impact on the score
         </p>
@@ -836,7 +842,7 @@ function OverviewSections({
       </section>
     ),
     "plugin-findings": (
-      <section className="card" aria-label="Plugins section" style={{ marginBottom: 20 }}>
+      <section className="card" data-tilt aria-label="Plugins section" style={{ marginBottom: 20 }}>
         <PluginsPanel
           plugins={plugins}
           results={pluginViews}
@@ -852,7 +858,7 @@ function OverviewSections({
   return (
     <div>
       <PrioritiesField value={priorities} onChange={onPrioritiesChange} onClear={onPrioritiesClear} />
-      <div className="token-grid">
+      <div className="token-grid parallax">
         <div>
           {shownSections.map((sectionId) => {
             const collapsedByAi = collapsed.has(sectionId) && !aiExpanded.has(sectionId);

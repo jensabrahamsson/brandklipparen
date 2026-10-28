@@ -1,6 +1,7 @@
 import type { JSX } from "react";
 import { applyPersonalizedOrder } from "../lib/matcher.ts";
 import { SchemaValue } from "./SchemaValue.tsx";
+import { Explain } from "./Explain.tsx";
 
 // Generic plugins panel (S-046): renders the registry plugin list beside
 // the analysis pluginResults with no per-plugin UI code. Every plugin
@@ -78,7 +79,8 @@ function ResultBlock({
     <ul className="mono" style={{ listStyle: "none", padding: 0, fontSize: 13 }}>
       {findings.map((finding) => (
         <li key={finding.id}>
-          {finding.title}
+          {finding.title}{" "}
+          <Explain explainKey="evidence:payload" label={`Finding ${finding.id}`} />
           {finding.payload === undefined ? null : (
             <div style={{ margin: "4px 0 4px 12px" }}>
               <SchemaValue value={finding.payload} schema={payloadSchemaOf(outputSchema)} />
@@ -88,7 +90,8 @@ function ResultBlock({
             {finding.evidence.map((entry, index) => (
               <li key={`${entry.selector}-${index}`} className="quiet">
                 {entry.selector}
-                {entry.offset === null ? "" : ` · PC 0x${entry.offset.toString(16)}`}
+                {entry.offset === null ? "" : ` · PC 0x${entry.offset.toString(16)}`}{" "}
+                <Explain explainKey="evidence:offset" label="Bytecode offset" />
               </li>
             ))}
           </ul>
@@ -161,7 +164,9 @@ export function PluginsPanel({
         const tags = active ? (matchedTags?.get(plugin.id) ?? []) : [];
         return (
           <article key={plugin.id}>
-            <h3 style={{ fontSize: 15 }}>{plugin.displayName}</h3>
+            <h3 style={{ fontSize: 15 }}>
+              <span>{plugin.displayName}</span> <Explain explainKey={`plugin:${plugin.id}`} label={plugin.displayName} />
+            </h3>
             <p className="quiet" style={{ margin: "4px 0 0", fontSize: 13 }}>
               {plugin.id} · v{plugin.version}
             </p>

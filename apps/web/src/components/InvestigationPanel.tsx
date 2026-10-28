@@ -1,5 +1,7 @@
-import type { JSX } from "react";
+import type { CSSProperties, JSX } from "react";
 import type { InvestigationState, InvestigationStep } from "../types.ts";
+import { Explain } from "./Explain.tsx";
+import { useReducedMotion } from "../lib/tilt.ts";
 
 // Investigation loop in its own tab: the opt-in runtime agent loop over
 // the frozen deterministic result. The panel never receives score,
@@ -7,18 +9,34 @@ import type { InvestigationState, InvestigationStep } from "../types.ts";
 // the deterministic result. Tool rationales and the narrative are model
 // text and render as text only: React escapes them by default, and this
 // panel uses no raw-HTML rendering path anywhere.
+//
+// The trace renders as a calm real 3D graph: steps recede along the depth
+// axis inside a perspective scene while every node card faces the reader,
+// so labels stay flat and readable. Reduced motion (or no 3D support in
+// CSS) falls back to the plain 2D list with the same items and order.
 function StepGraph({ steps }: { readonly steps: readonly InvestigationStep[] }): JSX.Element | null {
+  const reduced = useReducedMotion();
   if (steps.length === 0) {
     return null;
   }
   return (
-    <ol aria-label="Investigation steps" style={{ margin: "12px 0", paddingLeft: 24 }}>
-      {steps.map((step) => (
-        <li key={step.step} style={{ marginBottom: 8 }}>
+    <ol
+      aria-label="Investigation steps"
+      data-graph={reduced ? "2d" : "3d"}
+      className={reduced ? undefined : "graph3d"}
+      style={{ margin: "12px 0", paddingLeft: 24 }}
+    >
+      {steps.map((step, index) => (
+        <li
+          key={step.step}
+          className={reduced ? undefined : "graph3d-node"}
+          style={reduced ? { marginBottom: 8 } : ({ "--depth": `${index * -70}px`, marginBottom: 8 } as CSSProperties)}
+        >
           <p style={{ margin: 0 }}>
             <strong>
               Step {step.step}: {step.toolId}
-            </strong>
+            </strong>{" "}
+            <Explain explainKey="investigation:step" label={`Investigation step ${step.step}`} />
           </p>
           <p className="muted" style={{ margin: "2px 0" }}>
             {step.rationale}
@@ -43,7 +61,7 @@ export function InvestigationPanel({
 }): JSX.Element {
   void score;
   return (
-    <section className="card" aria-label="Investigation">
+    <section className="card" data-tilt aria-label="Investigation">
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Investigate with Muse</h2>
       {state.status === "idle" ? (
         <div>
@@ -112,7 +130,9 @@ export function InvestigationPanel({
             </span>
           </p>
           <StepGraph steps={state.steps} />
-          <h3 style={{ fontSize: 16, margin: "12px 0 4px" }}>Checked narrative</h3>
+          <h3 style={{ fontSize: 16, margin: "12px 0 4px" }}>
+            <span>Checked narrative</span> <Explain explainKey="investigation:narrative" label="Checked narrative" />
+          </h3>
           {state.narrative.length > 0 ? (
             <p style={{ margin: "0 0 4px" }}>{state.narrative}</p>
           ) : (
