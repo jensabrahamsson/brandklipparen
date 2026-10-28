@@ -1,6 +1,26 @@
-{
-  "functions": [
-    { "selector": "0xa9059cbb", "name": "transfer" },
-    { "selector": "0x70a08231", "name": "balanceOf" }
-  ]
-}
+[
+  {
+    "type": "function",
+    "name": "transfer",
+    "inputs": [{ "type": "address" }, { "type": "uint256" }],
+    "outputs": [{ "type": "bool" }],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "balanceOf",
+    "inputs": [{ "type": "address" }],
+    "outputs": [{ "type": "uint256" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "Transfer",
+    "inputs": [
+      { "name": "from", "type": "address", "indexed": true },
+      { "name": "to", "type": "address", "indexed": true },
+      { "name": "value", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false
+  }
+]

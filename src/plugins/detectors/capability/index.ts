@@ -9,7 +9,7 @@
 // domain types and pure functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
+import { containingSelector, disassemble, extractSelectors } from "../../../domain/selectors.ts";
 import { CAPABILITY_KEYS } from "../../../domain/signals.ts";
 import type { CapabilityKey } from "../../../domain/signals.ts";
 import { PcOffset } from "../../../domain/types.ts";
@@ -110,10 +110,12 @@ function toNonEmpty(items: EvidenceType[]): NonEmpty<EvidenceType> | null {
 // evidence order, final sort on the namespaced finding id. Bytecode without
 // selectors yields no findings, since a finding without selector evidence
 // is unrepresentable. Each opcode occurrence becomes one evidence entry
-// pairing the occurrence PC offset with a selector in round-robin order,
-// so the offset travels with the finding wherever it is derivable. This
-// mirrors the legacy domain sweep entry for entry, so the host conversion
-// through the catalogue reproduces the same Signals.
+// pairing the occurrence PC offset with the selector of the dispatcher
+// function holding that PC, so the evidence names the function the
+// capability sits in; occurrences outside every function range keep the
+// positional fallback. This mirrors the legacy domain sweep entry for
+// entry, so the host conversion through the catalogue reproduces the same
+// Signals.
 function detect(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -142,7 +144,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
     const evidence: EvidenceType[] = [];
     for (let index = 0; index < pcs.length; index += 1) {
       const pc = pcs[index] ?? 0;
-      const selector = selectors[index % selectors.length];
+      const selector = containingSelector(entries, pc) ?? selectors[index % selectors.length];
       if (selector === undefined) {
         continue;
       }

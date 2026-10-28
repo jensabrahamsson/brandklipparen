@@ -268,3 +268,29 @@ export function extractSelectors(bytecode: Bytecode): readonly SelectorEntry[] {
   });
   return found;
 }
+
+// Attribute one occurrence PC to the dispatcher function holding it: the
+// paired entry with the greatest jump target at or below the PC. Function
+// bodies follow their entry points in order, so an occurrence belongs to
+// the last function entered at or before it. Returns null when no paired
+// entry sits at or below the PC (dispatcher preamble or selector-less
+// code): the caller keeps its own fallback so every occurrence still
+// carries an offset beside a selector.
+export function containingSelector(
+  entries: readonly SelectorEntry[],
+  pc: number,
+): SelectorType | null {
+  let holder: SelectorType | null = null;
+  let best = -1;
+  for (const entry of entries) {
+    if (entry.kind !== "paired") {
+      continue;
+    }
+    const target = entry.target as number;
+    if (target <= pc && target > best) {
+      best = target;
+      holder = entry.selector;
+    }
+  }
+  return holder;
+}

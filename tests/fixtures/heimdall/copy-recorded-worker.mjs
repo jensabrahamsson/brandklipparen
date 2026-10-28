@@ -3,7 +3,7 @@
 // directory the adapter passes, after an artificial delay. The delay makes
 // the concurrency cap observable: with maxConcurrency 1 two overlapping
 // runs take at least twice the delay. Test-only; never shipped.
-import { cpSync, mkdirSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync } from "node:fs";
 
 const args = process.argv.slice(2);
 
@@ -27,7 +27,11 @@ if (from === null || output === null) {
 
 mkdirSync(output, { recursive: true });
 cpSync(`${from}/abi.json`, `${output}/abi.json`);
-cpSync(`${from}/decompiled.sol`, `${output}/decompiled.sol`);
+// A real run without `--include-sol` writes no `decompiled.sol`; the
+// recorded directory may hold one anyway, but the adapter never reads it.
+if (existsSync(`${from}/decompiled.sol`)) {
+  cpSync(`${from}/decompiled.sol`, `${output}/decompiled.sol`);
+}
 setTimeout(() => {
   process.exit(0);
 }, Number.isSafeInteger(delayMs) && delayMs >= 0 ? delayMs : 800);

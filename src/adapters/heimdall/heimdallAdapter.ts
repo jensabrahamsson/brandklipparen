@@ -7,7 +7,9 @@
 // parallel analyses continue. The worker receives the bytecode hex on argv
 // and writes its parsed output files (`abi.json` plus `decompiled.sol`)
 // into an adapter-owned output directory the invocation names with
-// `--output`. The child starts with an empty environment, so no process
+// `--output`. The parsed output file is `abi.json` as a standard ABI
+// array (real extdecomp 0.9.1 shape); no `--include-sol` is passed, so no
+// `decompiled.sol` is written or read. The child starts with an empty environment, so no process
 // secret can leak into the worker; outbound networking and filesystem
 // restrictions for the real binary live in the platform sandbox per I-11
 // (M-01). The real extdecomp binary is not installed here and is never
@@ -22,7 +24,11 @@ import { join } from "node:path";
 import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import { CodeSnippet } from "../../domain/evidence.ts";
-import { DEFAULT_MAX_BYTECODE_BYTES, Selector } from "../../domain/types.ts";
+import {
+  DEFAULT_MAX_BYTECODE_BYTES,
+  Selector,
+  keccak256HexOfUtf8,
+} from "../../domain/types.ts";
 import type {
   Bytecode as BytecodeType,
   CodeHash as CodeHashType,
@@ -233,9 +239,28 @@ export class extdecompAdapter implements DecompilerPort {
       const hex = `0x${bytesToHex(bytecode)}`;
       let child: ChildProcess;
       try {
+        // Local-bytecode-only invocation: the target is always hex from the
+        // port input, never an address, ENS name or RPC endpoint. The flags
+        // keep the run offline and non-interactive: `--skip-resolving`
+        // skips the remote selector lookup, `-d` answers every prompt with
+        // the default, `--color never` keeps escape codes out of the files,
+        // and `--output` names the adapter-owned output directory. No
+        // `--include-sol` is passed: the adapter parses `abi.json` only, so
+        // the run skips the per-function symbolic execution and the output
+        // stays far inside the output and time limits.
         child = spawn(
           this.binaryPath,
-          [...this.binaryArgs, "decompile", hex, "--output", outputDir],
+          [
+            ...this.binaryArgs,
+            "decompile",
+            hex,
+            "--output",
+            outputDir,
+            "--skip-resolving",
+            "-d",
+            "--color",
+            "never",
+          ],
           {
             stdio: ["ignore", "pipe", "ignore"],
             shell: false,
@@ -289,13 +314,14 @@ export class extdecompAdapter implements DecompilerPort {
   }
 
   // Strict boundary check at the port boundary (A-16, S-102): the
-  // `decompile` output directory holds exactly `abi.json` (the function
-  // list with one valid selector per entry) beside `decompiled.sol` (one
-  // `// function <selector>` section per entry). Each function carries a
-  // valid selector plus a well-formed snippet drawn from its section.
-  // Hostile or distorted output is turned away with invalid-output before
-  // it reaches the core (M-02); files past the output limit are turned
-  // away as output-too-large without being parsed.
+  // `decompile` output directory holds `abi.json` as a standard ABI array
+  // (`[{type, name, inputs, outputs, stateMutability}, ...]`), the shape
+  // real extdecomp 0.9.1 writes. Each function entry carries a valid
+  // selector derived from its name plus a well-formed snippet holding the
+  // canonical signature; entries of any other type (events, errors) are
+  // skipped. Hostile or distorted output is turned away with
+  // invalid-output before it reaches the core (M-02); files past the
+  // output limit are turned away as output-too-large without being parsed.
   private parseOutputFiles(
     outputDir: string,
     codeHash: CodeHashType,
@@ -304,48 +330,40 @@ export class extdecompAdapter implements DecompilerPort {
     if (!abi.ok) {
       return err(abi.error);
     }
-    const sol = this.readOutputFile(outputDir, "decompiled.sol");
-    if (!sol.ok) {
-      return err(sol.error);
-    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(abi.value.text) as unknown;
     } catch {
       return err(invalidOutput("abi.json is not valid JSON"));
     }
-    if (!isRecord(parsed) || !Array.isArray(parsed["functions"])) {
-      return err(invalidOutput("abi.json holds no functions array"));
+    if (!Array.isArray(parsed)) {
+      return err(invalidOutput("abi.json holds no ABI array"));
     }
-    const sections = splitSolSections(sol.value.text);
     const seen = new Set<string>();
     const functions: DecompiledFunction[] = [];
-    for (const entry of parsed["functions"]) {
-      if (!isRecord(entry) || typeof entry["selector"] !== "string") {
-        return err(invalidOutput("abi.json holds a function without a selector"));
+    for (let index = 0; index < parsed.length; index += 1) {
+      const entry = parsed[index] as unknown;
+      if (!isRecord(entry) || entry["type"] !== "function") {
+        continue;
       }
-      const selector = Selector.parse(entry["selector"]);
-      if (!selector.ok) {
-        return err(invalidOutput("abi.json holds no valid selector"));
+      const derived = deriveFunctionSelector(entry);
+      if (!derived.ok) {
+        return err(invalidOutput(derived.reason));
       }
-      const key = selector.value as string;
+      const key = derived.selector as string;
       if (seen.has(key)) {
         return err(invalidOutput("abi.json repeats a selector"));
       }
       seen.add(key);
-      const section = sections.get(key.toLowerCase());
-      if (section === undefined || section.text.length === 0) {
-        return err(invalidOutput("decompiled.sol holds no body for a listed selector"));
-      }
       const snippet = CodeSnippet.create({
-        text: section.text,
-        line: section.line,
-        selector: selector.value,
+        text: derived.signature,
+        line: index,
+        selector: derived.selector,
       });
       if (!snippet.ok) {
         return err(invalidOutput("holds a snippet the core turns away"));
       }
-      functions.push(Object.freeze({ selector: selector.value, snippet: snippet.value }));
+      functions.push(Object.freeze({ selector: derived.selector, snippet: snippet.value }));
     }
     return ok(Object.freeze({ codeHash, functions: Object.freeze(functions) }));
   }
@@ -376,34 +394,76 @@ export class extdecompAdapter implements DecompilerPort {
   }
 }
 
-// One `// function <selector>` section per function (S-102): the marker
-// line opens the section and every following line up to the next marker
-// is the function body. The snippet text is the trimmed body and the
-// snippet line is the marker's zero-based line number.
-function splitSolSections(
-  text: string,
-): Map<string, { readonly text: string; readonly line: number }> {
-  const bodies = new Map<string, { readonly lines: string[]; readonly line: number }>();
-  let current: string | null = null;
-  for (const [index, line] of text.split("\n").entries()) {
-    const marker = line.match(/^\/\/\s*function\s+(0x[0-9a-fA-F]{8})\s*$/);
-    if (marker !== null) {
-      current = (marker[1] ?? "").toLowerCase();
-      if (!bodies.has(current)) {
-        bodies.set(current, { lines: [], line: index });
-      }
-      continue;
-    }
-    if (current !== null) {
-      bodies.get(current)?.lines.push(line);
-    }
+// Selector derivation for one ABI function entry (real extdecomp 0.9.1
+// shape). Entries the resolver left unnamed carry the selector as
+// `Unresolved_<8 hex>` and yield it directly; resolved entries name the
+// function, so the selector is the first four bytes of keccak256 over the
+// canonical signature `name(type,...)` built from the input types (tuple
+// inputs expand through their components). The canonical signature also
+// becomes the snippet the deepening attaches to evidence.
+function deriveFunctionSelector(
+  entry: Record<string, unknown>,
+): { ok: true; selector: Selector; signature: string } | { ok: false; reason: string } {
+  const name = entry["name"];
+  if (typeof name !== "string" || name.length === 0) {
+    return { ok: false, reason: "abi.json holds a function without a name" };
   }
-  const sections = new Map<string, { readonly text: string; readonly line: number }>();
-  for (const [selector, body] of bodies) {
-    const bodyText = body.lines.join("\n").trim();
-    if (bodyText.length > 0) {
-      sections.set(selector, Object.freeze({ text: bodyText, line: body.line }));
+  const unresolved = /^unresolved_([0-9a-fA-F]{8})$/i.exec(name);
+  if (unresolved !== null) {
+    const selector = Selector.parse(`0x${(unresolved[1] ?? "").toLowerCase()}`);
+    if (!selector.ok) {
+      return { ok: false, reason: "abi.json holds no valid selector" };
     }
+    return { ok: true, selector: selector.value, signature: `${name}()` };
   }
-  return sections;
+  if (/^unresolved_/i.test(name)) {
+    return { ok: false, reason: "abi.json holds a malformed unresolved name" };
+  }
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    return { ok: false, reason: "abi.json holds a function with an invalid name" };
+  }
+  const inputs = entry["inputs"];
+  if (!Array.isArray(inputs)) {
+    return { ok: false, reason: "abi.json holds a function without an inputs array" };
+  }
+  const types: string[] = [];
+  for (const input of inputs) {
+    const expanded = expandInputType(input);
+    if (expanded === null) {
+      return { ok: false, reason: "abi.json holds a function with an invalid input type" };
+    }
+    types.push(expanded);
+  }
+  const signature = `${name}(${types.join(",")})`;
+  const selector = Selector.parse(keccak256HexOfUtf8(signature).slice(0, 10));
+  if (!selector.ok) {
+    return { ok: false, reason: "abi.json holds no valid selector" };
+  }
+  return { ok: true, selector: selector.value, signature };
+}
+
+// Canonical type of one ABI input: the declared type, expanded through
+// tuple components so nested structs keep their canonical parenthesized
+// form. Anything without a usable type string turns the entry away.
+function expandInputType(input: unknown): string | null {
+  if (!isRecord(input) || typeof input["type"] !== "string" || input["type"].length === 0) {
+    return null;
+  }
+  const type = input["type"];
+  if (type !== "tuple") {
+    return type;
+  }
+  const components = input["components"];
+  if (!Array.isArray(components)) {
+    return null;
+  }
+  const expanded: string[] = [];
+  for (const component of components) {
+    const inner = expandInputType(component);
+    if (inner === null) {
+      return null;
+    }
+    expanded.push(inner);
+  }
+  return `(${expanded.join(",")})`;
 }

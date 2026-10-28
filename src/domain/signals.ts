@@ -7,7 +7,7 @@
 // numeric threshold or weight. Risk, direction and severity mappings arrive
 // as an injected catalogue parameter; production values come from the
 // versioned model artifact per K-210 and A-20, never from this module.
-import { disassemble, extractSelectors } from "./selectors.ts";
+import { containingSelector, disassemble, extractSelectors } from "./selectors.ts";
 import { Evidence, sortEvidence } from "./evidence.ts";
 import type { NonEmpty, Evidence as EvidenceType } from "./evidence.ts";
 import { err, ok } from "./result.ts";
@@ -247,8 +247,10 @@ export type CapabilityCatalogue = {
 // SignalId. Bytecode without selectors yields no signals, since a signal
 // without selector evidence is unrepresentable per A-13. Each opcode
 // occurrence becomes one evidence entry pairing the occurrence PC offset
-// with a selector in round-robin order, so the offset travels with the
-// signal in every case where it is derivable.
+// with the selector of the dispatcher function holding that PC, so the
+// evidence names the function the capability sits in; occurrences outside
+// every function range (dispatcher preamble) keep the positional fallback,
+// so the offset still travels with the signal wherever it is derivable.
 export function detectCapabilities(
   bytecode: BytecodeType,
   codeHash: CodeHashType,
@@ -283,7 +285,7 @@ export function detectCapabilities(
     const evidence: EvidenceType[] = [];
     for (let index = 0; index < pcs.length; index += 1) {
       const pc = pcs[index] ?? 0;
-      const selector = selectors[index % selectors.length];
+      const selector = containingSelector(entries, pc) ?? selectors[index % selectors.length];
       if (selector === undefined) {
         continue;
       }

@@ -97,6 +97,38 @@ describe("capability detector plugin", () => {
     expect(capabilityDetectorPlugin.detect(input)).toEqual([]);
   });
 
+  test("evidence names the function holding the opcode, not the first selector", () => {
+    // Same layout as the domain attribution test: 0x06fdde03 routes to PC
+    // 48 with no storage use, 0xa9059cbb routes to PC 64, and the only
+    // SSTORE sits at PC 69 inside the 0xa9059cbb body. The finding must
+    // cite 0xa9059cbb.
+    const body = [
+      0x80, 0x63, 0x06, 0xfd, 0xde, 0x03, 0x14, 0x61, 0x00, 0x30, 0x57,
+      0x80, 0x63, 0xa9, 0x05, 0x9c, 0xbb, 0x14, 0x61, 0x00, 0x40, 0x57,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x5b,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00,
+      0x5b,
+      0x60, 0x00, 0x60, 0x00, 0x55, 0x00,
+    ];
+    const bytecode = mustOk(
+      Bytecode.parse(`0x${body.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`),
+    );
+    const input: DetectorInput = Object.freeze({
+      bytecode,
+      codeHash: mustOk(CodeHash.of(bytecode)),
+    });
+    const findings = capabilityDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    const evidence = findings[0]?.evidence;
+    expect(evidence?.length).toBe(1);
+    expect(evidence?.[0]?.selector as string).toBe("0xa9059cbb");
+    expect(evidence?.[0]?.offset as number).toBe(69);
+  });
+
   test("analyzeToken runs detection through the registry and records pluginResults", async () => {
     const target = mustOk(Address.parse("0x0102030405060708090a0b0c0d0e0f1011121314"));
     const block = mustOk(BlockNumber.of(24000000));

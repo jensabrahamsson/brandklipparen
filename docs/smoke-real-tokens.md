@@ -51,6 +51,13 @@ bytecode is analyzed and the report marks the token as a proxy. Entries
 that fail validation are listed in the report and skipped; a bad row never
 stops the run.
 
+Optional label provenance: `labelSource` (free text, up to 4096
+characters, so long list URLs validate), `labelNote` (free text, up to
+4096 characters) and `labelBasis` (one of `dataset`, `incident-report` or
+`token-list`). Provenance fields are validated but never printed: the
+report stays symbols-only and every derived line passes through the same
+sanitizer, so a long source URL cannot leak into the report or stdout.
+
 ## Analysis
 
 Each token runs through `analyzeToken` with the frozen repo artifact, the

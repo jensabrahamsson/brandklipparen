@@ -61,12 +61,16 @@ const TEMPLATE_VERSION_TEXT = "1.0.0";
 
 export type SmokeLabel = "legit" | "rug" | "honeypot" | "scam" | "unknown";
 
+export type SmokeLabelBasis = "dataset" | "incident-report" | "token-list";
+
 export type SmokeToken = {
   readonly address: string;
   readonly symbol: string;
   readonly name: string;
   readonly label: SmokeLabel;
   readonly labelSource?: string | undefined;
+  readonly labelNote?: string | undefined;
+  readonly labelBasis?: SmokeLabelBasis | undefined;
   readonly block: number;
   readonly codehash: string;
   readonly bytecode: string;
@@ -166,7 +170,12 @@ const FIXTURE_SCHEMA = {
     symbol: { type: "string", minLength: 1, maxLength: 64 },
     name: { type: "string", minLength: 1, maxLength: 256 },
     label: { enum: ["legit", "rug", "honeypot", "scam", "unknown"] },
-    labelSource: { type: "string", maxLength: 256 },
+    // Long provenance strings (list URLs with query parameters) validate
+    // up to 4096 characters; the report never prints these fields, so no
+    // display truncation is needed on the report path.
+    labelSource: { type: "string", maxLength: 4096 },
+    labelNote: { type: "string", maxLength: 4096 },
+    labelBasis: { enum: ["dataset", "incident-report", "token-list"] },
     block: { type: "integer", minimum: 0 },
     codehash: { type: "string", pattern: "^0x[0-9a-fA-F]+$" },
     bytecode: { type: "string", pattern: "^0x[0-9a-fA-F]*$" },

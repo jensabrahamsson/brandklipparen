@@ -259,6 +259,36 @@ describe("k010 structural detection on synthetic bytecode", () => {
     }
   });
 
+  test("k010_capability_evidence_names_the_function_holding_the_opcode", () => {
+    // Two-selector dispatcher: 0x06fdde03 routes to PC 48 (a body with no
+    // storage use) while 0xa9059cbb routes to PC 64, and the only SSTORE
+    // sits at PC 69 inside the 0xa9059cbb body. The evidence must name the
+    // holding function (0xa9059cbb): pairing the occurrence with the
+    // alphabetically first selector would blame a function that never
+    // touches storage.
+    const code = codeFromBytes([
+      0x80, 0x63, 0x06, 0xfd, 0xde, 0x03, 0x14, 0x61, 0x00, 0x30, 0x57,
+      0x80, 0x63, 0xa9, 0x05, 0x9c, 0xbb, 0x14, 0x61, 0x00, 0x40, 0x57,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x5b,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00,
+      0x5b,
+      0x60, 0x00, 0x60, 0x00, 0x55, 0x00,
+    ]);
+    const signals = detectCapabilities(code, codeHashOf(code), TEST_CATALOGUE, testChanger());
+    expect(signals).toHaveLength(1);
+    const only = signals[0];
+    expect(only?.kind).toBe("capability");
+    if (only !== undefined && only.kind === "capability") {
+      expect(only.evidence).toHaveLength(1);
+      expect(only.evidence[0]?.selector).toBe("0xa9059cbb");
+      expect(only.evidence[0]?.offset).toBe(69);
+    }
+  });
+
   test("k010_snippet_travels_with_evidence_when_given", () => {
     const code = dispatcherWithSelfdestruct();
     const snippet = mustOk(

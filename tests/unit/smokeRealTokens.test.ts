@@ -154,6 +154,60 @@ describe("smoke report builder (Task C)", () => {
   });
 });
 
+describe("smoke label provenance (labelSource, labelNote, labelBasis)", () => {
+  test("long_label_sources_validate_up_to_the_relaxed_limit", () => {
+    const { tokens, invalid } = validateFixture([
+      tokenOf({ labelSource: "p".repeat(280) }),
+      tokenOf({ symbol: "FAKEB", address: FAKE_ADDR_2, labelSource: "q".repeat(4096) }),
+    ]);
+    expect(invalid).toEqual([]);
+    expect(tokens).toHaveLength(2);
+  });
+
+  test("label_source_past_the_relaxed_limit_is_rejected", () => {
+    const { tokens, invalid } = validateFixture([tokenOf({ labelSource: "p".repeat(4097) })]);
+    expect(tokens).toHaveLength(0);
+    expect(invalid).toHaveLength(1);
+  });
+
+  test("label_note_and_label_basis_validate", () => {
+    const { tokens, invalid } = validateFixture([
+      tokenOf({ labelNote: "saw the incident thread", labelBasis: "incident-report" }),
+      tokenOf({ symbol: "FAKEB", address: FAKE_ADDR_2, labelNote: "", labelBasis: "dataset" }),
+      tokenOf({ symbol: "FAKEC", address: FAKE_ADDR_3, labelBasis: "token-list" }),
+    ]);
+    expect(invalid).toEqual([]);
+    expect(tokens).toHaveLength(3);
+  });
+
+  test("unknown_label_basis_and_non_string_note_are_rejected", () => {
+    const { tokens, invalid } = validateFixture([
+      tokenOf({ labelBasis: "gossip" }),
+      tokenOf({ symbol: "FAKEB", address: FAKE_ADDR_2, labelNote: 42 }),
+    ]);
+    expect(tokens).toHaveLength(0);
+    expect(invalid).toHaveLength(2);
+  });
+
+  test("provenance_fields_never_reach_the_report", () => {
+    const longSource = "p".repeat(280);
+    const { tokens, invalid } = validateFixture([
+      tokenOf({ labelSource: longSource, labelNote: "private note", labelBasis: "dataset" }),
+    ]);
+    expect(invalid).toEqual([]);
+    expect(tokens).toHaveLength(1);
+    const markdown = buildReport({
+      outcomes: [outcomeOf({ symbol: "FAKEA", label: "legit", score: 35, band: "Elevated" })],
+      invalid,
+      extdecomp: { enabled: false, successRate: 0, meanFunctions: 0, meanOwnSelectors: 0, deltas: [] },
+      totalMs: 5,
+      startedAt: "2026-10-28T12:00:00.000Z",
+    });
+    expect(markdown).not.toContain(longSource);
+    expect(markdown).not.toContain("private note");
+  });
+});
+
 describe("smoke offline wiring (Task C)", () => {
   test("offline_catalogue_matches_composed_servers", async () => {
     const { DEFAULT_CAPABILITY_CATALOGUE } = await import("../../src/composition/app.ts");
