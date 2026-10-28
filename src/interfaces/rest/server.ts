@@ -22,8 +22,13 @@ import {
   weightOfMapping,
 } from "../../plugins/exposure.ts";
 import type { PluginDocsMap, PluginWeightMapping } from "../../plugins/exposure.ts";
+import { serializeStoredAuditReport } from "../../plugins/auditReport.ts";
+import type { StoredAuditReportMap } from "../../plugins/auditReport.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
+import { serializePersonalizeOutcome } from "../../application/personalizeService.ts";
+import type { PersonalizeService } from "../../application/personalizeService.ts";
+import { sectionBodyOf } from "../../plugins/docs.ts";
 import { serializeTokenInvestigation } from "../../application/investigationService.ts";
 import type { InvestigationService } from "../../application/investigationService.ts";
 import {
@@ -36,6 +41,7 @@ import type {
   BlockNumber as BlockNumberType,
   IndexVersion,
   ModelVersion,
+  PromptVersion as PromptVersionType,
   TemplateVersion,
 } from "../../domain/types.ts";
 import type { CapabilityCatalogue } from "../../domain/signals.ts";
@@ -104,12 +110,26 @@ export type RestServerOptions = {
   // records the MCP docs surface reads. An unknown plugin id, or a known
   // id without a record, gives the uniform not-found error.
   readonly pluginDocs?: PluginDocsMap | undefined;
+  // Stored CI audit reports keyed by plugin id (S-058, K-516): the same
+  // records the MCP audit surface reads. Read-only; an unknown plugin id,
+  // or a known id without a stored report, gives the uniform not-found
+  // error. The read view never triggers an audit.
+  readonly pluginAudits?: StoredAuditReportMap | undefined;
   readonly analyzeTimeoutMs?: number | undefined;
   readonly maxQueryChars?: number | undefined;
   readonly maxBodyBytes?: number | undefined;
   // Absent service means the assessment feature is disabled through
   // configuration (K-309): /v1/assessment answers assessment-not-configured.
   readonly assessmentService?: AssessmentService | undefined;
+  // Personalize service for the experimental AI layout mapping (S-069,
+  // K-519, P-27). Absent service means the toggle stays off: the route
+  // answers the not-configured envelope with the deterministic baseline
+  // standing.
+  readonly personalizeService?: PersonalizeService | undefined;
+  // Mapping prompt version for the personalize cache key (P-27): the same
+  // version the adapter prompt carries. Absent version disables the route
+  // like an absent service.
+  readonly personalizePromptVersion?: PromptVersionType | undefined;
   // Absent service means the investigation loop is disabled through
   // configuration (P-29): /v1/investigate answers
   // investigation-not-configured with zero model calls.
@@ -684,6 +704,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
   const detectors = options.detectors;
   const pluginWeights: PluginWeightMapping = options.pluginWeights ?? {};
   const pluginDocs: PluginDocsMap = options.pluginDocs ?? new Map();
+  const pluginAudits: StoredAuditReportMap = options.pluginAudits ?? new Map();
 
   app.get("/v1/plugins", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     const requestId = issueRequestId();
@@ -695,7 +716,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
       .code(200)
       .header(REQUEST_ID_HEADER, requestId)
       .type("application/json")
-      .send(serializePluginList(exposeRegistry(detectors.registry, pluginWeights)));
+      .send(serializePluginList(exposeRegistry(detectors.registry, pluginWeights, pluginDocs)));
   });
 
   app.get<{ Params: { id: string } }>(
@@ -715,11 +736,12 @@ export function createRestServer(options: RestServerOptions): RestServer {
         return sendError(reply, notFound(requestId));
       }
       const weight = weightOfMapping(pluginWeights, entry.manifest.id);
+      const singleDocs = typeof id === "string" ? pluginDocs.get(id) : undefined;
       return reply
         .code(200)
         .header(REQUEST_ID_HEADER, requestId)
         .type("application/json")
-        .send(canonicalSerialize(exposeManifest(entry.manifest, weight) as never));
+        .send(canonicalSerialize(exposeManifest(entry.manifest, weight, singleDocs) as never));
     },
   );
 
@@ -751,6 +773,178 @@ export function createRestServer(options: RestServerOptions): RestServer {
         .send(serializePluginDocs(docs));
     },
   );
+
+  // Stored CI audit report read view (S-058, K-516): the last report per
+  // plugin with its three separate states (deterministic, ai, human-review)
+  // plus provider and model id on the advisory branch. Read-only behind
+  // the same API-key gate; an unknown id or a missing report gives the
+  // uniform not-found error (A-18). The read view triggers no audit.
+  app.get<{ Params: { id: string } }>(
+    "/v1/plugins/:id/audit",
+    async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+      const requestId = issueRequestId();
+      const gated = gateKeyOnly(request, request.query, requestId);
+      if (!gated.ok) {
+        return sendError(reply, gated.error);
+      }
+      const id = (request.params as { id?: unknown }).id;
+      const registered =
+        typeof id === "string"
+          ? detectors.registry.entries.some((candidate) => candidate.manifest.id === id)
+          : false;
+      const report = typeof id === "string" ? pluginAudits.get(id) : undefined;
+      if (!registered || report === undefined) {
+        return sendError(reply, notFound(requestId));
+      }
+      return reply
+        .code(200)
+        .header(REQUEST_ID_HEADER, requestId)
+        .type("application/json")
+        .send(serializeStoredAuditReport(report));
+    },
+  );
+
+  // Mapping provider label for the experimental toggle (S-070, K-519):
+  // the UI names the provider and model id before the first call.
+  app.get("/v1/personalize/status", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    const requestId = issueRequestId();
+    const gated = gateKeyOnly(request, request.query, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const service = options.personalizeService;
+    const personalize =
+      service === undefined
+        ? { disabled: true }
+        : { provider: service.provider, modelId: service.modelId };
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          personalize,
+        }),
+      );
+  });
+
+  // Experimental AI personalize mapping (S-069, K-519, P-27): one
+  // explicit per-request POST carrying the visitor's priorities text.
+  // The frozen analysis runs first; the mapping call quotes priorities
+  // and per-plugin frontmatter references as data. The route always
+  // answers 200 with the outcome envelope: any error kind means the
+  // deterministic baseline stands (P-28 fallback) with scores, evidence
+  // and text unchanged. The priorities text is never logged.
+  app.post("/v1/personalize", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, request.body, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const body = (request.body ?? {}) as { priorities?: unknown };
+    if (typeof body.priorities !== "string" || body.priorities.length === 0 || body.priorities.length > 500) {
+      return sendError(
+        reply,
+        validationError("Invalid priorities: expected 1 to 500 characters of visitor text.", requestId as string),
+      );
+    }
+    const { address, block } = gated.value;
+    const service = options.personalizeService;
+    const promptVersion = options.personalizePromptVersion;
+    if (service === undefined || promptVersion === undefined) {
+      return reply
+        .code(200)
+        .header(REQUEST_ID_HEADER, requestId)
+        .type("application/json")
+        .send(
+          JSON.stringify({
+            status: "ok",
+            apiVersion: API_VERSION,
+            personalize: JSON.parse(
+              serializePersonalizeOutcome({
+                kind: "error",
+                error: "not-configured",
+                message: "AI personalize is not configured for this server",
+              }),
+            ),
+          }),
+        );
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const counters = createRequestCounters();
+    const analysed = await options.services.analyzeToken(
+      {
+        address,
+        block,
+        requestId,
+        deadline: deadline.value,
+        modelVersion: options.modelVersion,
+        indexVersion: options.indexVersion,
+        templateVersion: options.templateVersion,
+        catalogue: options.catalogue,
+      },
+      counters,
+    );
+    if (!analysed.ok) {
+      const mapped = toHttpError(analysed.error);
+      return sendError(
+        reply,
+        requestError(mapped.status, mapped.code, mapped.message, requestId),
+      );
+    }
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(body);
+    }
+    const analysis = analysed.value.envelope;
+    const score = analysis.score;
+    const presentSections = ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell", "expert-detail"];
+    const outcome = await service.requestPersonalize(
+      {
+        codeHash: analysis.codeHash,
+        scoreBand: score >= 60 ? "high" : score >= 30 ? "medium" : "low",
+        sectionIds: presentSections,
+        pluginIds: analysis.pluginResults.map((entry) => entry.pluginId as string),
+        flooredSectionIds: ["summary", "score"],
+        priorities: body.priorities,
+        plugins: analysis.pluginResults.map((entry) => {
+          const docs = pluginDocs.get(entry.pluginId as string);
+          const excerpt =
+            docs === undefined
+              ? ""
+              : `${sectionBodyOf(docs.markdown, "What it checks")}\n${sectionBodyOf(docs.markdown, "Why it matters to you")}`.slice(0, 1000);
+          return {
+            pluginId: entry.pluginId as string,
+            tags: docs === undefined ? [] : [...docs.frontmatter.tags],
+            severityMax: docs === undefined ? "low" : docs.frontmatter.severity.max,
+            quotedExcerpt: excerpt,
+          };
+        }),
+        promptVersion,
+      },
+      { requestId, deadline: deadline.value, block: gated.value.block },
+    );
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          personalize: JSON.parse(serializePersonalizeOutcome(outcome)),
+        }),
+      );
+  });
 
   app.get("/v1/analyze", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleAnalyze(request, reply, request.query);

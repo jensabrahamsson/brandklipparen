@@ -230,21 +230,22 @@ function schemaPropertyNames(schema: JsonSchema): Set<string> {
   return names;
 }
 
-// Docs-versus-code output-field check (S-055, P-17): every backticked
-// field name in `## Output` must be declared in the manifest
-// outputSchema. A drifted field is a deterministic failure.
+// Docs-versus-code output-field check (S-055, P-17; section renamed in
+// S-065): every backticked field name in `## Evidence format` must be
+// declared in the manifest outputSchema. A drifted field is a deterministic
+// failure.
 export function auditDocsOutputFields(
   markdown: string,
   manifest: DetectorManifest,
 ): DeterministicAuditFailure[] {
   const declared = schemaPropertyNames(manifest.outputSchema);
   const failures: DeterministicAuditFailure[] = [];
-  for (const field of backtickIdentifiers(sectionBody(markdown, "Output"))) {
+  for (const field of backtickIdentifiers(sectionBody(markdown, "Evidence format"))) {
     if (!declared.has(field)) {
       failures.push({
         kind: "unknown-output-field",
         field,
-        message: `PLUGIN.md ## Output names a field the manifest outputSchema never declares: ${field}`,
+        message: `PLUGIN.md ## Evidence format names a field the manifest outputSchema never declares: ${field}`,
       });
     }
   }

@@ -26,10 +26,10 @@ code them now.
 |---|---|---|
 | E-09 Investigate with Muse | S-072–S-077 | S-072–S-077 shipped (K-036, K-520 in `docs/requirements.md`); S-077 recorded-trace library and per-codehash cache with caps included |
 | E-10 own EVM decompiler | S-078–S-085 | S-078–S-082 shipped green in this session (K-037, K-038, K-521 in `docs/requirements.md`); S-083–S-085 still parked |
-| Adaptive web UI | S-059–S-064 | After plugin core; not started |
-| User-priority personalization | S-065–S-070 | Demo headline candidate; S-065 frontmatter leftovers included if unused |
-| Plugin audit | S-053–S-055, S-058 | S-053–S-055 shipped green in this session (K-516 in `docs/requirements.md`); S-058 read view still parked |
-| Registry leftovers | S-048–S-050 | S-048 shipped green in this session (per-plugin MCP tools); S-049–S-050 still parked |
+| Adaptive web UI | S-059–S-064 | S-059 done — schema-driven panel with fixed library and canonical-JSON fallback (K-034); S-060 done — deterministic risk-adaptive order with score pinned first (strip UX) and severity next (K-034); S-061 done — Simple/Expert toggle persisted locally with raw detail in Expert (K-034); S-062–S-064 retired per ADR 0.1, folded into S-068–S-070 |
+| User-priority personalization | S-065–S-070 | S-065 done — strict frontmatter with vocab/audience/severity validated in CI, 6 docs migrated (K-035); S-066 done — local-only priorities field with closed validation; S-067 done — deterministic matcher with floor (K-035); S-068 done — unified PersonalizeSpec with JSON Schema descriptor; S-069 done — single port, fake + hosted contracts, service, POST /v1/personalize (K-519); S-070 done — experimental AI toggle off by default with provider label, one-call mapping, deterministic fallback (K-519) |
+| Plugin audit | S-053–S-055, S-058 | S-053–S-055 shipped green in this session (K-516 in `docs/requirements.md`); S-058 done — stored-report read view in REST and MCP, three states with provider/model, read-only |
+| Registry leftovers | S-048–S-050 | S-048 shipped green in this session (per-plugin MCP tools); S-049 done — signed allowlist admission at build time (H-46/M-52); S-050 done — dedicated worker per untrusted detector run with typed timeout (H-47/M-53) |
 | Later ideas | — | AI explain/chat/rug, REST streaming/snippet/calibration/deploy-time checks, duplicate package.json check, UI P2 (just-deployed feed replaced by E-11) |
 
 ## Pre-work

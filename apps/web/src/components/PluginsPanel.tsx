@@ -1,19 +1,30 @@
 import type { JSX } from "react";
+import { applyPersonalizedOrder } from "../lib/matcher.ts";
+import { SchemaValue } from "./SchemaValue.tsx";
 
 // Generic plugins panel (S-046): renders the registry plugin list beside
 // the analysis pluginResults with no per-plugin UI code. Every plugin
 // string renders as React text only, so hostile content stays inert under
 // the strict CSP: no HTML sinks anywhere in this view.
+export type PluginFrontmatterView = {
+  readonly tags: readonly string[];
+  readonly audience: readonly string[];
+  readonly severity: { readonly min: string; readonly max: string };
+};
+
 export type PluginListEntry = {
   readonly id: string;
   readonly version: string;
   readonly displayName: string;
   readonly description: string;
+  readonly outputSchema?: unknown;
+  readonly frontmatter?: PluginFrontmatterView;
 };
 
 export type PluginFindingView = {
   readonly id: string;
   readonly title: string;
+  readonly payload?: unknown;
   readonly evidence: readonly { readonly selector: string; readonly offset: number | null }[];
 };
 
@@ -29,12 +40,32 @@ function findingsFor(pluginId: string, results: readonly PluginResultView[]): re
   return entry?.findings ?? [];
 }
 
+function payloadSchemaOf(outputSchema: unknown): unknown {
+  if (typeof outputSchema !== "object" || outputSchema === null || Array.isArray(outputSchema)) {
+    return undefined;
+  }
+  const record = outputSchema as Record<string, unknown>;
+  const items = record["items"];
+  if (typeof items === "object" && items !== null && !Array.isArray(items)) {
+    const properties = (items as Record<string, unknown>)["properties"];
+    if (typeof properties === "object" && properties !== null && !Array.isArray(properties)) {
+      const payload = (properties as Record<string, unknown>)["payload"];
+      if (payload !== undefined) {
+        return payload;
+      }
+    }
+  }
+  return outputSchema;
+}
+
 function ResultBlock({
   heading,
   findings,
+  outputSchema,
 }: {
   readonly heading: string;
   readonly findings: readonly PluginFindingView[];
+  readonly outputSchema?: unknown;
 }): JSX.Element {
   if (findings.length === 0) {
     return (
@@ -48,6 +79,11 @@ function ResultBlock({
       {findings.map((finding) => (
         <li key={finding.id}>
           {finding.title}
+          {finding.payload === undefined ? null : (
+            <div style={{ margin: "4px 0 4px 12px" }}>
+              <SchemaValue value={finding.payload} schema={payloadSchemaOf(outputSchema)} />
+            </div>
+          )}
           <ul style={{ listStyle: "none", padding: "0 0 0 12px" }}>
             {finding.evidence.map((entry, index) => (
               <li key={`${entry.selector}-${index}`} className="quiet">
@@ -65,9 +101,17 @@ function ResultBlock({
 export function PluginsPanel({
   plugins,
   results,
+  order,
+  matchedTags,
+  personalized,
+  onShowStandardOrder,
 }: {
   readonly plugins: readonly PluginListEntry[] | null;
   readonly results: readonly PluginResultView[];
+  readonly order?: readonly string[] | undefined;
+  readonly matchedTags?: ReadonlyMap<string, readonly string[]> | undefined;
+  readonly personalized?: boolean | undefined;
+  readonly onShowStandardOrder?: (() => void) | undefined;
 }): JSX.Element {
   if (results.length === 0) {
     return <p className="muted">No plugin results.</p>;
@@ -81,27 +125,62 @@ export function PluginsPanel({
             <h3 className="mono" style={{ fontSize: 14 }}>
               {result.pluginId}
             </h3>
-            <ResultBlock heading={result.pluginId} findings={result.findings} />
+            <ResultBlock heading={result.pluginId} findings={result.findings} outputSchema={undefined} />
           </article>
         ))}
       </section>
     );
   }
+  // Deterministic priority order (S-067, K-035, P-25) under the severity
+  // floor (P-26): floored cards (frontmatter severity max `high`) clamp
+  // ahead, then matched cards, then the rest in standard order. No card
+  // is hidden, removed or reworded; only order and emphasis change.
+  const active = personalized === true && order !== undefined && order.length > 0;
+  const flooredIds = plugins
+    .filter((plugin) => plugin.frontmatter?.severity.max === "high")
+    .map((plugin) => plugin.id);
+  const entries = active
+    ? applyPersonalizedOrder(plugins, order, flooredIds)
+    : plugins;
   return (
     <section aria-label="Plugins">
       <h2>Plugins</h2>
-      {plugins.map((plugin) => (
-        <article key={plugin.id}>
-          <h3 style={{ fontSize: 15 }}>{plugin.displayName}</h3>
-          <p className="quiet" style={{ margin: "4px 0 0", fontSize: 13 }}>
-            {plugin.id} · v{plugin.version}
+      {active ? (
+        <div style={{ margin: "0 0 8px" }}>
+          <p className="quiet" data-testid="personalized-notice" style={{ margin: "0 0 4px", fontSize: 13 }}>
+            Ordered by what matters to you.
           </p>
-          <p className="muted" style={{ margin: "4px 0 0", fontSize: 14 }}>
-            {plugin.description}
-          </p>
-          <ResultBlock heading={plugin.displayName} findings={findingsFor(plugin.id, results)} />
-        </article>
-      ))}
+          {onShowStandardOrder === undefined ? null : (
+            <button type="button" className="button-ghost" data-testid="standard-order" onClick={onShowStandardOrder}>
+              Show standard order
+            </button>
+          )}
+        </div>
+      ) : null}
+      {entries.map((plugin) => {
+        const tags = active ? (matchedTags?.get(plugin.id) ?? []) : [];
+        return (
+          <article key={plugin.id}>
+            <h3 style={{ fontSize: 15 }}>{plugin.displayName}</h3>
+            <p className="quiet" style={{ margin: "4px 0 0", fontSize: 13 }}>
+              {plugin.id} · v{plugin.version}
+            </p>
+            <p className="muted" style={{ margin: "4px 0 0", fontSize: 14 }}>
+              {plugin.description}
+            </p>
+            {tags.length === 0 ? null : (
+              <p className="quiet" data-testid={`matched-${plugin.id}`} style={{ margin: "4px 0 0", fontSize: 13 }}>
+                Matched: {tags.join(", ")}
+              </p>
+            )}
+            <ResultBlock
+              heading={plugin.displayName}
+              findings={findingsFor(plugin.id, results)}
+              outputSchema={plugin.outputSchema}
+            />
+          </article>
+        );
+      })}
     </section>
   );
 }

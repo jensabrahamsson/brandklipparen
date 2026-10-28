@@ -10,6 +10,8 @@ import type {
   InvestigationState,
   InvestigationStep,
 } from "../types.ts";
+import type { PluginListEntry } from "../components/PluginsPanel.tsx";
+import { toPluginListEntries } from "./plugins.ts";
 
 export class ApiError extends Error {
   readonly code: string;
@@ -278,5 +280,73 @@ export async function requestInvestigation(
   } catch {
     const state = await fetchInvestigation(address, apiKey);
     return { state, streamed };
+  }
+}
+
+// Registry plugin list for the schema-driven panel (S-059, K-034, P-18).
+// Enhancement only: any failure maps to null and the panel renders the
+// analysis findings without registry names or output schemas, falling back
+// to canonical JSON text per P-10.
+export async function fetchPlugins(apiKey: string | null): Promise<readonly PluginListEntry[] | null> {
+  try {
+    const response = await fetch("/v1/plugins", { headers: apiHeaders(apiKey) });
+    if (!response.ok) {
+      return null;
+    }
+    const body = (await response.json()) as { plugins?: unknown };
+    const entries = toPluginListEntries(body.plugins);
+    return entries;
+  } catch {
+    return null;
+  }
+}
+
+// Mapping provider label for the experimental toggle (S-070, K-519): the
+// UI names the provider and model id before the first call. Null when the
+// server leaves the feature disabled.
+export async function fetchPersonalizeStatus(
+  apiKey: string | null,
+): Promise<{ readonly provider: string; readonly modelId: string } | null> {
+  try {
+    const response = await fetch("/v1/personalize/status", { headers: apiHeaders(apiKey) });
+    if (!response.ok) {
+      return null;
+    }
+    const body = (await response.json()) as {
+      personalize?: { disabled?: unknown; provider?: unknown; modelId?: unknown };
+    };
+    const personalize = body.personalize;
+    if (personalize === undefined || personalize.disabled === true) {
+      return null;
+    }
+    if (typeof personalize.provider !== "string" || typeof personalize.modelId !== "string") {
+      return null;
+    }
+    return { provider: personalize.provider, modelId: personalize.modelId };
+  } catch {
+    return null;
+  }
+}
+
+// One explicit mapping call (S-070, K-519, P-27): the visitor's priorities
+// text plus quoted plugin references for this request only. Null on any
+// failure: the deterministic baseline stands.
+export async function requestPersonalizeMapping(
+  apiKey: string | null,
+  address: string,
+  priorities: string,
+): Promise<unknown> {
+  try {
+    const response = await fetch("/v1/personalize", {
+      method: "POST",
+      headers: { ...apiHeaders(apiKey), "content-type": "application/json" },
+      body: JSON.stringify({ address, priorities }),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as unknown;
+  } catch {
+    return null;
   }
 }

@@ -13,6 +13,7 @@ import { pluginWeightOf } from "../domain/pluginCalibration.ts";
 import type { ModelArtifact } from "../domain/risk.ts";
 import type { JsonValue, PluginManifest } from "./api.ts";
 import type { ValidatedPluginDocs } from "./docs.ts";
+import type { PluginFrontmatter } from "./docs.ts";
 import type { PluginRegistry } from "./registry.ts";
 
 export type ExposedPluginCapabilities = {
@@ -28,6 +29,26 @@ export type ExposedPluginLimits = {
   readonly maxOutputBytes: number;
 };
 
+// Validated frontmatter beside the manifest (S-067, K-035, P-25): the
+// typed value the web matcher reads, never raw markdown.
+export type ExposedPluginFrontmatter = {
+  readonly tags: readonly string[];
+  readonly audience: readonly string[];
+  readonly severity: { readonly min: string; readonly max: string };
+};
+
+function frontmatterOf(docs: ValidatedPluginDocs | undefined): ExposedPluginFrontmatter | undefined {
+  if (docs === undefined) {
+    return undefined;
+  }
+  const frontmatter: PluginFrontmatter = docs.frontmatter;
+  return Object.freeze({
+    tags: frontmatter.tags,
+    audience: frontmatter.audience,
+    severity: frontmatter.severity,
+  });
+}
+
 type ExposedPluginBase = {
   readonly id: string;
   readonly version: string;
@@ -39,6 +60,9 @@ type ExposedPluginBase = {
   readonly outputSchema: JsonValue;
   readonly limits: ExposedPluginLimits;
   readonly enabled: true;
+  // Present exactly when the caller supplies the validated docs record:
+  // absent entries expose no frontmatter rather than an unvalidated one.
+  readonly frontmatter?: ExposedPluginFrontmatter | undefined;
 };
 
 // Calibrated detector weights supplied by the composition root (S-047,
@@ -53,10 +77,16 @@ export type ExposedPlugin =
 
 // One manifest in the published shape (P-09): identity, contract and
 // bounds, plus the calibrated state for detectors (the artifact weight, 0
-// until the artifact names the plugin) and the active marker for
-// assessment plugins. Configuration selects among registered plugins only;
-// the exposure never names an unregistered plugin.
-export function exposeManifest(manifest: PluginManifest, weight = 0): ExposedPlugin {
+// until the artifact names the plugin), the active marker for assessment
+// plugins, and the validated frontmatter when the caller hands the
+// registry-adjacent docs record. Configuration selects among registered
+// plugins only; the exposure never names an unregistered plugin.
+export function exposeManifest(
+  manifest: PluginManifest,
+  weight = 0,
+  docs: ValidatedPluginDocs | undefined = undefined,
+): ExposedPlugin {
+  const frontmatter = frontmatterOf(docs);
   const base: ExposedPluginBase = {
     id: manifest.id,
     version: manifest.version,
@@ -72,6 +102,7 @@ export function exposeManifest(manifest: PluginManifest, weight = 0): ExposedPlu
       maxOutputBytes: manifest.limits.maxOutputBytes,
     },
     enabled: true,
+    ...(frontmatter === undefined ? {} : { frontmatter }),
   };
   switch (manifest.kind) {
     case "detector":
@@ -83,13 +114,17 @@ export function exposeManifest(manifest: PluginManifest, weight = 0): ExposedPlu
 
 // The registry in registry order, frozen for the response path. Callers
 // sort by id where canonical order matters; the assessed envelope already
-// sorts pluginResults by plugin id (P-11).
+// sorts pluginResults by plugin id (P-11). The validated docs map is the
+// registry-adjacent value, so REST and MCP name the same frontmatter.
 export function exposeRegistry(
   registry: PluginRegistry,
   weights: PluginWeightMapping = {},
+  docs: PluginDocsMap | undefined = undefined,
 ): readonly ExposedPlugin[] {
   return Object.freeze(
-    registry.entries.map((entry) => exposeManifest(entry.manifest, weightOfMapping(weights, entry.manifest.id))),
+    registry.entries.map((entry) =>
+      exposeManifest(entry.manifest, weightOfMapping(weights, entry.manifest.id), docs?.get(entry.manifest.id)),
+    ),
   );
 }
 

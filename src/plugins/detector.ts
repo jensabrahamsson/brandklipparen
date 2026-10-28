@@ -72,9 +72,11 @@ export type DetectorPlugin = {
   readonly detect: (input: DetectorInput) => readonly PluginFinding[];
 };
 
-// Per-plugin outcome per analysis (ADR section 5.4). Every outcome leaves
-// the rest of the analysis standing; only `ok` contributes findings.
-export type PluginOutcome = "ok" | "invalid-output" | "threw" | "input-unavailable";
+// Per-plugin outcome per analysis (ADR section 5.4, S-050). Every outcome
+// leaves the rest of the analysis standing; only `ok` contributes
+// findings. `timeout` is recorded when an isolated worker run is killed
+// at its deadline; in-process detectors never produce it.
+export type PluginOutcome = "ok" | "invalid-output" | "threw" | "timeout" | "input-unavailable";
 
 export type PluginResultEntry = {
   readonly pluginId: PluginId;

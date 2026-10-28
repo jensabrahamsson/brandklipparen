@@ -1,12 +1,49 @@
+---
+id: dev.brandklipparen.clone-match
+kind: detector
+version: 1.0.0
+tags: [honeypot]
+audience: [holder, trader]
+severity: { min: medium, max: high }
+---
 # PLUGIN.md: Clone-match detector (`dev.brandklipparen.clone-match`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-044).
 
-## What it detects
+## What it checks
 
 A known trap-template hit from the clone index: at most one finding per
 analysis, naming the matched template group with its similarity share and
 prior count.
+
+## Why it matters to you
+
+Trap templates get reused. A bytecode match against a known honeypot
+template means someone has run this exact trap before, so you can walk
+away before it runs on you.
+
+## What it cannot tell you
+
+Whether this deployment behaves exactly like the matched template: a
+high-similarity clone can still differ in the details that decide the
+outcome. The match is a warning, not a verdict.
+
+## Evidence format
+
+At most one finding with the namespaced id
+`dev.brandklipparen.clone-match:<group>`, a short English title, the first
+dispatcher selector as `evidence` with the PC offset wherever derivable, and
+the payload with `similarity`, `group`, and `priorCount`. Every finding
+carries at least one `evidence` entry. Findings report at weight 0: the
+application service maps them to calibrated signals through the versioned
+clone mapping, and a finding enters the score only after calibration
+names it.
+
+## Limitations / false positives
+
+A miss or an index failure yields no findings: silence means no match,
+not safety. Common boilerplate (proxies, standard libraries) can
+resemble a template without sharing its trap.
 
 ## Inputs
 
@@ -16,19 +53,6 @@ over as the `cloneMatch` fact; a miss or an index failure arrives as null
 and yields no findings. The plugin derives the evidence selector itself
 through the shared domain helper.
 
-## Output
+## Version and changelog
 
-At most one finding with the namespaced id
-`dev.brandklipparen.clone-match:<group>`, a short English title, the first
-dispatcher selector as evidence with the PC offset wherever derivable, and
-the payload `{ "similarity": <0-1>, "group": "<group>", "priorCount": <n> }`.
-Every finding carries at least one evidence entry. Findings report at
-weight 0: the application service maps them to calibrated signals through
-the versioned clone mapping, and a finding enters the score only after
-calibration names it.
-
-## Limits
-
-At most 1 finding, at most 8 evidence entries per finding, at most
-32768 output bytes. The plugin is pure and synchronous: no network, no
-secrets, no clock, no randomness.
+Version 1.0.0. Initial release.

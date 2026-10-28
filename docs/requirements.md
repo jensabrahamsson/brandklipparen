@@ -702,6 +702,67 @@ the ID with the implementation.
   Verification: unit test
   `plugin_md_backfilled_docs_pass_for_registered_and_example_plugins`.
 
+### K-035 User-priority personalization: local-only priorities and deterministic matching (MVP)
+
+The token page shows what the user says matters to them. Priorities are
+free text stored locally only, matched deterministically to plugin
+frontmatter tags with no network, under a severity floor that keeps
+critical evidence always visible. Proposed in
+`docs/adr-plugin-architecture.md` (P-24–P-26); this story enters the ID
+with the implementation. Presentation only: scores, evidence and finding
+text never change.
+
+- The `PLUGIN.md` frontmatter carries the closed-vocabulary `tags`,
+  `audience` and severity range the matcher reads; the deterministic
+  validator checks every field in CI with zero network calls, and the
+  registered and example docs are migrated to the refined headings in
+  the same change. Verification: unit tests
+  `plugin_md_frontmatter_validator_accepts_compliant_plugin` and
+  `k035_frontmatter_checked_in_ci_without_network`, plus the extended
+  `k517_plugin_md_missing_or_mismatched_fails_deterministic_check`
+  branches.
+- The priorities field persists under one versioned `localStorage` key
+  with closed-shape validation; clearing removes the key, and the text
+  never reaches logs, cache keys or REST/MCP responses. Verification:
+  unit test `k035_invalid_stored_priorities_treated_as_none`,
+  Playwright test
+  `k035_priorities_persist_across_reload_and_clear_removes_them` and
+  integration test `k519_priorities_absent_from_logs_cache_and_responses`.
+- The baseline matcher maps frozen priorities to frontmatter tags with
+  one ordered id list and matched tags, with zero network calls and the
+  severity floor keeping every `high` finding present and expanded.
+  Verification: unit tests
+  `k035_priorities_match_frontmatter_tags_deterministically` and
+  `k519_priorities_never_sent_without_ai_opt_in`, property
+  `k519_personalization_leaves_scores_evidence_and_text_unchanged` and
+  Playwright test `k519_critical_finding_visible_with_unrelated_priorities`.
+
+### K-519 Experimental AI personalize toggle (MVP)
+
+The token page offers one experimental toggle that maps the visitor's
+priorities through the single `PluginPersonalizeModelPort` (hosted
+open-weights). The toggle is off by default, labelled with provider and
+model id, and states the one-call send before the first mapping; any
+invalid or missing model output falls back to the deterministic baseline
+with scores, evidence and text unchanged. Proposed in
+`docs/adr-plugin-architecture.md` (P-27, P-28); this story enters the ID
+with the implementation. The fake adapter stands in every test: no test
+reaches the network.
+
+- `POST /v1/personalize` runs the frozen analysis, quotes priorities and
+  frontmatter references as data, and answers the outcome envelope with
+  the validated `PersonalizeSpec`; any error kind means the baseline
+  stands. Verification: integration tests on the route (ok, error
+  envelope, not-configured, client error on empty priorities).
+- The web toggle persists locally, sends one explicit mapping request
+  per Apply press, re-validates the response client-side, applies only
+  whitelisted sections and plugin cards with the severity floor clamped
+  first, and never collapses a floored section. Verification: unit tests
+  for the toggle storage and the spec parse/apply, Playwright tests
+  `k519_invalid_or_missing_personalize_spec_falls_back_to_deterministic_baseline`,
+  `k519_ai_personalize_toggle_off_by_default_and_labelled` and
+  `k519_ai_personalize_toggle_states_priorities_before_first_call`.
+
 ## 6. Interfaces (K-0xx, continued)
 
 Each interface is a driving adapter over the same application service
@@ -893,6 +954,36 @@ the implementation.
   the same value, with a machine-readable error for an unknown plugin
   id. Verification: integration test
   `k033_plugin_docs_match_registry_in_rest_and_mcp`.
+
+### K-034 Adaptive web UI: schema-driven rendering and deterministic layout (MVP)
+
+The token page renders every plugin output from its `outputSchema`
+through the fixed component library, orders sections deterministically
+by risk band, and offers a Simple / Expert mode persisted locally.
+Proposed in `docs/adr-plugin-architecture.md` (P-18–P-20); this story
+enters the ID with the implementation. Presentation only: scores,
+evidence and finding text never change.
+
+- Every `outputSchema` shape in the documented subset (text, number,
+  boolean, enum, list, nested object, evidence) renders through its
+  library component with no per-plugin UI code; an out-of-subset shape
+  falls back to canonical JSON as inert text. Verification: unit test
+  `k034_every_output_schema_shape_renders_via_fixed_library` and
+  `k034_unknown_schema_shape_falls_back_to_canonical_json_text`.
+- Section order follows the frozen analysis: severe evidence first at
+  high risk, a calm summary first at low risk, with the same plan for
+  the same analysis and no section hidden in any band. Verification:
+  unit tests `k034_high_risk_orders_severe_evidence_first`,
+  `k034_low_risk_shows_calm_summary_first` and property
+  `k034_same_analysis_same_layout_across_runs`.
+- Simple is the default and shows summary, score, signals, findings and
+  explanations; Expert additionally shows bytecode, selectors with PC
+  offsets and raw plugin payloads as inert text. The preference persists
+  in `localStorage` under one versioned key and never reaches the
+  server. Verification: unit test
+  `k034_invalid_stored_mode_falls_back_to_simple` and Playwright tests
+  `k034_mode_toggle_persists_across_reload` and
+  `k034_expert_mode_reveals_bytecode_selectors_raw_data`.
 
 ### K-036 Investigate with Muse: opt-in runtime agent loop (MVP)
 
@@ -2197,6 +2288,9 @@ the test per acceptance criterion.
 | K-030 | `runAssessmentModelPortContract` per registered assessment plugin (contract) |
 | K-032 | `k517_plugin_md_missing_or_mismatched_fails_deterministic_check` (unit) |
 | K-033 | `k033_plugin_docs_match_registry_in_rest_and_mcp` (integration) |
+| K-035 | `k035_priorities_match_frontmatter_tags_deterministically` (unit, web) |
+| K-519 | `k519_ai_personalize_toggle_off_by_default_and_labelled` (Playwright, web) |
+| K-034 | `k034_every_output_schema_shape_renders_via_fixed_library` (unit, web) |
 | K-036 | `k036_investigate_matches_across_rest_and_mcp_for_same_codehash` (integration) |
 | K-517 | `k517_plugin_md_missing_or_mismatched_fails_deterministic_check` (unit) |
 | K-101 | `k101_fast_path_p95_within_5s` (timing) |

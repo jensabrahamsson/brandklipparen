@@ -1059,6 +1059,49 @@ M-12 and the boundary rules in A-06.
   plugin absent from the registry array is absent from analysis
   output.
 
+**H-46 Forged or tampered separately published plugin package
+(F-16, B9).** A plugin package published outside the repo is
+intercepted or edited in transit or at rest: file bytes change, the
+version is rebound to foreign bytes, or a foreign signer certifies
+the bytes. Without a build-time check the forged package enters
+review and registration carrying code no reviewer approved.
+
+- M-52 Signed allowlist admission at build time: a separately
+  published package is admitted only when the allowlist names its id
+  and version with a matching canonical SHA-256 digest and a valid
+  ed25519 build signature, verified from package bytes in
+  `src/adapters/pluginAllowlist/allowlist.ts` before any import. An unsigned package
+  (absent id or version) and a byte-changed package (digest mismatch
+  or bad signature) are turned away with a typed error; the verifier
+  never loads plugin code, reads the filesystem, or uses the network.
+  First-party plugins stay on the static-import path in M-21; the
+  allowlist is the single door for anything published separately.
+  Requirement: K-514. Test: the unit test
+  `k514_unsigned_or_tampered_plugin_rejected_at_build` feeds an
+  unsigned and a byte-changed package and requires a build-time
+  rejection before any import.
+
+**H-47 Runaway untrusted detector binds the analysis (F-16, B9).**
+A detector that loops or blocks holds the shared analysis past the
+fast-path budget, starving parallel analyses and the demo. An
+in-process synchronous call has no preemptive deadline, so the
+runaway is a defect no review reliably catches.
+
+- M-53 Dedicated worker per untrusted detector run with a hard
+  deadline: `src/adapters/pluginWorker/` spawns one child `node`
+  process per run with an empty environment, the input JSON on stdin
+  and one envelope on stdout. The deadline kill maps to the typed
+  `timeout` plugin outcome with an empty finding list; every other
+  worker failure maps to `worker-error`, and the rest of the analysis
+  stands. Parallel runs occupy solely their own workers, so a runaway
+  never starves a sibling. In-process execution stays reserved for
+  reviewed first-party detectors; any unreviewed detector registers
+  behind this boundary first. Requirement: K-515 (proposed), K-501.
+  Test: the integration test
+  `k501_pathological_input_isolates_to_its_analysis` (extended to a
+  runaway detector plugin) requires parallel analyses to continue
+  while the runaway records the typed timeout outcome.
+
 **H-16 Malicious or defective plugin output skews scores, breaks
 determinism, or reaches the browser as markup (plugin output, B6, B8).**
 A detector plugin that reads a clock, randomness, or the network, that
@@ -2494,6 +2537,8 @@ K-5xx to its threats and countermeasures, is in section 12.2 in
 | M-49 Env-only feed key handling with redacted display and paced polling | H-43 | K-039, K-505, K-504 | `k039_etherscan_without_key_reports_not_configured_and_sends_nothing` (unit) |
 | M-50 Pinned factories, strict decoders, gated handoff, and reorg orphaning | H-44 | K-039, K-102 | `k039_liquidity_gate_hands_to_analysis_only_after_first_liquidity` (unit) |
 | M-51 Address-only quote resolution with logged skips, score-neutral by type | H-45 | K-039, K-307 | `k039_feed_leaves_score_and_evidence_unchanged` (property) |
+| M-52 Signed allowlist admission for separately published packages at build time | H-46 | K-514 | `k514_unsigned_or_tampered_plugin_rejected_at_build` (unit) |
+| M-53 Dedicated worker per untrusted detector run with a hard deadline and typed timeout | H-47 | K-515, K-501 | `k501_pathological_input_isolates_to_its_analysis` extended to a runaway detector (integration) |
 
 Every row in the table is included in the suite or the gate as per A-22
 and I-01. A change that activates a new component, port or

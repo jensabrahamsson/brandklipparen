@@ -1,6 +1,23 @@
 import { useCallback, useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
-import { ApiError, analyzeToken, fetchAssessment, fetchHealth, requestInvestigation } from "../lib/api.ts";
+import { ApiError, analyzeToken, fetchAssessment, fetchHealth, fetchPersonalizeStatus, fetchPlugins, requestInvestigation, requestPersonalizeMapping } from "../lib/api.ts";
+import { ExpertDetail } from "../components/ExpertDetail.tsx";
+import { PluginsPanel } from "../components/PluginsPanel.tsx";
+import type { PluginListEntry } from "../components/PluginsPanel.tsx";
+import { toPluginResultViews } from "../lib/plugins.ts";
 import { isValidAddress } from "../lib/validate.ts";
+import { planLayout } from "../lib/layout.ts";
+import { readStoredMode, writeStoredMode } from "../lib/uiMode.ts";
+import type { UiMode } from "../lib/uiMode.ts";
+import { clearStoredPriorities, readStoredPriorities, writeStoredPriorities } from "../lib/priorities.ts";
+import { matchPriorities } from "../lib/matcher.ts";
+import { PrioritiesField } from "../components/PrioritiesField.tsx";
+import {
+  applyAiSectionOrder,
+  parsePersonalizeEnvelope,
+  readStoredAiPersonalize,
+  writeStoredAiPersonalize,
+} from "../lib/personalize.ts";
+import type { AiPersonalizeSpec, PersonalizeContext } from "../lib/personalize.ts";
 import { riskWord } from "../lib/risk.ts";
 import { combinedScoreLine, emptyGaugeReason, plainReason, signalTitle, sortByImpact, strongestSignal } from "../lib/signals.ts";
 import { AssessmentPanel } from "../components/AssessmentPanel.tsx";
@@ -44,6 +61,15 @@ export function TokenPage({
   const [assessment, setAssessment] = useState<AssessmentState>({ status: "idle" });
   const [investigation, setInvestigation] = useState<InvestigationState>({ status: "idle" });
   const [provider, setProvider] = useState<ProviderInfo>({ status: "loading" });
+  const [plugins, setPlugins] = useState<readonly PluginListEntry[] | null>(null);
+  const [mode, setMode] = useState<UiMode>(() => readStoredMode());
+  const [priorities, setPriorities] = useState<string>(() => readStoredPriorities());
+  const [standardOrder, setStandardOrder] = useState(false);
+  const [aiOn, setAiOn] = useState<boolean>(() => readStoredAiPersonalize());
+  const [aiSpec, setAiSpec] = useState<AiPersonalizeSpec | null>(null);
+  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const [aiPending, setAiPending] = useState(false);
+  const [aiProvider, setAiProvider] = useState<{ provider: string; modelId: string } | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [attempt, setAttempt] = useState(0);
   const [elapsed, setElapsed] = useState<number | null>(null);
@@ -107,6 +133,58 @@ export function TokenPage({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const key = apiKey.length === 0 ? null : apiKey;
+    fetchPlugins(key).then((entries) => {
+      if (!cancelled) {
+        setPlugins(entries);
+      }
+    });
+    fetchPersonalizeStatus(key).then((status) => {
+      if (!cancelled) {
+        setAiProvider(status);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiKey]);
+
+  const toggleAi = (next: boolean): void => {
+    setAiOn(next);
+    writeStoredAiPersonalize(next);
+    setAiNotice(null);
+    if (!next) {
+      setAiSpec(null);
+    }
+  };
+
+  const applyAiOrder = (): void => {
+    if (aiPending || !aiOn || priorities.trim().length === 0) {
+      return;
+    }
+    setAiPending(true);
+    const key = apiKey.length === 0 ? null : apiKey;
+    requestPersonalizeMapping(key, address.trim(), priorities.trim()).then((body) => {
+      setAiPending(false);
+      const pluginIds = (plugins ?? []).map((plugin) => plugin.id);
+      const context: PersonalizeContext = {
+        sectionIds: ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell", "expert-detail"],
+        pluginIds,
+        flooredSectionIds: ["summary", "score"],
+      };
+      const spec = parsePersonalizeEnvelope(body, context);
+      if (spec === null) {
+        setAiSpec(null);
+        setAiNotice("AI layout unavailable — showing deterministic order.");
+      } else {
+        setAiSpec(spec);
+        setAiNotice("AI order applied. Scores, evidence and text are unchanged.");
+      }
+    });
+  };
 
   const deepening = result?.kind === "assessed" ? result.deepening : undefined;
   const resultKind = result?.kind;
@@ -293,9 +371,97 @@ export function TokenPage({
         </div>
       ) : null}
       {result !== null && result.kind === "assessed" ? (
+        <div role="radiogroup" aria-label="Detail depth" style={{ margin: "0 0 16px" }}>
+          <span className="quiet" style={{ marginRight: 12, fontSize: 14 }}>
+            Detail:
+          </span>
+          <label style={{ marginRight: 12, fontSize: 14 }}>
+            <input
+              type="radio"
+              name="ui-mode"
+              value="simple"
+              checked={mode === "simple"}
+              onChange={() => {
+                setMode("simple");
+                writeStoredMode("simple");
+              }}
+            />{" "}
+            Simple
+          </label>
+          <label style={{ fontSize: 14 }}>
+            <input
+              type="radio"
+              name="ui-mode"
+              value="expert"
+              checked={mode === "expert"}
+              onChange={() => {
+                setMode("expert");
+                writeStoredMode("expert");
+              }}
+            />{" "}
+            Expert
+          </label>
+        </div>
+      ) : null}
+      {result !== null && result.kind === "assessed" ? (
+        <section className="card" aria-label="AI personalize" style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 14, fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              data-testid="ai-personalize-toggle"
+              checked={aiOn}
+              onChange={(event) => toggleAi(event.target.checked)}
+            />{" "}
+            AI personalize (experimental)
+          </label>
+          <p className="quiet" data-testid="ai-personalize-label" style={{ margin: "4px 0", fontSize: 13 }}>
+            {aiProvider === null
+              ? "Mapping provider not configured on this server."
+              : `Maps with ${aiProvider.provider} · ${aiProvider.modelId}.`}
+          </p>
+          {aiOn ? (
+            <div>
+              <p className="quiet" data-testid="ai-personalize-preface" style={{ margin: "4px 0", fontSize: 13 }}>
+                Sends your priorities text and plugin references to{" "}
+                {aiProvider === null ? "the mapping provider" : `${aiProvider.provider} · ${aiProvider.modelId}`} for
+                this one mapping call. Nothing else is sent.
+              </p>
+              <button
+                type="button"
+                data-testid="ai-personalize-apply"
+                disabled={aiPending || priorities.trim().length === 0}
+                onClick={applyAiOrder}
+              >
+                {aiPending ? "Mapping…" : "Apply AI order"}
+              </button>
+            </div>
+          ) : null}
+          {aiNotice === null ? null : (
+            <p className="quiet" data-testid="ai-personalize-result" style={{ margin: "4px 0 0", fontSize: 13 }}>
+              {aiNotice}
+            </p>
+          )}
+        </section>
+      ) : null}
+      {result !== null && result.kind === "assessed" ? (
         <AssessedView
           result={result}
           elapsed={elapsed}
+          plugins={plugins}
+          mode={mode}
+          aiSpec={aiOn ? aiSpec : null}
+          priorities={priorities}
+          onPrioritiesChange={(text) => {
+            setPriorities(text);
+            writeStoredPriorities(text);
+            setStandardOrder(false);
+          }}
+          onPrioritiesClear={() => {
+            clearStoredPriorities();
+            setPriorities("");
+          }}
+          standardOrder={standardOrder}
+          onShowStandardOrder={() => setStandardOrder(true)}
           tab={tab}
           onTab={setTab}
           onTabKeyDown={onTabKeyDown}
@@ -316,6 +482,14 @@ export function TokenPage({
 function AssessedView({
   result,
   elapsed,
+  plugins,
+  mode,
+  aiSpec,
+  priorities,
+  onPrioritiesChange,
+  onPrioritiesClear,
+  standardOrder,
+  onShowStandardOrder,
   tab,
   onTab,
   onTabKeyDown,
@@ -330,6 +504,14 @@ function AssessedView({
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
   readonly elapsed: number | null;
+  readonly plugins: readonly PluginListEntry[] | null;
+  readonly mode: UiMode;
+  readonly aiSpec: AiPersonalizeSpec | null;
+  readonly priorities: string;
+  readonly onPrioritiesChange: (text: string) => void;
+  readonly onPrioritiesClear: () => void;
+  readonly standardOrder: boolean;
+  readonly onShowStandardOrder: () => void;
   readonly tab: Tab;
   readonly onTab: (tab: Tab) => void;
   readonly onTabKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
@@ -415,76 +597,24 @@ function AssessedView({
       </div>
       <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" hidden={tab !== "overview"}>
         {tab === "overview" ? (
-          <div>
-            <div className="token-grid">
-              <div>
-                <section className="card" aria-label="Combined score" ref={ringRef} style={{ marginBottom: 20 }}>
-                  <div className="score-ring-wrap">
-                    <ScoreRing score={result.score} />
-                    <div style={{ flex: "1 1 240px" }}>
-                      <p className="risk-meaning" style={{ fontSize: 22, fontWeight: 600, margin: "0 0 8px" }}>
-                        {meaningSentence(result)}
-                      </p>
-                      <p className="muted" style={{ margin: "0 0 8px" }}>
-                        {combinedScoreLine(result.score, result.probabilities)}
-                      </p>
-                      <p className="quiet numeric" style={{ margin: 0 }}>
-                        {result.score} {riskWord(result.score)} · model {result.modelVersion} · block {result.block}
-                        {elapsed === null ? "" : ` · Fast path ${elapsed.toFixed(1)} s`}
-                      </p>
-                      <p className="quiet" style={{ margin: "4px 0 0" }}>
-                        Calibration report: see the model card. The v1 REST response carries no calibration
-                        numbers, so none are shown here.
-                      </p>
-                    </div>
-                  </div>
-                  {result.deepening === "pending" ? (
-                    <p className="quiet" style={{ margin: "16px 0 0" }}>
-                      Deepening pending: decompiled snippets stream in here when ready. Score and probabilities
-                      stand meanwhile.
-                    </p>
-                  ) : null}
-                </section>
-                <div className="gauges" style={{ marginBottom: 20 }}>
-                  {RISKS.map((risk) => {
-                    const top = strongestSignal(result.signals, risk);
-                    const count = result.signals.filter((signal) => signal.risk === risk).length;
-                    return (
-                      <Gauge
-                        key={risk}
-                        kind={risk}
-                        probability={result.probabilities[risk]}
-                        signalCount={count}
-                        reason={top === undefined ? emptyGaugeReason() : plainReason(top)}
-                      />
-                    );
-                  })}
-                </div>
-                <ExplanationList
-                  claims={result.explanation.claims}
-                  templateVersion={result.explanation.templateVersion}
-                  onSignalLink={onSignalLink}
-                />
-                <section className="card" aria-label="Signals" style={{ marginBottom: 20 }}>
-                  <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Signals</h2>
-                  <p className="quiet numeric" style={{ margin: "0 0 8px" }}>
-                    {result.signals.length} found · sorted by impact on the score
-                  </p>
-                  <SignalList
-                    signals={sorted}
-                    target={result.target}
-                    codeHash={result.codeHash}
-                    deepening={result.deepening}
-                    open={openSignals}
-                    onToggle={onToggleSignal}
-                    templateLine={templateLine}
-                  />
-                </section>
-                <CantTellPanel entries={result.cantTell} />
-              </div>
-              <Sidebar result={result} />
-            </div>
-          </div>
+          <OverviewSections
+            result={result}
+            elapsed={elapsed}
+            plugins={plugins}
+            mode={mode}
+            aiSpec={aiSpec}
+            priorities={priorities}
+            onPrioritiesChange={onPrioritiesChange}
+            onPrioritiesClear={onPrioritiesClear}
+            standardOrder={standardOrder}
+            onShowStandardOrder={onShowStandardOrder}
+            sorted={sorted}
+            templateLine={templateLine}
+            openSignals={openSignals}
+            onToggleSignal={onToggleSignal}
+            onSignalLink={onSignalLink}
+            ringRef={ringRef}
+          />
         ) : null}
       </div>
       <div role="tabpanel" id="panel-assessment" aria-labelledby="tab-assessment" hidden={tab !== "assessment"}>
@@ -496,6 +626,213 @@ function AssessedView({
         {tab === "investigate" ? (
           <InvestigationPanel state={investigation} score={result.score} onRequest={onRunInvestigation} />
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+// Overview sections in deterministic risk-adaptive order (S-060, K-034,
+// P-19): the plan comes from the frozen analysis only, DOM order equals
+// visual order, and every section stays present in every band. Only order
+// changes; scores, evidence and finding text never move.
+function OverviewSections({
+  result,
+  elapsed,
+  plugins,
+  mode,
+  aiSpec,
+  priorities,
+  onPrioritiesChange,
+  onPrioritiesClear,
+  standardOrder,
+  onShowStandardOrder,
+  sorted,
+  templateLine,
+  openSignals,
+  onToggleSignal,
+  onSignalLink,
+  ringRef,
+}: {
+  readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
+  readonly elapsed: number | null;
+  readonly plugins: readonly PluginListEntry[] | null;
+  readonly mode: UiMode;
+  readonly priorities: string;
+  readonly onPrioritiesChange: (text: string) => void;
+  readonly onPrioritiesClear: () => void;
+  readonly standardOrder: boolean;
+  readonly onShowStandardOrder: () => void;
+  readonly aiSpec: AiPersonalizeSpec | null;
+  readonly sorted: Extract<AnalyzeResult, { kind: "assessed" }>["signals"];
+  readonly templateLine: (signalId: string) => string | undefined;
+  readonly openSignals: ReadonlySet<string>;
+  readonly onToggleSignal: (signalId: string) => void;
+  readonly onSignalLink: (signalId: string) => void;
+  readonly ringRef: React.RefObject<HTMLElement | null>;
+}): JSX.Element {
+  const pluginViews = result.pluginResults === undefined ? [] : toPluginResultViews(result.pluginResults);
+  const plan = planLayout({
+    score: result.score,
+    signalCount: result.signals.length,
+    severeSignalCount: result.signals.filter((signal) => signal.severity === "high").length,
+    pluginFindingCount: pluginViews.reduce((total, view) => total + view.findings.length, 0),
+    cantTellCount: result.cantTell.length,
+  });
+  // Deterministic priority baseline (S-067, K-035, P-25): frozen priorities
+  // plus validated frontmatter give the plugin order with matched tags.
+  // Zero network calls; the text never leaves the device here.
+  const frontmatterViews = (plugins ?? [])
+    .filter(
+      (plugin): plugin is typeof plugin & { frontmatter: NonNullable<typeof plugin.frontmatter> } =>
+        plugin.frontmatter !== undefined &&
+        (plugin.frontmatter.severity.max === "low" ||
+          plugin.frontmatter.severity.max === "medium" ||
+          plugin.frontmatter.severity.max === "high"),
+    )
+    .map((plugin) => ({
+      id: plugin.id,
+      tags: plugin.frontmatter.tags,
+      severityMax: plugin.frontmatter.severity.max as "low" | "medium" | "high",
+    }));
+  const match = matchPriorities(priorities, frontmatterViews);
+  const aiActive = aiSpec !== null;
+  // Experimental AI order (S-070, K-519, P-28): the validated spec wins
+  // over the deterministic match; any invalid or missing spec already
+  // fell back to null, so the baseline stands unchanged.
+  const sectionOrder = aiActive
+    ? applyAiSectionOrder(plan, aiSpec, ["summary", "score"])
+    : plan;
+  const emphasisOf = new Map((aiSpec?.placements ?? []).map((placement) => [placement.sectionId, placement.emphasis]));
+  const collapsed = new Set(
+    (aiSpec?.placements ?? []).filter((placement) => placement.collapsed).map((placement) => placement.sectionId),
+  );
+  const [aiExpanded, setAiExpanded] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    setAiExpanded(new Set());
+  }, [aiSpec]);
+  const pluginOrder = aiActive ? aiSpec.pluginRanking : match.orderedIds;
+  const activeMatchedTags = aiActive ? new Map<string, readonly string[]>() : match.matchedTags;
+  const personalized = aiActive || (!standardOrder && match.orderedIds.length > 0);
+  const blocks: Record<string, JSX.Element> = {
+    score: (
+      <>
+        <section className="card" aria-label="Combined score" ref={ringRef} style={{ marginBottom: 20 }}>
+          <div className="score-ring-wrap">
+            <ScoreRing score={result.score} />
+            <div style={{ flex: "1 1 240px" }}>
+              <p className="risk-meaning" style={{ fontSize: 22, fontWeight: 600, margin: "0 0 8px" }}>
+                {meaningSentence(result)}
+              </p>
+              <p className="muted" style={{ margin: "0 0 8px" }}>
+                {combinedScoreLine(result.score, result.probabilities)}
+              </p>
+              <p className="quiet numeric" style={{ margin: 0 }}>
+                {result.score} {riskWord(result.score)} · model {result.modelVersion} · block {result.block}
+                {elapsed === null ? "" : ` · Fast path ${elapsed.toFixed(1)} s`}
+              </p>
+              <p className="quiet" style={{ margin: "4px 0 0" }}>
+                Calibration report: see the model card. The v1 REST response carries no calibration numbers, so
+                none are shown here.
+              </p>
+            </div>
+          </div>
+          {result.deepening === "pending" ? (
+            <p className="quiet" style={{ margin: "16px 0 0" }}>
+              Deepening pending: decompiled snippets stream in here when ready. Score and probabilities stand
+              meanwhile.
+            </p>
+          ) : null}
+        </section>
+        <div className="gauges" style={{ marginBottom: 20 }}>
+          {RISKS.map((risk) => {
+            const top = strongestSignal(result.signals, risk);
+            const count = result.signals.filter((signal) => signal.risk === risk).length;
+            return (
+              <Gauge
+                key={risk}
+                kind={risk}
+                probability={result.probabilities[risk]}
+                signalCount={count}
+                reason={top === undefined ? emptyGaugeReason() : plainReason(top)}
+              />
+            );
+          })}
+        </div>
+      </>
+    ),
+    explanation: (
+      <ExplanationList
+        claims={result.explanation.claims}
+        templateVersion={result.explanation.templateVersion}
+        onSignalLink={onSignalLink}
+      />
+    ),
+    signals: (
+      <section className="card" aria-label="Signals" style={{ marginBottom: 20 }}>
+        <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Signals</h2>
+        <p className="quiet numeric" style={{ margin: "0 0 8px" }}>
+          {result.signals.length} found · sorted by impact on the score
+        </p>
+        <SignalList
+          signals={sorted}
+          target={result.target}
+          codeHash={result.codeHash}
+          deepening={result.deepening}
+          open={openSignals}
+          onToggle={onToggleSignal}
+          templateLine={templateLine}
+        />
+      </section>
+    ),
+    "plugin-findings": (
+      <section className="card" aria-label="Plugins section" style={{ marginBottom: 20 }}>
+        <PluginsPanel
+          plugins={plugins}
+          results={pluginViews}
+          order={pluginOrder}
+          matchedTags={activeMatchedTags}
+          personalized={personalized}
+          onShowStandardOrder={onShowStandardOrder}
+        />
+      </section>
+    ),
+    "cant-tell": <CantTellPanel entries={result.cantTell} />,
+  };
+  return (
+    <div>
+      <PrioritiesField value={priorities} onChange={onPrioritiesChange} onClear={onPrioritiesClear} />
+      <div className="token-grid">
+        <div>
+          {sectionOrder.map((sectionId) => {
+            const collapsedByAi = collapsed.has(sectionId) && !aiExpanded.has(sectionId);
+            if (collapsedByAi) {
+              return (
+                <div key={sectionId} data-section={sectionId} data-collapsed="true">
+                  <button
+                    type="button"
+                    className="button-ghost"
+                    data-testid={`ai-expand-${sectionId}`}
+                    onClick={() => setAiExpanded(new Set([...aiExpanded, sectionId]))}
+                  >
+                    Show {sectionId}
+                  </button>
+                </div>
+              );
+            }
+            return (
+              <div key={sectionId} data-section={sectionId} data-emphasis={emphasisOf.get(sectionId) ?? "normal"}>
+                {emphasisOf.get(sectionId) === "high" ? (
+                  <p className="quiet" data-testid={`ai-emphasis-${sectionId}`} style={{ fontSize: 13 }}>
+                    Highlighted for you.
+                  </p>
+                ) : null}
+                {blocks[sectionId]}
+              </div>
+            );
+          })}
+          {mode === "expert" ? <ExpertDetail result={result} /> : null}
+        </div>
+        <Sidebar result={result} />
       </div>
     </div>
   );

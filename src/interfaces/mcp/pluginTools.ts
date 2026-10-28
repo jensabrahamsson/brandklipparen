@@ -98,6 +98,12 @@ export const TOOL_SECURITY_REVIEWS: Readonly<Record<string, PluginToolSecurityRe
     scope: "read-only validated docs record, unknown id rejected",
     verdict: "approved",
   }),
+  get_plugin_audit: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-10-28",
+    scope: "read-only stored audit record, unknown id rejected, triggers no audit",
+    verdict: "approved",
+  }),
   plugin_dev_brandklipparen_capability: Object.freeze({
     reviewer: "plugin-security-review",
     date: "2026-10-28",

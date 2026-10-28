@@ -42,25 +42,45 @@ function mustManifest(): DetectorManifest {
 
 function compliantDocs(): string {
   return [
+    "---",
+    "id: dev.brandklipparen.capability",
+    "kind: detector",
+    "version: 1.0.0",
+    "tags: [owner-powers, upgradeability]",
+    "audience: [holder, auditor]",
+    "severity: { min: low, max: high }",
+    "---",
     "# PLUGIN.md: Capability detector (`dev.brandklipparen.capability`)",
     "",
     "Version 1.0.0. First-party detector plugin.",
     "",
-    "## What it detects",
+    "## What it checks",
     "",
     "Structural bytecode capabilities, one finding per capability key.",
+    "",
+    "## Why it matters to you",
+    "",
+    "A selfdestruct or delegatecall capability can drain or redirect funds.",
+    "",
+    "## What it cannot tell you",
+    "",
+    "Whether the capability is reachable or guarded.",
+    "",
+    "## Evidence format",
+    "",
+    "Findings carry `id`, `title`, `payload` and `evidence` with a `selector`.",
+    "",
+    "## Limitations / false positives",
+    "",
+    "Dead code still counts: presence is not reachability.",
     "",
     "## Inputs",
     "",
     "Declared inputs: `bytecode` (with its code hash).",
     "",
-    "## Output",
+    "## Version and changelog",
     "",
-    "Findings with selector evidence and the payload `{ \"capability\": \"<key>\" }`.",
-    "",
-    "## Limits",
-    "",
-    "At most 8 findings and 32768 output bytes.",
+    "Version 1.0.0. Initial release.",
     "",
   ].join("\n");
 }
@@ -78,7 +98,7 @@ describe("required PLUGIN.md deterministic checks (S-052, K-517)", () => {
     const manifest = mustManifest();
     expect(docsError(manifest, undefined).kind).toBe("missing-file");
     expect(
-      docsError(manifest, compliantDocs().replace("## Limits\n\nAt most 8 findings and 32768 output bytes.\n", "")).kind,
+      docsError(manifest, compliantDocs().replace("## Evidence format", "## Output")).kind,
     ).toBe("missing-section");
     expect(
       docsError(

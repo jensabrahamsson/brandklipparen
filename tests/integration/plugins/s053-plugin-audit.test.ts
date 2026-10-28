@@ -37,25 +37,45 @@ function testManifest(): DetectorManifest {
   return parsed.value;
 }
 
-const CLEAN_DOCS = `# PLUGIN.md: Test detector (\`dev.brandklipparen.test-detector\`)
+const CLEAN_DOCS = `---
+id: dev.brandklipparen.test-detector
+kind: detector
+version: 1.0.0
+tags: [honeypot]
+audience: [holder]
+severity: { min: low, max: high }
+---
+# PLUGIN.md: Test detector (\`dev.brandklipparen.test-detector\`)
 
 Version 1.0.0.
 
-## What it detects
+## What it checks
 
 A test detection.
+
+## Why it matters to you
+
+A test finding worth reading.
+
+## What it cannot tell you
+
+Whether the test detection matters.
+
+## Evidence format
+
+Findings carry evidence with selectors.
+
+## Limitations / false positives
+
+A test limitation.
 
 ## Inputs
 
 Declared inputs: \`bytecode\`.
 
-## Output
+## Version and changelog
 
-Findings carry evidence.
-
-## Limits
-
-At most 8 findings.
+Version 1.0.0. Initial release.
 `;
 
 function ctxOf() {

@@ -20,6 +20,8 @@ import { serializeAssessment } from "../../application/analyzeToken.ts";
 import type { AppServices, DetectorSet } from "../../application/analyzeToken.ts";
 import { exposeRegistry, serializePluginDocs, serializePluginList } from "../../plugins/exposure.ts";
 import type { PluginDocsMap, PluginWeightMapping } from "../../plugins/exposure.ts";
+import { serializeStoredAuditReport } from "../../plugins/auditReport.ts";
+import type { StoredAuditReportMap } from "../../plugins/auditReport.ts";
 import { serializeTokenAssessment } from "../../application/assessmentService.ts";
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import { serializeTokenInvestigation } from "../../application/investigationService.ts";
@@ -50,6 +52,7 @@ import type { RateLimitConfig, RateLimiter } from "../rest/rateLimit.ts";
 import type { McpToolError } from "./errors.ts";
 import {
   ASSESS_TOKEN_TOOL,
+  GET_PLUGIN_AUDIT_TOOL,
   GET_PLUGIN_DOCS_TOOL,
   INVESTIGATE_TOKEN_TOOL,
   LIST_PLUGINS_TOOL,
@@ -58,6 +61,7 @@ import {
   TOOL_LIST_VERSION,
   findTool,
   parseAssessTokenInput,
+  parseGetPluginAuditInput,
   parseGetPluginDocsInput,
   parseInvestigateInput,
   parseListPluginsInput,
@@ -94,6 +98,10 @@ export type McpServerOptions = {
   // records the REST docs route reads. An unknown plugin id, or a known
   // id without a record, gives the machine-readable not-found error.
   readonly pluginDocs?: PluginDocsMap | undefined;
+  // Stored CI audit reports keyed by plugin id (S-058, K-516): the same
+  // records the REST audit route reads. Read-only; the tool triggers no
+  // audit.
+  readonly pluginAudits?: StoredAuditReportMap | undefined;
   readonly analyzeTimeoutMs?: number | undefined;
   readonly maxMessageBytes?: number | undefined;
   // Absent service means the assessment feature is disabled through
@@ -475,8 +483,9 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       }
     }
     const weights: PluginWeightMapping = options.pluginWeights ?? {};
+    const docs = options.pluginDocs ?? new Map();
     return ok({
-      content: Object.freeze([textBlock(serializePluginList(exposeRegistry(detectors.registry, weights)))]),
+      content: Object.freeze([textBlock(serializePluginList(exposeRegistry(detectors.registry, weights, docs)))]),
       isError: false,
     });
   }
@@ -534,6 +543,63 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       return err(validationError(`Unknown plugin id: ${JSON.stringify(id)}.`, requestId as string));
     }
     return ok({ content: Object.freeze([textBlock(serializePluginDocs(docs))]), isError: false });
+  }
+
+  // Stored CI audit report read view (S-058, K-516): the stored record for
+  // one registered plugin in a text content block marked as data for the
+  // user (M-15), byte-identical to GET /v1/plugins/:id/audit for the same
+  // record (K-027). An unknown plugin id, or a known id without a stored
+  // report, gives the machine-readable not-found error following the
+  // unknown-tool pattern. The tool triggers no audit.
+  async function runGetPluginAudit(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const detectors = options.detectors;
+    let apiKeyId = "anonymous";
+    if (keyGate) {
+      const candidate = callOptions?.apiKey;
+      if (candidate === undefined) {
+        return err(missingApiKey(requestId as string));
+      }
+      if (!store.verify(candidate)) {
+        return err(invalidApiKey(requestId as string));
+      }
+      apiKeyId = store.keyId(candidate) ?? "unknown-key";
+    }
+    const argLength = safeJsonLength(args);
+    if (argLength === null) {
+      return err(validationError("Invalid arguments: expected an object with id.", requestId as string));
+    }
+    if (argLength > maxMessageBytes) {
+      return err(requestTooLarge(requestId as string));
+    }
+    const parsed = parseGetPluginAuditInput(args);
+    if ("kind" in parsed) {
+      switch (parsed.kind) {
+        case "request-too-large":
+          return err(requestTooLarge(requestId as string));
+        case "key-in-url-or-body":
+          return err(keyInToolArgs(requestId as string));
+        case "validation-error":
+        default:
+          return err(validationError(parsed.message ?? "Invalid arguments.", requestId as string));
+      }
+    }
+    if (limiter !== null) {
+      const decision = limiter.check(apiKeyId);
+      if (!decision.allowed) {
+        return err(rateLimited(decision.retryAfterSec, requestId as string));
+      }
+    }
+    const id = parsed.id;
+    const registered = detectors.registry.entries.some((candidate) => candidate.manifest.id === id);
+    const report = (options.pluginAudits ?? new Map()).get(id);
+    if (!registered || report === undefined) {
+      return err(validationError(`Unknown plugin id: ${JSON.stringify(id)}.`, requestId as string));
+    }
+    return ok({ content: Object.freeze([textBlock(serializeStoredAuditReport(report))]), isError: false });
   }
 
   // Per-plugin detector tool (S-048, K-031): the same gate and analysis
@@ -623,6 +689,9 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     }
     if (name === GET_PLUGIN_DOCS_TOOL) {
       return runGetPluginDocs(args, requestId, callOptions);
+    }
+    if (name === GET_PLUGIN_AUDIT_TOOL) {
+      return runGetPluginAudit(args, requestId, callOptions);
     }
     if (name === INVESTIGATE_TOKEN_TOOL) {
       return runInvestigate(args, requestId, callOptions);

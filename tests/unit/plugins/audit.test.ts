@@ -78,25 +78,45 @@ export function detect(): string {
 }
 `;
 
-const CLEAN_DOCS = `# PLUGIN.md: Test detector (\`dev.brandklipparen.test-detector\`)
+const CLEAN_DOCS = `---
+id: dev.brandklipparen.test-detector
+kind: detector
+version: 1.0.0
+tags: [honeypot]
+audience: [holder]
+severity: { min: low, max: high }
+---
+# PLUGIN.md: Test detector (\`dev.brandklipparen.test-detector\`)
 
 Version 1.0.0.
 
-## What it detects
+## What it checks
 
-A test detection with the \`capability\` payload.
+A test detection with the [\`capability\`] payload.
+
+## Why it matters to you
+
+A test finding worth reading.
+
+## What it cannot tell you
+
+Whether the test detection matters.
+
+## Evidence format
+
+Findings carry [\`id\`], [\`title\`], [\`payload\`] with [\`capability\`], and [\`evidence\`] with [\`selector\`].
+
+## Limitations / false positives
+
+A test limitation.
 
 ## Inputs
 
-Declared inputs: \`bytecode\`.
+Declared inputs: [\`bytecode\`].
 
-## Output
+## Version and changelog
 
-Findings carry \`id\`, \`title\`, \`payload\` with \`capability\`, and \`evidence\` with \`selector\`.
-
-## Limits
-
-At most 8 findings.
+Version 1.0.0. Initial release.
 `;
 
 function kindsOf(report: { passed: boolean; failures: readonly { kind: string }[] }): string[] {
@@ -281,11 +301,11 @@ describe("deterministic plugin audit", () => {
       [{ path: "index.ts", text: CLEAN_SOURCE }],
       `${CLEAN_DOCS}\nThe \`frobnicate\` flag gates emission.\n`,
     );
-    // Appended prose outside ## Output names no output field...
+    // Appended prose outside ## Evidence format names no output field...
     expect(driftedField.passed).toBe(true);
 
     const outputDrift = auditDocsOutputFields(
-      CLEAN_DOCS.replace("and `evidence` with `selector`.", "and `evidence` with `selector` plus `frobnicate`."),
+      CLEAN_DOCS.replace("and [`evidence`] with [`selector`].", "and [`evidence`] with [`selector`] plus `frobnicate`."),
       manifest,
     );
     expect(outputDrift.map((failure) => failure.kind)).toContain("unknown-output-field");

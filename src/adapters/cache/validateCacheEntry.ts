@@ -202,6 +202,7 @@ const PLUGIN_OUTCOMES: readonly string[] = Object.freeze([
   "ok",
   "invalid-output",
   "threw",
+  "timeout",
   "input-unavailable",
 ]);
 

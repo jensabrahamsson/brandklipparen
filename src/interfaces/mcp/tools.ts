@@ -39,6 +39,11 @@ export const LIST_PLUGINS_VERSION = "1.0.0";
 // surface (K-026).
 export const GET_PLUGIN_DOCS_TOOL = "get_plugin_docs";
 export const GET_PLUGIN_DOCS_VERSION = "1.0.0";
+// Stored CI audit report read view (S-058, K-516): one registry-derived
+// reading tool returning the same stored report as GET
+// /v1/plugins/:id/audit. The read view triggers no audit.
+export const GET_PLUGIN_AUDIT_TOOL = "get_plugin_audit";
+export const GET_PLUGIN_AUDIT_VERSION = "1.0.0";
 // On-request Muse contract assessment (S-038, K-305, K-309): a separate
 // reading tool over the shared assessment service. Scores and evidence
 // pass through untouched; the assessment lands in its own labelled field.
@@ -141,6 +146,20 @@ export const GET_PLUGIN_DOCS_INPUT_SCHEMA: JsonSchema = Object.freeze({
   }),
 });
 
+export const GET_PLUGIN_AUDIT_INPUT_SCHEMA: JsonSchema = Object.freeze({
+  type: "object",
+  additionalProperties: false,
+  required: Object.freeze(["id"]),
+  properties: Object.freeze({
+    id: Object.freeze({
+      type: "string",
+      description: "Registered plugin id, for example dev.brandklipparen.capability.",
+      minLength: 1,
+      maxLength: MCP_MAX_ADDRESS_CHARS,
+    }),
+  }),
+});
+
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
   Object.freeze({
     name: ASSESS_TOKEN_TOOL,
@@ -176,6 +195,13 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       "Read the validated PLUGIN.md docs for one registered plugin: id, version, section list and markdown. Same record as GET /v1/plugins/:id/docs. Read-only.",
     version: GET_PLUGIN_DOCS_VERSION,
     inputSchema: GET_PLUGIN_DOCS_INPUT_SCHEMA,
+  }),
+  Object.freeze({
+    name: GET_PLUGIN_AUDIT_TOOL,
+    description:
+      "Read the stored CI audit report for one registered plugin: deterministic state, advisory AI state with provider and model id, and human-review state. Same record as GET /v1/plugins/:id/audit. Read-only; triggers no audit.",
+    version: GET_PLUGIN_AUDIT_VERSION,
+    inputSchema: GET_PLUGIN_AUDIT_INPUT_SCHEMA,
   }),
 ]);
 
@@ -304,6 +330,16 @@ export function parseListPluginsInput(args: unknown): AssessInputError | { reado
 // value must be a plain object carrying solely the plugin id. Unknown
 // fields are turned away; secret-like fields name the key rule like any
 // other tool.
+// Strict boundary check for get_plugin_audit arguments (S-058, K-026):
+// the value must be a plain object carrying solely the plugin id, the same
+// shape as the docs tool. Unknown fields are turned away; secret-like
+// fields name the key rule like any other tool.
+export function parseGetPluginAuditInput(
+  args: unknown,
+): AssessInputError | { readonly id: string } {
+  return parseGetPluginDocsInput(args);
+}
+
 export function parseGetPluginDocsInput(
   args: unknown,
 ): AssessInputError | { readonly id: string } {

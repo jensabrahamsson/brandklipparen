@@ -52,7 +52,7 @@
               "pluginId": { "type": "string", "minLength": 1 },
               "pluginVersion": { "type": "string", "minLength": 1 },
               "apiVersion": { "type": "string", "minLength": 1 },
-              "outcome": { "enum": ["ok", "invalid-output", "threw", "input-unavailable"] },
+              "outcome": { "enum": ["ok", "invalid-output", "threw", "timeout", "input-unavailable"] },
               "findings": {
                 "type": "array",
                 "items": {
@@ -301,6 +301,22 @@
           }
         },
         "outputSchema": { "type": "object" },
+        "frontmatter": {
+          "type": "object",
+          "required": ["tags", "audience", "severity"],
+          "properties": {
+            "tags": { "type": "array", "items": { "type": "string" } },
+            "audience": { "type": "array", "items": { "type": "string" } },
+            "severity": {
+              "type": "object",
+              "required": ["min", "max"],
+              "properties": {
+                "min": { "enum": ["low", "medium", "high"] },
+                "max": { "enum": ["low", "medium", "high"] }
+              }
+            }
+          }
+        },
         "limits": {
           "type": "object",
           "required": ["maxFindings", "maxEvidencePerFinding", "maxOutputBytes"],
