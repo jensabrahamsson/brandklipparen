@@ -35,6 +35,14 @@ export type OnchainJoinResult = {
   readonly violations: readonly OffsetViolation[];
 };
 
+// In skip mode the holdout rows are used for the overlap exclusion only
+// (so the seed-42 train/test split stays identical) and are never scored:
+// every holdout scoring, metric and band path gates on this helper, which
+// yields no row at all when skipping.
+export function holdoutRowsForScoring<T>(skipHoldout: boolean, holdoutRows: readonly T[]): T[] {
+  return skipHoldout ? [] : [...holdoutRows];
+}
+
 // Join by lowercase address. Rows are never dropped: an unmatched
 // calibration row keeps its label with a fully missing (all-zero) feature
 // vector, and the counts report the coverage honestly.

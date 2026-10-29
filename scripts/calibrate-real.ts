@@ -17,8 +17,10 @@ import { applyPlattScaling, fitCalibratedHead, fitWeightedLogistic } from "../sr
 import { DEFAULT_BAND_THRESHOLDS, bandOfScore, chooseBandThresholds } from "../src/domain/thresholds.ts";
 import { freezeArtifactFile } from "../src/domain/artifact.ts";
 import { loadOnchainSnapshotFile } from "../src/adapters/onchain/snapshotFile.ts";
-import { joinOnchainSnapshot, rankAUC } from "../src/application/onchainCalibration.ts";
+import { holdoutRowsForScoring, joinOnchainSnapshot, rankAUC } from "../src/application/onchainCalibration.ts";
 import { ONCHAIN_FEATURE_NAMES, ONCHAIN_FEATURE_VERSION, SERVABLE_FEATURE_NAMES, featureAvailable, indexSnapshotById, snapshotFeaturesOf } from "../src/domain/onchain/snapshot.ts";
+import { applyOnchainScaler, fitOnchainScaler, scalerToJSON } from "../src/domain/onchain/scaler.ts";
+import { ONCHAIN_RISK_DIRECTIONS, signConstraintOf } from "../src/domain/onchain/signs.ts";
 import type { SnapshotFile, SnapshotRow } from "../src/domain/onchain/snapshot.ts";
 import { parseModelArtifact } from "../src/domain/risk.ts";
 import type { ModelArtifact } from "../src/domain/risk.ts";
@@ -163,6 +165,11 @@ const extraSnapshotPaths = extraSnapshotsRaw
 
 const calibrationRows = readRows(datasetPath);
 const holdoutRows = readRows(holdoutPath);
+// Skip mode keeps the holdout file read for the overlap exclusion below
+// only (so the seed-42 train/test split stays identical): every scoring,
+// metric and band path gates on holdoutRowsForScoring, which yields no row
+// when skipping, so no holdout score, AUC, Brier or band count is ever
+// computed, printed or written in this run.
 
 const holdoutHashes = new Set<string>();
 for (const row of holdoutRows) {
@@ -718,12 +725,14 @@ const testSummary = summarize(testRows);
 const testBadLabels = testRows.map(badLabel);
 const testRugLabels = testRows.map(rugPullLabel);
 const testHoneyLabels = testRows.map(honeypotLabel);
-const holdoutSummary = summarize(holdoutRows);
-const holdoutBadLabels = holdoutRows.map(badLabel);
+// Gated: in skip mode no holdout row reaches scoring or metrics.
+const holdoutForScoring = holdoutRowsForScoring(skipHoldout, holdoutRows);
+const holdoutSummary = skipHoldout ? null : summarize(holdoutForScoring);
+const holdoutBadLabels = holdoutForScoring.map(badLabel);
 const unknownSummary = summarize(unknownRows);
 
 const testFeatures = testRows.map(detectorFeatures);
-const holdoutFeatures = holdoutRows.map(detectorFeatures);
+const holdoutFeatures = holdoutForScoring.map(detectorFeatures);
 const featureNames = FEATURE_PLUGINS.map(({ name }) => name);
 
 // TRAIN ablation importance on the fitted path: the TRAIN bad-AUC delta
@@ -749,7 +758,7 @@ const cofire = jaccardMatrix(trainFeatures);
 
 const appliedHigh = DEFAULT_BAND_THRESHOLDS.high;
 const appliedElevated = DEFAULT_BAND_THRESHOLDS.elevated;
-// On-chain snapshot ablation (onchain-v2 mapping): when a snapshot file is
+// On-chain snapshot ablation (onchain-v3 mapping): when a snapshot file is
 // given, join it to train, test and holdout rows by token id and fit the
 // onchain and combined arms beside the bytecode production fit. The
 // production fit above (rugHead/honeyHead, detectorHeadWeights, the frozen
@@ -758,10 +767,14 @@ const appliedElevated = DEFAULT_BAND_THRESHOLDS.elevated;
 // probes, so the scores cannot change until a serving-time conversion
 // exists. Only SERVABLE_FEATURE_NAMES columns (live computation matches
 // the snapshot definition) enter the arms; the rest are diagnostic-only.
-// Regularization per arm comes from grouped cross-validation inside TRAIN
-// only (grouped by codehash); test is never tuned on. With --skip-holdout
-// the holdout is not touched at all (seed-variance runs); otherwise it is
-// evaluated exactly once, after the fits are frozen.
+// Continuous on-chain columns are standardized with TRAIN-only params
+// (binaries pass through; missing maps to zero contribution). Risk
+// directions come from the documented domain table in
+// src/domain/onchain/signs.ts, never from test. Regularization per arm
+// comes from grouped cross-validation inside TRAIN only (grouped by
+// codehash); test is never tuned on. With --skip-holdout the holdout rows
+// feed the overlap exclusion only and are never scored; otherwise the
+// holdout is evaluated exactly once, after the fits are frozen.
 let onchainReport: Record<string, unknown> | null = null;
 if (onchainSnapshotPath !== undefined) {
   const loaded = loadOnchainSnapshotFile(onchainSnapshotPath);
@@ -772,15 +785,47 @@ if (onchainSnapshotPath !== undefined) {
   const snapshot: SnapshotFile = loaded.value;
   const trainJoin = joinOnchainSnapshot(trainRows, snapshot);
   const testJoin = joinOnchainSnapshot(testRows, snapshot);
-  const holdoutJoin = skipHoldout ? null : joinOnchainSnapshot(holdoutRows, snapshot);
+  const holdoutJoin = skipHoldout ? null : joinOnchainSnapshot(holdoutForScoring, snapshot);
   const unknownJoin = joinOnchainSnapshot(unknownRows, snapshot);
   const { byId: snapshotById } = indexSnapshotById(snapshot);
   const servableIndex = SERVABLE_FEATURE_NAMES.map((name) => ONCHAIN_FEATURE_NAMES.indexOf(name));
   const pickServable = (matrix: readonly (readonly number[])[]): number[][] =>
     matrix.map((row) => servableIndex.map((col) => row[col] ?? 0));
-  const trainOnchain = pickServable(trainJoin.matrix);
-  const testOnchain = pickServable(testJoin.matrix);
-  const holdoutOnchain = holdoutJoin === null ? [] : pickServable(holdoutJoin.matrix);
+  const trainOnchainRaw = pickServable(trainJoin.matrix);
+  const testOnchainRaw = pickServable(testJoin.matrix);
+  const holdoutOnchainRaw = holdoutJoin === null ? [] : pickServable(holdoutJoin.matrix);
+  // Standardization (issue 1): LP shares are continuous and standardized
+  // with TRAIN-only mean/sd over the available subset; owner flags and the
+  // drained flag are binary and pass through untouched.
+  const CONTINUOUS_SERVABLE = ["lp_burned_share", "lp_locker_share", "lp_deployer_or_owner_share"];
+  const BINARY_SERVABLE = ["owner_renounced", "owner_eoa", "owner_contract", "owner_safe", "liquidity_removed_24h"];
+  for (const name of SERVABLE_FEATURE_NAMES) {
+    const binary = BINARY_SERVABLE.includes(name);
+    const continuous = CONTINUOUS_SERVABLE.includes(name);
+    if (binary === continuous) {
+      fail(`servable feature ${name} must be exactly binary or continuous for scaling`);
+      throw new Error("unreachable");
+    }
+  }
+  const availabilityOf = (rows: CalibrationRow[]): boolean[][] =>
+    rows.map((row) =>
+      SERVABLE_FEATURE_NAMES.map((feature) => featureAvailable(snapshotById.get(row.address.toLowerCase()) ?? null, feature)),
+    );
+  const trainAvail = availabilityOf(trainRows);
+  const testAvail = availabilityOf(testRows);
+  const holdoutAvail = holdoutJoin === null ? [] : availabilityOf(holdoutForScoring);
+  const onchainScaler = fitOnchainScaler(
+    [...SERVABLE_FEATURE_NAMES],
+    (name) => CONTINUOUS_SERVABLE.includes(name),
+    trainOnchainRaw,
+    trainAvail,
+  );
+  const trainOnchain = trainOnchainRaw.map((row, index) => [...applyOnchainScaler(row, trainAvail[index] ?? [], onchainScaler)]);
+  const testOnchain = testOnchainRaw.map((row, index) => [...applyOnchainScaler(row, testAvail[index] ?? [], onchainScaler)]);
+  const holdoutOnchain =
+    holdoutJoin === null
+      ? []
+      : holdoutOnchainRaw.map((row, index) => [...applyOnchainScaler(row, holdoutAvail[index] ?? [], onchainScaler)]);
   const withOnchain = (
     base: readonly (readonly number[])[],
     extra: readonly (readonly number[])[],
@@ -788,24 +833,18 @@ if (onchainSnapshotPath !== undefined) {
   const trainBoth = withOnchain(trainFeatures, trainOnchain);
   const testBoth = withOnchain(testFeatures, testOnchain);
   const holdoutBoth = holdoutJoin === null ? [] : withOnchain(holdoutFeatures, holdoutOnchain);
-  // Documented risk directions for the on-chain columns (vs the missing
-  // baseline): retained control raises, renounced/burned/locked/deep
-  // lowers, drained/removed/concentrated raises, slow-to-liquidity lowers.
-  const onchainSign = (name: string): "pos" | "neg" | "free" => {
-    if (name === "owner_renounced" || name === "lp_burned_share" || name === "lp_locker_share") {
-      return "neg";
+  // Risk directions from the documented domain table (issue 2): every
+  // servable feature must map to a fittable pos/neg constraint, never a
+  // test-picked sign; excluded features never reach a fit.
+  const servableConstraints = SERVABLE_FEATURE_NAMES.map((name) => ({ name, constraint: signConstraintOf(name) }));
+  for (const entry of servableConstraints) {
+    if (entry.constraint !== "pos" && entry.constraint !== "neg") {
+      fail(`servable feature ${entry.name} has no fittable risk direction (${entry.constraint})`);
+      throw new Error("unreachable");
     }
-    if (name === "liq_log10_1p_weth" || name === "blocks_deploy_to_first_capped") {
-      return "neg";
-    }
-    if (name === "conc_deployer_share" || name === "conc_top1_share" || name === "conc_top10_share") {
-      return "pos";
-    }
-    return "pos";
-  };
-  const servableSigns = SERVABLE_FEATURE_NAMES.map(onchainSign);
-  const servableNonNegative = servableSigns.map((sign) => sign === "pos");
-  const servableNonPositive = servableSigns.map((sign) => sign === "neg");
+  }
+  const servableNonNegative = servableConstraints.map((entry) => entry.constraint === "pos");
+  const servableNonPositive = servableConstraints.map((entry) => entry.constraint === "neg");
   const bothNonNegative = [...NON_NEGATIVE, ...servableNonNegative];
   const bothNonPositive = [...NON_NEGATIVE.map(() => false), ...servableNonPositive];
   const headPrior = (head: "rug-pull" | "honeypot") => ({
@@ -908,7 +947,15 @@ if (onchainSnapshotPath !== undefined) {
   ) => {
     const trainProbs = badProbsOf(trainMatrix, arm);
     const testProbs = badProbsOf(testMatrix, arm);
-    const holdoutProbs = holdoutMatrix === null ? [] : badProbsOf(holdoutMatrix, arm);
+    // In skip mode the holdout keys are omitted entirely: no holdout AUC,
+    // Brier or band value is computed, printed or written anywhere.
+    const holdoutPart =
+      holdoutMatrix === null
+        ? {}
+        : {
+            holdoutBadAuc: round6(aucRank(badProbsOf(holdoutMatrix, arm), holdoutLabels)),
+            holdoutBadBrier: round6(brier(badProbsOf(holdoutMatrix, arm), holdoutLabels)),
+          };
     return {
       lambda: arm.lambda,
       trainBadAuc: round6(aucRank(trainProbs, trainBadLabels)),
@@ -916,8 +963,7 @@ if (onchainSnapshotPath !== undefined) {
       testBadAucCI: bootstrapAucCI(testProbs, testLabels, 1000, seed + 1),
       testBadBrier: round6(brier(testProbs, testLabels)),
       testBandDist: bandDistOf(testProbs),
-      holdoutBadAuc: holdoutMatrix === null ? null : round6(aucRank(holdoutProbs, holdoutLabels)),
-      holdoutBadBrier: holdoutMatrix === null ? null : round6(brier(holdoutProbs, holdoutLabels)),
+      ...holdoutPart,
       scoreSpread: spreadOf(testProbs),
       rugUncalibrated: arm.rug.uncalibrated,
       honeyUncalibrated: arm.honey.uncalibrated,
@@ -937,30 +983,54 @@ if (onchainSnapshotPath !== undefined) {
     });
     return { auc: round6(rankAUC(scores, kept)), rows: scores.length, excluded };
   };
-  // Per-class score distribution (aggregate only, never per-token).
-  const spreadOf = (probs: readonly number[]): { count: number; mean: number; min: number; max: number } => {
+  // Per-class score distribution (aggregate only, never per-token):
+  // min/nearest-rank quartiles/max plus the saturation shares above 0.99
+  // and below 0.01 (issue 5).
+  const spreadOf = (probs: readonly number[]): {
+    count: number;
+    mean: number;
+    min: number;
+    p25: number;
+    p50: number;
+    p75: number;
+    max: number;
+    shareAbove099: number;
+    shareBelow001: number;
+  } => {
     if (probs.length === 0) {
-      return { count: 0, mean: 0, min: 0, max: 0 };
+      return { count: 0, mean: 0, min: 0, p25: 0, p50: 0, p75: 0, max: 0, shareAbove099: 0, shareBelow001: 0 };
     }
+    const ordered = [...probs].sort((left, right) => left - right);
+    const quantile = (rank: number): number => ordered[Math.min(ordered.length - 1, Math.floor(rank * ordered.length))] ?? 0;
     let total = 0;
-    let min = Number.POSITIVE_INFINITY;
-    let max = Number.NEGATIVE_INFINITY;
+    let above = 0;
+    let below = 0;
     for (const prob of probs) {
       total += prob;
-      if (prob < min) {
-        min = prob;
+      if (prob > 0.99) {
+        above += 1;
       }
-      if (prob > max) {
-        max = prob;
+      if (prob < 0.01) {
+        below += 1;
       }
     }
-    return { count: probs.length, mean: round6(total / probs.length), min: round6(min), max: round6(max) };
+    return {
+      count: probs.length,
+      mean: round6(total / probs.length),
+      min: round6(ordered[0] ?? 0),
+      p25: round6(quantile(0.25)),
+      p50: round6(quantile(0.5)),
+      p75: round6(quantile(0.75)),
+      max: round6(ordered[ordered.length - 1] ?? 0),
+      shareAbove099: round6(above / probs.length),
+      shareBelow001: round6(below / probs.length),
+    };
   };
   const classSpread = (
     rows: CalibrationRow[],
     probs: readonly number[],
-  ): Record<string, { count: number; mean: number; min: number; max: number }> => {
-    const out: Record<string, { count: number; mean: number; min: number; max: number }> = {};
+  ): Record<string, ReturnType<typeof spreadOf>> => {
+    const out: Record<string, ReturnType<typeof spreadOf>> = {};
     for (const label of ["honeypot", "legit", "rug", "scam", "unknown"] as const) {
       const group = rows.map((row, index) => ({ row, prob: probs[index] ?? 0 })).filter(({ row }) => row.label === label);
       out[label] = spreadOf(group.map(({ prob }) => prob));
@@ -1020,6 +1090,119 @@ if (onchainSnapshotPath !== undefined) {
       out[feature] = { auc: round6(rankAUC(scores, kept)), rows: scores.length };
     }
     return out;
+  };
+  // TRAIN-only sign check (issue 2): grouped 3-fold CV rank AUC per
+  // servable feature on raw values over the available subset of each held
+  // fold (groups by codehash, same folds as the lambda choice). A
+  // risk-increasing prior expects CV AUC above 0.5, a risk-decreasing one
+  // below; mismatches keep their domain constraint regardless (the fit
+  // pins them at 0 rather than fitting noise). Test never enters.
+  const signCheckOf = (): Record<string, { cvAuc: number; rows: number; expected: string; matches: boolean }> => {
+    const out: Record<string, { cvAuc: number; rows: number; expected: string; matches: boolean }> = {};
+    const order = trainRows.map((_, index) => index).sort((left, right) => {
+      const a = trainCodehashes[left] ?? "";
+      const b = trainCodehashes[right] ?? "";
+      return a < b ? -1 : a > b ? 1 : left - right;
+    });
+    const folds: number[][] = [[], [], []];
+    order.forEach((rowIndex, position) => {
+      folds[position % 3]?.push(rowIndex);
+    });
+    for (const feature of SERVABLE_FEATURE_NAMES) {
+      const rawCol = ONCHAIN_FEATURE_NAMES.indexOf(feature);
+      const foldAucs: number[] = [];
+      let rows = 0;
+      for (let held = 0; held < 3; held += 1) {
+        const heldIdx = folds[held] ?? [];
+        const scores: number[] = [];
+        const kept: (0 | 1)[] = [];
+        for (const rowIndex of heldIdx) {
+          const row = trainRows[rowIndex];
+          if (row === undefined) {
+            continue;
+          }
+          const snapshot: SnapshotRow | null = snapshotById.get(row.address.toLowerCase()) ?? null;
+          if (!featureAvailable(snapshot, feature)) {
+            continue;
+          }
+          const vector = snapshot === null ? null : snapshotFeaturesOf(snapshot);
+          scores.push(vector?.[rawCol] ?? 0);
+          kept.push(trainBadLabels[rowIndex] ?? 0);
+        }
+        if (held === 0) {
+          rows = trainRows.filter((row) => featureAvailable(snapshotById.get(row.address.toLowerCase()) ?? null, feature)).length;
+        }
+        foldAucs.push(rankAUC(scores, kept));
+      }
+      const cvAuc = foldAucs.reduce((total, value) => total + value, 0) / Math.max(1, foldAucs.length);
+      const constraint = signConstraintOf(feature);
+      const expected = constraint === "pos" ? "above-0.5" : "below-0.5";
+      out[feature] = {
+        cvAuc: round6(cvAuc),
+        rows,
+        expected,
+        matches: constraint === "pos" ? cvAuc > 0.5 : cvAuc < 0.5,
+      };
+    }
+    return out;
+  };
+  // Pearson correlation over paired finite values; 0 when degenerate.
+  const pearsonOf = (xs: readonly number[], ys: readonly number[]): number => {
+    if (xs.length !== ys.length || xs.length < 2) {
+      return 0;
+    }
+    let meanX = 0;
+    let meanY = 0;
+    for (let index = 0; index < xs.length; index += 1) {
+      meanX += xs[index] ?? 0;
+      meanY += ys[index] ?? 0;
+    }
+    meanX /= xs.length;
+    meanY /= ys.length;
+    let cross = 0;
+    let varX = 0;
+    let varY = 0;
+    for (let index = 0; index < xs.length; index += 1) {
+      const dx = (xs[index] ?? 0) - meanX;
+      const dy = (ys[index] ?? 0) - meanY;
+      cross += dx * dy;
+      varX += dx * dx;
+      varY += dy * dy;
+    }
+    if (varX <= 0 || varY <= 0) {
+      return 0;
+    }
+    return cross / Math.sqrt(varX * varY);
+  };
+  // Era-proxy evidence for the dropped deploy-to-first feature (issue 3,
+  // TRAIN only): its grouped-CV AUC and its Pearson correlation with
+  // deployBlock over the available TRAIN subset.
+  const eraProxyOf = (): {
+    feature: string;
+    trainCvAuc: number;
+    pearsonWithDeployBlock: number;
+    trainRows: number;
+  } => {
+    const blocks: number[] = [];
+    const deploys: number[] = [];
+    const labels: (0 | 1)[] = [];
+    trainRows.forEach((row, index) => {
+      const snapshot: SnapshotRow | null = snapshotById.get(row.address.toLowerCase()) ?? null;
+      if (!featureAvailable(snapshot, "blocks_deploy_to_first_capped") || snapshot?.deployBlock === null) {
+        return;
+      }
+      const vector = snapshot === null ? null : snapshotFeaturesOf(snapshot);
+      const col = ONCHAIN_FEATURE_NAMES.indexOf("blocks_deploy_to_first_capped");
+      blocks.push(vector?.[col] ?? 0);
+      deploys.push(snapshot?.deployBlock ?? 0);
+      labels.push(trainBadLabels[index] ?? 0);
+    });
+    return {
+      feature: "blocks_deploy_to_first_capped",
+      trainCvAuc: round6(rankAUC(blocks, labels)),
+      pearsonWithDeployBlock: round6(pearsonOf(blocks, deploys)),
+      trainRows: blocks.length,
+    };
   };
   // TRAIN-only error analysis (aggregate feature patterns, never
   // per-token): false positives are legit rows at or above the applied
@@ -1082,6 +1265,9 @@ if (onchainSnapshotPath !== undefined) {
       bothTestBadAuc: round6(aucRank(badProbsOf(withOnchain(testFeatures, pickServable(extraTest.matrix)), extraBoth), testBadLabels)),
     });
   }
+  // Snapshot-file coverage membership only (a count of unmatched file rows,
+  // never a score): holdout ids stay in this set so the count keeps its
+  // meaning, but no holdout probability, metric or band is computed above.
   const allIds = new Set<string>();
   for (const row of [...trainRows, ...testRows, ...holdoutRows, ...unknownRows]) {
     allIds.add(row.address.toLowerCase());
@@ -1139,12 +1325,39 @@ if (onchainSnapshotPath !== undefined) {
   } catch {
     frozen101 = { error: "could not load artifact-1.0.1.json" };
   }
+  // Live-parity gaps that keep features diagnostic-only after this run:
+  // holder shares and liquidity depth have no serving-side equivalent yet.
+  const DIAGNOSTIC_REASONS: Record<string, string> = {
+    conc_deployer_share:
+      "live excludes lockers and rebuilds balances from logs while the snapshot counts lockers and reads balances directly",
+    conc_top1_share:
+      "live excludes lockers and rebuilds balances from logs while the snapshot counts lockers and reads balances directly",
+    conc_top10_share:
+      "live excludes lockers and rebuilds balances from logs while the snapshot counts lockers and reads balances directly",
+    liq_log10_1p_weth: "serving-side unit normalisation pending",
+    blocks_deploy_to_first_capped: "dropped from the model: capped delay still proxies launch era (see eraProxy)",
+  };
   onchainReport = {
     mode: onchainMode,
     binaryTarget: "bad=1 when label is rug, scam or honeypot; bad=0 when legit; unknown excluded from train/test and reported separately",
     featureVersion: ONCHAIN_FEATURE_VERSION,
     servableFeatures: [...SERVABLE_FEATURE_NAMES],
     diagnosticOnlyFeatures: ONCHAIN_FEATURE_NAMES.filter((name) => !SERVABLE_FEATURE_NAMES.includes(name)),
+    diagnosticOnly: ONCHAIN_FEATURE_NAMES.filter((name) => !SERVABLE_FEATURE_NAMES.includes(name)).map((name) => ({
+      feature: name,
+      reason: DIAGNOSTIC_REASONS[name] ?? "no serving-side equivalent yet",
+    })),
+    riskDirections: SERVABLE_FEATURE_NAMES.map((name) => ({
+      feature: name,
+      direction: ONCHAIN_RISK_DIRECTIONS[name]?.direction ?? "unknown",
+      rationale: ONCHAIN_RISK_DIRECTIONS[name]?.rationale ?? "",
+    })),
+    scaler: {
+      ...scalerToJSON(onchainScaler),
+      note: "continuous on-chain columns standardized with these TRAIN-only params; binaries pass through; missing maps to 0",
+    },
+    signCheck: signCheckOf(),
+    eraProxy: eraProxyOf(),
     offsetBlocks: snapshot.offsetBlocks,
     skipHoldout,
     coverage: {
@@ -1159,7 +1372,7 @@ if (onchainSnapshotPath !== undefined) {
       perFeature: {
         train: coverageOf(trainRows),
         test: coverageOf(testRows),
-        holdout: skipHoldout ? "skipped" : coverageOf(holdoutRows),
+        holdout: skipHoldout ? "skipped" : coverageOf(holdoutForScoring),
         unknown: coverageOf(unknownRows),
       },
     },
@@ -1205,6 +1418,7 @@ if (onchainSnapshotPath !== undefined) {
     },
     researchFit: {
       arm: onchainMode,
+      space: "onchain columns standardized with the TRAIN scaler above; bytecode columns raw 0/1",
       rugHead: { uncalibrated: selectedArm.rug.uncalibrated, coefficients: coefficientsOf(selectedNames, selectedArm.rug.weights) },
       honeyHead: { uncalibrated: selectedArm.honey.uncalibrated, coefficients: coefficientsOf(selectedNames, selectedArm.honey.weights) },
     },
@@ -1212,6 +1426,24 @@ if (onchainSnapshotPath !== undefined) {
     leakageChecks,
     note: "research fits are diagnostics only; the frozen artifact carries the bytecode fit",
   };
+  // Scaler sidecar beside the candidate artifact (the frozen artifact
+  // schema carries no on-chain fields): serving applies this same TRAIN
+  // transform before any future on-chain head.
+  writeFileSync(
+    join(outDir, `onchain-scaler-${VERSION_TEXT}.json`),
+    JSON.stringify(
+      {
+        version: VERSION_TEXT,
+        featureVersion: ONCHAIN_FEATURE_VERSION,
+        seed,
+        scaler: scalerToJSON(onchainScaler),
+        note: "standardize continuous on-chain columns with these TRAIN params; binaries pass through; missing maps to 0",
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
 }
 
 // Reliability deciles on TEST bad probability: mean predicted vs
@@ -1269,20 +1501,26 @@ const worstBadLow = bandRows(
   (row, score) => row.label !== "legit" && score < appliedElevated,
   (left, right) => left.score - right.score,
 );
-const holdoutWorstLegitHigh = bandRows(
-  holdoutRows,
-  holdoutSummary,
-  holdoutFeatures,
-  (row, score) => row.label === "legit" && score >= appliedHigh,
-  (left, right) => right.score - left.score,
-);
-const holdoutWorstBadLow = bandRows(
-  holdoutRows,
-  holdoutSummary,
-  holdoutFeatures,
-  (row, score) => row.label !== "legit" && score < appliedElevated,
-  (left, right) => left.score - right.score,
-);
+const holdoutWorstLegitHigh =
+  holdoutSummary === null
+    ? []
+    : bandRows(
+        holdoutForScoring,
+        holdoutSummary,
+        holdoutFeatures,
+        (row, score) => row.label === "legit" && score >= appliedHigh,
+        (left, right) => right.score - left.score,
+      );
+const holdoutWorstBadLow =
+  holdoutSummary === null
+    ? []
+    : bandRows(
+        holdoutForScoring,
+        holdoutSummary,
+        holdoutFeatures,
+        (row, score) => row.label !== "legit" && score < appliedElevated,
+        (left, right) => left.score - right.score,
+      );
 
 const output = {
   version: VERSION_TEXT,
@@ -1358,15 +1596,18 @@ const output = {
     worstLegitHigh,
     worstBadLow,
   },
-  holdout: {
-    count: holdoutSummary.count,
-    bands: holdoutSummary.bands,
-    fittedBands: holdoutSummary.fittedBands,
-    badAuc: round6(aucRank(holdoutSummary.badProbs, holdoutBadLabels)),
-    badBrier: round6(brier(holdoutSummary.badProbs, holdoutBadLabels)),
-    worstLegitHigh: holdoutWorstLegitHigh,
-    worstBadLow: holdoutWorstBadLow,
-  },
+  holdout:
+    holdoutSummary === null
+      ? "skipped"
+      : {
+          count: holdoutSummary.count,
+          bands: holdoutSummary.bands,
+          fittedBands: holdoutSummary.fittedBands,
+          badAuc: round6(aucRank(holdoutSummary.badProbs, holdoutBadLabels)),
+          badBrier: round6(brier(holdoutSummary.badProbs, holdoutBadLabels)),
+          worstLegitHigh: holdoutWorstLegitHigh,
+          worstBadLow: holdoutWorstBadLow,
+        },
   unknown: {
     count: unknownSummary.count,
     bands: unknownSummary.bands,

@@ -25,6 +25,7 @@
 //   features; the join carries them for era diagnostics only.
 import { err, ok } from "../result.ts";
 import type { Result } from "../result.ts";
+import { lockerShareOfBreakdown } from "./lockers.ts";
 
 // Declared snapshot offset in blocks: firstLiquidityBlock + 7200. Rows
 // whose snapshot block differs are collected as offset violations.
@@ -32,7 +33,7 @@ export const SNAPSHOT_OFFSET_BLOCKS = 7200;
 
 // Version of the numeric mapping below: recalibration reports name it so
 // a later mapping change cannot be confused with a weight change.
-export const ONCHAIN_FEATURE_VERSION = "onchain-v2";
+export const ONCHAIN_FEATURE_VERSION = "onchain-v3";
 
 // Holder figures are unreliable for rebasing/reflection/fee tokens: when
 // logBalanceSumOverSupply deviates from 1 beyond this tolerance, top1,
@@ -96,6 +97,11 @@ export type SnapshotRow = {
     readonly reason: string | null;
     readonly burnedShare: number;
     readonly lockerShare: number;
+    // Per-locker breakdown (locker name to share) backing lockerShare: the
+    // mapping recomputes the share from this record through the shared
+    // locker registry, so train uses the same locker set the live plugin
+    // reads by address. Empty when no locker holds LP.
+    readonly lockerBreakdown: Readonly<Record<string, number>>;
     readonly deployerOrOwnerShare: number;
     readonly otherShare: number;
     readonly drained: boolean;
@@ -396,6 +402,7 @@ function parseRow(address: string, raw: unknown): Result<SnapshotRow, SnapshotPa
       reason: reason.value,
       burnedShare: 0,
       lockerShare: 0,
+      lockerBreakdown: Object.freeze({}),
       deployerOrOwnerShare: 0,
       otherShare: 0,
       drained: false,
@@ -412,12 +419,26 @@ function parseRow(address: string, raw: unknown): Result<SnapshotRow, SnapshotPa
     if (typeof drained !== "boolean") {
       return err(schemaError(`row ${id}: lpDistribution lpSupplyIsMinimumLiquidityOnly is not a boolean`));
     }
+    const breakdownRaw = record["lockerBreakdown"];
+    const lockerBreakdown: Record<string, number> = {};
+    if (breakdownRaw !== undefined && breakdownRaw !== null) {
+      if (!isRecord(breakdownRaw)) {
+        return err(schemaError(`row ${id}: lpDistribution lockerBreakdown is not an object`));
+      }
+      for (const [name, share] of Object.entries(breakdownRaw)) {
+        if (!isShare(share)) {
+          return err(schemaError(`row ${id}: lpDistribution lockerBreakdown entry is not a share in [0, 1]`));
+        }
+        lockerBreakdown[name] = share;
+      }
+    }
     const pairIsMain = record["pairIsMain"];
     lp = {
       available: true,
       reason: null,
       burnedShare: record["burnedShare"] as number,
       lockerShare: record["lockerShare"] as number,
+      lockerBreakdown: Object.freeze(lockerBreakdown),
       deployerOrOwnerShare: record["deployerOrOwnerShare"] as number,
       otherShare: record["otherShare"] as number,
       drained,
@@ -611,11 +632,13 @@ export function deployToFirstLiq(row: SnapshotRow): number | null {
   return Math.min(delta, DEPLOY_TO_FIRST_CAP_BLOCKS);
 }
 
-// Versioned numeric mapping (onchain-v2). Every entry is 0 when its source
+// Versioned numeric mapping (onchain-v3). Every entry is 0 when its source
 // is missing, drained or unreliable, and there are NO missing-indicator
 // columns: a missing on-chain feature contributes exactly zero to a linear
 // head by construction. Status, reason, pairIsMain, mainPairDex,
-// afterFixtureBlock and pair counts never enter the vector.
+// afterFixtureBlock and pair counts never enter the vector. The locker
+// share recomputes from the breakdown through the shared locker registry,
+// so train and serve count the same locker set.
 export const ONCHAIN_FEATURE_NAMES: readonly string[] = Object.freeze([
   "owner_renounced",
   "owner_eoa",
@@ -637,7 +660,9 @@ export const ONCHAIN_FEATURE_NAMES: readonly string[] = Object.freeze([
 // shares use different exclusion sets live (lockers excluded) than in the
 // snapshot (lockers counted), holder balances are rebuilt from logs live
 // but read directly in the snapshot, and liquidity needs a serving-side
-// unit normalisation first; those stay diagnostic-only.
+// unit normalisation first; those stay diagnostic-only. Deploy-to-first
+// is out of the model entirely: even capped it proxies launch era, so it
+// is diagnostic-only too (its mapping and univariate stay for the report).
 export const SERVABLE_FEATURE_NAMES: readonly string[] = Object.freeze([
   "owner_renounced",
   "owner_eoa",
@@ -647,7 +672,6 @@ export const SERVABLE_FEATURE_NAMES: readonly string[] = Object.freeze([
   "lp_locker_share",
   "lp_deployer_or_owner_share",
   "liquidity_removed_24h",
-  "blocks_deploy_to_first_capped",
 ]);
 
 export const ONCHAIN_FEATURE_COUNT = ONCHAIN_FEATURE_NAMES.length;
@@ -668,7 +692,10 @@ export function snapshotFeaturesOf(row: SnapshotRow | null): readonly number[] {
     // Drained pairs read burnedShare as unavailable: 1.0 there means the
     // liquidity was already pulled, not locked.
     row.lp.available && !row.lp.drained ? row.lp.burnedShare : 0,
-    row.lp.available ? row.lp.lockerShare : 0,
+    // Locker share recomputed from the breakdown through the shared locker
+    // registry (not the file's precomputed value), so train uses exactly
+    // the locker set the live plugin reads by address.
+    row.lp.available ? lockerShareOfBreakdown(row.lp.lockerBreakdown) : 0,
     row.lp.available ? row.lp.deployerOrOwnerShare : 0,
     // Affirmed point-in-time signal only: 1 exactly when the snapshot proves
     // the drain (minimum-liquidity-only supply at the snapshot block).

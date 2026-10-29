@@ -1,5 +1,7 @@
 # On-chain calibration report (onchain-v2 mapping, artifact decision: keep 1.0.1)
 
+Follow-up: [onchain-1.2](onchain-1.2.md) fixes issues 1-5 on TRAIN/TEST only with no holdout scoring; this report is otherwise unchanged.
+
 Date: 2026-10-29. Mapping version `onchain-v2`. Seed 42 is the artifact
 seed; seeds 7 and 1337 are variance runs reported separately. The holdout
 was evaluated exactly once (seed 42 run); the seed 7/1337 runs pass
