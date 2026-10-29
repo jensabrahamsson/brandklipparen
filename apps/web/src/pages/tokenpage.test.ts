@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { ApiError } from "../lib/api.ts";
-import { errorCopy, mergeDeepeningResult } from "./TokenPage.tsx";
-import type { AnalyzeResult } from "../types.ts";
+import { errorCopy, meaningSentence, mergeDeepeningResult } from "./TokenPage.tsx";
+import type { AnalyzeResult, Signal } from "../types.ts";
 
 function assessed(overrides: Partial<Extract<AnalyzeResult, { kind: "assessed" }>> = {}): AnalyzeResult {
   return {
@@ -49,6 +49,68 @@ describe("deepening merge (design review P0-6)", () => {
       return;
     }
     expect(merged.deepening).toBe("unavailable");
+  });
+});
+
+function capability(id: string, risk: "rug-pull" | "honeypot" | "bot-pump", severity: "low" | "medium" | "high"): Signal {
+  return {
+    kind: "capability",
+    id,
+    risk,
+    direction: "raises",
+    severity,
+    evidence: [{ selector: "0x44337ea1", offset: 2623 }],
+  };
+}
+
+describe("headline agrees with the score (S-117)", () => {
+  test("s117_headline_band_matches_ring_at_24_30_60", () => {
+    const honeypotHigh = capability("owner-blacklist", "honeypot", "high");
+    const byScore: Array<{ score: number; word: string }> = [
+      { score: 24, word: "Low" },
+      { score: 30, word: "Elevated" },
+      { score: 60, word: "High" },
+    ];
+    for (const { score, word } of byScore) {
+      const result = assessed({
+        score,
+        probabilities: { "rug-pull": 0.62, honeypot: 0.35, "bot-pump": 0.1 },
+        signals: [capability("mintable", "rug-pull", "high"), honeypotHigh],
+      });
+      if (result.kind !== "assessed") {
+        throw new Error("fixture must assess");
+      }
+      expect(meaningSentence(result).startsWith(`${word} risk (62% rug-pull):`)).toBe(true);
+    }
+  });
+
+  test("s117_no_owner_funds_claim_without_rug_pull_signal", () => {
+    const result = assessed({
+      score: 24,
+      probabilities: { "rug-pull": 0.62, honeypot: 0.35, "bot-pump": 0.1 },
+      signals: [capability("owner-blacklist", "honeypot", "high")],
+    });
+    if (result.kind !== "assessed") {
+      throw new Error("fixture must assess");
+    }
+    const sentence = meaningSentence(result);
+    expect(sentence.startsWith("Low risk (62% rug-pull):")).toBe(true);
+    expect(sentence).not.toContain("owner can move or mint");
+    expect(sentence).toContain("no specific rug-pull pattern found");
+  });
+
+  test("s117_clause_comes_from_the_strongest_fired_signal", () => {
+    const result = assessed({
+      score: 84,
+      probabilities: { "rug-pull": 0.62, honeypot: 0.91, "bot-pump": 0.34 },
+      signals: [capability("owner-blacklist", "honeypot", "high")],
+    });
+    if (result.kind !== "assessed") {
+      throw new Error("fixture must assess");
+    }
+    expect(meaningSentence(result)).toBe(
+      "High risk (91% honeypot): Honeypot — The owner can stop you from selling.",
+    );
   });
 });
 

@@ -125,7 +125,7 @@ export function StartPage({
           <p className="quiet" style={{ margin: "0 0 12px" }}>
             From this browser only: addresses you analyzed here.
           </p>
-          <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 12 }}>
+          <ul className="recent-list" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 12 }}>
             {recent.map((entry) => (
               <li key={entry.address} className="row-card">
                 <button

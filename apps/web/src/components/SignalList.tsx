@@ -1,5 +1,5 @@
 import { useState, type JSX } from "react";
-import { signalTitle } from "../lib/signals.ts";
+import { signalKey, signalTitle } from "../lib/signals.ts";
 import type { Signal } from "../types.ts";
 import { Explain } from "./Explain.tsx";
 
@@ -7,6 +7,10 @@ import { Explain } from "./Explain.tsx";
 // renders as React text only, so hostile content stays inert: no HTML
 // sinks anywhere in this view.
 //
+// Identity (S-116): the REST layer may repeat signal ids within one
+// response, so articles, DOM ids and open state key on the stable
+// position-derived signal key, never on the signal id. Template lines map
+// to signals by position and risk through the same order.
 // Expanded evidence slots (design review P0-5):
 // - decompiled snippet: the v1 REST schema carries no snippet field, so
 //   the slot is an honest placeholder, never faked content;
@@ -28,8 +32,8 @@ export function SignalList({
   readonly codeHash: string;
   readonly deepening: "pending" | "ready" | "unavailable";
   readonly open: ReadonlySet<string>;
-  readonly onToggle: (signalId: string) => void;
-  readonly templateLine: (signalId: string) => string | undefined;
+  readonly onToggle: (key: string) => void;
+  readonly templateLine: (index: number) => string | undefined;
 }): JSX.Element {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -63,20 +67,21 @@ export function SignalList({
       <p aria-live="polite" className="quiet" style={{ position: "absolute", left: -9999 }}>
         {copiedId === null ? "" : `Evidence for ${copiedId} copied.`}
       </p>
-      {signals.map((signal) => {
-        const expanded = open.has(signal.id);
-        const line = templateLine(signal.id);
+      {signals.map((signal, index) => {
+        const key = signalKey(signal, index);
+        const expanded = open.has(key);
+        const line = templateLine(index);
         return (
           <article
-            key={signal.id}
-            id={`signal-${signal.id}`}
+            key={key}
+            id={`signal-${key}`}
             className={signal.direction === "lowers" ? "signal signal-lowers" : "signal signal-raises"}
           >
             <button
               type="button"
               className="button-ghost"
               aria-expanded={expanded}
-              onClick={() => onToggle(signal.id)}
+              onClick={() => onToggle(key)}
               style={{ border: "none", padding: 0, color: "var(--text)", fontSize: 16, fontWeight: 600 }}
             >
               {signalTitle(signal)} {expanded ? "▾" : "▸"}
@@ -91,9 +96,9 @@ export function SignalList({
             ) : null}
             {expanded ? (
               <div>
-                <h4 className="quiet">
+                <h3 className="quiet" style={{ fontSize: 12 }}>
                   EVIDENCE IN BYTECODE <Explain explainKey="evidence:selector" label="Evidence rows" />
-                </h4>
+                </h3>
                 <ul className="mono numeric" style={{ listStyle: "none", padding: 0, fontSize: 13 }}>
                   {signal.evidence.map((entry, index) => (
                     <li key={`${entry.selector}-${index}`}>
@@ -102,9 +107,9 @@ export function SignalList({
                     </li>
                   ))}
                 </ul>
-                <h4 className="quiet">
+                <h3 className="quiet" style={{ fontSize: 12 }}>
                   DECOMPILED SNIPPET <Explain explainKey="evidence:snippet" label="Decompiled snippet" />
-                </h4>
+                </h3>
                 <p className="muted" style={{ fontSize: 13, margin: "0 0 8px" }}>
                   {snippetText}
                 </p>

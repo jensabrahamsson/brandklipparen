@@ -2,9 +2,22 @@ import type { Probabilities, RiskKind, Signal } from "../types.ts";
 
 const SEVERITY_RANK: Record<string, number> = { low: 0, medium: 1, high: 2 };
 
+// Human title per known capability id (S-116: signals read as what they
+// mean, never as hex). Unknown ids fall back to a risk-and-severity label
+// via signalTitle, so no title ever carries raw hex.
+export const CAPABILITY_TITLE: Readonly<Record<string, string>> = {
+  "owner-blacklist": "Owner can block transfers",
+  mintable: "Owner can mint new tokens",
+  pausable: "Owner can pause trading",
+  "fee-on-transfer": "Sales carry an owner fee",
+  "owner-withdraw": "Owner can withdraw funds",
+  "proxy-upgrade": "Owner can replace the contract logic",
+  "honeypot-transfer": "Sales may fail while buys succeed",
+};
+
 // Plain-language reason per known signal id (design review: gauges must
 // read without decoding bytecode vocabulary). Unknown ids fall back to the
-// title-cased id via plainReason.
+// human title via plainReason, so gauge reasons never carry raw hex.
 export const SIGNAL_PLAIN: Readonly<Record<string, string>> = {
   "owner-blacklist": "The owner can stop you from selling.",
   mintable: "The owner can create new tokens and dilute you.",
@@ -71,6 +84,29 @@ function rank(signal: Signal): number {
   return SEVERITY_RANK[signal.severity ?? "medium"] ?? 1;
 }
 
+export function riskLabel(risk: RiskKind): string {
+  if (risk === "rug-pull") {
+    return "Rug pull";
+  }
+  if (risk === "honeypot") {
+    return "Honeypot";
+  }
+  return "Bot-pump";
+}
+
+const HEX_ID_PATTERN = /0x[0-9a-f]{4,}/i;
+
+// Stable unique key per rendered signal position (S-116). The REST layer
+// may repeat signal ids within one response, so the UI never keys React
+// lists, DOM ids or open state by signal id.
+export function signalKey(signal: Signal, index: number): string {
+  return `${index}-${signal.kind}-${signal.risk}`;
+}
+
+function riskPatternTitle(signal: Signal): string {
+  return `${riskLabel(signal.risk)} pattern (${signal.severity ?? "medium"})`;
+}
+
 export function signalTitle(signal: Signal): string {
   if (signal.kind === "clone-match") {
     const group = signal.group ?? "known template";
@@ -79,8 +115,16 @@ export function signalTitle(signal: Signal): string {
   if (signal.kind === "hard-to-analyze") {
     return `Hard to analyze: ${signal.cause ?? "decompilation limit reached"}`;
   }
-  return signal.id
+  const mapped = CAPABILITY_TITLE[signal.id];
+  if (mapped !== undefined) {
+    return mapped;
+  }
+  if (HEX_ID_PATTERN.test(signal.id)) {
+    return riskPatternTitle(signal);
+  }
+  const titled = signal.id
     .split(/[-_]/g)
     .map((part) => (part.length === 0 ? part : (part[0]?.toUpperCase() ?? "") + part.slice(1)))
     .join(" ");
+  return HEX_ID_PATTERN.test(titled) ? riskPatternTitle(signal) : titled;
 }

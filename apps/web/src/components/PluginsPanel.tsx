@@ -75,6 +75,9 @@ function ResultBlock({
       </p>
     );
   }
+  // One Explain trigger per finding group (S-120): the PC rows below
+  // carry no triggers of their own, so the panel stays navigable even
+  // with hundreds of evidence pointers.
   return (
     <ul className="mono" style={{ listStyle: "none", padding: 0, fontSize: 13 }}>
       {findings.map((finding) => (
@@ -90,8 +93,7 @@ function ResultBlock({
             {finding.evidence.map((entry, index) => (
               <li key={`${entry.selector}-${index}`} className="quiet">
                 {entry.selector}
-                {entry.offset === null ? "" : ` · PC 0x${entry.offset.toString(16)}`}{" "}
-                <Explain explainKey="evidence:offset" label="Bytecode offset" />
+                {entry.offset === null ? "" : ` · PC 0x${entry.offset.toString(16)}`}
               </li>
             ))}
           </ul>
@@ -145,6 +147,10 @@ export function PluginsPanel({
   const entries = active
     ? applyPersonalizedOrder(plugins, order, flooredIds)
     : plugins;
+  // Findings expand; plugins with no findings collapse to one line
+  // (S-120), so a quiet detector costs one sentence, not a card.
+  const withFindings = entries.filter((plugin) => findingsFor(plugin.id, results).length > 0);
+  const withoutFindings = entries.filter((plugin) => findingsFor(plugin.id, results).length === 0);
   return (
     <section aria-label="Plugins">
       <h2>Plugins</h2>
@@ -160,7 +166,7 @@ export function PluginsPanel({
           )}
         </div>
       ) : null}
-      {entries.map((plugin) => {
+      {withFindings.map((plugin) => {
         const tags = active ? (matchedTags?.get(plugin.id) ?? []) : [];
         return (
           <article key={plugin.id}>
@@ -186,6 +192,12 @@ export function PluginsPanel({
           </article>
         );
       })}
+      {withoutFindings.length === 0 ? null : (
+        <p className="quiet" style={{ margin: "8px 0 0", fontSize: 13 }}>
+          {withoutFindings.length === 1 ? "1 detector found nothing" : `${withoutFindings.length} detectors found nothing`}
+          : {withoutFindings.map((plugin) => plugin.displayName).join(", ")}
+        </p>
+      )}
     </section>
   );
 }

@@ -68,9 +68,18 @@ async function mockAnalyze(page: Page): Promise<void> {
   });
 }
 
+async function openCustomize(page: Page): Promise<void> {
+  const customize = page.locator("details.customize");
+  await expect(customize).toBeVisible();
+  if (!(await customize.evaluate((element) => (element as HTMLDetailsElement).open))) {
+    await customize.locator("summary").click();
+  }
+}
+
 test("s100_field_picker_limits_sections_without_changing_score", async ({ page }) => {
   await mockAnalyze(page);
   await page.goto(`/#/token/${ADDRESS}`);
+  await openCustomize(page);
   const score = page.locator('section[aria-label="Combined score"]');
   await expect(score).toContainText("84 High");
   const before = await score.innerText();

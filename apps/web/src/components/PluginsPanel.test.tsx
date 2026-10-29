@@ -78,4 +78,24 @@ describe("generic plugins panel (S-046)", () => {
     expect(html).toContain("dev.brandklipparen.capability");
     expect(html).toContain("Contract can self-destruct");
   });
+
+  test("s120_quiet_plugins_collapse_to_one_line_with_one_explain_per_finding", () => {
+    const html = renderToString(
+      <PluginsPanel
+        plugins={[
+          ...PLUGINS,
+          { id: "dev.brandklipparen.mint", version: "1.0.0", displayName: "Mint", description: "Quiet." },
+          { id: "dev.brandklipparen.pause", version: "1.0.0", displayName: "Pause", description: "Quiet." },
+        ]}
+        results={[...RESULTS]}
+      />,
+    );
+    expect(html).toContain("2 detectors found nothing");
+    expect(html).toContain("Mint, Pause");
+    expect(html).not.toContain("Mint detector");
+    const triggers = html.match(/explain-trigger/g) ?? [];
+    // One for the plugin header and one for the finding group, none per
+    // PC row: the single evidence pointer carries no trigger.
+    expect(triggers).toHaveLength(2);
+  });
 });

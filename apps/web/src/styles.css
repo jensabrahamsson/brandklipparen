@@ -285,16 +285,42 @@ a:focus-visible {
 }
 
 @media (max-width: 700px) {
-  .gauges {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
   .gauge {
     padding: 12px 8px;
   }
   .gauge svg {
     width: 100%;
     height: auto;
+  }
+}
+
+/* Below 600 px the gauges stack in one column with the arc and the
+   reason side by side, so nothing overflows a 320 px phone (S-119). */
+@media (max-width: 600px) {
+  .gauges {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .gauge {
+    display: grid;
+    grid-template-columns: 148px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 12px;
+  }
+  .gauge > h3 {
+    grid-column: 1 / -1;
+  }
+  .gauge > p.quiet {
+    grid-column: 1 / -1;
+  }
+  .gauge > svg {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .gauge > p.muted {
+    grid-column: 2;
+    grid-row: 3;
+    margin: 0;
   }
 }
 
@@ -310,6 +336,14 @@ a:focus-visible {
 
 .gauge {
   text-align: left;
+  min-width: 0;
+}
+
+/* Gauge reasons and mono values wrap anywhere: long ids must stay inside
+   the card at 390 px and 1440 px (S-116). */
+.gauge p,
+.mono {
+  overflow-wrap: anywhere;
 }
 
 .signal {
@@ -360,6 +394,8 @@ a:focus-visible {
   gap: 4px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 20px;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .tab {
@@ -371,6 +407,8 @@ a:focus-visible {
   cursor: pointer;
   font-family: var(--font-sans);
   border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tab[aria-selected="true"] {
@@ -428,6 +466,34 @@ pre.code {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 220px;
+}
+
+/* Customize view (S-118): one collapsed disclosure after the tabs holding
+   the Detail radios, AI personalize, section picker and priorities. It sits
+   to the right on desktop and spans the width on narrow screens. */
+.customize {
+  margin: 0 0 20px auto;
+  max-width: 460px;
+}
+
+@media (max-width: 900px) {
+  .customize {
+    max-width: none;
+  }
+}
+
+.customize > summary {
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-2);
+  width: fit-content;
+  margin-left: auto;
+  padding: 6px 0;
+}
+
+.customize > summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .compact-strip-probs {
@@ -614,4 +680,78 @@ polls never shift existing rows, and the "new" marker is plain text. */
   border-radius: 999px;
   padding: 1px 8px;
   margin-left: 8px;
+}
+
+/* Claim sentences and every other long value wrap anywhere, so unbroken
+   hex can never push the page sideways (S-116, S-119). */
+.claim-text {
+  overflow-wrap: anywhere;
+}
+
+/* Live list as stacked cards below 640 px; the table stays for wider
+   screens (S-119). */
+.live-cards {
+  display: none;
+}
+
+.live-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 639px) {
+  .live-table-wrap {
+    display: none;
+  }
+  .live-cards {
+    display: grid;
+    gap: 12px;
+    margin: 16px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .live-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-row);
+    padding: 12px 16px;
+    min-width: 0;
+  }
+}
+
+/* Flex children that must shrink instead of pushing the page wide. */
+.search-row .input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.recent-bars,
+.recent-top {
+  min-width: 0;
+}
+
+/* A single explicit column so the recent row can shrink to the phone
+   width instead of sizing to its content (S-119). */
+.recent-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.recent-row {
+  max-width: 100%;
+}
+
+/* Roomy touch targets on phones (S-119): every tappable element meets
+   44x44 px. Desktop layout is untouched. */
+@media (max-width: 640px) {
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }

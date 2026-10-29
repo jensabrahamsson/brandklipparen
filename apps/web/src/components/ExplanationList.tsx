@@ -1,18 +1,89 @@
-import type { JSX } from "react";
-import type { ExplanationClaim } from "../types.ts";
+// Readable template explanation (S-120): every claim renders as one
+// short summary first, labelled with its template version. Temporality
+// reads as a "Can change" chip or "applies now"; the controlling account
+// hides behind a truncated chip with copy; the raw locations sit in a
+// keyboard-operable disclosure grouped by selector. Signal links expand
+// and scroll to their signal in SignalList. Everything renders as React
+// text only, so hostile content stays inert: no HTML sinks anywhere.
+import { useState, type JSX } from "react";
+import { signalKey, signalTitle } from "../lib/signals.ts";
+import { claimSummary, evidenceLocationCount, extractAccount, extractEvidenceGroups } from "../lib/claims.ts";
+import { shortAddress } from "../lib/liveTokens.ts";
+import type { ExplanationClaim, Signal } from "../types.ts";
 import { Explain } from "./Explain.tsx";
 
-// Full template explanation (design review P0-4): every claim renders,
-// labelled with its template version. Temporality uses plain words, and
-// each signal link expands and scrolls to its signal in SignalList.
+function AccountChip({ address }: { readonly address: string }): JSX.Element {
+  const [copied, setCopied] = useState(false);
+  const copy = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+    } catch {
+      // Clipboard is a convenience only; the address stays readable.
+    }
+  };
+  return (
+    <span className="mono numeric" style={{ fontSize: 13 }} title={address}>
+      Account {shortAddress(address)}{" "}
+      <button
+        type="button"
+        className="button-ghost"
+        style={{ border: "none", padding: 0, fontSize: 12 }}
+        onClick={() => void copy()}
+      >
+        Copy account
+      </button>{" "}
+      <span aria-live="polite" className="quiet">
+        {copied ? "Copied." : ""}
+      </span>
+    </span>
+  );
+}
+
+function ClaimEvidence({ text }: { readonly text: string }): JSX.Element | null {
+  const groups = extractEvidenceGroups(text);
+  if (groups.length === 0) {
+    return null;
+  }
+  const locations = evidenceLocationCount(groups);
+  return (
+    <details style={{ marginTop: 8 }}>
+      <summary>
+        Evidence · {locations} {locations === 1 ? "location" : "locations"}
+      </summary>
+      <ul className="mono" style={{ listStyle: "none", padding: 0, fontSize: 13 }}>
+        {groups.map((group) => (
+          <li key={`${group.selector}|${group.line ?? ""}|${group.snippet ?? ""}`} style={{ marginBottom: 8 }}>
+            <span>{group.selector}</span>
+            {group.offsets.length > 0 ? (
+              <span className="quiet">
+                {" "}
+                · offsets {group.offsets.map((offset) => `0x${offset.toString(16)}`).join(", ")}
+              </span>
+            ) : null}
+            {group.hasNoOffset ? <span className="quiet"> · no byte offset</span> : null}
+            {group.snippet === null || group.line === null ? null : (
+              <div className="quiet">
+                decompiled line {group.line} reads &quot;{group.snippet}&quot;
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 export function ExplanationList({
   claims,
+  signals,
   templateVersion,
   onSignalLink,
 }: {
   readonly claims: readonly ExplanationClaim[];
+  readonly signals: readonly Signal[];
   readonly templateVersion: string;
-  readonly onSignalLink: (signalId: string) => void;
+  readonly onSignalLink: (key: string) => void;
 }): JSX.Element {
   return (
     <section className="card" aria-label={`Template explanation · v${templateVersion}`} style={{ marginBottom: 20 }}>
@@ -28,32 +99,54 @@ export function ExplanationList({
         </p>
       ) : (
         <ul style={{ margin: 0, paddingLeft: 20 }}>
-          {claims.map((claim, index) => (
-            <li key={`${claim.text}-${index}`} style={{ marginBottom: 12 }}>
-              <div>{claim.text}</div>
-              <div className="quiet" style={{ marginTop: 4 }}>
-                {claim.temporality.kind === "applies-now" ? "applies now" : "can change"}
-                {claim.signalLinks.length > 0 ? (
-                  <>
-                    {" · signals: "}
-                    {claim.signalLinks.map((signalId, linkIndex) => (
-                      <span key={signalId}>
-                        {linkIndex > 0 ? ", " : null}
-                        <button
-                          type="button"
-                          className="button-ghost"
-                          style={{ border: "none", padding: 0, fontSize: 12 }}
-                          onClick={() => onSignalLink(signalId)}
-                        >
-                          {signalId}
-                        </button>
-                      </span>
-                    ))}
-                  </>
-                ) : null}
-              </div>
-            </li>
-          ))}
+          {claims.map((claim, index) => {
+            const account = extractAccount(claim.text);
+            return (
+              <li key={`${claim.text.slice(0, 32)}-${index}`} style={{ marginBottom: 12 }}>
+                <div className="claim-text">{claimSummary(claim.text)}</div>
+                <div className="quiet" style={{ marginTop: 4 }}>
+                  {claim.temporality.kind === "applies-now" ? (
+                    "applies now"
+                  ) : (
+                    <span className="chip">Owner can turn this on later</span>
+                  )}
+                  {account === null ? null : (
+                    <>
+                      {" · "}
+                      <AccountChip address={account} />
+                    </>
+                  )}
+                  {claim.signalLinks.length > 0 ? (
+                    <>
+                      {" · signals: "}
+                      {claim.signalLinks.map((signalId, linkIndex) => {
+                        const targetIndex = signals.findIndex((signal) => signal.id === signalId);
+                        if (targetIndex < 0) {
+                          return null;
+                        }
+                        const target = signals[targetIndex] as Signal;
+                        const key = signalKey(target, targetIndex);
+                        return (
+                          <span key={`${signalId}-${linkIndex}`}>
+                            {linkIndex > 0 ? ", " : null}
+                            <button
+                              type="button"
+                              className="button-ghost"
+                              style={{ border: "none", padding: 0, fontSize: 12 }}
+                              onClick={() => onSignalLink(key)}
+                            >
+                              {signalTitle(target)}
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </>
+                  ) : null}
+                </div>
+                <ClaimEvidence text={claim.text} />
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

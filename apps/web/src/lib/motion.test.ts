@@ -1,5 +1,7 @@
-// Reduced-motion flag coverage: the shared hook answers what the viewer
-// preference reports, with no motion of its own.
+// Reduced-motion flag coverage (S-114): the shared hook answers what the
+// viewer preference reports, with no motion of its own. The flag drives
+// the fully-static kill switch; default mode keeps only short,
+// non-looping opacity/colour/shadow transitions.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { reducedMotionRequested, useReducedMotion } from "./motion.ts";
 

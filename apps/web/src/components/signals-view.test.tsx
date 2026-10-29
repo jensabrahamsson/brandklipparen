@@ -15,11 +15,16 @@ const SIGNALS: readonly Signal[] = [
   },
 ];
 
-function openAll(): { open: Set<string>; onToggle: (id: string) => void; templateLine: (id: string) => string | undefined } {
+function openAll(): {
+  open: Set<string>;
+  onToggle: (key: string) => void;
+  templateLine: (index: number) => string | undefined;
+} {
   return {
-    open: new Set(["owner-blacklist"]),
+    open: new Set(["0-capability-honeypot"]),
     onToggle: () => undefined,
-    templateLine: (id: string) => (id === "owner-blacklist" ? "The owner can stop you from selling." : undefined),
+    templateLine: (index: number) =>
+      index === 0 ? "The owner can stop you from selling." : undefined,
   };
 }
 
@@ -31,6 +36,7 @@ describe("template explanation (design review P0-4)", () => {
           { text: "The owner can stop you from selling.", signalLinks: ["owner-blacklist"], temporality: { kind: "can-change" } },
           { text: "Launch mechanics were fair at deployment.", signalLinks: [], temporality: { kind: "applies-now" } },
         ]}
+        signals={SIGNALS}
         templateVersion="1.0.0"
         onSignalLink={() => undefined}
       />,
@@ -38,9 +44,10 @@ describe("template explanation (design review P0-4)", () => {
     expect(html).toContain("Template explanation · v1.0.0");
     expect(html).toContain("The owner can stop you from selling.");
     expect(html).toContain("Launch mechanics were fair at deployment.");
-    expect(html).toContain("can change");
+    expect(html).toContain("Owner can turn this on later");
     expect(html).toContain("applies now");
-    expect(html).toContain("owner-blacklist");
+    expect(html).not.toContain("owner-blacklist");
+    expect(html).toContain("Owner can block transfers");
   });
 });
 

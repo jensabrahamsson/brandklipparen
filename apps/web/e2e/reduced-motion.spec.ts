@@ -1,7 +1,9 @@
-// Playwright for the calm static styling (K-021, K-103).
-// The default look never moves: no card carries a transform, no container
-// uses perspective, the investigate trace is always the flat 2D list, and
-// nothing animates. Every REST response is route-mocked.
+// Playwright for the motion rules (K-021, K-103): default mode allows
+// only short (at most 300 ms), non-looping opacity/colour/shadow
+// transitions and never transforms; with prefers-reduced-motion the UI is
+// fully static. No card carries a transform, no container uses
+// perspective, the investigate trace is always the flat 2D list.
+// Every REST response is route-mocked.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -107,6 +109,40 @@ async function mockRest(page: Page): Promise<void> {
   });
 }
 
+test("default_motion_is_short_non_looping_and_never_transforms", async ({ page }) => {
+  await mockRest(page);
+  await page.goto(`/#/token/${ADDRESS}`);
+
+  const cards = page.locator(".card, .cant-tell");
+  await expect(cards.first()).toBeVisible();
+
+  const violations = await page.evaluate(() => {
+    const bad: string[] = [];
+    document.querySelectorAll("*").forEach((element) => {
+      const style = getComputedStyle(element);
+      style.transitionDuration.split(",").forEach((part, index) => {
+        const seconds = Number.parseFloat(part);
+        if (!(seconds > 0)) {
+          return;
+        }
+        const properties = style.transitionProperty.split(",");
+        const property = (properties[Math.min(index, properties.length - 1)] ?? "").trim();
+        if (seconds > 0.3 || property.includes("transform")) {
+          bad.push(`${element.tagName}<${element.getAttribute("class") ?? ""}> ${property} ${part.trim()}`);
+        }
+      });
+      if (style.animationName !== "none") {
+        const counts = style.animationIterationCount.split(",").map((part) => part.trim());
+        if (counts.some((part) => part === "infinite" || Number.parseFloat(part) > 1)) {
+          bad.push(`${element.tagName}<${element.getAttribute("class") ?? ""}> iteration ${counts.join(",")}`);
+        }
+      }
+    });
+    return bad;
+  });
+  expect(violations).toEqual([]);
+});
+
 test("reduced_motion_has_no_animation_or_transform", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await mockRest(page);
@@ -171,8 +207,18 @@ test("hover_leaves_cards_flat_without_perspective", async ({ page }) => {
 });
 
 test("investigation_graph_runs_no_animations", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
+
+  // Full interaction script under reduced motion: hover, open a tooltip,
+  // expand a signal and switch tabs. Nothing may animate at any point.
+  const cards = page.locator(".card, .cant-tell");
+  await expect(cards.first()).toBeVisible();
+  await cards.first().hover();
+  await page.locator('[data-testid="explain-score:combined"]').focus();
+  await page.locator('section[aria-label="Signals"] article > button[aria-expanded]').first().click();
+  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
 
   await page.getByRole("tab", { name: "Investigate" }).click();
   await page.getByRole("button", { name: "Request investigation" }).click();

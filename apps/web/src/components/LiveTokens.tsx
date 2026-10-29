@@ -95,8 +95,28 @@ export function LiveTokensList({ snapshot }: { readonly snapshot: LiveTokensSnap
           </p>
         </div>
       ) : (
-        <div className="card" style={{ marginTop: 16, padding: 8 }}>
-          <table className="live-table">
+        <>
+          <ul className="live-cards">
+            {items.map((entry) => (
+              <li key={entry.pairAddress} className="live-card">
+                <div className="live-card-top">
+                  <a href={`#/token/${encodeURIComponent(entry.tokenAddress)}`} title={entry.tokenAddress}>
+                    {entry.symbol ?? shortAddress(entry.tokenAddress)}
+                  </a>
+                  {riskCell(entry)}
+                </div>
+                <div className="quiet numeric">
+                  {formatAge(entry.ageSeconds)} · {entry.dex}
+                  {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
+                  <span className="muted">
+                    {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <div className="card live-table-wrap" style={{ marginTop: 16, padding: 8 }}>
+            <table className="live-table">
             <caption className="skip-link">New Uniswap pairs, newest first</caption>
             <thead>
               <tr>
@@ -138,8 +158,9 @@ export function LiveTokensList({ snapshot }: { readonly snapshot: LiveTokensSnap
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+            </table>
+          </div>
+        </>
       )}
     </section>
   );

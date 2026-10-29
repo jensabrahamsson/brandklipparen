@@ -1,5 +1,13 @@
 import { describe, expect, test } from "vitest";
-import { combinedScoreLine, emptyGaugeReason, plainReason, signalTitle, sortByImpact, strongestSignal } from "./signals.ts";
+import {
+  combinedScoreLine,
+  emptyGaugeReason,
+  plainReason,
+  signalKey,
+  signalTitle,
+  sortByImpact,
+  strongestSignal,
+} from "./signals.ts";
 import type { Signal } from "../types.ts";
 
 const SIGNALS: readonly Signal[] = [
@@ -29,7 +37,7 @@ describe("signal descriptions (K-021)", () => {
   });
 
   test("k021_signal_title_is_plain_text", () => {
-    expect(signalTitle(SIGNALS[0] as Signal)).toBe("Owner Blacklist");
+    expect(signalTitle(SIGNALS[0] as Signal)).toBe("Owner can block transfers");
   });
 
   test("design_review_sort_by_impact_raises_first_then_severity", () => {
@@ -71,5 +79,46 @@ describe("signal descriptions (K-021)", () => {
     expect(combinedScoreLine(84, { "rug-pull": 0.62, honeypot: 0.91, "bot-pump": 0.34 })).toBe(
       "Combined 84 follows the strongest single risk: Honeypot at 91%.",
     );
+  });
+});
+
+describe("signal identity (S-116)", () => {
+  const hexId = `0x${"ab".repeat(32)}`;
+
+  test("s116_signal_title_never_hex", () => {
+    const hex: Signal = {
+      kind: "capability",
+      id: hexId,
+      risk: "honeypot",
+      direction: "raises",
+      severity: "high",
+      evidence: [{ selector: "0x44337ea1", offset: 2623 }],
+    };
+    expect(signalTitle(hex)).not.toMatch(/0x[0-9a-f]{16,}/i);
+    expect(signalTitle(hex)).toBe("Honeypot pattern (high)");
+    const rugHex: Signal = { ...hex, id: hexId, risk: "rug-pull", severity: "medium" };
+    expect(signalTitle(rugHex)).toBe("Rug pull pattern (medium)");
+    expect(plainReason(hex)).not.toMatch(/0x[0-9a-f]{16,}/i);
+  });
+
+  test("s116_signal_title_uses_capability_map", () => {
+    const mintable: Signal = {
+      kind: "capability",
+      id: "mintable",
+      risk: "rug-pull",
+      direction: "raises",
+      severity: "high",
+      evidence: [{ selector: "0x40c10f19", offset: null }],
+    };
+    expect(signalTitle(mintable)).toBe("Owner can mint new tokens");
+    expect(signalTitle(SIGNALS[0] as Signal)).toBe("Owner can block transfers");
+  });
+
+  test("s116_signal_key_unique_per_position", () => {
+    const first = signalKey(SIGNALS[0] as Signal, 0);
+    const second = signalKey(SIGNALS[0] as Signal, 1);
+    expect(first).not.toBe(second);
+    expect(first).toContain("0");
+    expect(second).toContain("1");
   });
 });
