@@ -160,7 +160,12 @@ describe("live tokens list", () => {
   test("the new marker is static text with no animation hooks", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} />);
     expect(html).toContain('<span class="live-new">new</span>');
-    expect(html).not.toMatch(/animat|fade|slide|transition|keyframes|blink|flash/i);
+    // The marker element itself carries no animation hook: it renders
+    // uppercase through CSS only. (Section-level one-shot fades live on
+    // ancestor sections, never on the marker.)
+    const marker = html.match(/<span class="live-new"[^>]*>.*?<\/span>/)?.[0] ?? "";
+    expect(marker).toBe('<span class="live-new">new</span>');
+    expect(marker).not.toMatch(/animat|fade|slide|transition|keyframes|blink|flash/i);
   });
 
   test("the count line is the single polite live region", () => {

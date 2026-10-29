@@ -89,10 +89,13 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     const header = page.locator('section[aria-label="Combined score"]');
     await expect(header).toBeVisible();
 
-    // Ring, number and headline are fully visible without scrolling.
+    // Dial, number, band badge and headline are fully visible without
+    // scrolling. The 50-tick dial keeps the accessible combined-score
+    // name; the number counts up once and the HIGH badge reads inverse.
     for (const target of [
       page.getByRole("img", { name: /Combined score 84 of 100, High risk/ }),
-      header.getByText("84 High", { exact: true }),
+      header.locator(".score-dial .num"),
+      header.locator(".score-dial .bandtag"),
       header.locator(".risk-meaning"),
     ]) {
       const box = await target.boundingBox();
@@ -102,6 +105,9 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     }
     await expect(header.locator("h1")).toContainText("0xdead");
     await expect(header).toContainText("Honey 91%");
+    // The dial number counts up once to the score; the badge names the band.
+    await expect(header.locator(".score-dial .num")).toHaveText("84");
+    await expect(header.locator(".score-dial .bandtag")).toHaveText("HIGH");
 
     // Exactly one h1 and no skipped heading levels across the page.
     await expect(page.locator("h1")).toHaveCount(1);

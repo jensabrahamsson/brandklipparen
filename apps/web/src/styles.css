@@ -1,113 +1,212 @@
-/* Brandklipparen web design tokens per design/README.md.
-   Dark base, calm fjallbla brand, risk colors for risk only.
-   Kornguld appears solely as a sparse brand detail (logo eye). */
+/* Brandklipparen web: Phosphor Console direction.
+   A green-phosphor CRT terminal: void background, glass tube frame,
+   glowing mono glyphs, static scanline texture. Text stays crisp; glow
+   sits behind it as text-shadow or box-shadow. Nothing moves except
+   opacity/colour/glow per the motion inventory below.
+   Contrast (bg glass #03110A unless noted):
+   - phosphor #8DFFB6 15.7:1, hi #D6FFE6 17.7:1: body and headings.
+   - dim #4FB27A 7.3:1: secondary text, control edges.
+   - edge #2E7A4F 3.7:1: UI boundaries, unlit segments and ticks.
+   - faint #1F5A3A 2.4:1 and rule #154A2E 1.9:1 are decorative only:
+     scanlines, dotted leaders, dashed hairlines. Never text, never the
+     fill state of a segment, never a control edge. */
 
 :root {
   color-scheme: dark;
-  --bg: #0e1116;
-  --surface: #161b22;
-  --surface-2: #1c2330;
-  --border: #262d38;
-  --text: #e6eaf0;
-  --text-2: #8b95a3;
-  --text-3: #8590a0;
-  --high: #f47067;
-  --brand: #7e9cc2;
-  --brand-deep: #4e6a8f;
-  --gold: #d4b36a;
-  --low: #3fb97f;
-  --low-bg: #16291f;
-  --elevated: #e5a13a;
-  --elevated-bg: #2e2414;
-  --high-bg: #321a1b;
-  --cant-tell: #3a4250;
-  --radius-card: 16px;
-  --radius-row: 14px;
-  --radius-button: 8px;
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  /* Elevation language (S-121): the single token system for static 3D
-     depth. Layered shadows with a top-edge highlight; a static specular
-     sheen; a button bevel; inset rings for badges and recessed inputs.
-     Nothing here animates or moves. */
-  --elev-1: inset 0 1px 0 rgb(255 255 255 / 4%), 0 1px 2px rgb(0 0 0 / 35%), 0 4px 12px rgb(0 0 0 / 22%);
-  --elev-2: inset 0 1px 0 rgb(255 255 255 / 5%), 0 2px 4px rgb(0 0 0 / 35%), 0 12px 32px rgb(0 0 0 / 32%);
-  --elev-3: inset 0 1px 0 rgb(255 255 255 / 6%), 0 8px 16px rgb(0 0 0 / 40%), 0 24px 48px rgb(0 0 0 / 45%);
-  --sheen: linear-gradient(180deg, rgb(255 255 255 / 3.5%), transparent 45%);
-  --bevel-button: inset 0 1px 0 rgb(255 255 255 / 18%), inset 0 -1px 0 rgb(0 0 0 / 25%);
-  --inset-input: inset 0 1px 2px rgb(0 0 0 / 40%);
-  --ring-badge: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent);
-  /* Boundary tone (S-125, S-126): control, chip, ghost-button and track
-     edges at 3:1 or better against every background they sit on. */
-  --border-strong: #5a7186;
-  /* Motion tokens (S-122): short eased state changes only, on
-     opacity/colour/shadow. Everything becomes instant under the
-     reduced-motion kill switch below. */
-  --dur-fast: 120ms;
-  --dur-base: 180ms;
-  --dur-slow: 280ms;
+  --void: #010402;
+  --glass: #03110a;
+  --glass-2: #062016;
+  --phosphor: #8dffb6;
+  --phosphor-hi: #d6ffe6;
+  --dim: #4fb27a;
+  --faint: #1f5a3a;
+  --rule: #154a2e;
+  --edge: #2e7a4f;
+  --track: #2e7a4f;
+  --amber: #ffc14d;
+  --red: #ff5a52;
+  --red-ink: #ffd9d6;
+  --low: #8dffb6;
+  --elevated: #ffc14d;
+  --high: #ff5a52;
+  --low-bg: #062016;
+  --elevated-bg: #201503;
+  --high-bg: #220a08;
+  --cant-tell: #2e7a4f;
+  --glow: rgb(70 255 150 / 42%);
+  --glow-soft: rgb(70 255 150 / 12%);
+  --glow-red: 0 0 14px rgb(255 90 82 / 55%);
+  --glow-red-lg: 0 0 22px rgb(255 90 82 / 60%);
+  --glow-red-strong: 0 0 20px rgb(255 90 82 / 85%);
+  --glow-red-faint: 0 0 3px rgb(255 90 82 / 30%);
+  --glow-seg: 0 0 8px currentColor;
+  --arrive-glow: inset 0 0 30px rgb(141 255 182 / 50%);
+  --shadow-off: 0 0 0 transparent;
+  --shadow-none: none;
+  --alert-glow: 0 0 0 1px rgb(0 0 0 / 40%), 0 0 28px rgb(255 90 82 / 18%), inset 0 0 24px rgb(255 90 82 / 8%);
+  --tube-rings: 0 0 0 1px #0d2a1b, 0 0 0 9px #050b08, 0 0 0 10px #12251a;
+  --bg: #010402;
+  --surface: #03110a;
+  --surface-2: #062016;
+  --border: #2e7a4f;
+  --border-strong: #4fb27a;
+  --text: #8dffb6;
+  --text-2: #4fb27a;
+  --text-3: #4fb27a;
+  --brand: #8dffb6;
+  --brand-deep: #1f5a3a;
+  --radius-card: 14px;
+  --radius-row: 10px;
+  --radius-button: 6px;
+  --font-sans: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* Glow language: depth comes from phosphor glow, never lifted
+     shadows. Every box-shadow below stays token-based. */
+  --elev-1: 0 0 0 1px rgb(0 0 0 / 40%), 0 0 18px var(--glow-soft);
+  --elev-2: 0 0 0 1px rgb(0 0 0 / 40%), 0 0 28px var(--glow-soft), inset 0 0 24px rgb(70 255 150 / 6%);
+  --elev-3: 0 0 0 1px rgb(0 0 0 / 40%), 0 0 40px rgb(70 255 150 / 18%), inset 0 0 32px rgb(70 255 150 / 8%);
+  --sheen: linear-gradient(180deg, rgb(200 255 225 / 3.5%), transparent 45%);
+  --bevel-button: inset 0 1px 0 rgb(214 255 230 / 25%), inset 0 -1px 0 rgb(0 0 0 / 30%);
+  --inset-input: inset 0 1px 2px rgb(0 0 0 / 50%);
+  --ring-badge: inset 0 0 0 1px rgb(141 255 182 / 30%);
+  --elev-pressed: inset 0 2px 4px rgb(0 0 0 / 50%);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--brand);
+  /* Motion inventory (Phosphor Console): opacity/colour/glow only.
+     Blinks run at most 1 Hz; pulses and breathing run 1.4-3.2 s. */
+  --dur-hover: 180ms;
+  --blink-cursor: 1.2s;
+  --blink-analyzing: 1s;
+  --pulse-live: 1.6s;
+  --arrive: 2.4s;
+  --settle: 1.4s;
+  --breathe: 3s;
+  --glass-breathe: 3.2s;
+  --warn: 1.4s;
+  --hot: 2.2s;
+  --hot-badge: 2s;
+  --fade-sec: 0.8s;
   --ease-out: cubic-bezier(0.2, 0, 0, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-  /* Pressed-button inset (S-122): part of the shadow-only motion
-     language, so button presses stay in the token system. */
-  --elev-pressed: inset 0 2px 4px rgb(0 0 0 / 45%);
-  /* Focus ring (S-121): the single token for the keyboard focus ring, so
-     every box-shadow declaration outside :root stays token-based. */
-  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--brand);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  background: var(--void);
+}
+
 body {
   margin: 0;
-  background: var(--bg);
+  min-height: 100vh;
+  padding: 18px;
+  background: radial-gradient(120% 90% at 50% 40%, #04140c 0%, var(--void) 70%);
   color: var(--text);
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   font-size: 15px;
   line-height: 1.5;
 }
 
+::selection {
+  background: var(--phosphor);
+  color: var(--void);
+}
+
+/* Static screen texture: scanlines plus vignette. Fixed, subtle, and
+   pointer-transparent; the 1 px lines never travel and never flicker. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  background: repeating-linear-gradient(180deg, rgb(0 0 0 / 14%) 0 1px, transparent 1px 3px);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  pointer-events: none;
+  background: radial-gradient(115% 100% at 50% 45%, transparent 55%, rgb(0 0 0 / 42%) 100%);
+}
+
 a {
-  color: var(--brand);
+  color: var(--phosphor-hi);
 }
 
 .mono {
   font-family: var(--font-mono);
+  overflow-wrap: anywhere;
 }
 
 .numeric {
   font-variant-numeric: tabular-nums;
 }
 
+/* The tube: rounded glass frame with an inner bloom. The reflection
+   overlay only breathes in opacity (3.2 s); nothing travels. */
 .page {
-  max-width: 1120px;
+  position: relative;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 24px 20px 64px;
+  padding: 22px 40px 34px;
+  border-radius: 26px;
+  background: radial-gradient(110% 85% at 50% 38%, var(--glass-2) 0%, var(--glass) 55%, #020906 100%);
+  box-shadow: var(--tube-rings), 0 30px 80px rgb(0 0 0 / 70%), inset 0 0 120px rgb(0 0 0 / 75%);
 }
 
+.page::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 40% at 22% 8%, rgb(200 255 225 / 7%), transparent 70%),
+    linear-gradient(115deg, transparent 58%, rgb(200 255 225 / 2.5%) 64%, transparent 70%);
+  animation: bk-glass var(--glass-breathe) var(--ease-in-out) infinite;
+}
+
+/* Status bar */
 .topbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 0 24px;
+  gap: 22px;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 6px 40px 18px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
 }
 
 .brand {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: var(--text);
+  color: var(--phosphor-hi);
   text-decoration: none;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.brand b {
+  color: var(--void);
+  background: var(--phosphor);
+  padding: 1px 6px;
+  font-style: normal;
+  box-shadow: 0 0 14px var(--glow);
 }
 
 .brand img {
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   border-radius: 6px;
 }
 
@@ -118,7 +217,7 @@ a {
 }
 
 .topbar nav a {
-  color: var(--text-2);
+  color: var(--dim);
   text-decoration: none;
   font-size: 14px;
 }
@@ -131,52 +230,548 @@ a {
   flex: 1;
 }
 
+.topbar-tagline {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.live {
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.live i {
+  width: 9px;
+  height: 9px;
+  background: var(--phosphor);
+  box-shadow: 0 0 10px var(--phosphor), 0 0 22px var(--glow);
+  animation: bk-livepulse var(--pulse-live) var(--ease-in-out) infinite;
+}
+
+.cursor {
+  display: inline-block;
+  width: 0.62em;
+  height: 1.05em;
+  vertical-align: -0.16em;
+  background: var(--phosphor);
+  box-shadow: 0 0 12px var(--glow);
+  animation: bk-blink var(--blink-cursor) steps(1) infinite;
+}
+
+.glow {
+  text-shadow: 0 0 1px var(--phosphor), 0 0 10px var(--glow), 0 0 26px rgb(70 255 150 / 18%);
+}
+
+.dim {
+  color: var(--dim);
+}
+
+.hi {
+  color: var(--phosphor-hi);
+}
+
+/* Start hero */
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 48px;
+  align-items: end;
+  padding: 34px 0 26px;
+}
+
+.boot {
+  font-size: 12px;
+  color: var(--dim);
+  letter-spacing: 0.08em;
+  margin: 0 0 14px;
+}
+
+.hero-title {
+  margin: 0;
+  font-size: clamp(44px, 8vw, 92px);
+  line-height: 0.92;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  color: var(--phosphor-hi);
+  text-shadow: 0 0 2px var(--phosphor), 0 0 18px var(--glow), 0 0 60px rgb(70 255 150 / 22%);
+  overflow-wrap: anywhere;
+}
+
+.hero-title em {
+  font-style: normal;
+  color: var(--phosphor);
+}
+
+.hero-sub {
+  margin: 18px 0 0;
+  max-width: 760px;
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.prompt {
+  margin-top: 24px;
+  display: flex;
+  align-items: stretch;
+  max-width: 880px;
+  border: 3px double var(--dim);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 40%), 0 0 28px var(--glow-soft), inset 0 0 24px rgb(70 255 150 / 6%);
+  background: var(--void);
+}
+
+.prompt label {
+  padding: 15px 0 15px 18px;
+  color: var(--phosphor-hi);
+  font-weight: 700;
+}
+
+.prompt-mark {
+  padding: 15px 0 15px 18px;
+  color: var(--phosphor-hi);
+  font-weight: 700;
+}
+
+/* Invalid input: the prompt box itself carries the red edge, since the
+   field inside it is borderless. */
+.prompt:has(.input[aria-invalid="true"]) {
+  border-color: var(--high);
+  box-shadow: var(--alert-glow);
+}
+
+.prompt .cursor {
+  align-self: center;
+  margin-right: 10px;
+  flex: none;
+}
+
+.prompt .field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.search-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.search-row .input {
+  min-width: 0;
+  flex: 1 1 auto;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: var(--shadow-none);
+  color: var(--phosphor-hi);
+  caret-color: var(--phosphor);
+}
+
+.search-row .input::placeholder {
+  color: var(--dim);
+  opacity: 1;
+}
+
+.prompt .btn,
+.prompt .button {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.legend {
+  border: 1px solid var(--edge);
+  padding: 16px 18px;
+  font-size: 12.5px;
+  background: rgb(6 32 22 / 60%);
+  box-shadow: var(--elev-1);
+}
+
+.legend h3 {
+  margin: 0 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+  font-weight: 600;
+}
+
+.legend .legend-row {
+  display: grid;
+  grid-template-columns: 74px 92px 1fr;
+  gap: 10px;
+  padding: 5px 0;
+  align-items: center;
+}
+
+.legend .note {
+  margin: 10px 0 0;
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* Feed: terminal table */
+.feedhead {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  padding: 10px 0;
+  border-top: 1px solid var(--edge);
+  flex-wrap: wrap;
+}
+
+.feedhead h2 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.24em;
+  color: var(--phosphor-hi);
+  text-shadow: 0 0 1px var(--phosphor), 0 0 10px var(--glow), 0 0 26px rgb(70 255 150 / 18%);
+}
+
+.feedhead .count {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.chips {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--edge);
+  border-radius: 0;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  box-shadow: var(--elev-1);
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--faint);
+  color: var(--phosphor-hi);
+  border-color: var(--dim);
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1.1fr) minmax(0, 1fr) 110px minmax(0, 1.4fr) 110px minmax(0, 1.2fr);
+  gap: 16px;
+  align-items: center;
+  padding: 0 12px 6px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+  border-bottom: 1px dashed var(--edge);
+}
+
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.foot {
+  margin-top: 18px;
+  font-size: 11.5px;
+  color: var(--dim);
+  letter-spacing: 0.06em;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/* Segmented score bars: 10 ticks, lit ones glow in the band colour.
+   Unlit ticks use the 3:1 edge tone so the bar reads on glass. */
+.segs {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.segs i {
+  width: 9px;
+  height: 14px;
+  background: var(--track);
+  font-style: normal;
+}
+
+.segs i.on {
+  background: currentColor;
+  box-shadow: var(--glow-seg);
+}
+
+.risk {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.risk .score {
+  min-width: 30px;
+  text-align: right;
+  font-weight: 700;
+}
+
+.risk .word {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.band-low .risk {
+  color: var(--low);
+}
+
+.band-elevated .risk {
+  color: var(--amber);
+}
+
+.band-high .risk {
+  color: var(--red);
+}
+
+.band-high .risk .word {
+  color: var(--void);
+  background: var(--red);
+  padding: 1px 7px;
+  box-shadow: var(--glow-red);
+  animation: bk-hot var(--hot) var(--ease-in-out) infinite;
+}
+
+.pending {
+  color: var(--dim);
+  letter-spacing: 0.14em;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.pending b {
+  color: var(--phosphor);
+  font-weight: 400;
+  animation: bk-blink var(--blink-analyzing) steps(1) infinite;
+}
+
+.cantword {
+  color: var(--dim);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 1px dashed var(--edge);
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+/* Live new-tokens list: a terminal table with text-only updates. Rows
+   keep stable keys so polls never shift existing rows; the "new" marker
+   is plain text. A fresh row flashes in place once (background and glow
+   only, never pushed with animation). */
+.live-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.live-table th,
+.live-table td {
+  text-align: left;
+  padding: 9px 12px;
+  border-top: 1px dashed var(--edge);
+  vertical-align: middle;
+}
+
+.live-table thead th {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+  font-weight: 600;
+  border-top: none;
+  border-bottom: 1px dashed var(--edge);
+}
+
+.live-table tbody tr {
+  position: relative;
+  transition:
+    box-shadow var(--dur-hover) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-out);
+}
+
+.live-table tbody tr:hover {
+  box-shadow: var(--elev-1);
+}
+
+.live-table tbody tr:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+  box-shadow: var(--elev-2);
+}
+
+.live-table td:first-child a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.live-table tbody tr.is-new {
+  animation: bk-arrive var(--arrive) var(--ease-out) 1;
+}
+
+.live-table tbody tr.is-scored .risk {
+  animation: bk-settle var(--settle) var(--ease-out) 1;
+}
+
+.live-new {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--phosphor);
+  border: 1px solid var(--dim);
+  padding: 1px 8px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.live-cards {
+  display: none;
+}
+
+.live-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.live-card {
+  position: relative;
+  transition:
+    box-shadow var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out);
+}
+
+.live-card:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  box-shadow: var(--elev-2);
+}
+
+.live-card-top a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.live-card.is-new {
+  animation: bk-arrive var(--arrive) var(--ease-out) 1;
+}
+
+/* Risk badge: number and word together, never colour-only. HIGH reads
+   as inverse video with a red glow pulse. */
+.risk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.risk-badge strong {
+  font-weight: 700;
+  min-width: 2ch;
+  text-align: right;
+}
+
+.risk-low {
+  color: var(--low);
+}
+
+.risk-elevated {
+  color: var(--elevated);
+}
+
+.risk-high {
+  color: var(--high);
+}
+
+.risk-high .risk-word {
+  color: var(--void);
+  background: var(--red);
+  padding: 1px 7px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  box-shadow: var(--glow-red);
+  animation: bk-hot var(--hot) var(--ease-in-out) infinite;
+}
+
+/* Cards, rows and buttons */
 .card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--sheen), var(--surface);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-card);
   padding: 20px;
+  box-shadow: var(--elev-2);
+}
+
+.card.gauge {
+  box-shadow: var(--elev-1);
+}
+
+.card.verdict {
+  border-top: 1px solid var(--verdict-band, var(--edge));
 }
 
 .row-card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-row);
   padding: 12px 16px;
   box-shadow: var(--elev-1);
 }
 
 .button {
-  background: linear-gradient(180deg, #5b7aa3, var(--brand-deep));
-  color: var(--text);
-  border: 1px solid transparent;
+  background: var(--phosphor);
+  color: var(--void);
+  border: none;
   border-radius: var(--radius-button);
-  padding: 10px 18px;
-  font-size: 15px;
-  font-weight: 600;
+  padding: 10px 26px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   cursor: pointer;
-  font-family: var(--font-sans);
-  box-shadow: var(--bevel-button);
+  font-family: var(--font-mono);
+  box-shadow: 0 0 22px var(--glow), var(--bevel-button);
+  max-width: 100%;
 }
 
 .button:hover:not(:disabled) {
-  background: var(--brand);
-  color: #0e1116;
+  background: var(--phosphor-hi);
+  color: var(--void);
 }
 
-/* Disabled primary buttons (S-123): flat grey with a light solid edge so
-   the boundary stays visible, and a not-allowed cursor. The edge colour
-   against the face measures at least 3:1. */
 .button:disabled {
-  background: #2a3340;
-  border: 1px solid #7d8ea3;
-  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--dim);
+  color: var(--dim);
   opacity: 1;
   cursor: not-allowed;
 }
 
-/* Neutral unavailable pill (S-123): grey, with an outline icon. Never
-   the brand dot, so it cannot read as an active status. */
 .unavailable-pill {
   display: inline-flex;
   align-items: center;
@@ -185,31 +780,42 @@ a {
   padding: 4px 12px;
   font-size: 13px;
   background: var(--surface-2);
-  color: var(--text-2);
-  border: 1px solid var(--border);
+  color: var(--dim);
+  border: 1px solid var(--edge);
 }
 
 .button-ghost {
   background: transparent;
-  color: var(--brand);
-  border: 1px solid var(--border-strong);
+  color: var(--phosphor);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-button);
   padding: 8px 14px;
   font-size: 14px;
   cursor: pointer;
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
 }
 
-/* Disabled ghost buttons (S-126): faded with a dashed edge and no
-   pointer, so they read as off next to enabled ones. */
 .button-ghost:disabled {
   opacity: 0.5;
   border-style: dashed;
   cursor: not-allowed;
 }
 
+.btn {
+  background: var(--phosphor);
+  color: var(--void);
+  border: none;
+  font: 700 14px var(--font-mono);
+  letter-spacing: 0.16em;
+  padding: 0 26px;
+  cursor: pointer;
+  box-shadow: 0 0 22px var(--glow);
+  text-transform: uppercase;
+  max-width: 100%;
+}
+
 .input {
-  background: var(--bg);
+  background: var(--void);
   color: var(--text);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-button);
@@ -220,8 +826,6 @@ a {
   box-shadow: var(--inset-input);
 }
 
-/* Invalid input (S-126): a red edge on the field itself. The message
-   below stays linked through aria-describedby; the icon is decorative. */
 .input[aria-invalid="true"] {
   border-color: var(--high);
 }
@@ -241,15 +845,497 @@ a {
   line-height: 1;
 }
 
-/* Hit-area pattern for radios and checkboxes: the input keeps the 44x44
-   tap target S-119 measures, while the visible control paints at ~20 px
-   inside it (12 px padding with the background clipped to the content
-   box). The boundary is an inset outline ring in the 3:1 tone (S-126);
-   checked and disabled states use theme tones, never the native bright
-   system blue. Animated state runs on background-color and box-shadow
-   only (S-122 allowlist); the outline boundary color follows instantly.
-   accent-color stays as a fallback for engines without appearance
-   support. */
+.field-error {
+  color: var(--high);
+  font-size: 14px;
+  margin: 8px 0 0;
+}
+
+.muted {
+  color: var(--text-2);
+}
+
+.quiet {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+/* ---------- Analysis ---------- */
+.crumbs {
+  padding: 18px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+  letter-spacing: 0.08em;
+}
+
+.crumbs a {
+  color: var(--phosphor);
+}
+
+.verdict {
+  display: block;
+}
+
+.token-sym {
+  margin: 0;
+  font-size: clamp(56px, 9vw, 104px);
+  line-height: 0.9;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: var(--phosphor-hi);
+  text-shadow: 0 0 2px var(--phosphor), 0 0 20px var(--glow), 0 0 64px rgb(70 255 150 / 20%);
+  overflow-wrap: anywhere;
+}
+
+.token-meta {
+  margin: 14px 0 0;
+  color: var(--dim);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.token-meta b {
+  color: var(--phosphor);
+  font-weight: 600;
+}
+
+.headline-marker {
+  color: var(--red);
+  text-shadow: 0 0 12px rgb(255 90 82 / 60%);
+}
+
+.risk-meaning {
+  font-size: 26px;
+  line-height: 1.4;
+  color: var(--phosphor-hi);
+  max-width: 820px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.score-ring-wrap {
+  display: flex;
+  gap: 48px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* 50-tick score dial: ticks light in sequence through colour and
+   opacity only; the halo breathes; the number counts up once. */
+.score-disc {
+  background: radial-gradient(circle at 50% 38%, rgb(255 255 255 / 7%), transparent 62%);
+  border-radius: 50%;
+}
+
+.score-dial {
+  position: relative;
+  width: min(400px, 100%);
+  aspect-ratio: 1;
+  justify-self: end;
+}
+
+.score-dial svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.score-dial .tick {
+  stroke: var(--track);
+  stroke-width: 7;
+  opacity: 0.55;
+  transition: stroke 0.25s var(--ease-out), opacity 0.25s var(--ease-out), filter 0.25s var(--ease-out);
+}
+
+.score-dial .tick.lit {
+  stroke: var(--tick, var(--high));
+  opacity: 1;
+  filter: drop-shadow(0 0 5px rgb(255 90 82 / 85%));
+}
+
+.score-dial.low .tick.lit {
+  filter: drop-shadow(0 0 5px var(--glow));
+}
+
+.score-dial.elevated .tick.lit {
+  filter: drop-shadow(0 0 5px rgb(255 193 77 / 85%));
+}
+
+.score-dial .inner {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+}
+
+.score-dial .core {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  align-content: center;
+}
+
+.score-dial .halo {
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(255 90 82 / 22%), transparent 68%);
+  animation: bk-breathe var(--breathe) var(--ease-in-out) infinite;
+}
+
+.score-dial.low .halo {
+  background: radial-gradient(circle, rgb(70 255 150 / 20%), transparent 68%);
+}
+
+.score-dial.elevated .halo {
+  background: radial-gradient(circle, rgb(255 193 77 / 20%), transparent 68%);
+}
+
+.score-dial .num {
+  position: relative;
+  font-size: clamp(72px, 18vw, 120px);
+  line-height: 0.9;
+  font-weight: 800;
+  letter-spacing: -0.05em;
+}
+
+.score-dial.high .num {
+  color: var(--red-ink);
+  text-shadow: 0 0 2px var(--red), 0 0 22px rgb(255 90 82 / 70%), 0 0 60px rgb(255 90 82 / 35%);
+}
+
+.score-dial.elevated .num {
+  color: var(--phosphor-hi);
+  text-shadow: 0 0 2px var(--amber), 0 0 22px rgb(255 193 77 / 60%), 0 0 60px rgb(255 193 77 / 30%);
+}
+
+.score-dial.low .num {
+  color: var(--phosphor-hi);
+  text-shadow: 0 0 2px var(--phosphor), 0 0 22px var(--glow), 0 0 60px rgb(70 255 150 / 30%);
+}
+
+.score-dial .of {
+  position: relative;
+  font-size: 12px;
+  letter-spacing: 0.3em;
+  color: var(--dim);
+  margin-top: 8px;
+}
+
+.score-dial .bandtag {
+  position: relative;
+  justify-self: center;
+  margin-top: 12px;
+  padding: 4px 14px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  font-size: 14px;
+}
+
+.score-dial.high .bandtag {
+  background: var(--red);
+  color: var(--void);
+  box-shadow: var(--glow-red-lg);
+  animation: bk-hot var(--hot-badge) var(--ease-in-out) infinite;
+}
+
+.score-dial.elevated .bandtag {
+  color: var(--amber);
+  border: 1px solid var(--amber);
+}
+
+.score-dial.low .bandtag {
+  color: var(--phosphor);
+  border: 1px solid var(--dim);
+}
+
+.sec {
+  padding: 24px 0 8px;
+}
+
+.sec h2 {
+  margin: 0 0 16px;
+  font-size: 13px;
+  letter-spacing: 0.26em;
+  color: var(--phosphor-hi);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.sec h2 span {
+  color: var(--dim);
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  margin-left: 12px;
+  text-transform: none;
+}
+
+.gauges {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.gauge {
+  text-align: left;
+  min-width: 0;
+  border: 1px solid var(--edge);
+  padding: 14px 16px 16px;
+  position: relative;
+}
+
+.gauge .lab {
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--dim);
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gauge .pct {
+  font-size: clamp(44px, 6vw, 60px);
+  font-weight: 800;
+  line-height: 1;
+  margin: 8px 0 10px;
+  letter-spacing: -0.04em;
+}
+
+.gauge .bar20 {
+  display: grid;
+  grid-template-columns: repeat(20, 1fr);
+  gap: 3px;
+  min-height: 16px;
+}
+
+.gauge .bar20 i {
+  background: var(--track);
+  min-height: 16px;
+  font-style: normal;
+  transition: background-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), opacity 0.2s var(--ease-out);
+}
+
+.gauge .bar20 i.lit {
+  background: currentColor;
+  box-shadow: var(--glow-seg);
+}
+
+.gauge .why {
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.gauge .cnt {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.gauge.high {
+  color: var(--red);
+  border-color: rgb(255 90 82 / 45%);
+  box-shadow: inset 0 0 40px rgb(255 90 82 / 6%), var(--elev-1);
+}
+
+.gauge.elevated {
+  color: var(--amber);
+}
+
+.gauge.low {
+  color: var(--phosphor);
+}
+
+.gauge.high .pct,
+.gauge.elevated .pct {
+  text-shadow: 0 0 18px currentColor;
+}
+
+.gauge.low .pct {
+  text-shadow: 0 0 14px var(--glow);
+}
+
+/* Signals: inverted severity tags, evidence as terminal lines. */
+.signals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px dashed var(--edge);
+}
+
+.sig {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 120px;
+  gap: 16px;
+  padding: 12px;
+  border-bottom: 1px dashed var(--edge);
+  align-items: start;
+}
+
+.sev {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  padding: 2px 0;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sig.high .sev,
+.sev.high {
+  background: var(--red);
+  color: var(--void);
+  animation: bk-warn var(--warn) var(--ease-in-out) infinite;
+}
+
+.sig.medium .sev,
+.sev.medium {
+  color: var(--amber);
+  border: 1px solid var(--amber);
+}
+
+.sig.low .sev,
+.sev.low {
+  color: var(--phosphor);
+  border: 1px solid var(--dim);
+}
+
+.sev {
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+/* The severity tag sits on its own line above the expandable title. */
+.signal > .sev {
+  display: table;
+}
+
+.signal > button {
+  display: block;
+  margin-top: 4px;
+  text-align: left;
+}
+
+/* The "??" marker shares the question line; the Needs line stays below. */
+.cant li > div:first-child,
+.cant-tell li > div:first-child {
+  display: inline;
+}
+
+.ev-list {
+  list-style: none;
+  padding: 0;
+}
+
+.ev-list li::before {
+  content: "└─ ";
+  color: var(--dim);
+}
+
+.sig .t {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--phosphor-hi);
+  overflow-wrap: anywhere;
+}
+
+.sig.high .t {
+  color: var(--red-ink);
+  text-shadow: 0 0 14px rgb(255 90 82 / 35%);
+}
+
+.sig .pl {
+  margin: 3px 0 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.sig .ev {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.sig .ev::before {
+  content: "└─ evidence  ";
+  color: var(--dim);
+}
+
+.sig .rk {
+  font-size: 12px;
+  color: var(--dim);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: right;
+  padding-top: 3px;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 40px;
+}
+
+.cant {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cant li {
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--edge);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.cant li::before {
+  content: "?? ";
+  color: var(--amber);
+  font-weight: 700;
+}
+
+.facts {
+  margin: 0;
+}
+
+.facts .fact-row {
+  display: flex;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px dashed var(--edge);
+  align-items: baseline;
+}
+
+.facts dt {
+  color: var(--dim);
+  flex: none;
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--phosphor-hi);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.facts .lead {
+  flex: 1;
+  border-bottom: 1px dotted var(--faint);
+  margin-bottom: 6px;
+  min-width: 12px;
+}
+
+/* Form controls: 44x44 hit areas, themed tones, glow-only state motion. */
 input[type="radio"],
 input[type="checkbox"] {
   accent-color: var(--brand);
@@ -267,8 +1353,8 @@ input[type="checkbox"] {
   cursor: pointer;
   vertical-align: middle;
   transition:
-    background-color var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out);
+    background-color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
 }
 
 input[type="radio"] {
@@ -281,13 +1367,13 @@ input[type="checkbox"] {
 
 input[type="radio"]:checked {
   background-color: var(--brand-deep);
-  background-image: radial-gradient(circle at center, #ffffff 0 4px, transparent 4.6px);
+  background-image: radial-gradient(circle at center, #d6ffe6 0 4px, transparent 4.6px);
   outline-color: var(--brand-deep);
 }
 
 input[type="checkbox"]:checked {
   background-color: var(--brand-deep);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3.5 3.5 6-8' fill='none' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3.5 3.5 6-8' fill='none' stroke='%23d6ffe6' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-size: 70%;
   background-position: center;
   background-repeat: no-repeat;
@@ -298,7 +1384,7 @@ input[type="radio"]:disabled,
 input[type="checkbox"]:disabled {
   background-color: var(--surface);
   background-image: none;
-  outline-color: var(--border);
+  outline-color: var(--edge);
   cursor: not-allowed;
   opacity: 0.6;
 }
@@ -311,101 +1397,13 @@ input[type="checkbox"]:focus-visible {
 .input:focus-visible,
 .button:focus-visible,
 .button-ghost:focus-visible,
+.btn:focus-visible,
 .chip:focus-visible,
 .tab:focus-visible,
 select:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
-}
-
-.field-error {
-  color: var(--high);
-  font-size: 14px;
-  margin: 8px 0 0;
-}
-
-.muted {
-  color: var(--text-2);
-}
-
-.quiet {
-  color: var(--text-3);
-  font-size: 12px;
-}
-
-.risk-badge {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 14px;
-  box-shadow: var(--ring-badge);
-}
-
-.risk-badge strong {
-  font-weight: 700;
-}
-
-.risk-low {
-  background: var(--low-bg);
-  color: var(--low);
-}
-
-.risk-elevated {
-  background: var(--elevated-bg);
-  color: var(--elevated);
-}
-
-.risk-high {
-  background: var(--high-bg);
-  color: var(--high);
-}
-
-.hero-title {
-  font-size: 40px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  text-align: center;
-  margin: 48px 0 12px;
-}
-
-.hero-sub {
-  text-align: center;
-  color: var(--text-2);
-  margin: 0 0 28px;
-  font-size: 17px;
-}
-
-.search-row {
-  display: flex;
-  gap: 12px;
-  max-width: 720px;
-  margin: 0 auto;
-}
-
-.chips {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.chip {
-  background: transparent;
-  color: var(--text-2);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 13px;
-  cursor: pointer;
-  font-family: var(--font-sans);
-  box-shadow: var(--elev-1);
-}
-
-.chip[aria-pressed="true"] {
-  color: var(--text);
-  border-color: var(--brand);
 }
 
 .token-grid {
@@ -421,106 +1419,40 @@ a:focus-visible {
   }
 }
 
-.score-ring-wrap {
-  display: flex;
-  gap: 24px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.gauges {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-@media (max-width: 700px) {
-  .gauge {
-    padding: 12px 8px;
-  }
-  .gauge svg {
-    width: 100%;
-    height: auto;
-  }
-}
-
-/* Below 600 px the gauges stack in one column with the arc and the
-   reason side by side, so nothing overflows a 320 px phone (S-119). */
-@media (max-width: 600px) {
-  .gauges {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-  }
-  .gauge {
-    display: grid;
-    grid-template-columns: 148px minmax(0, 1fr);
-    align-items: center;
-    column-gap: 12px;
-  }
-  .gauge > h3 {
-    grid-column: 1 / -1;
-  }
-  .gauge > p.quiet {
-    grid-column: 1 / -1;
-  }
-  .gauge > svg {
-    grid-column: 1;
-    grid-row: 3;
-  }
-  .gauge > p.muted {
-    grid-column: 2;
-    grid-row: 3;
-    margin: 0;
-  }
-}
-
-@media (max-width: 600px) {
-  .topbar-tagline {
-    display: none;
-  }
-  .score-ring-wrap svg {
-    width: 128px;
-    height: 128px;
-  }
-}
-
-.gauge {
-  text-align: left;
-  min-width: 0;
-}
-
-/* Gauge reasons and mono values wrap anywhere: long ids must stay inside
-   the card at 390 px and 1440 px (S-116). */
-.gauge p,
-.mono {
-  overflow-wrap: anywhere;
-}
-
+/* Restyled legacy signal cards keep their identity classes. */
 .signal {
-  border-left: 3px solid var(--border);
-  padding: 4px 0 4px 12px;
+  border-bottom: 1px dashed var(--edge);
+  padding: 12px;
   margin: 12px 0;
 }
 
 .signal-raises {
-  border-left-color: var(--high);
+  border-left: 3px solid var(--high);
+  padding-left: 12px;
 }
 
 .signal-lowers {
-  border-left-color: var(--low);
+  border-left: 3px solid var(--low);
+  padding-left: 12px;
 }
 
 .cant-tell {
   border: 1px dashed var(--cant-tell);
   border-radius: var(--radius-card);
   padding: 20px;
-  background: repeating-linear-gradient(
-    -45deg,
-    transparent,
-    transparent 10px,
-    rgb(58 66 80 / 12%) 10px,
-    rgb(58 66 80 / 12%) 20px
-  );
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+}
+
+.cant-tell ul {
+  list-style: none;
+  padding: 0;
+}
+
+.cant-tell li::before {
+  content: "?? ";
+  color: var(--amber);
+  font-weight: 700;
 }
 
 .assessment-label {
@@ -542,7 +1474,7 @@ a:focus-visible {
 .tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--edge);
   margin-bottom: 20px;
   overflow-x: auto;
   scrollbar-width: thin;
@@ -551,29 +1483,31 @@ a:focus-visible {
 .tab {
   background: none;
   border: none;
-  color: var(--text-2);
+  color: var(--dim);
   font-size: 14px;
   padding: 10px 14px;
   cursor: pointer;
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   border-bottom: 2px solid transparent;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .tab[aria-selected="true"] {
-  color: var(--text);
-  border-bottom-color: var(--brand);
+  color: var(--phosphor-hi);
+  border-bottom-color: var(--phosphor);
+  text-shadow: 0 0 10px var(--glow);
 }
 
 pre.code {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--void);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-button);
   padding: 12px;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 13px;
+  color: var(--text);
 }
 
 .skip-link {
@@ -587,7 +1521,7 @@ pre.code {
   background: var(--surface);
   padding: 8px 12px;
   border-radius: var(--radius-button);
-  z-index: 10;
+  z-index: 70;
 }
 
 #main:focus {
@@ -603,7 +1537,7 @@ pre.code {
   gap: 16px;
   flex-wrap: wrap;
   background: var(--sheen), var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: var(--radius-card);
   padding: 10px 16px;
   margin-bottom: 16px;
@@ -612,16 +1546,18 @@ pre.code {
 
 .compact-strip-hash {
   font-size: 12px;
-  color: var(--text-2);
+  color: var(--dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 220px;
 }
 
-/* Customize view (S-118): one collapsed disclosure after the tabs holding
-   the Detail radios, AI personalize, section picker and priorities. It sits
-   to the right on desktop and spans the width on narrow screens. */
+.compact-strip-probs {
+  font-size: 13px;
+  color: var(--dim);
+}
+
 .customize {
   margin: 0 0 20px auto;
   max-width: 460px;
@@ -636,7 +1572,7 @@ pre.code {
 .customize > summary {
   cursor: pointer;
   font-size: 14px;
-  color: var(--text-2);
+  color: var(--dim);
   width: fit-content;
   margin-left: auto;
   padding: 6px 0;
@@ -647,11 +1583,6 @@ pre.code {
   outline-offset: 2px;
 }
 
-.compact-strip-probs {
-  font-size: 13px;
-  color: var(--text-2);
-}
-
 .recent-row {
   display: flex;
   align-items: center;
@@ -660,12 +1591,17 @@ pre.code {
   border: none;
   text-align: left;
   color: var(--text);
+  background: transparent;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  max-width: 100%;
 }
 
 .recent-bars {
   display: inline-flex;
   gap: 6px;
   flex: 1 1 160px;
+  min-width: 0;
 }
 
 .recent-bar {
@@ -679,31 +1615,31 @@ pre.code {
 .recent-bar-track {
   display: block;
   height: 6px;
-  border-radius: 3px;
   background: var(--surface-2);
+  border: 1px solid var(--edge);
   overflow: hidden;
 }
 
 .recent-bar-fill {
   display: block;
   height: 100%;
-  background: var(--brand);
+  background: var(--dim);
+  box-shadow: 0 0 6px var(--glow-soft);
 }
 
-/* Label under each recent bar (S-131): Rug, Honey, Bot in quiet text. */
 .recent-bar-label {
   font-size: 11px;
   line-height: 1;
-  color: var(--text-3);
+  color: var(--dim);
   white-space: nowrap;
 }
 
-/* Recent row title (S-131): the symbol or short address, truncated. */
 .recent-title {
   font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--phosphor-hi);
 }
 
 .recent-top {
@@ -712,29 +1648,18 @@ pre.code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+}
+
+.recent-list {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .bot-details summary::-webkit-details-marker {
   color: var(--brand);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --dur-fast: 0ms;
-    --dur-base: 0ms;
-    --dur-slow: 0ms;
-  }
-  *,
-  *::before,
-  *::after {
-    transition: none !important;
-    animation: none !important;
-  }
-}
-
-/* Explanations (S-113): a small trigger beside the explained item. The
-   text opens below the trigger so it never covers the numbers beside it,
-   and renders as plain text on a panel background. */
+/* Explanations: trigger beside the item, text opens below it. */
 .explain {
   position: relative;
   display: inline-block;
@@ -746,9 +1671,9 @@ pre.code {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   background: transparent;
-  color: var(--brand);
+  color: var(--phosphor);
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
@@ -772,7 +1697,7 @@ pre.code {
   width: max-content;
   max-width: 280px;
   background: var(--surface-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 13px;
@@ -780,6 +1705,7 @@ pre.code {
   color: var(--text);
   text-align: left;
   box-shadow: var(--elev-3);
+  animation: bk-fade var(--fade-sec) var(--ease-out) 1;
 }
 
 .explain-tooltip strong {
@@ -787,151 +1713,11 @@ pre.code {
   margin-bottom: 4px;
 }
 
-/* Elevation language in use (S-121): every surface shadow comes from
-   the --elev-* tokens above, with the static --sheen layered on cards and
-   the strip. Nothing moves on scroll, hover, pointer move or focus. Text
-   is never transformed and keeps its contrast. Focus rings stay clearly
-   visible. */
-.card {
-  background: var(--sheen), var(--surface);
-  box-shadow: var(--elev-2);
-}
-
-/* Gauges are small dense cards: the lighter row tier keeps them calm. */
-.card.gauge {
-  box-shadow: var(--elev-1);
-}
-
-/* The verdict header keeps the card tier with a 1px top border in the
-   band colour, set through --verdict-band on the element. */
-.card.verdict {
-  border-top: 1px solid var(--verdict-band, var(--border));
-}
-
-/* Score ring: a static radial inner disc behind the arc plus a soft
-   band-coloured glow on the arc itself. Both are static. */
-.score-disc {
-  background: radial-gradient(circle at 50% 38%, rgb(255 255 255 / 7%), transparent 62%);
-  border-radius: 50%;
-}
-
-.score-arc {
-  filter: drop-shadow(0 0 8px var(--arc-glow, transparent));
-  /* One-shot draw (S-122): the dash opens from 0 to the value once on
-     mount over --dur-slow. The final value is a plain attribute, so the
-     ring keeps its shape with no running animation afterwards. */
-  transition: stroke-dasharray var(--dur-slow) var(--ease-out);
-}
-
-.cant-tell {
-  box-shadow: var(--elev-2);
-}
-
-.button,
-.button-ghost,
-.chip,
-.tab,
-.explain-trigger {
-  transition:
-    background-color var(--dur-fast) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out),
-    color var(--dur-fast) var(--ease-out),
-    box-shadow var(--dur-fast) var(--ease-out),
-    opacity var(--dur-fast) var(--ease-out);
-}
-
-/* Button press: the bevel gives way to a pressed inset over --dur-fast. */
-.button:active:not(:disabled) {
-  box-shadow: var(--elev-pressed);
-}
-
-/* Row hover (S-122): rows rest at --elev-1 and deepen to --elev-2 over
-   --dur-base. Shadow only: no translate, no transform. */
-.live-card {
-  transition:
-    box-shadow var(--dur-base) var(--ease-out),
-    border-color var(--dur-fast) var(--ease-out);
-}
-
-.live-card:hover {
-  box-shadow: var(--elev-2);
-}
-
-.live-table {
-  border-collapse: separate;
-  border-spacing: 0;
-}
-
-.live-table tbody tr {
-  box-shadow: var(--elev-1);
-  transition:
-    box-shadow var(--dur-base) var(--ease-out),
-    background-color var(--dur-fast) var(--ease-out);
-}
-
-.live-table tbody tr:hover {
-  box-shadow: var(--elev-2);
-}
-
-/* Whole-row target (S-124): the token link stretches over its row via a
-   positioned pseudo-element. Keyboard focus lands on the link and the row
-   answers with a :focus-within ring plus the --elev-2 tier. */
-.live-table tbody tr {
-  position: relative;
-}
-
-.live-table tbody tr:focus-within {
-  outline: 2px solid var(--brand);
-  outline-offset: -2px;
-  box-shadow: var(--elev-2);
-}
-
-.live-table td:first-child a::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-}
-
-.live-card {
-  position: relative;
-}
-
-.live-card:focus-within {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-  box-shadow: var(--elev-2);
-}
-
-.live-card-top a::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-}
-
-/* One-shot fades (S-122): tooltips and disclosure content fade from
-   opacity 0 to 1 over --dur-base. Finite and non-looping; the connector
-   lines and layout never animate. */
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.explain-tooltip {
-  animation: fade-in var(--dur-base) var(--ease-out) 1;
-}
-
 details[open] > *:not(summary) {
-  animation: fade-in var(--dur-base) var(--ease-out) 1;
+  animation: bk-fade var(--fade-sec) var(--ease-out) 1;
 }
 
-/* Investigation timeline (S-125): a static vertical trace. Numbered
-   28 px nodes joined by a 2 px connector; no transforms, no rotation,
-   and the connector never animates. Streamed step bodies fade in with
-   opacity over --dur-base. */
+/* Investigation timeline: a static vertical trace. */
 .timeline {
   list-style: none;
   margin: 12px 0;
@@ -983,11 +1769,11 @@ details[open] > *:not(summary) {
 
 .timeline-body {
   background: var(--surface-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: 12px;
   padding: 10px 12px;
   box-shadow: var(--elev-1);
-  animation: fade-in var(--dur-base) var(--ease-out) 1;
+  animation: bk-fade var(--fade-sec) var(--ease-out) 1;
 }
 
 .tool-chip {
@@ -996,68 +1782,144 @@ details[open] > *:not(summary) {
   font-size: 12px;
   color: var(--text);
   background: var(--surface-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--edge);
   border-radius: 6px;
   padding: 2px 8px;
 }
 
-/* Live new-tokens list: a static table with text-only updates. No
-transitions, no transforms, no animations: rows keep stable keys so
-polls never shift existing rows, and the "new" marker is plain text. */
-.live-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-.live-table th,
-.live-table td {
-  text-align: left;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border);
-  vertical-align: middle;
-}
-
-.live-table thead th {
-  font-size: 12px;
-  color: var(--text-3);
-  font-weight: 600;
-  border-top: none;
-}
-
-.live-new {
-  display: inline-block;
-  font-size: 11px;
-  color: var(--text-2);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 1px 8px;
-  margin-left: 8px;
-}
-
-/* Claim sentences and every other long value wrap anywhere, so unbroken
-   hex can never push the page sideways (S-116, S-119). */
 .claim-text {
   overflow-wrap: anywhere;
 }
 
-/* Live list as stacked cards below 640 px; the table stays for wider
-   screens (S-119). */
-.live-cards {
-  display: none;
+.button,
+.button-ghost,
+.chip,
+.tab,
+.explain-trigger {
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out),
+    opacity var(--dur-hover) var(--ease-out);
 }
 
-.live-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.button:active:not(:disabled) {
+  box-shadow: var(--elev-pressed);
 }
 
+/* Phosphor motion inventory: opacity, colour and glow only. No
+   transform, translate, scale or rotate anywhere in this sheet. */
+@keyframes bk-glass {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes bk-livepulse {
+  50% {
+    opacity: 0.25;
+    box-shadow: var(--shadow-off);
+  }
+}
+
+@keyframes bk-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes bk-arrive {
+  0% {
+    background-color: rgb(141 255 182 / 42%);
+    box-shadow: var(--arrive-glow);
+  }
+
+  18% {
+    background-color: rgb(141 255 182 / 14%);
+  }
+
+  30% {
+    background-color: rgb(141 255 182 / 30%);
+  }
+
+  100% {
+    background-color: transparent;
+    box-shadow: var(--shadow-off);
+  }
+}
+
+@keyframes bk-settle {
+  0% {
+    opacity: 0.2;
+    filter: brightness(2.2);
+  }
+
+  100% {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+@keyframes bk-hot {
+  50% {
+    box-shadow: var(--glow-red-faint);
+  }
+}
+
+@keyframes bk-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes bk-warn {
+  0%,
+  100% {
+    box-shadow: var(--glow-red-strong);
+    opacity: 1;
+  }
+
+  50% {
+    box-shadow: var(--glow-red-faint);
+    opacity: 0.72;
+  }
+}
+
+@keyframes bk-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Sections fade in once, staggered in 110 ms steps. Apply .fade-sec
+   with --sec-i set to the section index; each block sets its own index
+   so DOM order always matches visual order. */
+.fade-sec {
+  animation: bk-fade var(--fade-sec) var(--ease-out) 1;
+  animation-delay: calc(var(--sec-i, 0) * 110ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Live list as stacked two-line cards below 640 px; the terminal table
+   stays for wider screens. */
 @media (max-width: 639px) {
   .live-table-wrap {
     display: none;
   }
+
   .live-cards {
     display: grid;
     gap: 12px;
@@ -1065,39 +1927,57 @@ polls never shift existing rows, and the "new" marker is plain text. */
     padding: 0;
     list-style: none;
   }
+
   .live-card {
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--edge);
     border-radius: var(--radius-row);
     padding: 12px 16px;
     min-width: 0;
     box-shadow: var(--elev-1);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 10px;
+  }
+
+  .live-card .risk .segs {
+    display: none;
+  }
+
+  /* Two-line mobile cards: symbol + risk, then age · DEX · liquidity. */
+  .live-card .live-card-top {
+    grid-column: 1 / -1;
+  }
+
+  .live-card .live-sub {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    color: var(--dim);
+  }
+
+  .live-card .live-meta,
+  .live-card .live-pair {
+    display: none;
+  }
+}
+
+.live-card .live-sub {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .live-card .live-sub {
+    display: block;
   }
 }
 
 /* Flex children that must shrink instead of pushing the page wide. */
-.search-row .input {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
 .recent-bars,
 .recent-top {
   min-width: 0;
 }
 
-/* A single explicit column so the recent row can shrink to the phone
-   width instead of sizing to its content (S-119). */
-.recent-list {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.recent-row {
-  max-width: 100%;
-}
-
-/* Roomy touch targets on phones (S-119): every tappable element meets
-   44x44 px. Desktop layout is untouched. */
+/* Roomy touch targets on phones: every tappable element meets 44x44. */
 @media (max-width: 640px) {
   a,
   button,
@@ -1109,3 +1989,106 @@ polls never shift existing rows, and the "new" marker is plain text. */
     min-width: 44px;
   }
 }
+
+@media (max-width: 760px) {
+  body {
+    padding: 8px;
+    font-size: 14px;
+  }
+
+  .page {
+    padding: 14px 16px 24px;
+    border-radius: 18px;
+  }
+
+  .topbar {
+    gap: 10px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+  }
+
+  .topbar .net,
+  .topbar .bar-desc,
+  .topbar-tagline {
+    display: none;
+  }
+
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    padding: 22px 0 18px;
+  }
+
+  .legend {
+    display: none;
+  }
+
+  .hero-sub {
+    font-size: 14.5px;
+  }
+
+  .prompt {
+    flex-wrap: wrap;
+  }
+
+  .prompt .btn,
+  .prompt .button {
+    width: 100%;
+    padding: 12px;
+  }
+
+  .chips {
+    margin-left: 0;
+  }
+
+  .sig {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .sig .sev {
+    justify-self: start;
+    padding: 2px 10px;
+  }
+
+  .sig .rk {
+    text-align: left;
+  }
+
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .gauges {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .risk-meaning {
+    font-size: 19px;
+  }
+
+  /* The stacked verdict must stay within a phone viewport: a smaller
+     dial and tighter gaps keep symbol, headline and dial visible. */
+  .score-ring-wrap {
+    gap: 20px;
+  }
+
+  .score-dial {
+    width: min(240px, 100%);
+  }
+
+  .score-dial .bandtag {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 600px) {
+  .topbar-tagline {
+    display: none;
+  }
+}
+
+
+

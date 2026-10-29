@@ -79,12 +79,21 @@ export function SignalList({
         const key = signalKey(signal, index);
         const expanded = open.has(key);
         const line = templateLine(index);
+        // Inverted severity tag (Phosphor Console): HIGH reads as inverse
+        // video with a warning pulse; the severity also stays in words in
+        // the meta line below, so it is never colour-only.
+        const severity = signal.severity ?? "medium";
+        const sevClass = severity === "high" ? "high" : severity === "low" ? "low" : "medium";
+        const sevWord = severity === "high" ? "HIGH" : severity === "low" ? "LOW" : "MED";
         return (
           <article
             key={key}
             id={`signal-${key}`}
             className={signal.direction === "lowers" ? "signal signal-lowers" : "signal signal-raises"}
           >
+            <span className={`sev ${sevClass}`} aria-hidden="true">
+              {sevWord}
+            </span>
             <button
               type="button"
               className="button-ghost"
@@ -107,7 +116,7 @@ export function SignalList({
                 <h3 className="quiet" style={{ fontSize: 12 }}>
                   EVIDENCE IN BYTECODE <Explain explainKey="evidence:selector" label="Evidence rows" />
                 </h3>
-                <ul className="mono numeric" style={{ listStyle: "none", padding: 0, fontSize: 13 }}>
+                <ul className="mono numeric ev-list" style={{ fontSize: 13 }}>
                   {signal.evidence.map((entry, index) => (
                     <li key={`${entry.selector}-${index}`}>
                       {entry.selector}

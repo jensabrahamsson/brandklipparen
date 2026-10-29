@@ -1,9 +1,17 @@
-import { useState, type JSX } from "react";
+import { useState, type CSSProperties, type JSX } from "react";
 import { ChainSelector } from "../components/ChainSelector.tsx";
 import { LiveTokens } from "../components/LiveTokens.tsx";
-import { RISK_SHORT } from "../lib/risk.ts";
+import { ELEVATED_BAND, HIGH_BAND, LOW_BAND, RISK_SHORT } from "../lib/risk.ts";
 import { recentRowTitle } from "../lib/tokenIdentity.ts";
 import { isValidAddress, normalizeAddress, validationMessage } from "../lib/validate.ts";
+
+// Risk-score legend rows (Phosphor Console): band ranges straight from
+// the frozen risk bands, with plain-language meanings. No feature data.
+const LEGEND: readonly { readonly min: number; readonly max: number; readonly word: string; readonly meaning: string }[] = [
+  { min: LOW_BAND.min, max: LOW_BAND.max, word: "Low", meaning: "no strong owner powers seen" },
+  { min: ELEVATED_BAND.min, max: ELEVATED_BAND.max, word: "Elevated", meaning: "some risky capabilities" },
+  { min: HIGH_BAND.min, max: HIGH_BAND.max, word: "High", meaning: "owner can hurt holders" },
+];
 
 // Start page: one search field for a contract address, the mainnet-only
 // chain badge, and the live new-tokens list below it.
@@ -72,43 +80,73 @@ export function StartPage({
 
   return (
     <div className="page">
-      <h1 className="hero-title">Know the risk before you buy.</h1>
-      <p className="hero-sub">
-        Paste a contract address. Rug pull, honeypot and bot-pump risk from bytecode alone, explained in plain
-        English.
-      </p>
-      <form onSubmit={submit} noValidate>
-        <div className="search-row">
-          <label htmlFor="address-search" className="skip-link">
-            Contract address
-          </label>
-          <input
-            id="address-search"
-            className="input"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="Paste contract address, 0x…"
-            value={raw}
-            onChange={(event) => setRaw(event.target.value)}
-            aria-invalid={error !== null}
-            aria-describedby={error !== null ? "address-error" : undefined}
-          />
-          {error !== null ? (
-            <span className="field-error-icon" aria-hidden="true">
-              !
-            </span>
-          ) : null}
-          <button type="submit" className="button">
-            Analyze
-          </button>
-        </div>
-        {error !== null ? (
-          <p id="address-error" className="field-error numeric" role="alert" style={{ maxWidth: 720, marginLeft: "auto", marginRight: "auto" }}>
-            {error}
+      <section className="hero">
+        <div className="fade-sec" style={{ "--sec-i": 0 } as CSSProperties}>
+          <p className="boot">BK/1 · ERC-20 contract reader · ready</p>
+          <h1 className="hero-title">
+            Scan before
+            <br />
+            <em>you ape.</em>
+          </h1>
+          <p className="hero-sub">
+            Paste a contract address. Rug pull, honeypot and bot-pump risk from bytecode alone, explained in plain
+            English.
           </p>
-        ) : null}
-      </form>
+          <form onSubmit={submit} noValidate className="prompt">
+            <span className="prompt-mark" aria-hidden="true">
+              &gt;
+            </span>
+            <div className="field">
+              <div className="search-row">
+                <label htmlFor="address-search" className="skip-link">
+                  Contract address
+                </label>
+                {raw.length === 0 ? (
+                  <span className="cursor" aria-hidden="true" />
+                ) : null}
+                <input
+                  id="address-search"
+                  className="input"
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="Paste contract address, 0x…"
+                  value={raw}
+                  onChange={(event) => setRaw(event.target.value)}
+                  aria-invalid={error !== null}
+                  aria-describedby={error !== null ? "address-error" : undefined}
+                />
+                {error !== null ? (
+                  <span className="field-error-icon" aria-hidden="true">
+                    !
+                  </span>
+                ) : null}
+                <button type="submit" className="button">
+                  Analyze
+                </button>
+              </div>
+            </div>
+          </form>
+          {error !== null ? (
+            <p id="address-error" className="field-error numeric" role="alert" style={{ maxWidth: 720 }}>
+              {error}
+            </p>
+          ) : null}
+        </div>
+        <aside className="legend fade-sec" aria-label="Risk score legend" style={{ "--sec-i": 1 } as CSSProperties}>
+          <h3>Risk score · 0–100</h3>
+          {LEGEND.map((row) => (
+            <div className="legend-row" key={row.word}>
+              <span>
+                {row.min}–{row.max}
+              </span>
+              <span>{row.word.toUpperCase()}</span>
+              <span className="dim">{row.meaning}</span>
+            </div>
+          ))}
+          <p className="note">A score is a reading of the contract, not a promise. Every page lists what we can&apos;t tell.</p>
+        </aside>
+      </section>
       <div
         style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 16, flexWrap: "wrap", alignItems: "center" }}
       >

@@ -1,8 +1,9 @@
-// Playwright for the motion rules (K-021, K-103): default mode allows
-// only short (at most 300 ms), non-looping opacity/colour/shadow
-// transitions and never transforms; with prefers-reduced-motion the UI is
-// fully static. No card carries a transform, no container uses
-// perspective, the investigate trace is always the flat 2D list.
+// Playwright for the motion rules (Phosphor Console): default mode
+// allows only short (at most 300 ms) opacity/colour/shadow transitions
+// plus looping glow/opacity pulses inside 1.0-3.2 s, and never
+// transforms; with prefers-reduced-motion the UI is fully static. No
+// card carries a transform, no container uses perspective, the
+// investigate trace is always the flat 2D list.
 // Every REST response is route-mocked.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
@@ -109,7 +110,7 @@ async function mockRest(page: Page): Promise<void> {
   });
 }
 
-test("default_motion_is_short_non_looping_and_never_transforms", async ({ page }) => {
+test("default_motion_is_short_pulses_bounded_and_never_transforms", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
 
@@ -131,11 +132,21 @@ test("default_motion_is_short_non_looping_and_never_transforms", async ({ page }
           bad.push(`${element.tagName}<${element.getAttribute("class") ?? ""}> ${property} ${part.trim()}`);
         }
       });
+      // Looping animations must be glow/opacity pulses inside 1.0-3.2 s:
+      // blinks run at most 1 Hz, breathing between 1.4 s and 3.2 s.
       if (style.animationName !== "none") {
         const counts = style.animationIterationCount.split(",").map((part) => part.trim());
-        if (counts.some((part) => part === "infinite" || Number.parseFloat(part) > 1)) {
-          bad.push(`${element.tagName}<${element.getAttribute("class") ?? ""}> iteration ${counts.join(",")}`);
-        }
+        const durations = style.animationDuration.split(",").map((part) => Number.parseFloat(part));
+        counts.forEach((count, index) => {
+          if (count === "infinite" || Number.parseFloat(count) > 1) {
+            const seconds = durations[Math.min(index, durations.length - 1)] ?? 0;
+            if (!(seconds >= 1 && seconds <= 3.2)) {
+              bad.push(
+                `${element.tagName}<${element.getAttribute("class") ?? ""}> loop ${style.animationName} ${seconds}s`,
+              );
+            }
+          }
+        });
       }
     });
     return bad;

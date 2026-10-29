@@ -76,7 +76,7 @@ async function mockRest(page: Page): Promise<void> {
 
 test("k020_start_page_loads_and_search_validates", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Know the risk before you buy." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Scan before you ape." })).toBeVisible();
   await page.getByLabel("Contract address").fill("not-an-address");
   await page.getByRole("button", { name: "Analyze" }).click();
   await expect(page.getByRole("alert")).toContainText("Invalid address");

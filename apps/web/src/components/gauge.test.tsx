@@ -1,27 +1,47 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { Gauge } from "./Gauge.tsx";
 
-// Design review P0-1: the arc dash math used a different radius than the
-// SVG arc, so the gauge under-reported probability. pathLength=100 with a
-// percent dash makes the fill exact by construction.
-describe("gauge arc fill (design review P0-1)", () => {
-  test("design_review_gauge_dash_matches_percent", () => {
-    const html = renderToString(<Gauge kind="honeypot" probability={0.91} signalCount={1} reason="plain reason" />).replace(
-      /<!-- -->/g,
-      "",
-    );
-    expect(html).toContain('pathLength="100"');
-    expect(html).toContain('stroke-dasharray="91 100"');
-    expect(html).toContain("91%");
+// Phosphor Console gauges: a 20-segment bar that lights once to the
+// probability share, the percent as text with its band word, the signal
+// count and one plain-text reason. The accessible labels carry the exact
+// percent, so the reading never depends on the lit count alone.
+describe("gauge segments (phosphor console)", () => {
+  test("gauge_renders_twenty_segments_with_exact_labels", () => {
+    const html = renderToString(
+      <Gauge kind="honeypot" probability={0.91} signalCount={1} reason="plain reason" />,
+    ).replace(/<!-- -->/g, "");
+    expect(html).toContain('aria-label="Honeypot gauge: 91 percent"');
+    expect(html).toContain('aria-label="91 percent probability"');
+    expect(html).toContain("plain reason");
+    expect(html).toContain("1 signal");
+    expect(html).toContain("HIGH");
+    const segments = html.match(/<i /g) ?? [];
+    expect(segments).toHaveLength(20);
   });
 
-  test("design_review_gauge_zero_and_full", () => {
-    expect(renderToString(<Gauge kind="rug-pull" probability={0} signalCount={0} reason="x" />)).toContain(
-      'stroke-dasharray="0 100"',
-    );
-    expect(renderToString(<Gauge kind="rug-pull" probability={1} signalCount={2} reason="x" />)).toContain(
-      'stroke-dasharray="100 100"',
-    );
+  test("gauge_zero_and_full_light_counts", () => {
+    vi.stubGlobal("window", {
+      matchMedia: (query: string) => ({ matches: query.includes("reduce"), media: query }),
+    });
+    try {
+      // Under reduced motion the fill renders final at once.
+      const zero = renderToString(<Gauge kind="rug-pull" probability={0} signalCount={0} reason="x" />);
+      expect(zero.match(/class="lit"/g) ?? []).toHaveLength(0);
+      expect(zero).toContain("no signals");
+      const full = renderToString(<Gauge kind="rug-pull" probability={1} signalCount={2} reason="x" />);
+      expect(full.match(/class="lit"/g) ?? []).toHaveLength(20);
+      expect(full).toContain("2 signals");
+      expect(full).toContain("HIGH");
+      const partial = renderToString(<Gauge kind="bot-pump" probability={0.22} signalCount={0} reason="x" />);
+      expect(partial.match(/class="lit"/g) ?? []).toHaveLength(4);
+      expect(partial).toContain("LOW");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 });

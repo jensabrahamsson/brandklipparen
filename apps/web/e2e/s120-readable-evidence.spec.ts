@@ -177,9 +177,11 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   const explanation = page.locator('section[aria-label^="Template explanation"]');
   await expect(explanation).toBeVisible();
 
-  // Simple-mode height stays within budget on a wide viewport.
+  // Simple-mode height stays within budget on a wide viewport. The
+  // budget is re-baselined to the Phosphor Console verdict (display
+  // heading plus 400 px dial); it still caps runaway growth.
   const height = await page.evaluate(() => document.documentElement.scrollHeight);
-  expect(height).toBeLessThanOrEqual(4000);
+  expect(height).toBeLessThanOrEqual(4300);
 
   // Few Explain triggers: one per group, never one per PC row.
   const triggers = await page.locator(".explain-trigger").count();

@@ -641,9 +641,11 @@ function AssessedView({
           {result.modelVersion}
         </p>
         <div className="score-ring-wrap">
-          <ScoreRing score={result.score} />
           <div style={{ flex: "1 1 240px" }}>
-            <p className="risk-meaning" style={{ fontSize: 22, fontWeight: 600, margin: "0 0 8px" }}>
+            <p className="risk-meaning" style={{ margin: "0 0 8px" }}>
+              <span className="headline-marker" aria-hidden="true">
+                &gt;{" "}
+              </span>
               <span>{meaningSentence(result)}</span> <Explain explainKey="score:combined" label="Combined score" />
             </p>
             <p className="muted" style={{ margin: "0 0 8px" }}>
@@ -660,6 +662,7 @@ function AssessedView({
               </p>
             ) : null}
           </div>
+          <ScoreRing score={result.score} />
         </div>
         {result.deepening === "pending" ? (
           <p className="quiet" style={{ margin: "16px 0 0" }}>
@@ -751,6 +754,7 @@ function AssessedView({
               onToggleSignal={onToggleSignal}
               onSignalLink={jumpToSignal}
               visibleSections={visibleSections}
+              liveEntry={liveEntry}
             />
             {mode === "expert" ? <StreamView address={address} apiKey={apiKey} /> : null}
             <ExplainPanel address={address} apiKey={apiKey} availability={availability.explain} />
@@ -818,21 +822,42 @@ function CustomizeView({
 }): JSX.Element {
   // Disclosure with remembered state, synced from the element: `open`
   // renders the remembered session state, and every native toggle — mouse
-  // click, keyboard Enter/Space, find-in-page, programmatic — fires
-  // `toggle`, whose handler syncs React state and persists it. The old
-  // summary onClick + preventDefault suppressed the native toggle
-  // entirely, so `toggle` never fired (the reported "onToggle not
-  // firing") and every non-click toggle desynced React state; there is no
-  // `defaultOpen` for details in React (the prop renders inert), so the
-  // element's own `open` read in onToggle is the sync source.
+  // click, keyboard Enter/Space, find-in-page, programmatic — flips the
+  // `open` attribute. The old summary onClick + preventDefault suppressed
+  // the native toggle entirely, so `toggle` never fired (the reported
+  // "onToggle not firing") and every non-click toggle desynced React
+  // state; there is no `defaultOpen` for details in React (the prop
+  // renders inert), so the element itself is the sync source. Persisting
+  // only in `onToggle` is racy: the event is queued as a later task after
+  // `.open` already flipped, so a reload committed in between (flaky
+  // details-toggle e2e at the post-reload assertion) drops the write
+  // while the test already observed open=true. The observer below fires
+  // at the microtask checkpoint of the flipping task, so React state and
+  // session storage are synced before any reload navigation can start.
+  // `onToggle` stays as the redundant sync for the same state.
   const [open, setOpen] = useState<boolean>(() => readStoredCustomize());
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  useEffect(() => {
+    const element = detailsRef.current;
+    if (element === null) {
+      return;
+    }
+    const sync = (): void => {
+      const next = element.open;
+      setOpen(next);
+      writeStoredCustomize(next);
+    };
+    const observer = new MutationObserver(sync);
+    observer.observe(element, { attributes: true, attributeFilter: ["open"] });
+    return () => observer.disconnect();
+  }, []);
   const remember = (event: SyntheticEvent<HTMLDetailsElement>): void => {
     const next = event.currentTarget.open;
     setOpen(next);
     writeStoredCustomize(next);
   };
   return (
-    <details className="customize" open={open ? true : undefined} onToggle={remember}>
+    <details ref={detailsRef} className="customize" open={open ? true : undefined} onToggle={remember}>
       <summary>Customize view</summary>
       <div role="radiogroup" aria-label="Detail depth" style={{ margin: "16px 0" }}>
         <span className="quiet" style={{ marginRight: 12, fontSize: 14 }}>
@@ -912,6 +937,7 @@ function OverviewSections({
   onToggleSignal,
   onSignalLink,
   visibleSections,
+  liveEntry,
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
   readonly plugins: readonly PluginListEntry[] | null;
@@ -926,6 +952,7 @@ function OverviewSections({
   readonly onToggleSignal: (key: string) => void;
   readonly onSignalLink: (key: string) => void;
   readonly visibleSections: ReadonlySet<string>;
+  readonly liveEntry: LiveTokenEntry | null;
 }): JSX.Element {
   const jumpToSignal = onSignalLink;
   const pluginViews = result.pluginResults === undefined ? [] : toPluginResultViews(result.pluginResults);
@@ -1049,7 +1076,7 @@ function OverviewSections({
     <div>
       <div className="token-grid">
         <div>
-          {shownSections.map((sectionId) => {
+          {shownSections.map((sectionId, sectionIndex) => {
             const collapsedByAi = collapsed.has(sectionId) && !aiExpanded.has(sectionId);
             if (collapsedByAi) {
               return (
@@ -1066,7 +1093,13 @@ function OverviewSections({
               );
             }
             return (
-              <div key={sectionId} data-section={sectionId} data-emphasis={emphasisOf.get(sectionId) ?? "normal"}>
+              <div
+                key={sectionId}
+                data-section={sectionId}
+                data-emphasis={emphasisOf.get(sectionId) ?? "normal"}
+                className="fade-sec"
+                style={{ "--sec-i": sectionIndex + 1 } as CSSProperties}
+              >
                 {emphasisOf.get(sectionId) === "high" ? (
                   <p className="quiet" data-testid={`ai-emphasis-${sectionId}`} style={{ fontSize: 13 }}>
                     Highlighted for you.
@@ -1078,7 +1111,7 @@ function OverviewSections({
           })}
           {mode === "expert" ? <ExpertDetail result={result} /> : null}
         </div>
-        <Sidebar result={result} expert={mode === "expert"} />
+        <Sidebar result={result} expert={mode === "expert"} liveEntry={liveEntry} />
       </div>
     </div>
   );

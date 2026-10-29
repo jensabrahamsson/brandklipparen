@@ -82,6 +82,9 @@ test("s100_field_picker_limits_sections_without_changing_score", async ({ page }
   await openCustomize(page);
   const score = page.locator('section[aria-label="Combined score"]');
   await expect(score).toContainText("84 High");
+  // Let the one-shot dial count-up settle so the byte-identity capture
+  // below compares final text against final text.
+  await expect(score.locator(".score-dial .num")).toHaveText("84");
   const before = await score.innerText();
   // The picked Signals section renders by default.
   await expect(page.locator('section[aria-label="Signals"]')).toBeVisible();

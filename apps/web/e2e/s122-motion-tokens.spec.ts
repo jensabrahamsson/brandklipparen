@@ -1,8 +1,11 @@
-// S-122: motion tokens and micro-interactions. In default mode every
-// transition lasts at most 300 ms, no animation loops forever, and hover
-// never changes transform; the score ring draws once on mount and then
-// stays put. Under reduced motion the duration tokens collapse to 0 ms
-// and a full interaction script leaves zero running animations.
+// S-122: phosphor motion tokens and micro-interactions. In default mode
+// every transition lasts at most 300 ms, nothing uses transform or
+// perspective, hover never changes transform, and every running animation
+// touches only opacity/colour/glow with infinite cycles inside 1.0-3.2 s
+// (blinks at most 1 Hz). The 50-tick dial lights once on mount and then
+// holds its final value. Under reduced motion the full interaction script
+// stays animation-free and count-ups render final at once.
+// Every REST response is route-mocked.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -115,8 +118,7 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
   const cards = page.locator(".card");
   await expect(cards.first()).toBeVisible();
 
-  // Default mode: no transition runs longer than 300 ms and no animation
-  // loops forever.
+  // Default mode: no transition runs longer than 300 ms.
   const violations = await page.evaluate(() => {
     const bad: string[] = [];
     document.querySelectorAll("*").forEach((element) => {
@@ -126,16 +128,34 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
           bad.push(`${element.tagName} duration ${part.trim()}`);
         }
       });
-      if (style.animationName !== "none") {
-        const counts = style.animationIterationCount.split(",").map((part) => part.trim());
-        if (counts.some((part) => part === "infinite" || Number.parseFloat(part) > 1)) {
-          bad.push(`${element.tagName} iteration ${counts.join(",")}`);
-        }
-      }
     });
     return bad;
   });
   expect(violations).toEqual([]);
+
+  // No transform or perspective anywhere in the author stylesheets.
+  const motionDeclarations = await page.evaluate(() => {
+    const found: string[] = [];
+    for (const sheet of Array.from(document.styleSheets)) {
+      let rules: CSSRuleList | null = null;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue;
+      }
+      for (const rule of Array.from(rules ?? [])) {
+        if (rule instanceof CSSStyleRule) {
+          const transform = rule.style.getPropertyValue("transform");
+          const perspective = rule.style.getPropertyValue("perspective");
+          if (transform !== "" || perspective !== "") {
+            found.push(`${rule.selectorText} ${transform} ${perspective}`);
+          }
+        }
+      }
+    }
+    return found;
+  });
+  expect(motionDeclarations).toEqual([]);
 
   // Hover never changes transform on cards, tabs or explain triggers.
   const hoverTargets = [cards.first(), page.locator(".tab").first(), page.locator(".explain-trigger").first()];
@@ -146,41 +166,24 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
     expect(before).toBe("none");
   }
 
-  // The score ring draws once on mount over the slow token, then holds
-  // its final value through later interaction.
-  const arc = page.locator(".score-arc");
-  await expect(arc).toBeAttached();
-  expect(await arc.evaluate((element) => getComputedStyle(element).transitionDuration)).toBe("0.28s");
-  await page.waitForTimeout(600);
-  const settled = await arc.evaluate((element) => element.getAttribute("stroke-dasharray") ?? "");
-  expect(Number.parseFloat(settled)).toBeGreaterThan(0);
+  // The 50-tick dial lights once on mount to the score share (84 lights
+  // 42), then holds its final value through later interaction.
+  await expect(page.locator(".score-dial .tick.lit")).toHaveCount(42);
   await cards.first().hover();
   await page.waitForTimeout(400);
-  expect(await arc.evaluate((element) => element.getAttribute("stroke-dasharray") ?? "")).toBe(settled);
+  await expect(page.locator(".score-dial .tick.lit")).toHaveCount(42);
 
-  // Reduced motion: the duration tokens collapse and the full
-  // interaction script stays animation-free and instant.
+  // Reduced motion: the full interaction script stays animation-free and
+  // instant, and count-ups render final at once.
   const reduced = await browser.newContext({ reducedMotion: "reduce" });
   const reducedPage = await reduced.newPage();
   await mockRest(reducedPage);
   await reducedPage.goto(`/#/token/${ADDRESS}`);
   await expect(reducedPage.locator(".card").first()).toBeVisible();
 
-  const tokens = await reducedPage.evaluate(() => {
-    const root = getComputedStyle(document.documentElement);
-    return [
-      root.getPropertyValue("--dur-fast").trim(),
-      root.getPropertyValue("--dur-base").trim(),
-      root.getPropertyValue("--dur-slow").trim(),
-    ];
-  });
-  expect(tokens).toEqual(["0ms", "0ms", "0ms"]);
-
-  // The ring renders final at once: the dash opens with no animation.
-  const instant = await reducedPage
-    .locator(".score-arc")
-    .evaluate((element) => element.getAttribute("stroke-dasharray") ?? "");
-  expect(Number.parseFloat(instant)).toBeGreaterThan(0);
+  // The dial renders final at once: all 42 ticks lit, number at target.
+  await expect(reducedPage.locator(".score-dial .tick.lit")).toHaveCount(42);
+  await expect(reducedPage.locator(".score-dial .num")).toHaveText("84");
 
   await reducedPage.locator(".card").first().hover();
   await reducedPage.locator('[data-testid="explain-score:combined"]').focus();

@@ -140,7 +140,7 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
   await page.getByRole("button", { name: "Analyze" }).click();
   const search = page.locator("#address-search");
   await expect(search).toHaveAttribute("aria-invalid", "true");
-  expect(await search.evaluate((element) => getComputedStyle(element).borderColor)).toContain("244, 112, 103");
+  expect(await search.evaluate((element) => getComputedStyle(element).borderColor)).toContain("255, 90, 82");
   const describedBy = await search.getAttribute("aria-describedby");
   expect(describedBy).toBe("address-error");
   await expect(page.locator(`#${describedBy ?? ""}`)).toContainText("Invalid address");
@@ -155,14 +155,15 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
   await page.locator("details.customize > summary").click();
   // Native checkboxes follow the brand tone instead of system blue.
   const aiToggle = page.getByTestId("ai-personalize-toggle");
-  expect(await aiToggle.evaluate((element) => getComputedStyle(element).accentColor)).toContain("126, 156, 194");
+  expect(await aiToggle.evaluate((element) => getComputedStyle(element).accentColor)).toContain("141, 255, 182");
   const clear = page.getByTestId("priorities-clear");
   await expect(clear).toBeDisabled();
   expect(await clear.evaluate((element) => getComputedStyle(element).opacity)).toBe("0.5");
   expect(await clear.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("dashed");
   expect(await clear.evaluate((element) => getComputedStyle(element).cursor)).toBe("not-allowed");
 
-  // The gauge track keeps a 3:1 boundary on the card surface.
+  // The gauge segment track keeps a 3:1 boundary on the card surface:
+  // an unlit segment against the gauge card.
   const trackRatio = await page.evaluate(() => {
     const parse = (value: string): readonly [number, number, number] => {
       const match = value.match(/[\d.]+/g) ?? [];
@@ -175,12 +176,12 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
       });
       return 0.2126 * (linear[0] ?? 0) + 0.7152 * (linear[1] ?? 0) + 0.0722 * (linear[2] ?? 0);
     };
-    const track = document.querySelector(".gauge path");
+    const track = document.querySelector(".gauge .bar20 i:not(.lit)");
     const card = document.querySelector(".gauge");
     if (track === null || card === null) {
       return 0;
     }
-    const edge = luminance(parse(getComputedStyle(track as Element).stroke));
+    const edge = luminance(parse(getComputedStyle(track as Element).backgroundColor));
     const face = luminance(parse(getComputedStyle(card).backgroundColor));
     return (Math.max(edge, face) + 0.05) / (Math.min(edge, face) + 0.05);
   });

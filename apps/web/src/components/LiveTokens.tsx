@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type JSX, type RefObject } from "react";
+import { riskBand } from "../lib/risk.ts";
 import { RiskBadge } from "./RiskBadge.tsx";
 import {
   fetchLiveTokens,
@@ -49,16 +50,40 @@ function ageText(entry: LiveTokenEntry): JSX.Element | string {
   );
 }
 
+function bandClass(entry: LiveTokenEntry): string {
+  if (entry.state === "done" && typeof entry.score === "number") {
+    const word = riskBand(entry.score).word;
+    return word === "Low" ? "band-low" : word === "Elevated" ? "band-elevated" : "band-high";
+  }
+  if (entry.riskBand === "Low") {
+    return "band-low";
+  }
+  if (entry.riskBand === "Elevated") {
+    return "band-elevated";
+  }
+  return "band-high";
+}
+
 function riskCell(entry: LiveTokenEntry): JSX.Element {
   if (entry.state === "done" && typeof entry.score === "number") {
-    return <RiskBadge score={entry.score} />;
+    return (
+      <span className={`risk ${bandClass(entry)}`}>
+        <RiskBadge score={entry.score} />
+      </span>
+    );
   }
   if (entry.state === "queued" || entry.state === "analyzing") {
-    return <span className="muted">analyzing…</span>;
+    // Terminal analyzing state: uppercase through CSS, block cursor
+    // blinking at 1 Hz. The label stays polite for screen readers.
+    return (
+      <span className="pending" aria-label="Analyzing">
+        analyzing…<b aria-hidden="true">▌</b>
+      </span>
+    );
   }
   if (entry.state === "cant-tell") {
     return (
-      <span className="muted" title={entry.reason ?? "missing data"}>
+      <span className="cantword" title={entry.reason ?? "missing data"}>
         can't tell
       </span>
     );
@@ -83,6 +108,28 @@ export function LiveTokensList({
   readonly onShowBuffered?: (() => void) | null | undefined;
 }): JSX.Element {
   const [filter, setFilter] = useState<Filter>("All");
+  // Fresh-row flash (Phosphor Console): rows the reader has not seen get
+  // the in-place afterglow once. Everything on the first paint counts as
+  // seen, so loading never flashes; later polls flash only their inserts.
+  const [seen, setSeen] = useState<ReadonlySet<string>>(
+    () => new Set(snapshot.items.map((entry) => entry.pairAddress)),
+  );
+  useEffect(() => {
+    setSeen((previous) => {
+      const next = new Set(previous);
+      for (const entry of snapshot.items) {
+        next.add(entry.pairAddress);
+      }
+      return next;
+    });
+  }, [snapshot.items]);
+  const rowClass = (entry: LiveTokenEntry): string | undefined => {
+    const fresh = !seen.has(entry.pairAddress);
+    if (!fresh) {
+      return undefined;
+    }
+    return entry.state === "done" ? "is-new is-scored" : "is-new";
+  };
   if (snapshot.status === "not-configured") {
     return (
       <section aria-label="New tokens" style={{ marginTop: 56 }}>
@@ -105,14 +152,20 @@ export function LiveTokensList({
         : "Live feed · via Etherscan";
 
   return (
-    <section aria-label="New tokens" ref={sectionRef} style={{ marginTop: 56 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, fontSize: 20 }}>New tokens</h2>
-        <span className="quiet">{sourceLabel}</span>
+    <section
+      aria-label="New tokens"
+      ref={sectionRef}
+      className="fade-sec"
+      style={{ marginTop: 56, "--sec-i": 2 } as CSSProperties}
+    >
+      <div className="feedhead">
+        <h2>New pairs</h2>
+        <span className="count">
+          {sourceLabel} · newest first · <span className="live" style={{ fontSize: 12 }}><i aria-hidden="true" />Live</span>
+        </span>
         {lastPollAt === null ? null : (
           <span className="quiet numeric">{updatedAgoLabel(snapshot.updatedAt, lastPollAt)}</span>
         )}
-        <span style={{ flex: 1 }} />
         <div className="chips" role="group" aria-label="Risk filters">
           {FILTERS.map((name) => (
             <button
@@ -164,14 +217,29 @@ export function LiveTokensList({
         <>
           <ul className="live-cards">
             {items.map((entry) => (
-              <li key={entry.pairAddress} className="live-card">
+              <li key={entry.pairAddress} className={rowClass(entry) === undefined ? "live-card" : `live-card ${rowClass(entry)}`}>
                 <div className="live-card-top">
                   <a href={`#/token/${encodeURIComponent(entry.tokenAddress)}`} title={entry.tokenAddress}>
                     {entry.symbol ?? shortAddress(entry.tokenAddress)}
                   </a>
                   {riskCell(entry)}
                 </div>
-                <div className="quiet numeric">
+                <div className="quiet numeric live-sub">
+                  {ageText(entry)} · {entry.dex}
+                  {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
+                  <span
+                    className="muted"
+                    title={
+                      entry.initialLiquidityWeth === null
+                        ? "No WETH liquidity seen in the pair's first logs"
+                        : undefined
+                    }
+                  >
+                    {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
+                  </span>{" "}
+                  · <span className="mono" title={entry.pairAddress}>{shortAddress(entry.pairAddress)}</span>
+                </div>
+                <div className="quiet numeric live-meta">
                   {ageText(entry)} · {entry.dex}
                   {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
                   <span
@@ -185,7 +253,7 @@ export function LiveTokensList({
                     {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
                   </span>
                 </div>
-                <div className="quiet mono numeric" title={entry.pairAddress}>
+                <div className="quiet mono numeric live-pair" title={entry.pairAddress}>
                   {shortAddress(entry.pairAddress)} · block {entry.block}
                 </div>
               </li>
@@ -197,6 +265,7 @@ export function LiveTokensList({
             <thead>
               <tr>
                 <th scope="col">Token</th>
+                <th scope="col">Address</th>
                 <th scope="col">Age</th>
                 <th scope="col">Pair/DEX</th>
                 <th scope="col">Liquidity</th>
@@ -205,17 +274,17 @@ export function LiveTokensList({
             </thead>
             <tbody>
               {items.map((entry) => (
-                <tr key={entry.pairAddress}>
+                <tr key={entry.pairAddress} className={rowClass(entry)}>
                   <td>
                     <a href={`#/token/${encodeURIComponent(entry.tokenAddress)}`} title={entry.tokenAddress}>
                       {entry.symbol ?? shortAddress(entry.tokenAddress)}
                     </a>
-                    {entry.symbol === null ? null : (
-                      <span className="muted"> {shortAddress(entry.tokenAddress)}</span>
-                    )}
                     {entry.ageSeconds !== null && entry.ageSeconds < 120 ? (
                       <span className="live-new">new</span>
                     ) : null}
+                  </td>
+                  <td className="mono numeric">
+                    <span className="muted">{shortAddress(entry.tokenAddress)}</span>
                   </td>
                   <td className="numeric">{ageText(entry)}</td>
                   <td>

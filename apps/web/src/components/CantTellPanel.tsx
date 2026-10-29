@@ -20,7 +20,7 @@ export function CantTellPanel({ entries }: { readonly entries: readonly CantTell
           Nothing is currently marked as unknowable for this token.
         </p>
       ) : (
-        <ul style={{ margin: 0, paddingLeft: 20 }}>
+        <ul className="cant">
           {entries.map((entry) => (
             <li key={entry.question} style={{ marginBottom: 8 }}>
               <div>{cantTellQuestionText(entry.question)}</div>

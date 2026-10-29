@@ -89,14 +89,14 @@ test("control_hit_area_visual_boundary_and_states", async ({ page }) => {
   const brandDeep = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue("--brand-deep").trim(),
   );
-  expect(brandDeep).toBe("#4e6a8f");
+  expect(brandDeep).toBe("#1f5a3a");
   await expect
     .poll(() =>
       expert.evaluate((element) => getComputedStyle(element).backgroundColor),
     )
-    .toBe("rgb(78, 106, 143)");
+    .toBe("rgb(31, 90, 58)");
   const checkedBackground = await expert.evaluate((element) => getComputedStyle(element).backgroundColor);
-  expect(checkedBackground).toBe("rgb(78, 106, 143)");
+  expect(checkedBackground).toBe("rgb(31, 90, 58)");
   expect(checkedBackground).not.toContain("0, 122, 255");
 
   // The AI personalize box is disabled while no provider is configured.

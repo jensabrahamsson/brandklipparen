@@ -1,15 +1,21 @@
-import type { JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { riskBand } from "../lib/risk.ts";
 import type { RiskKind } from "../types.ts";
+import { reducedMotionRequested, useCountUp } from "../lib/motion.ts";
 import { Explain } from "./Explain.tsx";
 
-// One risk gauge (K-021): probability as a half-arc, signal count and one
-// plain-text reason. No needle, no gradients: an arc in the band color.
+// One risk gauge (Phosphor Console): probability as a 20-segment bar
+// that lights once (45 ms stagger, per-gauge offset), the percent
+// counting up once (1.5 s), plus signal count and one plain-text
+// reason. Number and band word travel together, so the reading never
+// depends on colour alone.
 const TITLES: Record<RiskKind, string> = {
   "rug-pull": "Rug pull",
   honeypot: "Honeypot",
   "bot-pump": "Bot-pump",
 };
+
+const SEGMENTS = 20;
 
 export function Gauge({
   kind,
@@ -24,34 +30,46 @@ export function Gauge({
 }): JSX.Element {
   const percent = Math.round(probability * 100);
   const band = riskBand(percent);
-  const color = band.word === "Low" ? "var(--low)" : band.word === "Elevated" ? "var(--elevated)" : "var(--high)";
+  const bandClass = band.word === "Low" ? "low" : band.word === "Elevated" ? "elevated" : "high";
+  const lit = Math.round(probability * SEGMENTS);
+  const shown = useCountUp(percent, 1500);
+  const reduce = reducedMotionRequested();
+  const [on, setOn] = useState(reduce);
+  useEffect(() => {
+    if (reduce) {
+      return;
+    }
+    let inner = 0;
+    const frame = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setOn(true));
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      cancelAnimationFrame(inner);
+    };
+  }, [reduce]);
   const signalWord = signalCount === 1 ? "signal" : "signals";
   return (
-    <section className="card gauge" aria-label={`${TITLES[kind]} gauge: ${percent} percent`}>
-      <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>
-        <span>{TITLES[kind]}</span> <Explain explainKey={`score:gauge:${kind}`} label={`${TITLES[kind]} gauge`} />
+    <section className={`card gauge ${bandClass}`} aria-label={`${TITLES[kind]} gauge: ${percent} percent`}>
+      <h3 className="lab" style={{ margin: "0 0 4px" }}>
+        <span>{TITLES[kind]}</span>
+        <Explain explainKey={`score:gauge:${kind}`} label={`${TITLES[kind]} gauge`} />
+        <span>{band.word.toUpperCase()}</span>
       </h3>
-      <p className="quiet numeric" style={{ margin: "0 0 12px" }}>
-        {signalCount} {signalWord}
-      </p>
-      <svg width="140" height="84" viewBox="0 0 140 84" role="img" aria-label={`${percent} percent probability`}>
-        <path d="M 14 76 A 56 56 0 0 1 126 76" fill="none" stroke="var(--border-strong)" strokeWidth="12" strokeLinecap="round" />
-        <path
-          d="M 14 76 A 56 56 0 0 1 126 76"
-          fill="none"
-          stroke={color}
-          strokeWidth="12"
-          strokeLinecap="round"
-          pathLength={100}
-          strokeDasharray={`${percent} 100`}
-        />
-        <text x="70" y="66" textAnchor="middle" fill="var(--text)" fontSize="26" fontWeight="600" className="numeric">
-          {percent}%
-        </text>
-      </svg>
-      <p className="muted numeric" style={{ margin: "8px 0 0", fontSize: 14 }}>
-        {reason}
-      </p>
+      <div className="pct numeric" role="img" aria-label={`${percent} percent probability`}>
+        {shown}%
+      </div>
+      <div className="bar20" aria-hidden="true">
+        {Array.from({ length: SEGMENTS }, (_, index) => (
+          <i
+            key={index}
+            className={on && index < lit ? "lit" : undefined}
+            style={{ transitionDelay: `${300 + index * 45}ms` }}
+          />
+        ))}
+      </div>
+      <p className="why">{reason}</p>
+      <p className="cnt numeric">{signalCount === 0 ? "no signals" : `${signalCount} ${signalWord}`}</p>
     </section>
   );
 }

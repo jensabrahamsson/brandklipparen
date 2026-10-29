@@ -5,7 +5,14 @@
 // the union, never leaves the device, and never enters a cache key or a
 // log. Written first (red) per A-21.
 import { describe, expect, test } from "vitest";
-import { MODE_KEY, parseStoredMode, readStoredMode } from "./uiMode.ts";
+import {
+  CUSTOMIZE_KEY,
+  MODE_KEY,
+  parseStoredMode,
+  readStoredCustomize,
+  readStoredMode,
+  writeStoredCustomize,
+} from "./uiMode.ts";
 
 function memoryStorage(initial: Record<string, string> = {}): Storage {
   const store = new Map<string, string>(Object.entries(initial));
@@ -60,5 +67,34 @@ describe("k034_invalid_stored_mode_falls_back_to_simple", () => {
     const mode = parseStoredMode(hostile);
     expect(mode).toBe("simple");
     expect(mode).not.toContain("<");
+  });
+});
+
+describe("customize_open_storage_round_trip", () => {
+  test("missing storage collapses the panel", () => {
+    expect(readStoredCustomize(memoryStorage())).toBe(false);
+  });
+
+  test("only the exact marker opens the panel", () => {
+    for (const raw of ["0", "yes", "true", "2", " 1", "<b>1</b>"]) {
+      expect(readStoredCustomize(memoryStorage({ [CUSTOMIZE_KEY]: raw }))).toBe(false);
+    }
+    expect(readStoredCustomize(memoryStorage({ [CUSTOMIZE_KEY]: "1" }))).toBe(true);
+  });
+
+  test("writing true stores the marker, writing false removes it", () => {
+    const storage = memoryStorage();
+    writeStoredCustomize(true, storage);
+    expect(storage.getItem(CUSTOMIZE_KEY)).toBe("1");
+    expect(readStoredCustomize(storage)).toBe(true);
+    writeStoredCustomize(false, storage);
+    expect(storage.getItem(CUSTOMIZE_KEY)).toBe(null);
+    expect(readStoredCustomize(storage)).toBe(false);
+  });
+
+  test("null storage collapses without throwing", () => {
+    expect(readStoredCustomize(null)).toBe(false);
+    expect(() => writeStoredCustomize(true, null)).not.toThrow();
+    expect(() => writeStoredCustomize(false, null)).not.toThrow();
   });
 });

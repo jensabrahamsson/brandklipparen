@@ -62,12 +62,15 @@ export function App(): JSX.Element {
       <a className="skip-link" href="#main" onClick={onSkip}>
         Skip to content
       </a>
-      <header className="page topbar" style={{ paddingBottom: 0 }}>
+      <header className="topbar">
         <a className="brand" href="#/">
+          <b>BK</b>
           <img src="/logo.svg" alt="" />
           brandklipparen
         </a>
+        <span className="bar-desc">rug-pull risk scanner</span>
         <span className="spacer" />
+        <span className="net">Ethereum mainnet</span>
         <span className="quiet numeric topbar-tagline">bytecode only · deterministic</span>
       </header>
       <main id="main" tabIndex={-1}>

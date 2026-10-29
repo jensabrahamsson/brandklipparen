@@ -172,7 +172,7 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Know the risk before you buy." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Scan before you ape." })).toBeVisible();
     await expectFitsViewport(page);
 
     // Below 640 px the live list renders as stacked cards, not a table.

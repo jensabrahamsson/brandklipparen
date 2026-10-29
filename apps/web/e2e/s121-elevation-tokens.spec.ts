@@ -1,9 +1,9 @@
-// S-121: elevation and material tokens. Every card, graph node, tooltip
-// and strip carries a layered elevation shadow from the --elev-* tokens
-// (no raw box-shadow anywhere in the stylesheet); nothing uses CSS
-// transform or perspective; the score ring has a static disc plus a
-// band-coloured glow; the verdict header has a 1px band top border; text
-// contrast is unchanged; and the look is identical under reduced motion.
+// S-121: phosphor material tokens. Every card, graph node, tooltip and
+// strip carries a layered phosphor-glow shadow from the token system (no
+// raw box-shadow anywhere in the stylesheet); nothing uses CSS transform
+// or perspective; the 50-tick score dial has a static disc plus a
+// band-coloured tick glow; the verdict header has a 1px band top border;
+// text contrast meets AA; and the look is identical under reduced motion.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -139,18 +139,20 @@ test("s121_elevation_tokens_cover_surfaces", async ({ page, browser }) => {
   });
   expect(motionDeclarations).toEqual([]);
 
-  // Score ring: static disc plus a band-coloured arc glow.
+  // Score dial: static disc plus a band-coloured tick glow. The 50
+  // ticks light once to the score share (84 lights 42).
   await page.getByRole("tab", { name: "Overview" }).click();
   const disc = await page
     .locator(".score-disc")
     .first()
     .evaluate((element) => getComputedStyle(element).backgroundImage);
   expect(disc).toContain("radial-gradient");
-  const arcFilter = await page
-    .locator(".score-arc")
+  await expect(page.locator(".score-dial .tick.lit")).toHaveCount(42);
+  const tickFilter = await page
+    .locator(".score-dial .tick.lit")
     .first()
     .evaluate((element) => getComputedStyle(element).filter);
-  expect(arcFilter).toContain("drop-shadow");
+  expect(tickFilter).toContain("drop-shadow");
 
   // Verdict header: card tier with a 1px band top border (score 84 is High).
   const verdict = page.locator(".card.verdict");

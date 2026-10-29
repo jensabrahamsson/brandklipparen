@@ -28,11 +28,15 @@ export function TokenHeader({
   }
   return (
     <header style={{ display: "grid", gap: 4 }}>
-      <h1 style={{ fontSize: 28, margin: 0, overflowWrap: "anywhere" }}>
-        {identity.symbol ?? shortAddress(address)}
-      </h1>
-      <p className="muted" style={{ margin: 0 }}>
-        {meta.join(" · ")}
+      <h1 className="token-sym">{identity.symbol ?? shortAddress(address)}</h1>
+      <p className="token-meta">
+        {identity.name === null ? null : (
+          <>
+            <b>{identity.name}</b>
+            {" · "}
+          </>
+        )}
+        {meta.slice(identity.name === null ? 0 : 1).join(" · ")}
       </p>
     </header>
   );
