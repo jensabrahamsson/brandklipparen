@@ -1,8 +1,11 @@
 // Shared copy-to-clipboard button (S-134): one "Copied" announcement
 // per copy through a single polite live region. The button keeps a real
 // 44x44 tap box on touch (the global touch rule) while looking small;
-// confirmation is colour/opacity only for about 1.5 s with no movement,
+// the visible confirmation is the button itself (Copy -> Copied, or
+// Copy failed) through colour only for about 1.5 s with no movement,
 // and stays static under reduced motion (no animation or transform).
+// The live region is screen-reader-only so it reserves no layout space,
+// and the accessible button name stays stable while it announces.
 import { useEffect, useRef, useState, type JSX, type MouseEvent } from "react";
 
 export function CopyButton({
@@ -57,14 +60,14 @@ export function CopyButton({
     <span className="copy-wrap">
       <button
         type="button"
-        className="button-ghost copy-btn"
+        className={`button-ghost copy-btn${state === "idle" ? "" : ` is-${state}`}`}
         aria-label={label}
         data-testid={testId}
         onClick={onClick}
       >
-        {state === "copied" ? "Copied" : "Copy"}
+        {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
       </button>
-      <span aria-live="polite" className={`copy-status${state === "idle" ? "" : " show"}`}>
+      <span aria-live="polite" className="copy-status sr-only">
         {state === "copied" ? "Copied." : state === "failed" ? "Copy failed." : ""}
       </span>
     </span>

@@ -22,6 +22,15 @@ describe("copy button", () => {
     expect(html.match(/aria-live="polite"/g)).toHaveLength(1);
   });
 
+  test("live region is screen-reader-only and empty when idle", () => {
+    const html = renderToString(<CopyButton value={ADDRESS} label="Copy contract address" />);
+    // Visually hidden so it reserves no layout space next to the button.
+    expect(html).toContain('class="copy-status sr-only"');
+    expect(html).toContain('aria-live="polite"');
+    // Empty when idle: one announcement per copy, nothing reserved.
+    expect(html).toMatch(/aria-live="polite"[^>]*><\/span>/);
+  });
+
   test("never nests a button inside another button", () => {
     const html = renderToString(
       <span>

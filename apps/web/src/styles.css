@@ -153,14 +153,32 @@ a {
   word-break: break-all;
 }
 
+/* Screen-reader-only text: announced but takes no layout space.
+   Never use display:none or visibility:hidden here: both would remove
+   the node from the accessibility tree and silence live regions. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Shared copy control (S-134): visually small, but the global touch
    rule keeps the real 44x44 box on phones. Above the stretched row
-   links so a copy click never navigates. Confirmation is opacity only
-   (no movement) and static under reduced motion. */
+   links so a copy click never navigates. The visible confirmation is
+   the button label itself (Copy -> Copied, or Copy failed) through
+   colour only (no movement) and static under reduced motion. The
+   polite live region is screen-reader-only, so the wrap holds no
+   reserved gap: the next item follows the button directly. */
 .copy-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 0;
   min-width: 0;
 }
 
@@ -169,19 +187,26 @@ a {
   z-index: 1;
   font-size: 12px;
   padding: 6px 10px;
+  /* Reserve the longest confirmation label ("Copy failed", 11 chars)
+     inside the button so Copy -> Copied never shifts layout. The
+     padding and border ride inside this width (border-box), so the
+     idle button takes no visible space beyond itself. */
+  min-width: calc(11ch + 22px);
+}
+
+.copy-btn.is-copied {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+}
+
+.copy-btn.is-failed {
+  color: var(--red-ink);
+  border-color: var(--red);
 }
 
 .copy-status {
   font-size: 12px;
   color: var(--dim);
-  min-width: 64px;
-  min-height: 1em;
-  opacity: 0;
-  transition: opacity var(--dur-hover) var(--ease-out);
-}
-
-.copy-status.show {
-  opacity: 1;
 }
 
 /* Live list address cells: full values wrap to two lines instead of
