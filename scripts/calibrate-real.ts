@@ -7,6 +7,8 @@
 // through the shared freeze path. Symbols only in stdout; no addresses,
 // codehashes or bytecode leave this script.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { execSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Bytecode, CodeHash } from "../src/domain/types.ts";
@@ -27,6 +29,9 @@ import type { ModelArtifact } from "../src/domain/risk.ts";
 import { score } from "../src/domain/risk.ts";
 import { Signal } from "../src/domain/signals.ts";
 import { ModelVersion } from "../src/domain/types.ts";
+import { HOLDOUT_FROZEN_VERSION, HOLDOUT_POSITIVE_CLASS, HOLDOUT_UNKNOWN_HANDLING, HOLDOUT_DECISION_RULE, canonicalFrozenText, frozenSha256 } from "../src/application/holdoutV2.ts";
+import type { FrozenConfig } from "../src/application/holdoutV2.ts";
+import { snapshotLockerNames, lockerAddresses } from "../src/domain/onchain/lockers.ts";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -157,6 +162,7 @@ if (onchainMode === "bytecode" && onchainSnapshotPath !== undefined) {
   throw new Error("unreachable");
 }
 const skipHoldout = process.argv.includes("--skip-holdout") || process.env["BK_SKIP_HOLDOUT"] === "1";
+const freezePath = flagValue("freeze") ?? process.env["BK_FREEZE_PATH"] ?? undefined;
 const extraSnapshotsRaw = flagValue("onchain-extra-snapshot") ?? process.env["BK_ONCHAIN_EXTRA_SNAPSHOTS"] ?? "";
 const extraSnapshotPaths = extraSnapshotsRaw
   .split(",")
@@ -1426,6 +1432,132 @@ if (onchainSnapshotPath !== undefined) {
     leakageChecks,
     note: "research fits are diagnostics only; the frozen artifact carries the bytecode fit",
   };
+  // Holdout-v2 freeze: with --freeze <path> (or BK_FREEZE_PATH) write a
+  // frozen config holding everything the holdout evaluation needs to
+  // score: the three ablation fits, the TRAIN-only scaler, sign rules,
+  // the locker list, regularization, band thresholds with the decision
+  // rule, seed, git commit and the input file hashes. Never refit here;
+  // the file below only records this run. Deterministic: the same inputs
+  // give the same canonical bytes and sha256.
+  if (freezePath !== undefined) {
+    const shaOfFile = (path: string): string => {
+      try {
+        return createHash("sha256").update(readFileSync(path)).digest("hex");
+      } catch {
+        fail(`freeze cannot hash file ${path}`);
+        throw new Error("unreachable");
+      }
+    };
+    let commit = "unknown";
+    try {
+      commit = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+    } catch {
+      commit = "unknown";
+    }
+    const scalerJson = scalerToJSON(onchainScaler);
+    const signRules: Record<string, string> = {};
+    for (const name of SERVABLE_FEATURE_NAMES) {
+      signRules[name] = ONCHAIN_RISK_DIRECTIONS[name]?.direction ?? "unknown";
+    }
+    const frozen: FrozenConfig = {
+      frozenVersion: HOLDOUT_FROZEN_VERSION,
+      modelVersion: VERSION_TEXT,
+      dataVersion,
+      seed,
+      gitCommit: commit,
+      featureVersion: ONCHAIN_FEATURE_VERSION,
+      positiveClass: HOLDOUT_POSITIVE_CLASS,
+      unknownHandling: HOLDOUT_UNKNOWN_HANDLING,
+      decisionRule: HOLDOUT_DECISION_RULE,
+      bytecodeFeatureNames: Object.freeze([...featureNames]),
+      onchainServableFeatures: Object.freeze([...SERVABLE_FEATURE_NAMES]),
+      bothFeatureNames: Object.freeze([...bothNames]),
+      arms: Object.freeze({
+        bytecode: Object.freeze({
+          ablation: "bytecode",
+          featureNames: Object.freeze([...featureNames]),
+          lambda: bytecodeLambda,
+          rug: Object.freeze({
+            weights: Object.freeze([...rugHead.weights]),
+            bias: rugHead.bias,
+            slope: rugHead.slope,
+            intercept: rugHead.intercept,
+            uncalibrated: rugHead.uncalibrated,
+          }),
+          honey: Object.freeze({
+            weights: Object.freeze([...honeyHead.weights]),
+            bias: honeyHead.bias,
+            slope: honeyHead.slope,
+            intercept: honeyHead.intercept,
+            uncalibrated: honeyHead.uncalibrated,
+          }),
+        }),
+        onchain: Object.freeze({
+          ablation: "onchain",
+          featureNames: Object.freeze([...SERVABLE_FEATURE_NAMES]),
+          lambda: onchainLambda,
+          rug: Object.freeze({
+            weights: Object.freeze([...onchainArm.rug.weights]),
+            bias: onchainArm.rug.bias,
+            slope: onchainArm.rug.slope,
+            intercept: onchainArm.rug.intercept,
+            uncalibrated: onchainArm.rug.uncalibrated,
+          }),
+          honey: Object.freeze({
+            weights: Object.freeze([...onchainArm.honey.weights]),
+            bias: onchainArm.honey.bias,
+            slope: onchainArm.honey.slope,
+            intercept: onchainArm.honey.intercept,
+            uncalibrated: onchainArm.honey.uncalibrated,
+          }),
+        }),
+        both: Object.freeze({
+          ablation: "both",
+          featureNames: Object.freeze([...bothNames]),
+          lambda: bothLambda,
+          rug: Object.freeze({
+            weights: Object.freeze([...bothArm.rug.weights]),
+            bias: bothArm.rug.bias,
+            slope: bothArm.rug.slope,
+            intercept: bothArm.rug.intercept,
+            uncalibrated: bothArm.rug.uncalibrated,
+          }),
+          honey: Object.freeze({
+            weights: Object.freeze([...bothArm.honey.weights]),
+            bias: bothArm.honey.bias,
+            slope: bothArm.honey.slope,
+            intercept: bothArm.honey.intercept,
+            uncalibrated: bothArm.honey.uncalibrated,
+          }),
+        }),
+      }),
+      scaler: Object.freeze({
+        features: Object.freeze([...scalerJson.features]),
+        means: Object.freeze([...scalerJson.means]),
+        sds: Object.freeze([...scalerJson.sds]),
+        scaled: Object.freeze([...scalerJson.scaled]),
+      }),
+      signRules: Object.freeze(signRules),
+      lockerList: Object.freeze({
+        snapshotNames: Object.freeze(snapshotLockerNames()),
+        addresses: Object.freeze(lockerAddresses()),
+      }),
+      regularization: Object.freeze({
+        bytecodeLambda,
+        onchainLambda,
+        bothLambda,
+        grid: Object.freeze([0.01, 0.1, 1]),
+        selection: "grouped 3-fold CV inside TRAIN grouped by codehash, mean bad-AUC per arm, ties keep the larger lambda",
+      }),
+      bandThresholds: Object.freeze({ elevated: chosenBands.elevated, high: chosenBands.high }),
+      appliedBands: Object.freeze({ elevated: DEFAULT_BAND_THRESHOLDS.elevated, high: DEFAULT_BAND_THRESHOLDS.high }),
+      calibrationDatasetSha256: shaOfFile(datasetPath),
+      calibrationSnapshotSha256: shaOfFile(onchainSnapshotPath),
+    };
+    mkdirSync(dirname(freezePath), { recursive: true });
+    writeFileSync(freezePath, canonicalFrozenText(frozen), "utf8");
+    process.stderr.write(`freeze: sha256 ${frozenSha256(frozen)}\n`);
+  }
   // Scaler sidecar beside the candidate artifact (the frozen artifact
   // schema carries no on-chain fields): serving applies this same TRAIN
   // transform before any future on-chain head.

@@ -106,6 +106,10 @@ export type SnapshotRow = {
     readonly otherShare: number;
     readonly drained: boolean;
     readonly pairIsMain: boolean | null;
+    // Venue of the tracked distribution: only v2 counts for features.
+    // A v3 value reads as unavailable (same as calibration, where v3-only
+    // tokens arrive unavailable). Absent means v2 for older files.
+    readonly dex: "v2" | "v3" | null;
   };
   readonly liquidityWeth: number | null;
   readonly liquidityReason: string | null;
@@ -407,6 +411,7 @@ function parseRow(address: string, raw: unknown): Result<SnapshotRow, SnapshotPa
       otherShare: 0,
       drained: false,
       pairIsMain: typeof pairIsMain === "boolean" ? pairIsMain : null,
+      dex: null,
     };
   } else {
     const record = lpRaw as Record<string, unknown>;
@@ -433,6 +438,14 @@ function parseRow(address: string, raw: unknown): Result<SnapshotRow, SnapshotPa
       }
     }
     const pairIsMain = record["pairIsMain"];
+    const dexRaw = record["dex"];
+    let dex: "v2" | "v3" | null = null;
+    if (dexRaw !== undefined && dexRaw !== null) {
+      if (dexRaw !== "v2" && dexRaw !== "v3") {
+        return err(schemaError(`row ${id}: lpDistribution dex is not v2 or v3`));
+      }
+      dex = dexRaw;
+    }
     lp = {
       available: true,
       reason: null,
@@ -443,6 +456,7 @@ function parseRow(address: string, raw: unknown): Result<SnapshotRow, SnapshotPa
       otherShare: record["otherShare"] as number,
       drained,
       pairIsMain: typeof pairIsMain === "boolean" ? pairIsMain : null,
+      dex,
     };
   }
 
@@ -503,7 +517,7 @@ export function parseSnapshotFile(raw: unknown): Result<SnapshotFile, SnapshotPa
     return err(schemaError("snapshot meta snapshotOffsetBlocks is not a non-negative integer"));
   }
   const groups: Record<string, unknown>[] = [];
-  for (const key of ["calibration", "real"] as const) {
+  for (const key of ["calibration", "real", "holdout"] as const) {
     const group = raw[key];
     if (group !== undefined && group !== null) {
       if (!isRecord(group)) {
@@ -513,7 +527,7 @@ export function parseSnapshotFile(raw: unknown): Result<SnapshotFile, SnapshotPa
     }
   }
   if (groups.length === 0) {
-    return err(schemaError("snapshot file holds neither a calibration nor a real group"));
+    return err(schemaError("snapshot file holds neither a calibration, real nor holdout group"));
   }
   const rows: SnapshotRow[] = [];
   const invalidRows: { readonly index: number; readonly reason: string }[] = [];
@@ -676,6 +690,13 @@ export const SERVABLE_FEATURE_NAMES: readonly string[] = Object.freeze([
 
 export const ONCHAIN_FEATURE_COUNT = ONCHAIN_FEATURE_NAMES.length;
 
+export function lpIsV2(row: SnapshotRow | null): boolean {
+  if (row === null) {
+    return false;
+  }
+  return row.lp.available && row.lp.dex !== "v3";
+}
+
 export function snapshotFeaturesOf(row: SnapshotRow | null): readonly number[] {
   if (row === null) {
     return Object.freeze(ONCHAIN_FEATURE_NAMES.map(() => 0));
@@ -684,22 +705,25 @@ export function snapshotFeaturesOf(row: SnapshotRow | null): readonly number[] {
   const reliable = holdersReliable(row);
   const deployToFirst = deployToFirstLiq(row);
   const weth = row.liquidityWeth === null ? null : Math.log10(1 + row.liquidityWeth);
+  const lpUsable = row.lp.available && row.lp.dex !== "v3";
   return Object.freeze([
     cls === "zero/dead" ? 1 : 0,
     cls === "eoa" ? 1 : 0,
     cls === "contract" ? 1 : 0,
     cls === "multisig" ? 1 : 0,
     // Drained pairs read burnedShare as unavailable: 1.0 there means the
-    // liquidity was already pulled, not locked.
-    row.lp.available && !row.lp.drained ? row.lp.burnedShare : 0,
+    // liquidity was already pulled, not locked. A v3 venue reads as
+    // unavailable too, matching calibration where v3-only tokens arrive
+    // unavailable.
+    lpUsable && !row.lp.drained ? row.lp.burnedShare : 0,
     // Locker share recomputed from the breakdown through the shared locker
     // registry (not the file's precomputed value), so train uses exactly
-    // the locker set the live plugin reads by address.
-    row.lp.available ? lockerShareOfBreakdown(row.lp.lockerBreakdown) : 0,
-    row.lp.available ? row.lp.deployerOrOwnerShare : 0,
+    // the locker set the live plugin reads by address. Only v2 counts.
+    lpUsable ? lockerShareOfBreakdown(row.lp.lockerBreakdown) : 0,
+    lpUsable ? row.lp.deployerOrOwnerShare : 0,
     // Affirmed point-in-time signal only: 1 exactly when the snapshot proves
     // the drain (minimum-liquidity-only supply at the snapshot block).
-    row.lp.available && row.lp.drained ? 1 : 0,
+    lpUsable && row.lp.drained ? 1 : 0,
     reliable && row.deployerShare !== null ? row.deployerShare : 0,
     reliable ? row.holders.top1Share : 0,
     reliable ? row.holders.top10Share : 0,
@@ -722,12 +746,12 @@ export function featureAvailable(row: SnapshotRow | null, feature: string): bool
     case "owner_safe":
       return chosenOwnerClass(row) !== null;
     case "lp_burned_share":
-      return row.lp.available && !row.lp.drained;
+      return row.lp.available && row.lp.dex !== "v3" && !row.lp.drained;
     case "lp_locker_share":
     case "lp_deployer_or_owner_share":
-      return row.lp.available;
+      return row.lp.available && row.lp.dex !== "v3";
     case "liquidity_removed_24h":
-      return row.lp.available;
+      return row.lp.available && row.lp.dex !== "v3";
     case "conc_deployer_share":
     case "conc_top1_share":
     case "conc_top10_share":
