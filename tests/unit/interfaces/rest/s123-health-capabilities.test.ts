@@ -1,0 +1,78 @@
+// Health capability labels (S-123): every optional AI feature reports
+// configured or disabled, so the web UI decides unavailable states up
+// front. No real services or network here; minimal structural stubs only.
+import { describe, expect, test } from "vitest";
+import { healthCapabilities } from "../../../../src/interfaces/rest/healthCapabilities.ts";
+import type { AssessmentService } from "../../../../src/application/assessmentService.ts";
+import type { ExplainService } from "../../../../src/application/explainService.ts";
+import type { InvestigationService } from "../../../../src/application/investigationService.ts";
+import type { PersonalizeService } from "../../../../src/application/personalizeService.ts";
+
+function assessment(provider: string | null, modelId: string | null): AssessmentService {
+  return { provider, modelId } as unknown as AssessmentService;
+}
+
+function investigation(): InvestigationService {
+  return { provider: () => "hosted-open-weights", modelId: () => "meta-models/muse-spark-open-1026" } as unknown as InvestigationService;
+}
+
+function explain(enabled: boolean): ExplainService {
+  return {
+    enabled,
+    provider: "hosted-open-weights",
+    modelId: "meta-models/muse-spark-open-1026",
+  } as unknown as ExplainService;
+}
+
+function personalize(): PersonalizeService {
+  return {
+    provider: "hosted-open-weights",
+    modelId: "meta-models/muse-spark-open-1026",
+  } as unknown as PersonalizeService;
+}
+
+describe("health capabilities", () => {
+  test("s123_absent_services_report_disabled", () => {
+    expect(healthCapabilities({})).toEqual({
+      assessment: { disabled: true },
+      investigation: { disabled: true },
+      explain: { disabled: true },
+      personalize: { disabled: true },
+      onchain: { disabled: true },
+    });
+  });
+
+  test("s123_configured_services_report_provider_and_model", () => {
+    expect(
+      healthCapabilities({
+        assessmentService: assessment("hosted-open-weights", "assessment-model-1"),
+        investigationService: investigation(),
+        explainService: explain(true),
+        personalizeService: personalize(),
+        onchain: { rpc: {}, weth: null },
+      }),
+    ).toEqual({
+      assessment: { provider: "hosted-open-weights", modelId: "assessment-model-1" },
+      investigation: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      explain: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      personalize: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      onchain: { available: true },
+    });
+  });
+
+  test("s123_partial_configuration_disables_only_the_missing_feature", () => {
+    expect(
+      healthCapabilities({
+        assessmentService: assessment(null, null),
+        investigationService: investigation(),
+        explainService: explain(false),
+      }),
+    ).toEqual({
+      assessment: { disabled: true },
+      investigation: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      explain: { disabled: true },
+      personalize: { disabled: true },
+      onchain: { disabled: true },
+    });
+  });
+});

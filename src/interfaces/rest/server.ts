@@ -85,6 +85,7 @@ import { readOnchainFeatures } from "../../application/onchainFeatures.ts";
 import type { HttpError } from "./errors.ts";
 import { createRateLimiter } from "./rateLimit.ts";
 import type { RateLimitConfig, RateLimiter } from "./rateLimit.ts";
+import { healthCapabilities } from "./healthCapabilities.ts";
 
 export const API_VERSION = "v1";
 export const API_KEY_HEADER = "x-api-key";
@@ -418,11 +419,18 @@ export function createRestServer(options: RestServerOptions): RestServer {
     // Minimal observability and cost frame (S-031, K-104, K-107, I-12):
     // provider and model labelling with the placeholder cost unit. Keys
     // stay out: the frame names the provider and model id only.
-    const service = options.assessmentService;
-    const assessment =
-      service === undefined || service.provider === null || service.modelId === null
-        ? { disabled: true }
-        : { provider: service.provider, modelId: service.modelId };
+    // AI feature capabilities for the web unavailable states (S-123):
+    // each optional feature reports configured (with its provider and
+    // model labelling) or disabled, so the UI can decide up front without
+    // inviting a click that dead-ends. Additive fields only; older
+    // readers keep using the top-level assessment field.
+    const capabilities = healthCapabilities({
+      assessmentService: options.assessmentService,
+      investigationService: options.investigationService,
+      explainService: options.explainService,
+      personalizeService: options.personalizeService,
+      onchain: options.onchain,
+    });
     return reply
       .code(200)
       .header(REQUEST_ID_HEADER, requestId)
@@ -431,7 +439,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         JSON.stringify({
           status: "ok",
           apiVersion: API_VERSION,
-          assessment,
+          ...capabilities,
           costUnits: PLACEHOLDER_COST_UNIT,
         }),
       );

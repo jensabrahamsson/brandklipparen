@@ -167,7 +167,7 @@ test("k036_investigation_shows_not_configured_limit_and_failure_states", async (
   await page.goto(`/#/token/${ADDRESS}`);
   await page.getByRole("tab", { name: "Investigate" }).click();
   await page.getByRole("button", { name: "Request investigation" }).click();
-  await expect(page.getByText("Investigation is not configured.")).toBeVisible();
+  await expect(page.getByText("AI investigation is not configured on this server.")).toBeVisible();
   // The deterministic score stands untouched beside the panel.
   await page.getByRole("tab", { name: "Overview" }).click();
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();

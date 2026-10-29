@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import type { AssessmentState, ProviderInfo } from "../types.ts";
+import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
 
 // Contract assessment in its own tab: free-text assessment through the
 // selected assessment provider, on explicit request only. The panel never
@@ -45,26 +46,31 @@ export function AssessmentPanel({
         </p>
       ) : null}
       {state.status === "idle" ? (
-        <div>
-          <p className="muted">
-            Request a free-text assessment of the closed evidence list. The deterministic score, signals and
-            evidence stay unchanged.
-          </p>
-          <button type="button" className="button" onClick={onRequest}>
-            Request assessment
-          </button>
-        </div>
+        provider.status === "disabled" ? (
+          <FeatureUnavailable
+            title="Contract assessment"
+            reason="Contract assessment is not configured on this server."
+            actionLabel="Request assessment"
+          />
+        ) : (
+          <div>
+            <p className="muted">
+              Request a free-text assessment of the closed evidence list. The deterministic score, signals and
+              evidence stay unchanged.
+            </p>
+            <button type="button" className="button" onClick={onRequest}>
+              Request assessment
+            </button>
+          </div>
+        )
       ) : null}
       {state.status === "loading" ? <p className="muted">Requesting assessment from the configured provider…</p> : null}
       {state.status === "not-configured" ? (
-        <div>
-          <p style={{ marginBottom: 4 }}>
-            <strong>Assessment is not configured.</strong>
-          </p>
-          <p className="muted" style={{ marginTop: 0 }}>
-            The REST API reports no assessment provider. Set one with its API key to enable it.
-          </p>
-        </div>
+        <FeatureUnavailable
+          title="Contract assessment"
+          reason="Contract assessment is not configured on this server."
+          actionLabel="Request assessment"
+        />
       ) : null}
       {state.status === "error" ? (
         <div>

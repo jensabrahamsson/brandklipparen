@@ -31,6 +31,54 @@ export type LiveTokensSnapshot = {
   readonly items: readonly LiveTokenEntry[];
 };
 
+export type LiveFilter = "All" | "Elevated & high" | "Low";
+
+// Risk filters with honest labels (S-124): the middle filter names both
+// bands it includes, so the label can never contradict the badge.
+export function filterLiveEntries(items: readonly LiveTokenEntry[], filter: LiveFilter): readonly LiveTokenEntry[] {
+  if (filter === "Elevated & high") {
+    return items.filter((entry) => entry.riskBand === "High" || entry.riskBand === "Elevated");
+  }
+  if (filter === "Low") {
+    return items.filter((entry) => entry.riskBand === "Low");
+  }
+  return items;
+}
+
+// Count line with correct grammar (S-124): "1 new token", never "1 new tokens".
+export function tokenCountLabel(count: number): string {
+  return count === 1 ? "1 new token" : `${count} new tokens`;
+}
+
+// Quiet liveness note (S-124): whole seconds since the last successful
+// poll, so the column rarely changes width between 10 s polls.
+export function updatedAgoLabel(updatedAt: number, nowMs: number): string {
+  const seconds = Math.max(0, Math.round((nowMs - updatedAt) / 1000));
+  return `Updated ${seconds} s ago`;
+}
+
+// Buffering (S-124): while the reader is scrolled or focused inside the
+// list, new rows wait in a buffer instead of pushing the table down. The
+// newest poll's unseen entries come first; nothing already shown or
+// buffered ever repeats.
+export function unseenEntries(
+  displayed: readonly LiveTokenEntry[],
+  incoming: readonly LiveTokenEntry[],
+  buffered: readonly LiveTokenEntry[],
+): LiveTokenEntry[] {
+  const known = new Set([...displayed, ...buffered].map((entry) => entry.pairAddress));
+  const fresh = incoming.filter((entry) => !known.has(entry.pairAddress));
+  return [...fresh, ...buffered];
+}
+
+export function mergeShown(
+  displayed: readonly LiveTokenEntry[],
+  buffered: readonly LiveTokenEntry[],
+): LiveTokenEntry[] {
+  const shown = new Set(displayed.map((entry) => entry.pairAddress));
+  return [...buffered.filter((entry) => !shown.has(entry.pairAddress)), ...displayed];
+}
+
 function readError(response: Response, fallbackCode: string): Promise<ApiError> {
   const fallback = new ApiError(fallbackCode, response.status, `Request failed with status ${response.status}.`);
   return response

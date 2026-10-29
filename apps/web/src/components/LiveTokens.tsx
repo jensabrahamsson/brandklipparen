@@ -1,25 +1,43 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { RiskBadge } from "./RiskBadge.tsx";
-import { fetchLiveTokens, formatAge, shortAddress } from "../lib/liveTokens.ts";
-import type { LiveTokenEntry, LiveTokensSnapshot } from "../lib/liveTokens.ts";
+import {
+  fetchLiveTokens,
+  filterLiveEntries,
+  formatAge,
+  mergeShown,
+  shortAddress,
+  tokenCountLabel,
+  unseenEntries,
+  updatedAgoLabel,
+} from "../lib/liveTokens.ts";
+import type { LiveFilter, LiveTokenEntry, LiveTokensSnapshot } from "../lib/liveTokens.ts";
 
 // Live new-tokens list: a calm table of fresh Uniswap V2/V3 pairs,
-// newest first, polled every ~10 s. Rows never animate or reorder:
-// stable keys, text-only updates, and at most a static "new" marker.
-// The status line is the single polite live region; the table itself is
+// newest first, polled every ~10 s. Rows never jump: while the reader is
+// scrolled or focused inside the list, new rows wait in a buffer behind a
+// "N new tokens · Show" pill instead of pushing the table down.
+// The count line is the single polite live region; the table itself is
 // not one, so screen readers hear the count, not every row.
-const FILTERS = ["All", "High risk", "Low risk"] as const;
+const FILTERS = ["All", "Elevated & high", "Low"] as const;
 
 type Filter = (typeof FILTERS)[number];
 
-function visibleEntries(items: readonly LiveTokenEntry[], filter: Filter): readonly LiveTokenEntry[] {
-  if (filter === "High risk") {
-    return items.filter((entry) => entry.riskBand === "High" || entry.riskBand === "Elevated");
+function filterToEntries(items: readonly LiveTokenEntry[], filter: Filter): readonly LiveTokenEntry[] {
+  return filterLiveEntries(items, filter as LiveFilter);
+}
+
+// Unknown chain age reads as an em dash with its meaning in the title,
+// never as a bare "-" that looks like a bug.
+function ageText(ageSeconds: number | null): JSX.Element | string {
+  const text = formatAge(ageSeconds);
+  if (text !== "-") {
+    return text;
   }
-  if (filter === "Low risk") {
-    return items.filter((entry) => entry.riskBand === "Low");
-  }
-  return items;
+  return (
+    <span title="Age unknown" aria-label="Age unknown">
+      —
+    </span>
+  );
 }
 
 function riskCell(entry: LiveTokenEntry): JSX.Element {
@@ -42,7 +60,19 @@ function riskCell(entry: LiveTokenEntry): JSX.Element {
   return <span className="muted">{entry.reason ?? "error"}</span>;
 }
 
-export function LiveTokensList({ snapshot }: { readonly snapshot: LiveTokensSnapshot }): JSX.Element {
+export function LiveTokensList({
+  snapshot,
+  buffered = [],
+  lastPollAt = null,
+  sectionRef = null,
+  onShowBuffered = null,
+}: {
+  readonly snapshot: LiveTokensSnapshot;
+  readonly buffered?: readonly LiveTokenEntry[] | undefined;
+  readonly lastPollAt?: number | null | undefined;
+  readonly sectionRef?: RefObject<HTMLElement | null> | null | undefined;
+  readonly onShowBuffered?: (() => void) | null | undefined;
+}): JSX.Element {
   const [filter, setFilter] = useState<Filter>("All");
   if (snapshot.status === "not-configured") {
     return (
@@ -57,7 +87,7 @@ export function LiveTokensList({ snapshot }: { readonly snapshot: LiveTokensSnap
     );
   }
 
-  const items = visibleEntries(snapshot.items, filter);
+  const items = filterToEntries(snapshot.items, filter);
   const sourceLabel =
     snapshot.source === "none"
       ? "Live feed"
@@ -66,10 +96,13 @@ export function LiveTokensList({ snapshot }: { readonly snapshot: LiveTokensSnap
         : "Live feed · via Etherscan";
 
   return (
-    <section aria-label="New tokens" style={{ marginTop: 56 }}>
+    <section aria-label="New tokens" ref={sectionRef} style={{ marginTop: 56 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 20 }}>New tokens</h2>
         <span className="quiet">{sourceLabel}</span>
+        {lastPollAt === null ? null : (
+          <span className="quiet numeric">{updatedAgoLabel(snapshot.updatedAt, lastPollAt)}</span>
+        )}
         <span style={{ flex: 1 }} />
         <div className="chips" role="group" aria-label="Risk filters">
           {FILTERS.map((name) => (
@@ -85,15 +118,39 @@ export function LiveTokensList({ snapshot }: { readonly snapshot: LiveTokensSnap
           ))}
         </div>
       </div>
-      <p className="quiet" aria-live="polite" style={{ margin: "8px 0 0" }}>
-        {`${items.length} new tokens`}
+      <p className="quiet numeric" aria-live="polite" style={{ margin: "8px 0 0" }}>
+        {tokenCountLabel(items.length)}
+      </p>
+      {/*
+        Buffered-rows pill slot (S-124): always rendered at a fixed height
+        so the pill appearing never moves the focused row by even a pixel.
+      */}
+      <p style={{ margin: "8px 0 0", minHeight: 44, display: "flex", alignItems: "center" }}>
+        {buffered.length > 0 && onShowBuffered !== null ? (
+          <button type="button" className="button-ghost" onClick={onShowBuffered}>
+            {`${tokenCountLabel(buffered.length)} · Show`}
+          </button>
+        ) : null}
       </p>
       {items.length === 0 ? (
-        <div className="card" style={{ marginTop: 16 }}>
-          <p className="muted" style={{ margin: 0 }}>
-            Waiting for new pairs…
-          </p>
-        </div>
+        filter === "All" ? (
+          <div className="card" style={{ marginTop: 16 }}>
+            <p className="muted" style={{ margin: 0 }}>
+              Waiting for new pairs…
+            </p>
+          </div>
+        ) : (
+          <div className="card" style={{ marginTop: 16 }}>
+            <p className="muted" style={{ margin: 0 }}>
+              No tokens match this filter.
+            </p>
+            <p style={{ margin: "12px 0 0" }}>
+              <button type="button" className="button-ghost" onClick={() => setFilter("All")}>
+                Show all
+              </button>
+            </p>
+          </div>
+        )
       ) : (
         <>
           <ul className="live-cards">
@@ -106,7 +163,7 @@ export function LiveTokensList({ snapshot }: { readonly snapshot: LiveTokensSnap
                   {riskCell(entry)}
                 </div>
                 <div className="quiet numeric">
-                  {formatAge(entry.ageSeconds)} · {entry.dex}
+                  {ageText(entry.ageSeconds)} · {entry.dex}
                   {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
                   <span className="muted">
                     {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
@@ -141,7 +198,7 @@ export function LiveTokensList({ snapshot }: { readonly snapshot: LiveTokensSnap
                       <span className="live-new">new</span>
                     ) : null}
                   </td>
-                  <td className="numeric">{formatAge(entry.ageSeconds)}</td>
+                  <td className="numeric">{ageText(entry.ageSeconds)}</td>
                   <td>
                     {entry.dex}
                     {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
@@ -182,18 +239,37 @@ export function LiveTokensError({ message }: { readonly message: string }): JSX.
 }
 
 export function LiveTokens({ apiKey }: { readonly apiKey: string }): JSX.Element {
-  const [snapshot, setSnapshot] = useState<LiveTokensSnapshot | null>(null);
+  const [view, setView] = useState<{ snapshot: LiveTokensSnapshot; buffered: readonly LiveTokenEntry[] } | null>(null);
+  const [lastPollAt, setLastPollAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const readerEngaged = (): boolean => {
+      if (typeof window !== "undefined" && window.scrollY > 0) {
+        return true;
+      }
+      const root = sectionRef.current;
+      return root !== null && root.contains(document.activeElement);
+    };
     const load = (): void => {
       fetchLiveTokens(apiKey)
         .then((next) => {
-          if (!cancelled) {
-            setSnapshot(next);
-            setError(null);
+          if (cancelled) {
+            return;
           }
+          setError(null);
+          setLastPollAt(Date.now());
+          setView((current) => {
+            if (current === null || !readerEngaged()) {
+              return { snapshot: next, buffered: [] };
+            }
+            return {
+              snapshot: current.snapshot,
+              buffered: unseenEntries(current.snapshot.items, next.items, current.buffered),
+            };
+          });
         })
         .catch(() => {
           if (!cancelled) {
@@ -209,11 +285,11 @@ export function LiveTokens({ apiKey }: { readonly apiKey: string }): JSX.Element
     };
   }, [apiKey]);
 
-  if (error !== null && snapshot === null) {
+  if (error !== null && view === null) {
     return <LiveTokensError message={error} />;
   }
 
-  if (snapshot === null) {
+  if (view === null) {
     return (
       <section aria-label="New tokens" style={{ marginTop: 56 }}>
         <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>New tokens</h2>
@@ -226,5 +302,21 @@ export function LiveTokens({ apiKey }: { readonly apiKey: string }): JSX.Element
     );
   }
 
-  return <LiveTokensList snapshot={snapshot} />;
+  const showBuffered = (): void => {
+    setView((current) =>
+      current === null
+        ? current
+        : { snapshot: { ...current.snapshot, items: mergeShown(current.snapshot.items, current.buffered) }, buffered: [] },
+    );
+  };
+
+  return (
+    <LiveTokensList
+      snapshot={view.snapshot}
+      buffered={view.buffered}
+      lastPollAt={lastPollAt}
+      sectionRef={sectionRef}
+      onShowBuffered={view.buffered.length === 0 ? null : showBuffered}
+    />
+  );
 }

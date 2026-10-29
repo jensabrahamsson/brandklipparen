@@ -107,9 +107,8 @@ test("k305_assessment_tab_shows_not_configured", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
   await page.getByRole("tab", { name: "Contract assessment" }).click();
-  await expect(page.getByText("Assessment is not configured: the REST API reports no assessment provider.")).toBeVisible();
-  await page.getByRole("button", { name: "Request assessment" }).click();
-  await expect(page.getByText("Assessment is not configured.")).toBeVisible();
+  await expect(page.getByText("Contract assessment is not configured on this server.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Request assessment" })).toBeDisabled();
   // The deterministic score stands untouched beside the panel.
   await page.getByRole("tab", { name: "Overview" }).click();
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();

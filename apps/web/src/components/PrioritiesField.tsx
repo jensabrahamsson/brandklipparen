@@ -23,12 +23,13 @@ export function PrioritiesField({
       <input
         id="priorities-field"
         data-testid="priorities-field"
+        className="input"
         type="text"
         value={value}
         maxLength={500}
         placeholder="Can the owner stop me selling? Can fees change? Can more tokens be minted?"
         onChange={(event) => onChange(event.target.value)}
-        style={{ width: "100%", maxWidth: 560, fontSize: 14, padding: "6px 8px" }}
+        style={{ maxWidth: 560 }}
       />
       <div style={{ marginTop: 6, display: "flex", gap: 12, alignItems: "center" }}>
         <button

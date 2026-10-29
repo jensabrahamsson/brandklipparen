@@ -6,6 +6,8 @@
 import { useState, type JSX } from "react";
 import { fetchOnchainFeatures } from "../lib/api.ts";
 import type { OnchainFeaturesState } from "../lib/api.ts";
+import type { Availability } from "../lib/capabilities.ts";
+import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
@@ -96,9 +98,11 @@ export function describeVariantHead(variant: unknown): string {
 export function OnchainPanel({
   address,
   apiKey,
+  availability,
 }: {
   readonly address: string;
   readonly apiKey: string;
+  readonly availability: Availability;
 }): JSX.Element {
   const [state, setState] = useState<OnchainFeaturesState | null>(null);
   const [pending, setPending] = useState(false);
@@ -119,13 +123,27 @@ export function OnchainPanel({
       <p className="quiet" style={{ margin: "0 0 8px" }}>
         Point-in-time chain reads at the current block. Advisory only: the score stands.
       </p>
-      <button type="button" className="button-ghost" onClick={() => void onRequest()} disabled={pending}>
-        {pending ? "Loading…" : "Load on-chain features"}
-      </button>
+      {state === null && availability === "unavailable" ? (
+        <div data-testid="onchain-unavailable" style={{ marginTop: 8 }}>
+          <FeatureUnavailable
+            title="On-chain features"
+            reason="On-chain features are not configured on this server."
+            actionLabel="Load on-chain features"
+          />
+        </div>
+      ) : (
+        <button type="button" className="button-ghost" onClick={() => void onRequest()} disabled={pending}>
+          {pending ? "Loading…" : "Load on-chain features"}
+        </button>
+      )}
       {state === null ? null : state.status === "not-configured" ? (
-        <p data-testid="onchain-not-configured" style={{ margin: "12px 0 0" }}>
-          On-chain features are not configured.
-        </p>
+        <div data-testid="onchain-not-configured" style={{ marginTop: 12 }}>
+          <FeatureUnavailable
+            title="On-chain features"
+            reason="On-chain features are not configured on this server."
+            actionLabel="Load on-chain features"
+          />
+        </div>
       ) : state.status === "failed" ? (
         <p data-testid="onchain-failed" style={{ margin: "12px 0 0" }}>
           On-chain features could not be read.

@@ -127,7 +127,7 @@ test("s101_explain_panel_shows_not_configured_without_key", async ({ page }) => 
   });
   await page.goto(`/#/token/${ADDRESS}`);
   await page.getByRole("button", { name: "Request explanation" }).click();
-  await expect(page.getByTestId("explain-not-configured")).toContainText("Explanations are not configured.");
+  await expect(page.getByTestId("explain-not-configured")).toContainText("Explanations are not configured on this server.");
 });
 
 test("s101_explain_panel_renders_checked_sentences_as_inert_text", async ({ page }) => {

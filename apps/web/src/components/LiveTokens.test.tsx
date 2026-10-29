@@ -1,7 +1,16 @@
 import { describe, expect, test, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { LiveTokensError, LiveTokensList } from "./LiveTokens.tsx";
-import { fetchLiveTokens, formatAge, shortAddress } from "../lib/liveTokens.ts";
+import {
+  fetchLiveTokens,
+  filterLiveEntries,
+  formatAge,
+  mergeShown,
+  shortAddress,
+  tokenCountLabel,
+  unseenEntries,
+  updatedAgoLabel,
+} from "../lib/liveTokens.ts";
 import { syntheticAddress } from "../lib/syntheticAddresses.ts";
 import type { LiveTokenEntry, LiveTokensSnapshot } from "../lib/liveTokens.ts";
 
@@ -84,13 +93,51 @@ describe("live tokens list", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, CANT_TELL])} />);
     expect(html).toContain('data-testid="risk-badge"');
     expect(html).toContain("can&#x27;t tell");
-    expect(html).toContain(">-<");
+    expect(html).toContain("—");
+    expect(html).toContain('title="Age unknown"');
   });
 
-  test("unknown chain age reads as a dash with no new marker", () => {
+  test("unknown chain age reads as an em dash with no new marker", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([CANT_TELL])} />);
-    expect(html).toContain(">-<");
+    expect(html).toContain("—");
+    expect(html).not.toContain(">-<");
     expect(html).not.toContain('<span class="live-new">new</span>');
+  });
+
+  test("s124_filters_name_both_bands_and_count_uses_grammar", () => {
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} lastPollAt={1700000006000} />);
+    expect(html).toContain("Elevated &amp; high");
+    expect(html).toContain(">Low<");
+    expect(html).not.toContain("High risk");
+    expect(html).not.toContain("Low risk");
+    expect(renderToString(<LiveTokensList snapshot={snapshot([NEW])} />)).toContain("1 new token");
+    expect(html).toContain("2 new tokens");
+    expect(html).toMatch(/Updated \d+ s ago/);
+  });
+
+  test("s124_filter_entries_match_labels_without_contradiction", () => {
+    const elevated: LiveTokenEntry = { ...NEW, riskBand: "Elevated" };
+    const high: LiveTokenEntry = { ...NEW, riskBand: "High", pairAddress: syntheticAddress(20) };
+    const low: LiveTokenEntry = { ...NEW, riskBand: "Low", pairAddress: syntheticAddress(21) };
+    const items = [elevated, high, low];
+    expect(filterLiveEntries(items, "Elevated & high").map((entry) => entry.pairAddress)).toEqual([
+      elevated.pairAddress,
+      high.pairAddress,
+    ]);
+    expect(filterLiveEntries(items, "Low").map((entry) => entry.pairAddress)).toEqual([low.pairAddress]);
+    expect(filterLiveEntries(items, "All")).toHaveLength(3);
+    expect(tokenCountLabel(1)).toBe("1 new token");
+    expect(tokenCountLabel(2)).toBe("2 new tokens");
+    expect(updatedAgoLabel(1700000000000, 1700000006000)).toBe("Updated 6 s ago");
+  });
+
+  test("s124_buffered_entries_never_repeat_or_reorder", () => {
+    const first = unseenEntries([NEW], [PENDING, NEW], []);
+    expect(first.map((entry) => entry.pairAddress)).toEqual([PENDING.pairAddress]);
+    const second = unseenEntries([NEW], [PENDING, NEW], first);
+    expect(second).toHaveLength(1);
+    const shown = mergeShown([NEW], second);
+    expect(shown.map((entry) => entry.pairAddress)).toEqual([PENDING.pairAddress, NEW.pairAddress]);
   });
 
   test("token links open the token page and rows keep stable keys", () => {

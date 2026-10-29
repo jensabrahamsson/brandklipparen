@@ -88,6 +88,11 @@ export function StartPage({
             aria-invalid={error !== null}
             aria-describedby={error !== null ? "address-error" : undefined}
           />
+          {error !== null ? (
+            <span className="field-error-icon" aria-hidden="true">
+              !
+            </span>
+          ) : null}
           <button type="submit" className="button">
             Analyze
           </button>

@@ -35,7 +35,7 @@ export function Gauge({
         {signalCount} {signalWord}
       </p>
       <svg width="140" height="84" viewBox="0 0 140 84" role="img" aria-label={`${percent} percent probability`}>
-        <path d="M 14 76 A 56 56 0 0 1 126 76" fill="none" stroke="var(--border)" strokeWidth="12" strokeLinecap="round" />
+        <path d="M 14 76 A 56 56 0 0 1 126 76" fill="none" stroke="var(--border-strong)" strokeWidth="12" strokeLinecap="round" />
         <path
           d="M 14 76 A 56 56 0 0 1 126 76"
           fill="none"

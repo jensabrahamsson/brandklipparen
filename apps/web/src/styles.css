@@ -3,6 +3,7 @@
    Kornguld appears solely as a sparse brand detail (logo eye). */
 
 :root {
+  color-scheme: dark;
   --bg: #0e1116;
   --surface: #161b22;
   --surface-2: #1c2330;
@@ -25,6 +26,31 @@
   --radius-button: 8px;
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* Elevation language (S-121): the single token system for static 3D
+     depth. Layered shadows with a top-edge highlight; a static specular
+     sheen; a button bevel; inset rings for badges and recessed inputs.
+     Nothing here animates or moves. */
+  --elev-1: inset 0 1px 0 rgb(255 255 255 / 4%), 0 1px 2px rgb(0 0 0 / 35%), 0 4px 12px rgb(0 0 0 / 22%);
+  --elev-2: inset 0 1px 0 rgb(255 255 255 / 5%), 0 2px 4px rgb(0 0 0 / 35%), 0 12px 32px rgb(0 0 0 / 32%);
+  --elev-3: inset 0 1px 0 rgb(255 255 255 / 6%), 0 8px 16px rgb(0 0 0 / 40%), 0 24px 48px rgb(0 0 0 / 45%);
+  --sheen: linear-gradient(180deg, rgb(255 255 255 / 3.5%), transparent 45%);
+  --bevel-button: inset 0 1px 0 rgb(255 255 255 / 18%), inset 0 -1px 0 rgb(0 0 0 / 25%);
+  --inset-input: inset 0 1px 2px rgb(0 0 0 / 40%);
+  --ring-badge: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent);
+  /* Boundary tone (S-125, S-126): control, chip, ghost-button and track
+     edges at 3:1 or better against every background they sit on. */
+  --border-strong: #5a7186;
+  /* Motion tokens (S-122): short eased state changes only, on
+     opacity/colour/shadow. Everything becomes instant under the
+     reduced-motion kill switch below. */
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 280ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Pressed-button inset (S-122): part of the shadow-only motion
+     language, so button presses stay in the token system. */
+  --elev-pressed: inset 0 2px 4px rgb(0 0 0 / 45%);
 }
 
 * {
@@ -114,10 +140,11 @@ a {
   border: 1px solid var(--border);
   border-radius: var(--radius-row);
   padding: 12px 16px;
+  box-shadow: var(--elev-1);
 }
 
 .button {
-  background: var(--brand-deep);
+  background: linear-gradient(180deg, #5b7aa3, var(--brand-deep));
   color: var(--text);
   border: 1px solid transparent;
   border-radius: var(--radius-button);
@@ -126,6 +153,7 @@ a {
   font-weight: 600;
   cursor: pointer;
   font-family: var(--font-sans);
+  box-shadow: var(--bevel-button);
 }
 
 .button:hover:not(:disabled) {
@@ -133,15 +161,35 @@ a {
   color: #0e1116;
 }
 
+/* Disabled primary buttons (S-123): flat grey with a light solid edge so
+   the boundary stays visible, and a not-allowed cursor. The edge colour
+   against the face measures at least 3:1. */
 .button:disabled {
-  opacity: 0.55;
-  cursor: default;
+  background: #2a3340;
+  border: 1px solid #7d8ea3;
+  color: var(--text-2);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+/* Neutral unavailable pill (S-123): grey, with an outline icon. Never
+   the brand dot, so it cannot read as an active status. */
+.unavailable-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 13px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
 }
 
 .button-ghost {
   background: transparent;
   color: var(--brand);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-button);
   padding: 8px 14px;
   font-size: 14px;
@@ -149,15 +197,52 @@ a {
   font-family: var(--font-sans);
 }
 
+/* Disabled ghost buttons (S-126): faded with a dashed edge and no
+   pointer, so they read as off next to enabled ones. */
+.button-ghost:disabled {
+  opacity: 0.5;
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
 .input {
   background: var(--bg);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-button);
   padding: 10px 14px;
   font-size: 15px;
   font-family: var(--font-mono);
   width: 100%;
+  box-shadow: var(--inset-input);
+}
+
+/* Invalid input (S-126): a red edge on the field itself. The message
+   below stays linked through aria-describedby; the icon is decorative. */
+.input[aria-invalid="true"] {
+  border-color: var(--high);
+}
+
+.field-error-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--high);
+  color: var(--high);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Native radios and checkboxes follow the brand tone instead of the
+   bright system-blue default (S-126). */
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: var(--brand);
 }
 
 .input:focus-visible,
@@ -193,6 +278,7 @@ a:focus-visible {
   border-radius: 999px;
   padding: 4px 12px;
   font-size: 14px;
+  box-shadow: var(--ring-badge);
 }
 
 .risk-badge strong {
@@ -245,12 +331,13 @@ a:focus-visible {
 .chip {
   background: transparent;
   color: var(--text-2);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 6px 14px;
   font-size: 13px;
   cursor: pointer;
   font-family: var(--font-sans);
+  box-shadow: var(--elev-1);
 }
 
 .chip[aria-pressed="true"] {
@@ -452,11 +539,12 @@ pre.code {
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  background: var(--surface);
+  background: var(--sheen), var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   padding: 10px 16px;
   margin-bottom: 16px;
+  box-shadow: var(--elev-3);
 }
 
 .compact-strip-hash {
@@ -544,6 +632,11 @@ pre.code {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
   *,
   *::before,
   *::after {
@@ -599,7 +692,7 @@ pre.code {
   line-height: 1.45;
   color: var(--text);
   text-align: left;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  box-shadow: var(--elev-3);
 }
 
 .explain-tooltip strong {
@@ -607,21 +700,44 @@ pre.code {
   margin-bottom: 4px;
 }
 
-/* Calm static depth: a soft layered box-shadow on cards and slight
-   surface layering only. Nothing moves on scroll, hover, pointer move or
-   focus: interactive elements ease color, shadow and opacity changes
-   (at most 150 ms, ease-out) and never transform. Text is never
-   transformed and keeps its contrast. Focus rings stay clearly visible. */
+/* Elevation language in use (S-121): every surface shadow comes from
+   the --elev-* tokens above, with the static --sheen layered on cards and
+   the strip. Nothing moves on scroll, hover, pointer move or focus. Text
+   is never transformed and keeps its contrast. Focus rings stay clearly
+   visible. */
 .card {
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 35%),
-    0 10px 28px rgb(0 0 0 / 28%);
+  background: var(--sheen), var(--surface);
+  box-shadow: var(--elev-2);
+}
+
+/* Gauges are small dense cards: the lighter row tier keeps them calm. */
+.card.gauge {
+  box-shadow: var(--elev-1);
+}
+
+/* The verdict header keeps the card tier with a 1px top border in the
+   band colour, set through --verdict-band on the element. */
+.card.verdict {
+  border-top: 1px solid var(--verdict-band, var(--border));
+}
+
+/* Score ring: a static radial inner disc behind the arc plus a soft
+   band-coloured glow on the arc itself. Both are static. */
+.score-disc {
+  background: radial-gradient(circle at 50% 38%, rgb(255 255 255 / 7%), transparent 62%);
+  border-radius: 50%;
+}
+
+.score-arc {
+  filter: drop-shadow(0 0 8px var(--arc-glow, transparent));
+  /* One-shot draw (S-122): the dash opens from 0 to the value once on
+     mount over --dur-slow. The final value is a plain attribute, so the
+     ring keeps its shape with no running animation afterwards. */
+  transition: stroke-dasharray var(--dur-slow) var(--ease-out);
 }
 
 .cant-tell {
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 30%),
-    0 8px 22px rgb(0 0 0 / 24%);
+  box-shadow: var(--elev-2);
 }
 
 .button,
@@ -630,22 +746,172 @@ pre.code {
 .tab,
 .explain-trigger {
   transition:
-    background-color 150ms ease-out,
-    border-color 150ms ease-out,
-    color 150ms ease-out,
-    box-shadow 150ms ease-out,
-    opacity 150ms ease-out;
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
 }
 
-/* Investigate-loop graph: a flat static 2D list in DOM order. */
-.graph-node {
+/* Button press: the bevel gives way to a pressed inset over --dur-fast. */
+.button:active:not(:disabled) {
+  box-shadow: var(--elev-pressed);
+}
+
+/* Row hover (S-122): rows rest at --elev-1 and deepen to --elev-2 over
+   --dur-base. Shadow only: no translate, no transform. */
+.live-card {
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+.live-card:hover {
+  box-shadow: var(--elev-2);
+}
+
+.live-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.live-table tbody tr {
+  box-shadow: var(--elev-1);
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+
+.live-table tbody tr:hover {
+  box-shadow: var(--elev-2);
+}
+
+/* Whole-row target (S-124): the token link stretches over its row via a
+   positioned pseudo-element. Keyboard focus lands on the link and the row
+   answers with a :focus-within ring plus the --elev-2 tier. */
+.live-table tbody tr {
+  position: relative;
+}
+
+.live-table tbody tr:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+  box-shadow: var(--elev-2);
+}
+
+.live-table td:first-child a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.live-card {
+  position: relative;
+}
+
+.live-card:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  box-shadow: var(--elev-2);
+}
+
+.live-card-top a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+/* One-shot fades (S-122): tooltips and disclosure content fade from
+   opacity 0 to 1 over --dur-base. Finite and non-looping; the connector
+   lines and layout never animate. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.explain-tooltip {
+  animation: fade-in var(--dur-base) var(--ease-out) 1;
+}
+
+details[open] > *:not(summary) {
+  animation: fade-in var(--dur-base) var(--ease-out) 1;
+}
+
+/* Investigation timeline (S-125): a static vertical trace. Numbered
+   28 px nodes joined by a 2 px connector; no transforms, no rotation,
+   and the connector never animates. Streamed step bodies fade in with
+   opacity over --dur-base. */
+.timeline {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+}
+
+.timeline-step {
+  position: relative;
+  margin: 0;
+  padding: 0 0 16px 44px;
+}
+
+.timeline-step:last-child {
+  padding-bottom: 0;
+}
+
+.timeline-step::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 32px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--border-strong);
+}
+
+.timeline-step:last-child::before {
+  display: none;
+}
+
+.timeline-node {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--elev-1);
+}
+
+.timeline-body {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 10px 12px;
-  box-shadow:
-    0 1px 2px rgb(0 0 0 / 35%),
-    0 8px 22px rgb(0 0 0 / 30%);
+  box-shadow: var(--elev-1);
+  animation: fade-in var(--dur-base) var(--ease-out) 1;
+}
+
+.tool-chip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
 }
 
 /* Live new-tokens list: a static table with text-only updates. No
@@ -718,6 +984,7 @@ polls never shift existing rows, and the "new" marker is plain text. */
     border-radius: var(--radius-row);
     padding: 12px 16px;
     min-width: 0;
+    box-shadow: var(--elev-1);
   }
 }
 

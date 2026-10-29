@@ -8,13 +8,17 @@
 import { useState, type JSX } from "react";
 import { fetchExplain } from "../lib/api.ts";
 import type { ExplainState } from "../lib/api.ts";
+import type { Availability } from "../lib/capabilities.ts";
+import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
 
 export function ExplainPanel({
   address,
   apiKey,
+  availability,
 }: {
   readonly address: string;
   readonly apiKey: string;
+  readonly availability: Availability;
 }): JSX.Element {
   const [state, setState] = useState<ExplainState | null>(null);
   const [pending, setPending] = useState(false);
@@ -32,13 +36,27 @@ export function ExplainPanel({
       <p className="quiet" style={{ margin: "0 0 8px" }}>
         One opt-in model explanation over the frozen analysis. Advisory only: the score stands.
       </p>
-      <button type="button" className="button-ghost" onClick={() => void onRequest()} disabled={pending}>
-        {pending ? "Loading…" : "Request explanation"}
-      </button>
+      {state === null && availability === "unavailable" ? (
+        <div data-testid="explain-unavailable" style={{ marginTop: 8 }}>
+          <FeatureUnavailable
+            title="Explain"
+            reason="Explanations are not configured on this server."
+            actionLabel="Request explanation"
+          />
+        </div>
+      ) : (
+        <button type="button" className="button-ghost" onClick={() => void onRequest()} disabled={pending}>
+          {pending ? "Loading…" : "Request explanation"}
+        </button>
+      )}
       {state === null ? null : state.status === "not-configured" ? (
-        <p data-testid="explain-not-configured" style={{ margin: "12px 0 0" }}>
-          Explanations are not configured.
-        </p>
+        <div data-testid="explain-not-configured" style={{ marginTop: 12 }}>
+          <FeatureUnavailable
+            title="Explain"
+            reason="Explanations are not configured on this server."
+            actionLabel="Request explanation"
+          />
+        </div>
       ) : state.status === "ready" ? (
         <div data-testid="explain-sentences" style={{ marginTop: 12 }}>
           {state.narrative.length === 0 ? (

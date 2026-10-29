@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent } from "react";
 import { ApiError, analyzeToken, fetchAssessment, fetchHealth, fetchPersonalizeStatus, fetchPlugins, requestInvestigation, requestPersonalizeMapping } from "../lib/api.ts";
 import { ExpertDetail } from "../components/ExpertDetail.tsx";
 import { PluginsPanel } from "../components/PluginsPanel.tsx";
@@ -20,7 +20,8 @@ import {
   writeStoredAiPersonalize,
 } from "../lib/personalize.ts";
 import type { AiPersonalizeSpec, PersonalizeContext } from "../lib/personalize.ts";
-import { riskWord } from "../lib/risk.ts";
+import { riskBand, riskWord } from "../lib/risk.ts";
+import { toAiAvailability, type AiFeatureAvailability } from "../lib/capabilities.ts";
 import { assignTemplateLines } from "../lib/claims.ts";
 import {
   combinedScoreLine,
@@ -50,6 +51,13 @@ import type { AnalyzeResult, AssessmentState, InvestigationState, InvestigationS
 
 const RISKS: readonly RiskKind[] = ["rug-pull", "honeypot", "bot-pump"];
 const RISK_SHORT: Record<RiskKind, string> = { "rug-pull": "Rug", honeypot: "Honey", "bot-pump": "Bot" };
+
+// Verdict header band colour (S-121): the risk band colour for the 1px
+// top border, passed as --verdict-band so the stylesheet owns the edge.
+function verdictBandColor(score: number): string {
+  const word = riskBand(score).word;
+  return word === "Low" ? "var(--low)" : word === "Elevated" ? "var(--elevated)" : "var(--high)";
+}
 
 // Deepening polls (design review P0-6): 1.5 s cadence, capped at 10.
 const DEEPEN_POLL_MS = 1500;
@@ -96,6 +104,15 @@ export function TokenPage({
   const [attempt, setAttempt] = useState(0);
   const [elapsed, setElapsed] = useState<number | null>(null);
   const [openSignals, setOpenSignals] = useState<ReadonlySet<string>>(new Set());
+  // AI feature availability decided up front from /health (S-123). The
+  // default keeps the previous explicit-request behaviour until the
+  // capabilities arrive; unknown fields stay available for older servers.
+  const [availability, setAvailability] = useState<AiFeatureAvailability>({
+    investigation: "available",
+    explain: "available",
+    onchain: "available",
+  });
+  const healthPersonalize = useRef(false);
   const deepeningPolls = useRef(0);
 
   useEffect(() => {
@@ -146,10 +163,20 @@ export function TokenPage({
         } else {
           setProvider({ status: "ready", provider: health.assessment.provider, modelId: health.assessment.modelId });
         }
+        setAvailability(toAiAvailability(health));
+        if (health.personalize !== undefined) {
+          healthPersonalize.current = true;
+          setAiProvider(
+            "disabled" in health.personalize
+              ? null
+              : { provider: health.personalize.provider, modelId: health.personalize.modelId },
+          );
+        }
       },
       () => {
         if (!cancelled) {
           setProvider({ status: "disabled" });
+          setAvailability({ investigation: "unavailable", explain: "unavailable", onchain: "unavailable" });
         }
       },
     );
@@ -166,8 +193,10 @@ export function TokenPage({
         setPlugins(entries);
       }
     });
+    // Older servers report no personalize capability in /health; the
+    // dedicated status endpoint stays the fallback there.
     fetchPersonalizeStatus(key).then((status) => {
-      if (!cancelled) {
+      if (!cancelled && !healthPersonalize.current) {
         setAiProvider(status);
       }
     });
@@ -429,6 +458,7 @@ export function TokenPage({
           }}
           standardOrder={standardOrder}
           onShowStandardOrder={() => setStandardOrder(true)}
+          availability={availability}
           tab={tab}
           onTab={setTab}
           onTabKeyDown={onTabKeyDown}
@@ -467,6 +497,7 @@ function AssessedView({
   onPrioritiesClear,
   standardOrder,
   onShowStandardOrder,
+  availability,
   tab,
   onTab,
   onTabKeyDown,
@@ -499,6 +530,7 @@ function AssessedView({
   readonly onPrioritiesClear: () => void;
   readonly standardOrder: boolean;
   readonly onShowStandardOrder: () => void;
+  readonly availability: AiFeatureAvailability;
   readonly tab: Tab;
   readonly onTab: (tab: Tab) => void;
   readonly onTabKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
@@ -519,6 +551,38 @@ function AssessedView({
   // by signal id, so duplicate ids cannot misattribute evidence.
   const templateLines = assignTemplateLines(sorted, result.explanation.claims);
   const templateLine = (index: number): string | undefined => templateLines[index];
+  // Signal links from claims and investigation evidence arrive as stable
+  // position-derived keys, so the scroll target uses the same unique key
+  // as the article DOM id. Focus follows the scroll so keyboard users land
+  // on the linked signal (S-125).
+  const jumpToSignal = useCallback(
+    (key: string) => {
+      onTab("overview");
+      if (!openSignals.has(key)) {
+        onToggleSignal(key);
+      }
+      // The overview panel remounts on the tab switch, so the article may
+      // not exist yet: retry until it commits, then scroll and focus it.
+      // getElementById takes the literal id: no CSS escaping (an escaped
+      // leading digit would never match).
+      let attempts = 0;
+      const reveal = (): void => {
+        const target = document.getElementById(`signal-${key}`);
+        if (target === null && attempts < 10) {
+          attempts += 1;
+          window.setTimeout(reveal, 50);
+          return;
+        }
+        target?.scrollIntoView({ block: "start" });
+        const control = target?.querySelector(":scope > button");
+        if (control instanceof HTMLElement) {
+          control.focus();
+        }
+      };
+      window.setTimeout(reveal, 0);
+    },
+    [onTab, onToggleSignal, openSignals],
+  );
   // Summary strip visibility: always on the assessment tab (no ring there);
   // on Overview only once the combined score ring has scrolled out of view.
   // Unmounted when hidden so it takes no layout space and cannot overlap
@@ -529,7 +593,12 @@ function AssessedView({
   const stripVisible = tab === "assessment" || tab === "investigate" || ringGone;
   return (
     <div>
-      <section className="card" aria-label="Combined score" ref={ringRef} style={{ marginBottom: 20 }}>
+      <section
+        className="card verdict"
+        aria-label="Combined score"
+        ref={ringRef}
+        style={{ marginBottom: 20, "--verdict-band": verdictBandColor(result.score) } as CSSProperties}
+      >
         <h1 title={result.target} style={{ margin: "0 0 4px", fontSize: 24 }}>
           {shortAddress(result.target)}
         </h1>
@@ -644,12 +713,12 @@ function AssessedView({
               templateLine={templateLine}
               openSignals={openSignals}
               onToggleSignal={onToggleSignal}
-              onTab={onTab}
+              onSignalLink={jumpToSignal}
               visibleSections={visibleSections}
             />
             <StreamView address={address} apiKey={apiKey} />
-            <ExplainPanel address={address} apiKey={apiKey} />
-            <OnchainPanel address={address} apiKey={apiKey} />
+            <ExplainPanel address={address} apiKey={apiKey} availability={availability.explain} />
+            <OnchainPanel address={address} apiKey={apiKey} availability={availability.onchain} />
           </>
         ) : null}
       </div>
@@ -660,7 +729,14 @@ function AssessedView({
       </div>
       <div role="tabpanel" id="panel-investigate" aria-labelledby="tab-investigate" hidden={tab !== "investigate"}>
         {tab === "investigate" ? (
-          <InvestigationPanel state={investigation} score={result.score} onRequest={onRunInvestigation} />
+          <InvestigationPanel
+            state={investigation}
+            score={result.score}
+            availability={availability.investigation}
+            signals={sorted}
+            onSignalLink={jumpToSignal}
+            onRequest={onRunInvestigation}
+          />
         ) : null}
       </div>
     </div>
@@ -731,10 +807,22 @@ function CustomizeView({
       </div>
       <section aria-label="AI personalize" style={{ marginBottom: 16 }}>
         <label style={{ fontSize: 14, fontWeight: 600 }}>
-          <input type="checkbox" data-testid="ai-personalize-toggle" checked={aiOn} onChange={(event) => onToggleAi(event.target.checked)} />{" "}
+          <input
+            type="checkbox"
+            data-testid="ai-personalize-toggle"
+            checked={aiOn}
+            disabled={aiProvider === null}
+            aria-describedby="ai-personalize-status"
+            onChange={(event) => onToggleAi(event.target.checked)}
+          />{" "}
           AI personalize (experimental)
         </label>
-        <p className="quiet" data-testid="ai-personalize-label" style={{ margin: "4px 0", fontSize: 13 }}>
+        <p
+          id="ai-personalize-status"
+          className="quiet"
+          data-testid="ai-personalize-label"
+          style={{ margin: "4px 0", fontSize: 13 }}
+        >
           {aiProvider === null
             ? "Mapping provider not configured on this server."
             : `Maps with ${aiProvider.provider} · ${aiProvider.modelId}.`}
@@ -780,7 +868,7 @@ function OverviewSections({
   templateLine,
   openSignals,
   onToggleSignal,
-  onTab,
+  onSignalLink,
   visibleSections,
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
@@ -794,23 +882,10 @@ function OverviewSections({
   readonly templateLine: (index: number) => string | undefined;
   readonly openSignals: ReadonlySet<string>;
   readonly onToggleSignal: (key: string) => void;
-  readonly onTab: (tab: Tab) => void;
+  readonly onSignalLink: (key: string) => void;
   readonly visibleSections: ReadonlySet<string>;
 }): JSX.Element {
-  // Signal links from claims arrive as stable position-derived keys, so
-  // the scroll target uses the same unique key as the article DOM id.
-  const jumpToSignal = useCallback(
-    (key: string) => {
-      onTab("overview");
-      if (!openSignals.has(key)) {
-        onToggleSignal(key);
-      }
-      window.setTimeout(() => {
-        document.getElementById(`signal-${CSS.escape(key)}`)?.scrollIntoView({ block: "start" });
-      }, 0);
-    },
-    [onTab, onToggleSignal, openSignals],
-  );
+  const jumpToSignal = onSignalLink;
   const pluginViews = result.pluginResults === undefined ? [] : toPluginResultViews(result.pluginResults);
   const plan = planLayout({
     score: result.score,

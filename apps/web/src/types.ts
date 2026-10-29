@@ -141,6 +141,19 @@ export type ProviderInfo =
   | { readonly status: "disabled" }
   | { readonly status: "ready"; readonly provider: string; readonly modelId: string };
 
-export type HealthState =
-  | { readonly assessment: { readonly provider: string; readonly modelId: string } }
-  | { readonly assessment: { readonly disabled: true } };
+// One AI feature as reported by GET /health (S-123): either configured
+// with its provider and model, or disabled. On-chain reads carry no model,
+// so a configured reader reports availability only.
+export type FeatureCapability =
+  | { readonly disabled: true }
+  | { readonly provider: string; readonly modelId: string };
+
+export type OnchainCapability = { readonly disabled: true } | { readonly available: true };
+
+export type HealthState = {
+  readonly assessment: FeatureCapability;
+  readonly investigation?: FeatureCapability | undefined;
+  readonly explain?: FeatureCapability | undefined;
+  readonly personalize?: FeatureCapability | undefined;
+  readonly onchain?: OnchainCapability | undefined;
+};
