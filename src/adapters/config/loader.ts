@@ -596,17 +596,19 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     return assessmentPromptVersion;
   }
 
-  const provider = assessmentProvider.value;
-  const needsMeta = isDemo && provider === "meta-model-api";
-  const needshosted = isDemo && provider === "hosted-open-weights";
-  const needsGenericCompatible = isDemo && provider === "generic-compatible";
-  const assessmentMetaApiKey = requiredWhen(env, V.assessmentMetaApiKey, needsMeta, (raw) =>
+  // Provider credential triples (S-135): optional in every setup. A
+  // selected provider without its key, model id or endpoint loads with
+  // those fields unset, and the composition root reports the assessment
+  // as not configured with zero provider calls instead of failing
+  // startup. A present value still parses, so a malformed value stays a
+  // typed startup error.
+  const assessmentMetaApiKey = optionalField(env, V.assessmentMetaApiKey, (raw) =>
     parseSecret(V.assessmentMetaApiKey, raw),
   );
   if (!assessmentMetaApiKey.ok) {
     return assessmentMetaApiKey;
   }
-  const assessmentMetaModelId = requiredWhen(env, V.assessmentMetaModelId, needsMeta, (raw) =>
+  const assessmentMetaModelId = optionalField(env, V.assessmentMetaModelId, (raw) =>
     mapDomain(
       V.assessmentMetaModelId,
       "must be a 1-256 character model identifier",
@@ -616,19 +618,19 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!assessmentMetaModelId.ok) {
     return assessmentMetaModelId;
   }
-  const assessmentMetaBaseUrl = requiredWhen(env, V.assessmentMetaBaseUrl, needsMeta, (raw) =>
+  const assessmentMetaBaseUrl = optionalField(env, V.assessmentMetaBaseUrl, (raw) =>
     parseHttpsUrl(V.assessmentMetaBaseUrl, raw),
   );
   if (!assessmentMetaBaseUrl.ok) {
     return assessmentMetaBaseUrl;
   }
-  const assessmenthostedApiKey = requiredWhen(env, V.assessmenthostedApiKey, needshosted, (raw) =>
+  const assessmenthostedApiKey = optionalField(env, V.assessmenthostedApiKey, (raw) =>
     parseSecret(V.assessmenthostedApiKey, raw),
   );
   if (!assessmenthostedApiKey.ok) {
     return assessmenthostedApiKey;
   }
-  const assessmenthostedModelId = requiredWhen(env, V.assessmenthostedModelId, needshosted, (raw) =>
+  const assessmenthostedModelId = optionalField(env, V.assessmenthostedModelId, (raw) =>
     mapDomain(
       V.assessmenthostedModelId,
       "must be a 1-256 character model identifier",
@@ -638,39 +640,37 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!assessmenthostedModelId.ok) {
     return assessmenthostedModelId;
   }
-  const assessmenthostedBaseUrl = requiredWhen(env, V.assessmenthostedBaseUrl, needshosted, (raw) =>
+  const assessmenthostedBaseUrl = optionalField(env, V.assessmenthostedBaseUrl, (raw) =>
     parseHttpsUrl(V.assessmenthostedBaseUrl, raw),
   );
   if (!assessmenthostedBaseUrl.ok) {
     return assessmenthostedBaseUrl;
   }
-  const assessmenthostedDeploymentId = requiredWhen(
+  const assessmenthostedDeploymentId = optionalField(
     env,
     V.assessmenthostedDeploymentId,
-    needshosted,
     (raw) => parseNonEmpty(V.assessmenthostedDeploymentId, raw, "a non-empty deployment identifier"),
   );
   if (!assessmenthostedDeploymentId.ok) {
     return assessmenthostedDeploymentId;
   }
   // Vendor-neutral chat-completions triple for a temporary local endpoint
-  // during development (local development only): required in the demo
-  // exactly when selected, mirroring the Meta/hosted triples above. No
-  // deployment identifier: only the base URL, model id and key change
-  // next to the other providers.
-  const assessmentGenericCompatibleApiKey = requiredWhen(
+  // during development (local development only): optional in every setup
+  // like the Meta/hosted triples above, so a selected provider without
+  // its key, model id or endpoint means not configured instead of a
+  // startup failure. No deployment identifier: only the base URL, model
+  // id and key change next to the other providers.
+  const assessmentGenericCompatibleApiKey = optionalField(
     env,
     V.assessmentGenericCompatibleApiKey,
-    needsGenericCompatible,
     (raw) => parseSecret(V.assessmentGenericCompatibleApiKey, raw),
   );
   if (!assessmentGenericCompatibleApiKey.ok) {
     return assessmentGenericCompatibleApiKey;
   }
-  const assessmentGenericCompatibleModelId = requiredWhen(
+  const assessmentGenericCompatibleModelId = optionalField(
     env,
     V.assessmentGenericCompatibleModelId,
-    needsGenericCompatible,
     (raw) =>
       mapDomain(
         V.assessmentGenericCompatibleModelId,
@@ -681,10 +681,9 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!assessmentGenericCompatibleModelId.ok) {
     return assessmentGenericCompatibleModelId;
   }
-  const assessmentGenericCompatibleBaseUrl = requiredWhen(
+  const assessmentGenericCompatibleBaseUrl = optionalField(
     env,
     V.assessmentGenericCompatibleBaseUrl,
-    needsGenericCompatible,
     (raw) => parseHttpsUrl(V.assessmentGenericCompatibleBaseUrl, raw),
   );
   if (!assessmentGenericCompatibleBaseUrl.ok) {

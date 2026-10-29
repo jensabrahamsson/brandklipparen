@@ -3,6 +3,9 @@
 // strict single-fence tolerance, distinct 4xx kinds with a warn line,
 // and loader coverage for the two new variables. No network, no real
 // keys: every transport is an in-memory capture.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { Bytecode, CodeHash, ModelId, PromptVersion, RequestId, Selector, SignalId, Timestamp } from "../../../src/domain/types.ts";
 import { Address } from "../../../src/domain/types.ts";
@@ -449,5 +452,91 @@ describe("vendor-neutral fallback reasons (session 18)", () => {
     const result = await adapter.assess(fixedEvidence(), fixedPrompt(), fixedContext());
     expect(result.ok).toBe(true);
     expect(calls.length).toBe(1);
+  });
+});
+
+describe("recorded realistic provider answer (S-136)", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const recordedDir = join(here, "..", "..", "fixtures", "assessment");
+
+  // Synthetic evidence matching the recorded fixtures: plain synthetic
+  // bytecode with synthetic selectors only, no real token data. The
+  // recorded signal links derive from these exact inputs.
+  function recordedEvidence(): EvidenceListType {
+    const code = mustOk(Bytecode.parse("0x6001600055"));
+    const codeHash = mustOk(CodeHash.of(code));
+    const first = mustOk(Evidence.create({ selector: mustOk(Selector.parse("0x01020304")) }));
+    const second = mustOk(Evidence.create({ selector: mustOk(Selector.parse("0x05060708")) }));
+    return mustOk(EvidenceList.create(codeHash, [first, second]));
+  }
+
+  function recordedAdapter(bodyText: string, warned: string[]): GenericCompatibleAdapter {
+    return new GenericCompatibleAdapter({
+      endpoint: "https://compat.example.invalid/",
+      apiKey: new SecretString(FAKE_KEY),
+      modelId: mustOk(ModelId.parse(COMPAT_MODEL)),
+      transport: async () => ({ status: 200, bodyText }),
+      onWarn: (line: string): void => {
+        warned.push(line);
+      },
+    });
+  }
+
+  test("s136_recorded_realistic_answer_validates", async () => {
+    const bodyText = readFileSync(join(recordedDir, "compat-realistic-recorded.json"), "utf8");
+    const warned: string[] = [];
+    const adapter = recordedAdapter(bodyText, warned);
+    const result = await adapter.assess(recordedEvidence(), fixedPrompt(), fixedContext());
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.provider).toBe("generic-compatible");
+    expect(result.value.claims.length).toBe(2);
+    expect(warned).toEqual([]);
+  });
+
+  test("s136_invalid_output_logs_schema_path_without_content", async () => {
+    const unknownId = `0x${"02".repeat(32)}`;
+    const unknownBody = readFileSync(join(recordedDir, "compat-unknown-signal-recorded.json"), "utf8");
+    expect(unknownBody.includes(unknownId)).toBe(true);
+    const warnedUnknown: string[] = [];
+    const unknown = await recordedAdapter(unknownBody, warnedUnknown).assess(
+      recordedEvidence(),
+      fixedPrompt(),
+      fixedContext(),
+    );
+    expect(unknown.ok).toBe(false);
+    if (unknown.ok) {
+      return;
+    }
+    expect(unknown.error.kind).toBe("invalid-output");
+    expect(warnedUnknown.length).toBe(1);
+    const unknownLine = warnedUnknown[0] ?? "";
+    expect(unknownLine).toContain("claims[0].signalLinks");
+    expect(unknownLine).toContain("unknown-signal");
+    expect(unknownLine.includes(unknownId)).toBe(false);
+    expect(unknownLine.includes(FAKE_KEY)).toBe(false);
+
+    const scriptBody = readFileSync(join(recordedDir, "compat-script-html-recorded.json"), "utf8");
+    expect(scriptBody.includes("<script")).toBe(true);
+    const warnedScript: string[] = [];
+    const scripted = await recordedAdapter(scriptBody, warnedScript).assess(
+      recordedEvidence(),
+      fixedPrompt(),
+      fixedContext(),
+    );
+    expect(scripted.ok).toBe(false);
+    if (scripted.ok) {
+      return;
+    }
+    expect(scripted.error.kind).toBe("invalid-output");
+    expect(warnedScript.length).toBe(1);
+    const scriptLine = warnedScript[0] ?? "";
+    expect(scriptLine).toContain("claims[0].text");
+    expect(scriptLine).toContain("no-markup");
+    expect(scriptLine.includes("<script")).toBe(false);
+    expect(scriptLine.includes("scripts.example.invalid")).toBe(false);
+    expect(scriptLine.includes(FAKE_KEY)).toBe(false);
   });
 });

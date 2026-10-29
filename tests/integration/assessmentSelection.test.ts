@@ -222,43 +222,19 @@ describe("composition-root assessment provider selection (K-309)", () => {
     expect(assessmentHealthStatus(binding.value)).toEqual({ disabled: true });
   });
 
-  test("k309_provider_without_model_id_is_invalid_naming_the_variable", () => {
-    const meta = selectAssessmentBinding({
-      ...manualBaseConfig(),
-      assessmentProvider: "meta-model-api",
-    });
-    expect(meta.ok).toBe(false);
-    if (meta.ok) {
-      return;
+  test("s135_provider_without_model_id_disables_assessment", () => {
+    for (const provider of ["meta-model-api", "hosted-open-weights", "generic-compatible"] as const) {
+      const binding = selectAssessmentBinding({
+        ...manualBaseConfig(),
+        assessmentProvider: provider,
+      });
+      expect(binding.ok).toBe(true);
+      if (!binding.ok) {
+        continue;
+      }
+      expect(binding.value).toEqual({ kind: "disabled" });
+      expect(assessmentHealthStatus(binding.value)).toEqual({ disabled: true });
     }
-    expect(meta.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID");
-    expect(formatConfigError(meta.error)).toContain("BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID");
-
-    const hosted = selectAssessmentBinding({
-      ...manualBaseConfig(),
-      assessmentProvider: "hosted-open-weights",
-    });
-    expect(hosted.ok).toBe(false);
-    if (hosted.ok) {
-      return;
-    }
-    expect(hosted.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID");
-    expect(formatConfigError(hosted.error)).toContain(
-      "BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID",
-    );
-
-    const compat = selectAssessmentBinding({
-      ...manualBaseConfig(),
-      assessmentProvider: "generic-compatible",
-    });
-    expect(compat.ok).toBe(false);
-    if (compat.ok) {
-      return;
-    }
-    expect(compat.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID");
-    expect(formatConfigError(compat.error)).toContain(
-      "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID",
-    );
   });
 
   test("k309_credentials_without_provider_are_ambiguous_naming_the_variable", () => {

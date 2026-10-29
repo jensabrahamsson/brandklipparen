@@ -17,12 +17,14 @@
 // the key or response content (K-305, K-509).
 import { err, ok } from "../../../domain/result.ts";
 import type { Result } from "../../../domain/result.ts";
+import { SignalId } from "../../../domain/types.ts";
 import type {
   ModelId as ModelIdType,
   PromptVersion as PromptVersionType,
 } from "../../../domain/types.ts";
 import type { SecretString } from "../../../ports/config.ts";
 import type {
+  AssessmentInvalidDetail,
   AssessmentModelError,
   AssessmentModelLimits,
   AssessmentModelPort,
@@ -142,10 +144,13 @@ export type ChatCompletionsAdapterOptions = {
   readonly omitSamplingParams?: boolean | undefined;
   readonly transport?: ChatCompletionsTransport | undefined;
   readonly onLog?: ((entry: ChatCompletionsLogEntry) => void) | undefined;
-  // Warn sink for non-2xx answers: one line per refused answer carrying
-  // the error kind and the HTTP status only, never the body, URL query,
-  // headers or key. Defaults to console.warn so a refused answer is
-  // always visible; tests inject a capture.
+  // Warn sink for refused or invalid answers: one line per refused
+  // answer carrying the error kind and the HTTP status only, plus the
+  // validation stage, schema path and check name for invalid output.
+  // The line never carries the body, URL query, headers, key, prompts
+  // or response content: paths and checks are fixed code constants.
+  // Defaults to console.warn so a refused answer is always visible;
+  // tests inject a capture.
   readonly onWarn?: ((line: string) => void) | undefined;
 };
 
@@ -164,23 +169,31 @@ function quoteSnippet(text: string): string {
 }
 
 // The user message carries the closed evidence list as a JSON string:
-// code hash plus one entry per selector with capped snippets. No custom
-// top-level request fields travel; the prompt version lives in the
-// system prompt text and in the expected response labels instead.
+// code hash plus one entry per selector with capped snippets and the
+// derived signal id beside each selector. The signal id travels so the
+// model can copy it verbatim into signalLinks; it derives from the
+// closed list, so no new information enters the prompt (K-302). Raw
+// bytecode never enters the prompt. No custom top-level request fields
+// travel; the prompt version lives in the system prompt text and in the
+// expected response labels instead.
 function buildEvidenceJson(evidence: EvidenceList): string {
   return JSON.stringify({
     codeHash: evidence.codeHash as string,
-    entries: evidence.evidence.map((entry) => ({
-      selector: entry.selector as string,
-      offset: (entry.offset as number | undefined) ?? null,
-      snippet:
-        entry.snippet === undefined
-          ? null
-          : {
-              text: quoteSnippet(entry.snippet.text),
-              line: entry.snippet.line,
-            },
-    })),
+    entries: evidence.evidence.map((entry) => {
+      const link = SignalId.of(evidence.codeHash, entry.selector);
+      return {
+        selector: entry.selector as string,
+        ...(link.ok ? { signalId: link.value as string } : {}),
+        offset: (entry.offset as number | undefined) ?? null,
+        snippet:
+          entry.snippet === undefined
+            ? null
+            : {
+                text: quoteSnippet(entry.snippet.text),
+                line: entry.snippet.line,
+              },
+      };
+    }),
   });
 }
 
@@ -207,8 +220,12 @@ export function buildAssessmentSystemPrompt(input: {
     `The "promptVersion" value must be exactly "${promptVersion}".`,
     'The "explanationVersion" value must be a semantic version string such as "1.0.0".',
     'The "text" value must be a non-empty assessment string within the output limit.',
-    'The "claims" value must be an array; every claim carries exactly "signalLinks" (a non-empty array of signal id strings derived from the evidence entries), "temporality" and "text" (a non-empty string).',
+    'The "claims" value must be an array; every claim carries exactly "signalLinks" (a non-empty array of signal id strings copied verbatim from the evidence entries), "temporality" and "text" (a non-empty string).',
     'A "temporality" value is either {"kind":"can-change","changer":"<0x address>"} or {"kind":"can-change-unknown"} (no proven controlling account) or {"kind":"applies-now","measuredValue":{"value":"<word>","slot":"<slot>","block":<number>,"at":<number>},"block":<number>,"at":<number>}. Name a changer address only when the evidence proves it; otherwise use can-change-unknown.',
+    "Each evidence entry carries a signalId: copy each signal id verbatim from the evidence entry into signalLinks. Never invent, recompute, shorten or reformat a signal id; a link that is not copied verbatim fails validation.",
+    "Minimal shape with placeholder ids (replace every placeholder with the real echoed labels and the signal ids copied from the evidence):",
+    '{"provider":"<provider-from-system-prompt>","modelId":"<model-id-from-system-prompt>","promptVersion":"<prompt-version-from-system-prompt>","explanationVersion":"1.0.0","text":"<assessment summary>","claims":[{"text":"<claim>","signalLinks":["<signal-id-from-evidence>"],"temporality":{"kind":"can-change-unknown"}}]}',
+    "Keep the answer free of markup, scripts and links: no HTML tags, no URLs, no script content in any text field.",
   ].join("\n");
 }
 
@@ -271,35 +288,188 @@ export function stripJsonFence(text: string): string {
   return content;
 }
 
+// Extracts the first complete untagged or `json`-tagged fence block
+// (case-insensitive) from anywhere in the message, for realistic
+// answers that wrap the payload in prose. The material outside the
+// single block must hold no further fence markers: another tag, an
+// unclosed fence or a doubled fence yields no block, so validation
+// still turns those answers away.
+function extractFencedBlock(content: string): string | null {
+  const match = /```[ \t]*([A-Za-z]*)[ \t]*(?:\r?\n)?([\s\S]*?)```/.exec(content);
+  if (match === null) {
+    return null;
+  }
+  const tag = match[1] ?? "";
+  if (tag !== "" && tag.toLowerCase() !== "json") {
+    return null;
+  }
+  const full = match[0] ?? "";
+  const at = content.indexOf(full);
+  const before = content.slice(0, at);
+  const after = content.slice(at + full.length);
+  if (before.includes("```") || after.includes("```")) {
+    return null;
+  }
+  const inner = (match[2] ?? "").trim();
+  if (inner.length === 0 || inner.includes("```")) {
+    return null;
+  }
+  return inner;
+}
+
+// Reads the assessment payload from the assistant message content
+// (S-136): plain JSON first, then a single fenced block surrounded by
+// prose, then the outermost brace span when the message carries no
+// fence markers at all. Anything else is an extraction failure naming
+// the content path and the json-parse check, never the content itself.
+function extractAssessmentPayload(content: string): Result<string, AssessmentInvalidDetail> {
+  const trimmed = content.trim();
+  try {
+    JSON.parse(trimmed);
+    return ok(trimmed);
+  } catch {
+    // Fall through to the fence and brace-span attempts below.
+  }
+  const fenced = extractFencedBlock(content);
+  if (fenced !== null) {
+    return ok(fenced);
+  }
+  if (!content.includes("```")) {
+    const start = content.indexOf("{");
+    const end = content.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      const span = content.slice(start, end + 1);
+      try {
+        JSON.parse(span);
+        return ok(span);
+      } catch {
+        // Fall through to the extraction failure below.
+      }
+    }
+  }
+  return err({ stage: "extraction", path: "content", check: "json-parse" });
+}
+
+// Placeholder explanation schema version applied when the answer omits
+// it (S-136): the adapter defaults the missing optional field, so a
+// realistic answer without a version still validates. The validator
+// keeps requiring a valid semver string whenever the field is present,
+// and every other top-level key stays required and exact.
+const PLACEHOLDER_EXPLANATION_VERSION = "1.0.0";
+
+// Normalizes a parsed answer before validation (S-136): unwraps a
+// single top-level `{"assessment": {...}}` wrapper, defaults the
+// missing optional fields, folds temporality kinds to their canonical
+// lowercase form and trims a changer address. Enum folding applies
+// only where unambiguous: any other kind passes through untouched so
+// validation still turns it away. Unknown top-level keys are never
+// removed, so extra fields keep failing validation.
+function normalizeAssessmentJson(raw: unknown): unknown {
+  const record = envelopeRecord(raw);
+  if (record === null) {
+    return raw;
+  }
+  let current: Record<string, unknown> = record;
+  const keys = Object.keys(current);
+  if (keys.length === 1 && keys[0] === "assessment") {
+    const inner = envelopeRecord(current["assessment"]);
+    if (inner !== null) {
+      current = { ...inner };
+    }
+  }
+  const normalized: Record<string, unknown> = { ...current };
+  if (normalized["explanationVersion"] === undefined) {
+    normalized["explanationVersion"] = PLACEHOLDER_EXPLANATION_VERSION;
+  }
+  const claims = normalized["claims"];
+  if (claims === undefined) {
+    normalized["claims"] = [];
+  } else if (Array.isArray(claims)) {
+    normalized["claims"] = claims.map((claim) => {
+      const claimRecord = envelopeRecord(claim);
+      if (claimRecord === null) {
+        return claim;
+      }
+      const temporality = envelopeRecord(claimRecord["temporality"]);
+      if (temporality === null) {
+        return claim;
+      }
+      const kind = temporality["kind"];
+      if (typeof kind !== "string") {
+        return claim;
+      }
+      const folded = kind.trim().toLowerCase();
+      if (folded !== "can-change" && folded !== "can-change-unknown" && folded !== "applies-now") {
+        return claim;
+      }
+      // Rebuild without inventing keys: a missing changer stays missing,
+      // so can-change-unknown keeps its exact key set. Only a present
+      // changer string is trimmed.
+      const next: Record<string, unknown> = { ...temporality, kind: folded };
+      if (folded === "can-change" && typeof temporality["changer"] === "string") {
+        next["changer"] = (temporality["changer"] as string).trim();
+      }
+      return {
+        ...claimRecord,
+        temporality: next,
+      };
+    });
+  }
+  return normalized;
+}
+
 // Reads the assessment JSON string from the standard chat-completions
 // envelope (`choices[0].message.content`). A `length` finish reason means
 // the completion was cut off and maps to invalid output, as do missing
-// or empty choices and missing or empty content.
+// or empty choices and missing or empty content. Every invalid-output
+// branch carries the extraction path and check name for the warn log;
+// the detail never carries response content.
 function readAssistantContent(bodyText: string): Result<string, AssessmentModelError> {
+  const extraction = (
+    message: string,
+    path: string,
+    check: string,
+  ): AssessmentModelError => ({
+    kind: "invalid-output",
+    message,
+    detail: { stage: "extraction", path, check },
+  });
   let envelope: unknown;
   try {
     envelope = JSON.parse(bodyText) as unknown;
   } catch {
-    return err({ kind: "invalid-output", message: "assessment response is not valid JSON" });
+    return err(extraction("assessment response is not valid JSON", "(root)", "json-envelope"));
   }
   const record = envelopeRecord(envelope);
   const choices = record?.["choices"];
   if (!Array.isArray(choices) || choices.length === 0) {
-    return err({ kind: "invalid-output", message: "assessment response carries no choices" });
+    return err(extraction("assessment response carries no choices", "choices", "choices-present"));
   }
   const first = envelopeRecord(choices[0]);
   if (first === null) {
-    return err({ kind: "invalid-output", message: "assessment response carries no choices" });
+    return err(extraction("assessment response carries no choices", "choices[0]", "choice-object"));
   }
   if (first["finish_reason"] === "length") {
-    return err({ kind: "invalid-output", message: "assessment response was cut off by the length limit" });
+    return err(
+      extraction(
+        "assessment response was cut off by the length limit",
+        "choices[0].finish_reason",
+        "complete-stop",
+      ),
+    );
   }
   const message = envelopeRecord(first["message"]);
   const content = message?.["content"];
   if (typeof content !== "string" || content.trim().length === 0) {
-    return err({ kind: "invalid-output", message: "assessment response carries no message content" });
+    return err(
+      extraction("assessment response carries no message content", "choices[0].message.content", "content-present"),
+    );
   }
-  return ok(stripJsonFence(content));
+  const extracted = extractAssessmentPayload(content);
+  if (extracted.ok) {
+    return ok(extracted.value);
+  }
+  return err(extraction("assessment response is not valid JSON", extracted.error.path, extracted.error.check));
 }
 
 // Module-private timeout marker: only the adapter's own timeout race
@@ -472,8 +642,21 @@ export class ChatCompletionsAdapter implements AssessmentModelPort {
       finish(error.kind);
       return err(error);
     }
+    // One warn line per invalid answer naming the validation stage,
+    // schema path and check name (S-136, K-305): the detail travels from
+    // the extraction and validation checks above, so the log names the
+    // failing rule while the response content stays out of the logs.
+    const warnInvalid = (detail: AssessmentInvalidDetail | undefined): void => {
+      const resolved = detail ?? { stage: "extraction", path: "content", check: "json-parse" };
+      this.onWarn(
+        `assessment request failed kind=invalid-output status=${response.status} stage=${resolved.stage} path=${resolved.path} check=${resolved.check}`,
+      );
+    };
     const content = readAssistantContent(response.bodyText);
     if (!content.ok) {
+      if (content.error.kind === "invalid-output") {
+        warnInvalid(content.error.detail);
+      }
       finish(content.error.kind);
       return content;
     }
@@ -484,17 +667,22 @@ export class ChatCompletionsAdapter implements AssessmentModelPort {
       const error: AssessmentModelError = {
         kind: "invalid-output",
         message: "assessment response is not valid JSON",
+        detail: { stage: "extraction", path: "content", check: "json-parse" },
       };
+      warnInvalid(error.detail);
       finish(error.kind);
       return err(error);
     }
-    const validated = validateAssessmentOutput(raw, evidence, {
+    const validated = validateAssessmentOutput(normalizeAssessmentJson(raw), evidence, {
       provider: this.providerValue,
       modelId: this.modelIdValue,
       promptVersion,
       maxOutputChars: this.maxOutputChars,
     });
     if (!validated.ok) {
+      if (validated.error.kind === "invalid-output") {
+        warnInvalid(validated.error.detail);
+      }
       finish(validated.error.kind);
       return validated;
     }

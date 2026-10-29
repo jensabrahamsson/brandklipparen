@@ -71,12 +71,31 @@ export type MuseAssessment = {
 export type AssessmentModelError =
   | { kind: "timeout"; message: string }
   | { kind: "rate-limited"; message: string }
-  | { kind: "invalid-output"; message: string }
+  | { kind: "invalid-output"; message: string; detail?: AssessmentInvalidDetail | undefined }
   | { kind: "output-too-large"; message: string; limitChars: number }
   | { kind: "provider-mismatch"; message: string }
   | { kind: "unavailable"; message: string }
   | { kind: "unauthorized"; message: string }
   | { kind: "rejected"; message: string };
+
+// Parse stage of an invalid provider answer (S-136): JSON extraction
+// covers the envelope, the message content and the fenced or wrapped
+// payload; schema covers the key sets, value shapes and content rules;
+// semantic covers the checks against the request evidence and the
+// selected provider labels. Adapters log the stage with the failing
+// path and check name at warn level, never the response content.
+export type AssessmentInvalidStage = "extraction" | "schema" | "semantic";
+
+// Fixed-vocabulary location of a failed validation check (S-136): the
+// schema path names the field (for example `claims[0].signalLinks`)
+// and the check names the rule (for example `unknown-signal`). Both
+// are code constants, so a warn line carrying them can never leak
+// response content, keys, headers or prompts.
+export type AssessmentInvalidDetail = {
+  readonly stage: AssessmentInvalidStage;
+  readonly path: string;
+  readonly check: string;
+};
 
 // Per-port limits per A-17. Values come from the operational configuration
 // (I-08, I-14); the port only names the fields.

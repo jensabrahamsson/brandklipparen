@@ -8,7 +8,14 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import * as fc from "fast-check";
 import { formatConfigError } from "../../../src/ports/config.ts";
+import type { AppConfig } from "../../../src/ports/config.ts";
 import { CONFIG_VARIABLE_NAMES, loadConfig } from "../../../src/adapters/config/loader.ts";
+import {
+  assessmentHealthStatus,
+  createAssessmentServiceFromConfig,
+  selectAssessmentBinding,
+} from "../../../src/composition/root.ts";
+import type { AppServices } from "../../../src/application/analyzeToken.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
@@ -114,19 +121,21 @@ describe("vendor-neutral provider for local development", () => {
     expect(loaded.value.assessmentDailyCostCapGenericCompatible).toBe(50);
   });
 
-  test("generic-compatible is rejected with a clear error when any value is missing", () => {
+  test("generic-compatible loads with the assessment off when any value is missing (S-135)", () => {
     for (const variable of [COMPAT_KEY, COMPAT_MODEL, COMPAT_URL]) {
       const env = compatDemoEnv();
       delete env[variable];
       const loaded = loadConfig(env);
-      expect(loaded.ok).toBe(false);
-      if (loaded.ok) {
+      expect(loaded.ok).toBe(true);
+      if (!loaded.ok) {
         continue;
       }
-      expect(loaded.error.variable).toBe(variable);
-      const text = formatConfigError(loaded.error);
-      expect(text).toContain(variable);
-      expect(text.includes("fake-compat-key-for-tests-only")).toBe(false);
+      const binding = selectAssessmentBinding(loaded.value);
+      expect(binding.ok).toBe(true);
+      if (!binding.ok) {
+        continue;
+      }
+      expect(binding.value).toEqual({ kind: "disabled" });
     }
   });
 
@@ -416,5 +425,139 @@ describe("typed config and secret handling at startup (K-505, K-510)", () => {
       ),
       { seed: 505, numRuns: 100 },
     );
+  });
+});
+
+describe("demo provider without key or model id means assessment off (S-135)", () => {
+  const META_VARS = [
+    "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY",
+    "BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID",
+    "BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL",
+  ] as const;
+
+  const hosted_VARS = [
+    "BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY",
+    "BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID",
+    "BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL",
+    "BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID",
+  ] as const;
+
+  const COMPAT_VARS = [
+    "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY",
+    "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID",
+    "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL",
+  ] as const;
+
+  function withoutProviderTriple(
+    provider: "meta-model-api" | "hosted-open-weights" | "generic-compatible",
+  ): EnvInput {
+    const env: EnvInput = {
+      ...demoEnv(),
+      BRANDKLIPPAREN_ASSESSMENT_PROVIDER: provider,
+    };
+    for (const name of [...META_VARS, ...hosted_VARS, ...COMPAT_VARS]) {
+      delete env[name];
+    }
+    return env;
+  }
+
+  function withProviderTriple(
+    provider: "meta-model-api" | "hosted-open-weights" | "generic-compatible",
+    triple: Record<string, string>,
+  ): EnvInput {
+    const env: EnvInput = {
+      ...demoEnv(),
+      BRANDKLIPPAREN_ASSESSMENT_PROVIDER: provider,
+    };
+    for (const name of [...META_VARS, ...hosted_VARS, ...COMPAT_VARS]) {
+      delete env[name];
+    }
+    return { ...env, ...triple };
+  }
+
+  function stubServices(): AppServices {
+    const unused = (): never => {
+      throw new Error("stub service must not be called on the disabled path");
+    };
+    return { analyzeToken: unused, resolveProxy: unused };
+  }
+
+  // Both startup gates in src/main.ts (loadConfig, then buildApp through
+  // createAssessmentServiceFromConfig) must pass with the assessment
+  // disabled, so the REST process starts, reports assessment off and
+  // keeps serving the deterministic analysis.
+  function expectAssessmentOff(env: EnvInput): AppConfig {
+    const loaded = loadConfig(env);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) {
+      throw new Error(`expected loadConfig to pass, got: ${formatConfigError(loaded.error)}`);
+    }
+    const binding = selectAssessmentBinding(loaded.value);
+    expect(binding.ok).toBe(true);
+    if (!binding.ok) {
+      return loaded.value;
+    }
+    expect(binding.value).toEqual({ kind: "disabled" });
+    expect(assessmentHealthStatus(binding.value)).toEqual({ disabled: true });
+    const built = createAssessmentServiceFromConfig(loaded.value, stubServices());
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      return loaded.value;
+    }
+    expect(built.value.provider).toBeNull();
+    expect(built.value.modelId).toBeNull();
+    return loaded.value;
+  }
+
+  test("s135_demo_absent_assessment_key_means_off", () => {
+    // hosted open-weights selected with no model id and no key: the REST
+    // process starts and reports assessment off instead of exiting with
+    // "missing required variable".
+    expectAssessmentOff(withoutProviderTriple("hosted-open-weights"));
+    // Model id absent while the key is present still means off.
+    expectAssessmentOff(
+      withProviderTriple("hosted-open-weights", {
+        BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY: "fake-hosted-key-for-tests-only",
+        BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL: "https://hosted.example.invalid",
+        BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID: "fake-deployment-1",
+      }),
+    );
+    // Key absent while the model id is present still means off.
+    expectAssessmentOff(
+      withProviderTriple("hosted-open-weights", {
+        BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID: "fake-open-weights-1",
+        BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL: "https://hosted.example.invalid",
+        BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID: "fake-deployment-1",
+      }),
+    );
+    // The same absence rule holds for the other two providers.
+    expectAssessmentOff(withoutProviderTriple("generic-compatible"));
+    expectAssessmentOff(withoutProviderTriple("meta-model-api"));
+  });
+
+  test("s135_present_but_malformed_assessment_value_stays_an_error", () => {
+    const badUrl = withProviderTriple("hosted-open-weights", {
+      BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY: "fake-hosted-key-for-tests-only",
+      BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID: "fake-open-weights-1",
+      BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL: "http://hosted.example.invalid",
+      BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID: "fake-deployment-1",
+    });
+    const loadedUrl = loadConfig(badUrl);
+    expect(loadedUrl.ok).toBe(false);
+    if (!loadedUrl.ok) {
+      expect(loadedUrl.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL");
+    }
+    const badModel = withProviderTriple("generic-compatible", {
+      BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-compat-key-for-tests-only",
+      BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID: `m${"o".repeat(300)}`,
+      BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL: "https://compat.example.invalid",
+    });
+    const loadedModel = loadConfig(badModel);
+    expect(loadedModel.ok).toBe(false);
+    if (!loadedModel.ok) {
+      expect(loadedModel.error.variable).toBe(
+        "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID",
+      );
+    }
   });
 });

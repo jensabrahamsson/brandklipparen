@@ -99,9 +99,6 @@ export type AssessmentHealthStatus =
   | { readonly disabled: true };
 
 const PROVIDER_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_PROVIDER";
-const META_MODEL_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID";
-const hosted_MODEL_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID";
-const generic_COMPATIBLE_MODEL_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID";
 
 // Documented default assessment intent (S-029, K-309): Jens's demo default
 // is the hosted open-weights provider with the published open-weights
@@ -146,20 +143,37 @@ export function selectAssessmentBinding(config: AppConfig): Result<AssessmentBin
     return ok({ kind: "disabled" });
   }
   const pluginId = assessmentPluginIdForProvider(provider);
+  // A selected provider without its model id, key or endpoint is not
+  // configured (S-135): the binding stays disabled with zero provider
+  // calls, consistent with how a missing key already maps to disabled in
+  // the adapter factory below. Present-but-malformed values never reach
+  // this point: the config loader turns them away as typed startup errors.
   if (provider === "meta-model-api") {
-    if (config.assessmentMetaModelId === undefined) {
-      return err({ kind: "missing-variable", variable: META_MODEL_VARIABLE });
+    if (
+      config.assessmentMetaModelId === undefined ||
+      config.assessmentMetaApiKey === undefined ||
+      config.assessmentMetaBaseUrl === undefined
+    ) {
+      return ok({ kind: "disabled" });
     }
     return ok({ kind: "enabled", provider, modelId: config.assessmentMetaModelId, pluginId });
   }
   if (provider === "generic-compatible") {
-    if (config.assessmentGenericCompatibleModelId === undefined) {
-      return err({ kind: "missing-variable", variable: generic_COMPATIBLE_MODEL_VARIABLE });
+    if (
+      config.assessmentGenericCompatibleModelId === undefined ||
+      config.assessmentGenericCompatibleApiKey === undefined ||
+      config.assessmentGenericCompatibleBaseUrl === undefined
+    ) {
+      return ok({ kind: "disabled" });
     }
     return ok({ kind: "enabled", provider, modelId: config.assessmentGenericCompatibleModelId, pluginId });
   }
-  if (config.assessmenthostedModelId === undefined) {
-    return err({ kind: "missing-variable", variable: hosted_MODEL_VARIABLE });
+  if (
+    config.assessmenthostedModelId === undefined ||
+    config.assessmenthostedApiKey === undefined ||
+    config.assessmenthostedBaseUrl === undefined
+  ) {
+    return ok({ kind: "disabled" });
   }
   return ok({ kind: "enabled", provider, modelId: config.assessmenthostedModelId, pluginId });
 }
