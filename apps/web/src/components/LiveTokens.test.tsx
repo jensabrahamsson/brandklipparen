@@ -90,8 +90,8 @@ describe("live tokens list", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([first, second])} />);
     expect(html).toContain("0.3%");
     expect(html).toContain("1%");
-    expect(html).toContain(shortAddress(first.pairAddress));
-    expect(html).toContain(shortAddress(second.pairAddress));
+    expect(html).toContain(first.pairAddress);
+    expect(html).toContain(second.pairAddress);
   });
 
   test("queued rows read analyzing until the queue reaches them", () => {
@@ -156,7 +156,18 @@ describe("live tokens list", () => {
   test("token links open the token page and rows keep stable keys", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} />);
     expect(html).toContain(`href="#/token/${NEW.tokenAddress}"`);
-    expect(html).toContain(shortAddress(NEW.pairAddress));
+    expect(html).toContain(NEW.tokenAddress);
+    expect(html).toContain(NEW.pairAddress);
+  });
+
+  test("s134_full_addresses_render_with_copy_and_no_short_form", () => {
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} />);
+    expect(html).toContain(NEW.tokenAddress);
+    expect(html).toContain(NEW.pairAddress);
+    expect(html).toContain(PENDING.tokenAddress);
+    expect(html).toContain(PENDING.pairAddress);
+    expect(html).toContain('aria-label="Copy contract address"');
+    expect(html).toContain('aria-label="Copy pair address"');
   });
 
   test("the new marker is static text with no animation hooks", () => {

@@ -101,10 +101,13 @@ test("tooltips_leave_numbers_readable", async ({ page }) => {
   const tooltip = page.locator('[role="tooltip"]');
   await expect(tooltip).toBeVisible();
 
-  const scoreSection = page.locator('section[aria-label="Combined score"]');
-  await expect(scoreSection).toBeVisible();
+  // S-133: the gauges live inside the Combined score hero on wide screens,
+  // so the readability check targets the dial numbers themselves, not the
+  // whole hero card.
+  const dialNumber = page.locator('section[aria-label="Combined score"] .score-dial .num');
+  await expect(dialNumber).toBeVisible();
   const tooltipBox = await tooltip.boundingBox();
-  const scoreBox = await scoreSection.boundingBox();
+  const scoreBox = await dialNumber.boundingBox();
   expect(tooltipBox).not.toBeNull();
   expect(scoreBox).not.toBeNull();
   if (tooltipBox !== null && scoreBox !== null) {

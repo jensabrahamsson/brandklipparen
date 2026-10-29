@@ -142,6 +142,97 @@ a {
   overflow-wrap: anywhere;
 }
 
+/* Full contract addresses (S-134): always the exact 42-char value as
+   plain text (mouse selection gives the full address), in readable
+   phosphor tones only. Wrapping stays on this element alone so 390 px
+   and 320 px break cleanly onto two lines with no page scroll. */
+.addr-full {
+  font-family: var(--font-mono);
+  color: var(--phosphor-hi);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+/* Shared copy control (S-134): visually small, but the global touch
+   rule keeps the real 44x44 box on phones. Above the stretched row
+   links so a copy click never navigates. Confirmation is opacity only
+   (no movement) and static under reduced motion. */
+.copy-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.copy-btn {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.copy-status {
+  font-size: 12px;
+  color: var(--dim);
+  min-width: 64px;
+  min-height: 1em;
+  opacity: 0;
+  transition: opacity var(--dur-hover) var(--ease-out);
+}
+
+.copy-status.show {
+  opacity: 1;
+}
+
+/* Live list address cells: full values wrap to two lines instead of
+   overflowing the table. */
+.live-table .addr-cell {
+  max-width: 250px;
+  min-width: 0;
+}
+
+/* Mobile cards: full token and pair addresses sit on their own lines
+   with copy, wrapping cleanly. */
+.live-addr,
+.live-pair-full {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--dim);
+  min-width: 0;
+}
+
+/* Recent rows: the full address meta sits below the navigating button
+   (never nested inside it) so the text stays selectable. */
+.recent-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--dim);
+  min-width: 0;
+  margin-top: 6px;
+}
+
+.recent-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  color: var(--text);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  max-width: 100%;
+  padding: 0;
+}
+
 .numeric {
   font-variant-numeric: tabular-nums;
 }
@@ -1082,6 +1173,27 @@ a {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
+}
+
+/* S-133: the verdict hero owns the risk breakdown. The three gauges sit
+   in the narrower hero column beside the dial, so they render slightly
+   tighter than a full-width row (same content, colours and motion); the
+   dial keeps the mockup's desktop size. */
+.verdict .gauges-hero {
+  gap: 16px;
+}
+
+.verdict .gauge {
+  padding: 12px 14px 14px;
+}
+
+.verdict .gauge .pct {
+  font-size: clamp(36px, 4vw, 48px);
+  margin: 6px 0 8px;
+}
+
+.verdict .gauge .why {
+  margin-top: 10px;
 }
 
 .gauge {
@@ -2158,9 +2270,15 @@ details[open] > *:not(summary) {
   }
 
   /* The stacked verdict must stay within a phone viewport: a smaller
-     dial and tighter gaps keep symbol, headline and dial visible. */
+     dial and tighter gaps keep symbol, headline and dial visible. The
+     full address meta (S-134) wraps with its copy control, so the meta
+     margin and wrap gap tighten here to hold the same fold guarantee. */
+  .token-meta {
+    margin-top: 6px;
+  }
+
   .score-ring-wrap {
-    gap: 20px;
+    gap: 16px;
   }
 
   .score-dial {

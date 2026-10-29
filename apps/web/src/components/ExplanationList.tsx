@@ -1,41 +1,26 @@
-// Readable template explanation (S-120): every claim renders as one
-// short summary first, labelled with its template version. Temporality
-// reads as a "Can change" chip or "applies now"; the controlling account
-// hides behind a truncated chip with copy; the raw locations sit in a
-// keyboard-operable disclosure grouped by selector. Signal links expand
-// and scroll to their signal in SignalList. Everything renders as React
-// text only, so hostile content stays inert: no HTML sinks anywhere.
-import { useState, type JSX } from "react";
+// Readable template explanation (S-120, S-134): every claim renders as
+// one short summary first, labelled with its template version.
+// Temporality reads as a "Can change" chip or "applies now"; the
+// controlling account shows in full with copy; the raw locations sit in
+// a keyboard-operable disclosure grouped by selector. Signal links
+// expand and scroll to their signal in SignalList. Everything renders
+// as React text only, so hostile content stays inert: no HTML sinks
+// anywhere.
+import type { JSX } from "react";
 import { signalKey, signalTitle } from "../lib/signals.ts";
 import { claimSummary, evidenceLocationCount, extractAccount, extractEvidenceGroups } from "../lib/claims.ts";
-import { shortAddress } from "../lib/liveTokens.ts";
 import type { ExplanationClaim, Signal } from "../types.ts";
 import { Explain } from "./Explain.tsx";
+import { CopyButton } from "./CopyButton.tsx";
 
 function AccountChip({ address }: { readonly address: string }): JSX.Element {
-  const [copied, setCopied] = useState(false);
-  const copy = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(address);
-      setCopied(true);
-    } catch {
-      // Clipboard is a convenience only; the address stays readable.
-    }
-  };
   return (
-    <span className="mono numeric" style={{ fontSize: 13 }} title={address}>
-      Account {shortAddress(address)}{" "}
-      <button
-        type="button"
-        className="button-ghost"
-        style={{ border: "none", padding: 0, fontSize: 12 }}
-        onClick={() => void copy()}
-      >
-        Copy account
-      </button>{" "}
-      <span aria-live="polite" className="quiet">
-        {copied ? "Copied." : ""}
-      </span>
+    <span className="mono numeric" style={{ fontSize: 13 }}>
+      Account{" "}
+      <span className="addr-full" data-testid="claim-account-full">
+        {address}
+      </span>{" "}
+      <CopyButton value={address} label="Copy account address" />
     </span>
   );
 }

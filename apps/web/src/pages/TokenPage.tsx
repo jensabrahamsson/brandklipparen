@@ -47,6 +47,7 @@ import { ExplanationList } from "../components/ExplanationList.tsx";
 import { Gauge } from "../components/Gauge.tsx";
 import { ScoreRing } from "../components/ScoreRing.tsx";
 import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
+import { useMediaQuery } from "../lib/useMediaQuery.ts";
 import { Sidebar } from "../components/Sidebar.tsx";
 import { SignalList } from "../components/SignalList.tsx";
 import { Explain } from "../components/Explain.tsx";
@@ -625,6 +626,16 @@ function AssessedView({
   const ringRef = useRef<HTMLElement | null>(null);
   const ringGone = useRingOutOfView(ringRef, tab);
   const stripVisible = tab === "assessment" || tab === "investigate" || ringGone;
+  // S-133: the verdict hero owns the risk breakdown only on wide screens,
+  // where the gauges sit beside the dial and fill the column. Narrow
+  // screens keep the previous stacked layout untouched, so the dial stays
+  // beside the verdict copy and fully visible without scrolling.
+  const heroBreakdown = useMediaQuery("(min-width: 1100px)");
+  // AI emphasis for the hero-anchored risk breakdown: when the hero owns
+  // the gauges, its highlight note lives with them. A collapsed "score"
+  // can never arrive here: the validated spec rejects collapsing a floored
+  // section, and "score" is always floored.
+  const scoreEmphasis = aiSpec?.placements.find((placement) => placement.sectionId === "score")?.emphasis;
   return (
     <div>
       <section
@@ -643,7 +654,7 @@ function AssessedView({
           {result.modelVersion}
         </p>
         <div className="score-ring-wrap">
-          <div style={{ flex: "1 1 240px" }}>
+          <div className="hero-copy" style={{ flex: "1 1 240px" }}>
             <p className="risk-meaning" style={{ margin: "0 0 8px" }}>
               <span className="headline-marker" aria-hidden="true">
                 &gt;{" "}
@@ -662,6 +673,31 @@ function AssessedView({
                 Calibration report: see the model card. The v1 REST response carries no calibration numbers, so none
                 are shown here.
               </p>
+            ) : null}
+            {heroBreakdown && scoreEmphasis === "high" ? (
+              <p className="quiet" data-testid="ai-emphasis-score" style={{ fontSize: 13, margin: "8px 0 0" }}>
+                Highlighted for you.
+              </p>
+            ) : null}
+            {heroBreakdown ? (
+              <>
+                <h2 style={{ margin: "12px 0 10px", fontSize: 20 }}>Risk breakdown</h2>
+                <div className="gauges gauges-hero">
+                  {RISKS.map((risk) => {
+                    const top = strongestSignal(result.signals, risk);
+                    const count = result.signals.filter((signal) => signal.risk === risk).length;
+                    return (
+                      <Gauge
+                        key={risk}
+                        kind={risk}
+                        probability={result.probabilities[risk]}
+                        signalCount={count}
+                        reason={top === undefined ? emptyGaugeReason() : plainReason(top)}
+                      />
+                    );
+                  })}
+                </div>
+              </>
             ) : null}
           </div>
           <ScoreRing score={result.score} />
@@ -744,6 +780,7 @@ function AssessedView({
           <>
             <OverviewSections
               result={result}
+              heroBreakdown={heroBreakdown}
               plugins={plugins}
               mode={mode}
               aiSpec={aiSpec}
@@ -927,6 +964,7 @@ function CustomizeView({
 
 function OverviewSections({
   result,
+  heroBreakdown,
   plugins,
   mode,
   aiSpec,
@@ -942,6 +980,7 @@ function OverviewSections({
   liveEntry,
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
+  readonly heroBreakdown: boolean;
   readonly plugins: readonly PluginListEntry[] | null;
   readonly mode: UiMode;
   readonly priorities: string;
@@ -993,8 +1032,14 @@ function OverviewSections({
   // Only pickable sections are ever hidden; the pinned score and any
   // non-pickable id (AI layouts may order extra ids) always pass through.
   const pickableIds = new Set(PICKABLE_SECTIONS.map((section) => section.id));
+  // S-133: on wide screens the risk breakdown lives in the verdict hero
+  // beside the dial, so the overview grid skips it; the plan still leads
+  // with "score" and the hero always renders first, so the score-first
+  // invariant holds. Narrow screens keep the overview card instead.
   const shownSections = sectionOrder.filter(
-    (sectionId) => !pickableIds.has(sectionId) || visibleSections.has(sectionId),
+    (sectionId) =>
+      (sectionId !== "score" || !heroBreakdown) &&
+      (!pickableIds.has(sectionId) || visibleSections.has(sectionId)),
   );
   const emphasisOf = new Map((aiSpec?.placements ?? []).map((placement) => [placement.sectionId, placement.emphasis]));
   const collapsed = new Set(
@@ -1008,9 +1053,10 @@ function OverviewSections({
   const activeMatchedTags = aiActive ? new Map<string, readonly string[]>() : match.matchedTags;
   const personalized = aiActive || (!standardOrder && match.orderedIds.length > 0);
   const blocks: Record<string, JSX.Element> = {
-    // The score ring and headline now live in the verdict header above the
-    // tabs (S-118); the pinned "score" section keeps the risk gauges under
-    // their own h2 so the heading outline never skips (h1 → h2 → h3).
+    // The score ring, headline and risk gauges live in the verdict hero
+    // above the tabs on wide screens (S-118, S-133). Narrow screens have
+    // no room beside the dial, so the overview keeps the gauges card there
+    // under their own h2 and the heading outline never skips (h1 → h2 → h3).
     score: (
       <section className="card" aria-label="Risk breakdown" style={{ marginBottom: 20 }}>
         <h2 style={{ margin: "0 0 12px", fontSize: 20 }}>Risk breakdown</h2>

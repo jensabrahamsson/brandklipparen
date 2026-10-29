@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type JSX } from "react";
 import { ChainSelector } from "../components/ChainSelector.tsx";
+import { CopyButton } from "../components/CopyButton.tsx";
 import { LiveTokens } from "../components/LiveTokens.tsx";
 import { ELEVATED_BAND, HIGH_BAND, LOW_BAND, RISK_SHORT } from "../lib/risk.ts";
 import { recentRowTitle } from "../lib/tokenIdentity.ts";
@@ -204,6 +205,12 @@ export function StartPage({
                   </span>
                   <span className="muted recent-top">{entry.topSignal ?? "No tracked risk patterns."}</span>
                 </button>
+                <div className="recent-meta">
+                  <span className="addr-full mono numeric" data-testid="recent-address-full">
+                    {entry.address}
+                  </span>{" "}
+                  <CopyButton value={entry.address} label="Copy contract address" />
+                </div>
               </li>
               );
             })}

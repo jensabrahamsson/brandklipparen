@@ -1,12 +1,14 @@
-// Token page heading: the token symbol when known (analysis response
-// first, live-list entry second), the short address otherwise. The name
-// rides as secondary text when known, the short address always rides as
-// secondary meta, and DEX plus human age join it when the live entry is
-// known. Static markup: no motion, no transforms.
+// Token page heading: the token symbol when known (analysis
+// response first, live-list entry second), the short address otherwise.
+// The name rides as secondary text when known, the FULL contract
+// address always rides as secondary meta with a copy button, and DEX
+// plus human age join it when the live entry is known. Static markup:
+// no motion, no transforms.
 import type { JSX } from "react";
 import { formatAge, shortAddress } from "../lib/liveTokens.ts";
 import type { LiveTokenEntry } from "../lib/liveTokens.ts";
 import type { TokenIdentity } from "../lib/tokenIdentity.ts";
+import { CopyButton } from "./CopyButton.tsx";
 
 export function TokenHeader({
   address,
@@ -17,15 +19,6 @@ export function TokenHeader({
   readonly identity: TokenIdentity;
   readonly liveEntry: LiveTokenEntry | null;
 }): JSX.Element {
-  const meta: string[] = [];
-  if (identity.name !== null) {
-    meta.push(identity.name);
-  }
-  meta.push(shortAddress(address));
-  if (liveEntry !== null) {
-    const fee = typeof liveEntry.feeTier === "number" ? ` · ${liveEntry.feeTier / 10000}%` : "";
-    meta.push(`${liveEntry.dex}${fee} · ${formatAge(liveEntry.ageSeconds)}`);
-  }
   return (
     <header style={{ display: "grid", gap: 4 }}>
       <h1 className="token-sym">{identity.symbol ?? shortAddress(address)}</h1>
@@ -36,7 +29,16 @@ export function TokenHeader({
             {" · "}
           </>
         )}
-        {meta.slice(identity.name === null ? 0 : 1).join(" · ")}
+        <span className="addr-full" data-testid="token-address-full">
+          {address}
+        </span>{" "}
+        <CopyButton value={address} label="Copy contract address" testId="copy-contract-address" />
+        {liveEntry === null ? null : (
+          <>
+            {" · "}
+            {`${liveEntry.dex}${typeof liveEntry.feeTier === "number" ? ` · ${liveEntry.feeTier / 10000}%` : ""} · ${formatAge(liveEntry.ageSeconds)}`}
+          </>
+        )}
       </p>
     </header>
   );

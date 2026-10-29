@@ -192,9 +192,10 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
     expect(((await summary.textContent()) ?? "").length).toBeLessThanOrEqual(200);
   }
 
-  // "Can change" renders as a chip; the account hides behind a short chip.
+  // "Can change" renders as a chip; the account shows in full with
+  // copy (S-134).
   await expect(explanation.getByText("Owner can turn this on later").first()).toBeVisible();
-  await expect(explanation).not.toContainText(CHANGER);
+  await expect(explanation).toContainText(CHANGER);
 
   // Evidence lives in a disclosure that opens and closes from the keyboard.
   const evidence = explanation.locator("details").first();

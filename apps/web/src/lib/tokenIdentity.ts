@@ -37,8 +37,9 @@ export function resolveTokenIdentity(
   return { symbol, name };
 }
 
-// Recently-analyzed row title (S-131): the symbol when the row carries
-// one, else the short address, so rows never show a 42-char hex run.
+// Recently-analyzed row title (S-131, S-134): the symbol when the row
+// carries one, else the short address. The title may stay short; the
+// full address always rides next to it in the row meta line.
 export function recentRowTitle(symbol: string | null | undefined, address: string): string {
   return clean(symbol) ?? shortAddress(address);
 }

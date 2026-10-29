@@ -66,6 +66,28 @@ describe("template explanation (design review P0-4)", () => {
     expect(html).toContain("The owner can stop you from selling.");
     expect(html).not.toContain("v1.0.0");
   });
+
+  test("s134_account_chip_shows_full_address_with_copy", () => {
+    const account = "0x5ab1e0000000000000000000000000000000a001";
+    const html = renderToString(
+      <ExplanationList
+        claims={[
+          {
+            text: `The owner can stop you from selling. Can change: account ${account} can activate this later.`,
+            signalLinks: [],
+            temporality: { kind: "can-change" },
+          },
+        ]}
+        signals={[]}
+        templateVersion="1.0.0"
+        expert={false}
+        onSignalLink={() => undefined}
+      />,
+    );
+    expect(html).toContain(account);
+    expect(html).toContain("claim-account-full");
+    expect(html).toContain('aria-label="Copy account address"');
+  });
 });
 
 describe("expanded signal evidence (design review P0-5)", () => {

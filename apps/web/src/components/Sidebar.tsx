@@ -1,42 +1,21 @@
-import { useState, type JSX } from "react";
+import type { JSX } from "react";
 import type { AnalyzeSuccess } from "../types.ts";
 import { formatAge } from "../lib/liveTokens.ts";
 import type { LiveTokenEntry } from "../lib/liveTokens.ts";
+import { CopyButton } from "./CopyButton.tsx";
 
 // Sidebar with contract facts and example API calls. Everything renders
-// as text; addresses and hashes use the mono style. Long hex values show
-// middle-truncated with the full value in the title attribute (design
-// review P1-11). Copy confirmations announce through a polite live region.
-function shortenHex(value: string): string {
-  if (/^0x[0-9a-fA-F]+$/.test(value) && value.length > 18) {
-    return `${value.slice(0, 10)}…${value.slice(-8)}`;
-  }
-  return value;
-}
-
-function Copyable({ label, value }: { readonly label: string; readonly value: string }): JSX.Element {
-  const [copied, setCopied] = useState(false);
-  const copy = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard is a convenience only; the text stays selectable.
-    }
-  };
+// as text; addresses and hashes use the mono style. Contract and pair
+// addresses always show in full with a copy button (S-134). Copy
+// confirmations announce through a polite live region.
+function Copyable({ label, value, copyLabel }: { readonly label: string; readonly value: string; readonly copyLabel?: string | undefined }): JSX.Element {
   return (
     <div className="fact-row">
       <dt>{label}</dt>
       <span className="lead" aria-hidden="true" />
       <dd className="mono numeric" style={{ fontSize: 13 }} title={value}>
-        {shortenHex(value)}{" "}
-        <button type="button" className="button-ghost" onClick={() => void copy()} aria-label={`Copy ${label}`}>
-          Copy
-        </button>
-        <span aria-live="polite" className="quiet" style={{ marginLeft: 8 }}>
-          {copied ? "Copied." : ""}
-        </span>
+        <span className="addr-full">{value}</span>{" "}
+        <CopyButton value={value} label={copyLabel ?? `Copy ${label}`} />
       </dd>
     </div>
   );
@@ -85,10 +64,10 @@ export function Sidebar({
         <h2 style={{ margin: "0 0 12px", fontSize: 17 }}>Contract facts</h2>
         <dl className="facts">
           <Fact label="Chain" value="Ethereum mainnet" />
-          <Copyable label="Address" value={result.target} />
+          <Copyable label="Address" value={result.target} copyLabel="Copy contract address" />
           {liveEntry === null ? null : (
             <>
-              <Copyable label="Pair" value={liveEntry.pairAddress} />
+              <Copyable label="Pair" value={liveEntry.pairAddress} copyLabel="Copy pair address" />
               <Fact label="DEX" value={`${liveEntry.dex}${fee}`} />
               <Fact label="First seen" value={`block ${liveEntry.block} · ${formatAge(liveEntry.ageSeconds)}`} />
               <Fact
@@ -103,7 +82,7 @@ export function Sidebar({
           )}
           <Copyable label="Proxy" value={proxyLabel(result)} />
           {result.proxy.kind !== "none" && result.proxy.implementation !== undefined ? (
-            <Copyable label="Implementation" value={result.proxy.implementation} />
+            <Copyable label="Implementation" value={result.proxy.implementation} copyLabel="Copy implementation address" />
           ) : null}
           <Copyable label="Code hash" value={result.codeHash} />
           <Copyable label="Model version" value={result.modelVersion} />

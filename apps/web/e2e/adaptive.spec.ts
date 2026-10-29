@@ -297,9 +297,13 @@ test("k519_invalid_or_missing_personalize_spec_falls_back_to_deterministic_basel
   const sections = await page.locator("div.token-grid div[data-section]").evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute("data-section")),
   );
-  expect(sections[0]).toBe("score");
-  expect(sections[1]).toBe("signals");
+  // S-133: the risk breakdown ("score") lives in the verdict hero above the
+  // tabs, so the overview grid starts with the next planned section; the
+  // hero still carries the gauges and the combined-score ring.
+  expect(sections[0]).toBe("signals");
+  expect(sections[1]).toBe("plugin-findings");
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
+  await expect(page.locator('section[aria-label="Combined score"] .gauges-hero')).toBeVisible();
 });
 
 test("k519_ai_personalize_toggle_off_by_default_and_labelled", async ({ page }) => {

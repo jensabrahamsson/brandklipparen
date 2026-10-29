@@ -1,8 +1,8 @@
 // S-131 user-facing copy pass: Simple mode never shows implementation
 // strings (REST, v1, contract gap, .env, env var names, "set its key"),
 // Stream view and the bot/API blocks are Expert-only, can't-tell entries
-// read as plain questions, and recent rows show a symbol or short address
-// with labelled bars.
+// read as plain questions, and recent rows show a symbol or short title
+// with labelled bars plus the full address in the row meta (S-134).
 import { expect, test, type Page } from "@playwright/test";
 
 const ADDRESS = "0x5ab1e0000000000000000000000000000000f005";
@@ -142,13 +142,15 @@ test("s131_simple_mode_copy_has_no_dev_strings", async ({ page }) => {
   await expect(feedNotice).toContainText("unavailable");
   expect(bannedIn(await feedNotice.innerHTML())).toEqual([]);
 
-  // Recent rows show a symbol or short address with labelled bars.
+  // Recent rows show a symbol or short title with labelled bars, and
+  // the full address rides in the row meta (S-134).
   const recent = page.locator("section[aria-label='Recently analyzed']");
   await expect(recent).toBeVisible();
-  await expect(recent.getByRole("button").first()).toContainText("SYNTH");
-  await expect(recent.getByRole("button").nth(1)).toContainText("0x5ab1…b002");
-  const recentText = (await recent.innerText()) ?? "";
-  expect(recentText).not.toMatch(/[0-9a-fA-F]{14,}/);
+  await expect(recent.getByRole("button", { name: /Re-analyze/ }).first()).toContainText("SYNTH");
+  await expect(recent.getByRole("button", { name: /Re-analyze/ }).nth(1)).toContainText("0x5ab1…b002");
+  await expect(recent).toContainText(RECENT_SYMBOL);
+  await expect(recent).toContainText(RECENT_SHORT);
+  await expect(recent.getByRole("button", { name: "Copy contract address" }).first()).toBeVisible();
   for (const label of ["Rug", "Honey", "Bot"]) {
     await expect(recent.getByText(label, { exact: true }).first()).toBeVisible();
   }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type JSX, type RefObject } from "react";
 import { riskBand } from "../lib/risk.ts";
 import { RiskBadge } from "./RiskBadge.tsx";
+import { CopyButton } from "./CopyButton.tsx";
 import {
   fetchLiveTokens,
   feedStatusLabel,
@@ -236,8 +237,20 @@ export function LiveTokensList({
                     }
                   >
                     {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
+                  </span>
+                </div>
+                <div className="live-addr">
+                  <span className="addr-full mono numeric" data-testid="live-card-token-full">
+                    {entry.tokenAddress}
                   </span>{" "}
-                  · <span className="mono" title={entry.pairAddress}>{shortAddress(entry.pairAddress)}</span>
+                  <CopyButton value={entry.tokenAddress} label="Copy contract address" />
+                </div>
+                <div className="live-pair-full">
+                  Pair{" "}
+                  <span className="addr-full mono numeric" data-testid="live-card-pair-full">
+                    {entry.pairAddress}
+                  </span>{" "}
+                  <CopyButton value={entry.pairAddress} label="Copy pair address" /> · block {entry.block}
                 </div>
                 <div className="quiet numeric live-meta">
                   {ageText(entry)} · {entry.dex}
@@ -253,8 +266,12 @@ export function LiveTokensList({
                     {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
                   </span>
                 </div>
-                <div className="quiet mono numeric live-pair" title={entry.pairAddress}>
-                  {shortAddress(entry.pairAddress)} · block {entry.block}
+                <div className="quiet numeric live-pair">
+                  Pair{" "}
+                  <span className="addr-full mono numeric" data-testid="live-card-pair-full-wide">
+                    {entry.pairAddress}
+                  </span>{" "}
+                  <CopyButton value={entry.pairAddress} label="Copy pair address" /> · block {entry.block}
                 </div>
               </li>
             ))}
@@ -283,14 +300,20 @@ export function LiveTokensList({
                       <span className="live-new">new</span>
                     ) : null}
                   </td>
-                  <td className="mono numeric">
-                    <span className="muted">{shortAddress(entry.tokenAddress)}</span>
+                  <td className="mono numeric addr-cell">
+                    <span className="addr-full" data-testid="live-token-full">
+                      {entry.tokenAddress}
+                    </span>{" "}
+                    <CopyButton value={entry.tokenAddress} label="Copy contract address" />
                   </td>
                   <td className="numeric">{ageText(entry)}</td>
-                  <td>
+                  <td className="addr-cell">
                     {entry.dex}
                     {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
-                    <span className="muted">{shortAddress(entry.pairAddress)}</span>
+                    <span className="addr-full mono numeric" data-testid="live-pair-full">
+                      {entry.pairAddress}
+                    </span>{" "}
+                    <CopyButton value={entry.pairAddress} label="Copy pair address" />
                   </td>
                   <td className="numeric">
                     {entry.initialLiquidityWeth === null ? (

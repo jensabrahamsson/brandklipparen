@@ -1,5 +1,6 @@
-// Recent-row titles (S-131): the symbol when the chain answered, else
-// the short address, so rows never show a 42-char hex run.
+// Recent-row titles (S-131, S-134): the symbol when the chain answered,
+// else the short address. The title may stay short; the full address
+// rides next to it in the row meta.
 import { describe, expect, it } from "vitest";
 import { recentRowTitle } from "./tokenIdentity.ts";
 
