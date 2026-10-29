@@ -16,7 +16,6 @@ import {
   CALLDATALOAD,
   GT,
   ISZERO,
-  JUMPI,
   KECCAK,
   LT,
   REVERT,
@@ -26,6 +25,7 @@ import {
   push1,
   sstoreConstSlot,
   tokenBytecode,
+  branchOk,
 } from "../../helpers/ownerControlFixtures.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
@@ -46,8 +46,7 @@ function maxTxTransferBody(): number[] {
     SLOAD,
     LT,
     ISZERO,
-    ...push1(90),
-    JUMPI,
+    ...branchOk(),
     ...push1(0),
     0x80,
     REVERT,
@@ -107,8 +106,7 @@ describe("transfer-limits detector plugin", () => {
           ...push1(7),
           SLOAD,
           GT,
-          ...push1(90),
-          JUMPI,
+          ...branchOk(),
           ...push1(0),
           0x80,
           REVERT,

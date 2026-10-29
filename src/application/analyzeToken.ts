@@ -25,8 +25,9 @@ import { score } from "../domain/risk.ts";
 import type { PluginFeatureMapping } from "../domain/risk.ts";
 import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
-import { Address, CacheKey, CodeHash, Slot } from "../domain/types.ts";
+import { Address, CacheKey, CallData, CodeHash, Slot } from "../domain/types.ts";
 import { isZeroOrDead } from "../domain/onchain/topics.ts";
+import { decodeTokenText } from "../domain/tokenMetadata.ts";
 import type {
   Address as AddressType,
   ArtifactChecksum as ArtifactChecksumType,
@@ -147,6 +148,11 @@ export type AssessmentEnvelope = {
   readonly block: BlockNumberType;
   readonly proxy: ProxyResolution;
   readonly codeHash: CodeHashType;
+  // Display-only ERC-20 symbol()/name() reads at the pinned block (never
+  // scored, never evidence): present when the chain answers with strict
+  // printable text, absent otherwise.
+  readonly tokenSymbol?: string | undefined;
+  readonly tokenName?: string | undefined;
   readonly modelVersion: ModelVersionType;
   readonly artifactChecksum: ArtifactChecksumType;
   readonly indexVersion: IndexVersionType;
@@ -399,6 +405,60 @@ function implementationOfProxy(proxy: ProxyResolution): AddressType | null {
     case "none":
       return null;
   }
+}
+
+// Display-only ERC-20 metadata (symbol()/name()) at the pinned block:
+// one eth_call per selector through the existing RpcPort, decoded
+// strictly (printable ASCII, trimmed, 32 chars max, bytes32 legacy form
+// supported). Any failure — parse, RPC, decode — yields undefined, so the
+// response carries no symbol or name instead of a guessed one. The values
+// never reach scoring, evidence or the code-hash cache through this path;
+// callers attach them to the envelope only, and the canonical form carries
+// them when present so every interface serves the same response.
+const TOKEN_SYMBOL_SELECTOR = "0x95d89b41";
+const TOKEN_NAME_SELECTOR = "0x06fdde03";
+
+async function readTokenText(
+  rpc: RpcPort,
+  target: AddressType,
+  ctx: CallContext,
+  selector: string,
+): Promise<string | undefined> {
+  const data = CallData.parse(selector);
+  if (!data.ok) {
+    return undefined;
+  }
+  const called = await rpc.call(target, data.value, ctx);
+  if (!called.ok) {
+    return undefined;
+  }
+  return decodeTokenText(called.value) ?? undefined;
+}
+
+async function readTokenMetadata(
+  rpc: RpcPort,
+  target: AddressType,
+  ctx: CallContext,
+): Promise<{ readonly symbol: string | undefined; readonly name: string | undefined }> {
+  const [symbol, name] = await Promise.all([
+    readTokenText(rpc, target, ctx, TOKEN_SYMBOL_SELECTOR),
+    readTokenText(rpc, target, ctx, TOKEN_NAME_SELECTOR),
+  ]);
+  return { symbol, name };
+}
+
+// Attaches display-only symbol/name to an assessed envelope when the
+// chain answers: the spread keeps absent fields absent (never explicit
+// undefined), so cached and older responses keep their exact shape.
+function withTokenMetadata(
+  envelope: AssessmentEnvelope,
+  metadata: { readonly symbol: string | undefined; readonly name: string | undefined },
+): AssessmentEnvelope {
+  return Object.freeze({
+    ...envelope,
+    ...(metadata.symbol === undefined ? {} : { tokenSymbol: metadata.symbol }),
+    ...(metadata.name === undefined ? {} : { tokenName: metadata.name }),
+  });
 }
 
 // First-party plugins whose findings convert to scored signals (P-05):
@@ -831,10 +891,13 @@ export async function analyzeToken(
       const hit = await ports.cache.get(remembered);
       if (hit.ok && hit.value !== null) {
         const proxy = await resolveProxyOrNone(countedPorts, proxyInputFor(input.block));
-        return ok({
-          kind: "assessed",
-          envelope: envelopeFromCached(hit.value, input.address, input.block, proxy, ports.clock.now()),
+        const envelope = envelopeFromCached(hit.value, input.address, input.block, proxy, ports.clock.now());
+        const metadata = await readTokenMetadata(countedPorts.rpc, input.address, {
+          requestId: input.requestId,
+          deadline: input.deadline,
+          block: input.block,
         });
+        return ok({ kind: "assessed", envelope: withTokenMetadata(envelope, metadata) });
       }
       addressIndex.delete(memoKey);
     }
@@ -887,10 +950,9 @@ export async function analyzeToken(
       if (input.block !== "latest") {
         addressIndex.set(memoKeyOf(input), cacheKey.value);
       }
-      return ok({
-        kind: "assessed",
-        envelope: envelopeFromCached(hit.value, input.address, block, proxy, ports.clock.now()),
-      });
+      const envelope = envelopeFromCached(hit.value, input.address, block, proxy, ports.clock.now());
+      const metadata = await readTokenMetadata(countedPorts.rpc, input.address, blockCtx);
+      return ok({ kind: "assessed", envelope: withTokenMetadata(envelope, metadata) });
     }
   }
   const loaded = ports.modelArtifacts.load(input.modelVersion);
@@ -1045,7 +1107,10 @@ export async function analyzeToken(
       addressIndex.set(memoKeyOf(input), cacheKey.value);
     }
   }
-  return ok({ kind: "assessed", envelope });
+  // Display-only metadata reads last: a failure here never fails the
+  // analysis, the envelope simply carries no symbol or name.
+  const metadata = await readTokenMetadata(countedPorts.rpc, input.address, blockCtx);
+  return ok({ kind: "assessed", envelope: withTokenMetadata(envelope, metadata) });
 }
 
 async function resolveBlock(
@@ -1073,6 +1138,8 @@ export function assessmentToCanonical(envelope: AssessmentEnvelope): CanonicalVa
     block: envelope.block as number,
     proxy: proxyToCanonical(envelope.proxy),
     codeHash: envelope.codeHash as string,
+    ...(envelope.tokenSymbol === undefined ? {} : { tokenSymbol: envelope.tokenSymbol }),
+    ...(envelope.tokenName === undefined ? {} : { tokenName: envelope.tokenName }),
     modelVersion: envelope.modelVersion as string,
     artifactChecksum: envelope.artifactChecksum as string,
     indexVersion: envelope.indexVersion as string,

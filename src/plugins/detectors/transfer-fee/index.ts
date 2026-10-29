@@ -18,7 +18,8 @@ import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
 import { analyzeOwnerControl, constSlotLoadNearFlavor } from "../../../domain/ownerControl.ts";
 import type { RegionFacts } from "../../../domain/ownerControl.ts";
-import { containingSelector, disassemble, extractSelectors } from "../../../domain/selectors.ts";
+import { attributeFunctions } from "../../../domain/evmFlow.ts";
+import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
 import type { DetectorInput, DetectorPlugin, PluginFinding } from "../../detector.ts";
@@ -175,6 +176,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   if (entries.length === 0) {
     return Object.freeze([]);
   }
+  const attribution = attributeFunctions(input.bytecode);
   const view = analyzeOwnerControl(input.bytecode);
   const privilegedSet = new Set(view.privileged);
   const transferSet = new Set(view.transfers);
@@ -236,8 +238,11 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
         if (!transfer.hasSub) {
           continue;
         }
-        const holder = containingSelector(entries, writePc) ?? region.selector;
-        const readerHolder = containingSelector(entries, proof.loadPc) ?? transfer.selector;
+        const holder = attribution.holderOf(writePc);
+        const readerHolder = attribution.holderOf(proof.loadPc);
+        if (holder === null || readerHolder === null) {
+          continue;
+        }
         const evidence: EvidenceType[] = [];
         const write = evidenceFor(input.bytecode, holder, writePc);
         if (write !== null) {

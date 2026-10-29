@@ -105,7 +105,9 @@ class HostileSnippetDecompiler implements DecompilerPort {
 }
 
 const TEST_ADDRESS = "0x0102030405060708090a0b0c0d0e0f1011121314";
-const TEST_BYTECODE = `0x8063a9059cbb14600a57${"00".repeat(10)}ff`;
+// Honest dispatcher: PUSH2 destination points at the JUMPDEST body, so the
+// reachability walk attributes the SELFDESTRUCT to this selector.
+const TEST_BYTECODE = "0x8063a9059cbb1461000b575bff";
 const TEST_BLOCK = 18000000;
 const TEST_API_KEY = "test-key-for-xss-suite-only";
 const TEST_PEPPER = "test-pepper-for-xss-suite-only";

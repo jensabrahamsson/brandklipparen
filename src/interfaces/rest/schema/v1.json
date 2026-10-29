@@ -28,6 +28,8 @@
           }
         },
         "codeHash": { "type": "string", "minLength": 1 },
+        "tokenSymbol": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "tokenName": { "type": "string", "minLength": 1, "maxLength": 32 },
         "modelVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
         "artifactChecksum": { "type": "string", "minLength": 1 },
         "indexVersion": { "type": "string", "minLength": 1 },

@@ -237,7 +237,14 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
   await expect(page.getByTestId("expert-selectors")).toContainText("PC 0xa3f");
   await expect(page.getByTestId("raw-plugin-payloads")).toContainText('"capability":"call"');
   const expertScore = await page.locator('section[aria-label="Combined score"]').innerText();
-  expect(expertScore).toBe(simpleScore);
+  // The score numbers never move between modes; Expert only adds the
+  // calibration detail (S-131).
+  for (const line of ["84 High", "Rug 62%", "Honey 91%", "Bot 34%"]) {
+    expect(simpleScore).toContain(line);
+    expect(expertScore).toContain(line);
+  }
+  expect(simpleScore).not.toContain("Calibration report");
+  expect(expertScore).toContain("Calibration report");
 });
 
 test("k035_priorities_persist_across_reload_and_clear_removes_them", async ({ page }) => {

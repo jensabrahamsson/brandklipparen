@@ -23,6 +23,7 @@ export function SignalList({
   target,
   codeHash,
   deepening,
+  expert,
   open,
   onToggle,
   templateLine,
@@ -31,6 +32,7 @@ export function SignalList({
   readonly target: string;
   readonly codeHash: string;
   readonly deepening: "pending" | "ready" | "unavailable";
+  readonly expert: boolean;
   readonly open: ReadonlySet<string>;
   readonly onToggle: (key: string) => void;
   readonly templateLine: (index: number) => string | undefined;
@@ -55,12 +57,18 @@ export function SignalList({
     }
   };
 
+  // The empty-snippet reason stays plain in Simple mode; the schema
+  // detail behind it lives in Expert mode (S-131).
   const snippetText =
     deepening === "pending"
       ? "Snippet arrives with deepening: the analysis is still streaming."
       : deepening === "ready"
-        ? "Deepening is ready, but this v1 response carries no decompiled snippet (REST contract gap: v1 has no snippet field)."
-        : "Deepening did not resolve; no snippet is available (REST contract gap: v1 has no snippet field).";
+        ? expert
+          ? "Deepening is ready, but this v1 response carries no decompiled snippet (REST contract gap: v1 has no snippet field)."
+          : "No decompiled snippet is available for this signal."
+        : expert
+          ? "Deepening did not resolve; no snippet is available (REST contract gap: v1 has no snippet field)."
+          : "No decompiled snippet is available for this signal.";
 
   return (
     <div>

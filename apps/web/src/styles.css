@@ -51,6 +51,9 @@
   /* Pressed-button inset (S-122): part of the shadow-only motion
      language, so button presses stay in the token system. */
   --elev-pressed: inset 0 2px 4px rgb(0 0 0 / 45%);
+  /* Focus ring (S-121): the single token for the keyboard focus ring, so
+     every box-shadow declaration outside :root stays token-based. */
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--brand);
 }
 
 * {
@@ -238,11 +241,71 @@ a {
   line-height: 1;
 }
 
-/* Native radios and checkboxes follow the brand tone instead of the
-   bright system-blue default (S-126). */
+/* Hit-area pattern for radios and checkboxes: the input keeps the 44x44
+   tap target S-119 measures, while the visible control paints at ~20 px
+   inside it (12 px padding with the background clipped to the content
+   box). The boundary is an inset outline ring in the 3:1 tone (S-126);
+   checked and disabled states use theme tones, never the native bright
+   system blue. Animated state runs on background-color and box-shadow
+   only (S-122 allowlist); the outline boundary color follows instantly.
+   accent-color stays as a fallback for engines without appearance
+   support. */
 input[type="radio"],
 input[type="checkbox"] {
   accent-color: var(--brand);
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  padding: 12px;
+  background-clip: content-box;
+  background-color: var(--surface-2);
+  outline: 2px solid var(--border-strong);
+  outline-offset: -13px;
+  cursor: pointer;
+  vertical-align: middle;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+
+input[type="radio"] {
+  border-radius: 50%;
+}
+
+input[type="checkbox"] {
+  border-radius: 16px;
+}
+
+input[type="radio"]:checked {
+  background-color: var(--brand-deep);
+  background-image: radial-gradient(circle at center, #ffffff 0 4px, transparent 4.6px);
+  outline-color: var(--brand-deep);
+}
+
+input[type="checkbox"]:checked {
+  background-color: var(--brand-deep);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3.5 3.5 6-8' fill='none' stroke='%23ffffff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-size: 70%;
+  background-position: center;
+  background-repeat: no-repeat;
+  outline-color: var(--brand-deep);
+}
+
+input[type="radio"]:disabled,
+input[type="checkbox"]:disabled {
+  background-color: var(--surface);
+  background-image: none;
+  outline-color: var(--border);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+input[type="radio"]:focus-visible,
+input[type="checkbox"]:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 
 .input:focus-visible,
@@ -607,6 +670,14 @@ pre.code {
 
 .recent-bar {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.recent-bar-track {
+  display: block;
   height: 6px;
   border-radius: 3px;
   background: var(--surface-2);
@@ -617,6 +688,22 @@ pre.code {
   display: block;
   height: 100%;
   background: var(--brand);
+}
+
+/* Label under each recent bar (S-131): Rug, Honey, Bot in quiet text. */
+.recent-bar-label {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* Recent row title (S-131): the symbol or short address, truncated. */
+.recent-title {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recent-top {

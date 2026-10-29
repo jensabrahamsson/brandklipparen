@@ -72,14 +72,24 @@ describe("live tokens list", () => {
     expect(firstRow).toBeGreaterThan(-1);
     expect(secondRow).toBeGreaterThan(firstRow);
     expect(html).toContain("NEW");
-    expect(html).toContain("45s");
+    expect(html).toContain("just now");
     expect(html).toContain("Uniswap V2");
     expect(html).toContain("1.5 WETH");
     expect(html).toContain("Uniswap V3");
     expect(html).toContain("0.3%");
-    expect(html).toContain("1h");
+    expect(html).toContain("1 h ago");
     expect(html).toContain("analyzing…");
     expect(html).toContain("can&#x27;t tell");
+  });
+
+  test("duplicate symbols stay distinguishable by fee tier and pair", () => {
+    const first = { ...PENDING, symbol: "NEW" };
+    const second = { ...PENDING, symbol: "NEW", pairAddress: syntheticAddress(30), feeTier: 10000 };
+    const html = renderToString(<LiveTokensList snapshot={snapshot([first, second])} />);
+    expect(html).toContain("0.3%");
+    expect(html).toContain("1%");
+    expect(html).toContain(shortAddress(first.pairAddress));
+    expect(html).toContain(shortAddress(second.pairAddress));
   });
 
   test("queued rows read analyzing until the queue reaches them", () => {
@@ -93,14 +103,15 @@ describe("live tokens list", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, CANT_TELL])} />);
     expect(html).toContain('data-testid="risk-badge"');
     expect(html).toContain("can&#x27;t tell");
-    expect(html).toContain("—");
-    expect(html).toContain('title="Age unknown"');
+    expect(html).toContain(">unknown<");
+    expect(html).not.toContain(">-<");
   });
 
-  test("unknown chain age reads as an em dash with no new marker", () => {
+  test("unknown chain age reads as a labelled unknown with the reason, never a bare dash", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([CANT_TELL])} />);
-    expect(html).toContain("—");
+    expect(html).toContain(">unknown<");
     expect(html).not.toContain(">-<");
+    expect(html).toContain("Pair creation time not reported");
     expect(html).not.toContain('<span class="live-new">new</span>');
   });
 
@@ -166,18 +177,19 @@ describe("live tokens list", () => {
     const off = renderToString(
       <LiveTokensList snapshot={{ source: "none", status: "not-configured", updatedAt: 0, items: [] }} />,
     );
-    expect(off).toContain("Set an Etherscan key to see new tokens");
-    expect(off).toContain("ETHERSCAN_API_KEY_FILE");
+    expect(off).toContain("New tokens are unavailable");
+    expect(off).not.toContain("ETHERSCAN_API_KEY");
+    expect(off).not.toContain(".env");
   });
 });
 
 describe("live tokens client", () => {
-  test("age formats to whole calm units", () => {
-    expect(formatAge(5)).toBe("5s");
-    expect(formatAge(125)).toBe("2m");
-    expect(formatAge(3700)).toBe("1h");
-    expect(formatAge(90000)).toBe("1d");
-    expect(formatAge(null)).toBe("-");
+  test("age reads as a human phrase from feed data, unknown stays labelled", () => {
+    expect(formatAge(5)).toBe("just now");
+    expect(formatAge(125)).toBe("2 min ago");
+    expect(formatAge(3700)).toBe("1 h ago");
+    expect(formatAge(90000)).toBe("1 d ago");
+    expect(formatAge(null)).toBe("unknown");
   });
 
   test("short addresses keep head and tail", () => {

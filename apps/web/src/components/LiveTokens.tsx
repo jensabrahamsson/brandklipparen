@@ -26,16 +26,25 @@ function filterToEntries(items: readonly LiveTokenEntry[], filter: Filter): read
   return filterLiveEntries(items, filter as LiveFilter);
 }
 
-// Unknown chain age reads as an em dash with its meaning in the title,
-// never as a bare "-" that looks like a bug.
-function ageText(ageSeconds: number | null): JSX.Element | string {
-  const text = formatAge(ageSeconds);
-  if (text !== "-") {
-    return text;
+// Age reads as a human phrase from the feed's own chain timestamp; the
+// block number rides in the tooltip as provenance. An unknown chain age
+// reads as a quiet labelled "unknown" with the reason, never a bare "-"
+// that looks like a bug.
+function ageText(entry: LiveTokenEntry): JSX.Element | string {
+  const text = formatAge(entry.ageSeconds);
+  if (text !== "unknown") {
+    return (
+      <span title={`Block ${entry.block}`}>
+        {text}
+      </span>
+    );
   }
   return (
-    <span title="Age unknown" aria-label="Age unknown">
-      —
+    <span
+      className="quiet"
+      title={`Pair creation time not reported by the feed (block ${entry.block})`}
+    >
+      unknown
     </span>
   );
 }
@@ -80,7 +89,7 @@ export function LiveTokensList({
         <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>New tokens</h2>
         <div className="card" style={{ marginTop: 16 }}>
           <p className="muted" style={{ margin: 0 }}>
-            Set an Etherscan key to see new tokens (ETHERSCAN_API_KEY or ETHERSCAN_API_KEY_FILE in .env.local).
+            New tokens are unavailable: this server is not set up to watch for them.
           </p>
         </div>
       </section>
@@ -163,11 +172,21 @@ export function LiveTokensList({
                   {riskCell(entry)}
                 </div>
                 <div className="quiet numeric">
-                  {ageText(entry.ageSeconds)} · {entry.dex}
+                  {ageText(entry)} · {entry.dex}
                   {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
-                  <span className="muted">
+                  <span
+                    className="muted"
+                    title={
+                      entry.initialLiquidityWeth === null
+                        ? "No WETH liquidity seen in the pair's first logs"
+                        : undefined
+                    }
+                  >
                     {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
                   </span>
+                </div>
+                <div className="quiet mono numeric" title={entry.pairAddress}>
+                  {shortAddress(entry.pairAddress)} · block {entry.block}
                 </div>
               </li>
             ))}
@@ -198,7 +217,7 @@ export function LiveTokensList({
                       <span className="live-new">new</span>
                     ) : null}
                   </td>
-                  <td className="numeric">{ageText(entry.ageSeconds)}</td>
+                  <td className="numeric">{ageText(entry)}</td>
                   <td>
                     {entry.dex}
                     {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
@@ -206,7 +225,9 @@ export function LiveTokensList({
                   </td>
                   <td className="numeric">
                     {entry.initialLiquidityWeth === null ? (
-                      <span className="muted">can't tell</span>
+                      <span className="muted" title="No WETH liquidity seen in the pair's first logs">
+                        can't tell
+                      </span>
                     ) : (
                       `${entry.initialLiquidityWeth} WETH`
                     )}

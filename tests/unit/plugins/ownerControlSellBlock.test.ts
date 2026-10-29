@@ -25,6 +25,7 @@ import {
   push1,
   sstoreConstSlot,
   tokenBytecode,
+  branchOk,
 } from "../../helpers/ownerControlFixtures.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
@@ -46,8 +47,7 @@ function pairGatedTransferBody(): number[] {
     SLOAD,
     EQ,
     ISZERO,
-    ...push1(90),
-    JUMPI,
+    ...branchOk(),
     ...push1(0),
     0x80,
     REVERT,
@@ -107,8 +107,7 @@ describe("sell-block detector plugin", () => {
           SLOAD,
           EQ,
           ISZERO,
-          ...push1(60),
-          JUMPI,
+          ...branchOk(),
           ...push1(0),
           0x80,
           REVERT,

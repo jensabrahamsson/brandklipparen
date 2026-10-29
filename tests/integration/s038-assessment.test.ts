@@ -113,8 +113,12 @@ const TEST_CATALOGUE: CapabilityCatalogue = Object.freeze({
 
 const ADDRESS_A = "0x0102030405060708090a0b0c0d0e0f1011121314";
 const ADDRESS_B = "0x1112131415161718191a1b1c1d1e1f2021222324";
-const BYTECODE_A = `0x8063a9059cbb14600057${"00".repeat(10)}ff`;
-const BYTECODE_B = `0x8063a9059cbb14600057${"00".repeat(12)}ff`;
+// Honest dispatcher fixtures for the CFG reachability attribution: the
+// PUSH2 destination points at the JUMPDEST body opening, so the walk from
+// the entry reaches the SELFDESTRUCT and the capability keeps its
+// selector. A and B differ by a trailing STOP for distinct code hashes.
+const BYTECODE_A = "0x8063a9059cbb1461000b575bff";
+const BYTECODE_B = "0x8063a9059cbb1461000b575bff00";
 const TEST_BLOCK = 18000000;
 const TEST_API_KEY = "test-key-for-s038-suite-only";
 const TEST_PEPPER = "test-pepper-for-s038-suite-only";

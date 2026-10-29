@@ -123,4 +123,15 @@ describe("error copy (design review P1-14)", () => {
       title: "Analysis failed.",
     });
   });
+
+  test("s131_error_details_carry_no_implementation_strings", () => {
+    for (const reason of [
+      new ApiError("auth", 401, "Unauthorized"),
+      new ApiError("boom", 503, "Down"),
+    ]) {
+      const detail = errorCopy(reason).detail;
+      expect(detail).not.toContain("REST");
+      expect(detail).not.toContain("contract gap");
+    }
+  });
 });

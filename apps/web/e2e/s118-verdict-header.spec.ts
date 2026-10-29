@@ -143,11 +143,13 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     }
     expect(reached).toBe(true);
 
-    // The panel remembers its state for the session.
+    // The panel remembers its state for the session. The toggle handler
+    // writes a beat after the click resolves, so poll for the write.
     await customize.locator("summary").click();
     expect(await customize.evaluate((element) => (element as HTMLDetailsElement).open)).toBe(true);
-    const stored = await page.evaluate(() => sessionStorage.getItem("brandklipparen-customize-open"));
-    expect(stored).toBe("1");
+    await expect
+      .poll(() => page.evaluate(() => sessionStorage.getItem("brandklipparen-customize-open")))
+      .toBe("1");
     await page.reload();
     await expect(page.locator("details.customize")).toBeVisible();
     expect(await page.locator("details.customize").evaluate((element) => (element as HTMLDetailsElement).open)).toBe(

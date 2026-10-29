@@ -12,8 +12,9 @@
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
 import { analyzeOwnerControl } from "../../../domain/ownerControl.ts";
-import { containingSelector, extractSelectors } from "../../../domain/selectors.ts";
-import type { SelectorEntry } from "../../../domain/selectors.ts";
+import { attributeFunctions } from "../../../domain/evmFlow.ts";
+import type { FunctionAttribution } from "../../../domain/evmFlow.ts";
+import { extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
 import type { Bytecode as BytecodeType } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
@@ -98,11 +99,13 @@ function toNonEmpty(items: EvidenceType[]): NonEmpty<EvidenceType> | null {
 
 function evidenceFor(
   bytecode: BytecodeType,
-  entries: readonly SelectorEntry[],
-  selectorFallback: EvidenceType["selector"],
+  attribution: FunctionAttribution,
   pc: number,
 ): EvidenceType | null {
-  const selector = containingSelector(entries, pc) ?? selectorFallback;
+  const selector = attribution.holderOf(pc);
+  if (selector === null) {
+    return null;
+  }
   const offset = PcOffset.of(pc, bytecode);
   if (!offset.ok) {
     return null;
@@ -121,6 +124,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   if (entries.length === 0) {
     return Object.freeze([]);
   }
+  const attribution = attributeFunctions(input.bytecode);
   const view = analyzeOwnerControl(input.bytecode);
   if (view.ownerSlot === null) {
     return Object.freeze([]);
@@ -131,7 +135,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   for (const region of view.regions) {
     for (const load of region.loads) {
       if (load.slot.kind === "const" && load.slot.value === slot) {
-        const entry = evidenceFor(input.bytecode, entries, region.selector, load.pc);
+        const entry = evidenceFor(input.bytecode, attribution, load.pc);
         if (entry !== null) {
           checks.push(entry);
         }
@@ -158,7 +162,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   for (const region of view.regions) {
     for (const store of region.stores) {
       if (store.slot.kind === "const" && store.slot.value === slot && store.valueIsZero) {
-        const entry = evidenceFor(input.bytecode, entries, region.selector, store.pc);
+        const entry = evidenceFor(input.bytecode, attribution, store.pc);
         if (entry !== null) {
           zeroWrites.push(entry);
         }

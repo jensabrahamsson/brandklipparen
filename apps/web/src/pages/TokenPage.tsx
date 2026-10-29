@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent, type SyntheticEvent } from "react";
 import { ApiError, analyzeToken, fetchAssessment, fetchHealth, fetchPersonalizeStatus, fetchPlugins, requestInvestigation, requestPersonalizeMapping } from "../lib/api.ts";
 import { ExpertDetail } from "../components/ExpertDetail.tsx";
 import { PluginsPanel } from "../components/PluginsPanel.tsx";
@@ -8,7 +8,10 @@ import { isValidAddress } from "../lib/validate.ts";
 import { planLayout } from "../lib/layout.ts";
 import { readStoredCustomize, readStoredMode, writeStoredCustomize, writeStoredMode } from "../lib/uiMode.ts";
 import type { UiMode } from "../lib/uiMode.ts";
-import { shortAddress } from "../lib/liveTokens.ts";
+import { fetchLiveTokens } from "../lib/liveTokens.ts";
+import type { LiveTokenEntry } from "../lib/liveTokens.ts";
+import { resolveTokenIdentity } from "../lib/tokenIdentity.ts";
+import { TokenHeader } from "../components/TokenHeader.tsx";
 import { clearStoredPriorities, readStoredPriorities, writeStoredPriorities } from "../lib/priorities.ts";
 import { matchPriorities } from "../lib/matcher.ts";
 import { PrioritiesField } from "../components/PrioritiesField.tsx";
@@ -48,9 +51,9 @@ import { Sidebar } from "../components/Sidebar.tsx";
 import { SignalList } from "../components/SignalList.tsx";
 import { Explain } from "../components/Explain.tsx";
 import type { AnalyzeResult, AssessmentState, InvestigationState, InvestigationStep, ProviderInfo, RiskKind } from "../types.ts";
+import { RISK_SHORT } from "../lib/risk.ts";
 
 const RISKS: readonly RiskKind[] = ["rug-pull", "honeypot", "bot-pump"];
-const RISK_SHORT: Record<RiskKind, string> = { "rug-pull": "Rug", honeypot: "Honey", "bot-pump": "Bot" };
 
 // Verdict header band colour (S-121): the risk band colour for the 1px
 // top border, passed as --verdict-band so the stylesheet owns the edge.
@@ -104,6 +107,9 @@ export function TokenPage({
   const [attempt, setAttempt] = useState(0);
   const [elapsed, setElapsed] = useState<number | null>(null);
   const [openSignals, setOpenSignals] = useState<ReadonlySet<string>>(new Set());
+  // Live-list entry for the heading fallback (symbol/name, DEX and age):
+  // matched by token address, null when the feed is off or silent.
+  const [liveEntry, setLiveEntry] = useState<LiveTokenEntry | null>(null);
   // AI feature availability decided up front from /health (S-123). The
   // default keeps the previous explicit-request behaviour until the
   // capabilities arrive; unknown fields stay available for older servers.
@@ -150,6 +156,29 @@ export function TokenPage({
       cancelled = true;
     };
   }, [address, apiKey, attempt]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLiveTokens(apiKey.length === 0 ? null : apiKey).then(
+      (snapshot) => {
+        if (cancelled) {
+          return;
+        }
+        const match = snapshot.items.find(
+          (item) => item.tokenAddress.toLowerCase() === address.toLowerCase(),
+        );
+        setLiveEntry(match ?? null);
+      },
+      () => {
+        if (!cancelled) {
+          setLiveEntry(null);
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [address, apiKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -470,6 +499,7 @@ export function TokenPage({
           openSignals={openSignals}
           onToggleSignal={toggleSignal}
           address={address}
+          liveEntry={liveEntry}
           apiKey={apiKey}
           visibleSections={visibleSections}
           onToggleSection={toggleSection}
@@ -509,6 +539,7 @@ function AssessedView({
   openSignals,
   onToggleSignal,
   address,
+  liveEntry,
   apiKey,
   visibleSections,
   onToggleSection,
@@ -542,6 +573,7 @@ function AssessedView({
   readonly openSignals: ReadonlySet<string>;
   readonly onToggleSignal: (key: string) => void;
   readonly address: string;
+  readonly liveEntry: LiveTokenEntry | null;
   readonly apiKey: string;
   readonly visibleSections: ReadonlySet<string>;
   readonly onToggleSection: (sectionId: string) => void;
@@ -599,9 +631,11 @@ function AssessedView({
         ref={ringRef}
         style={{ marginBottom: 20, "--verdict-band": verdictBandColor(result.score) } as CSSProperties}
       >
-        <h1 title={result.target} style={{ margin: "0 0 4px", fontSize: 24 }}>
-          {shortAddress(result.target)}
-        </h1>
+        <TokenHeader
+          address={result.target}
+          identity={resolveTokenIdentity(result, liveEntry)}
+          liveEntry={liveEntry}
+        />
         <p className="quiet numeric" style={{ margin: "0 0 16px" }}>
           Analysis complete{elapsed === null ? "" : ` in ${elapsed.toFixed(1)} s`} · Block {result.block} · model{" "}
           {result.modelVersion}
@@ -619,10 +653,12 @@ function AssessedView({
               {result.score} {riskWord(result.score)} ·{" "}
               {RISKS.map((risk) => `${RISK_SHORT[risk]} ${Math.round(result.probabilities[risk] * 100)}%`).join(" · ")}
             </p>
-            <p className="quiet" style={{ margin: "4px 0 0" }}>
-              Calibration report: see the model card. The v1 REST response carries no calibration numbers, so none
-              are shown here.
-            </p>
+            {mode === "expert" ? (
+              <p className="quiet" style={{ margin: "4px 0 0" }}>
+                Calibration report: see the model card. The v1 REST response carries no calibration numbers, so none
+                are shown here.
+              </p>
+            ) : null}
           </div>
         </div>
         {result.deepening === "pending" ? (
@@ -716,7 +752,7 @@ function AssessedView({
               onSignalLink={jumpToSignal}
               visibleSections={visibleSections}
             />
-            <StreamView address={address} apiKey={apiKey} />
+            {mode === "expert" ? <StreamView address={address} apiKey={apiKey} /> : null}
             <ExplainPanel address={address} apiKey={apiKey} availability={availability.explain} />
             <OnchainPanel address={address} apiKey={apiKey} availability={availability.onchain} />
           </>
@@ -780,18 +816,24 @@ function CustomizeView({
   readonly onPrioritiesChange: (text: string) => void;
   readonly onPrioritiesClear: () => void;
 }): JSX.Element {
+  // Disclosure with remembered state, synced from the element: `open`
+  // renders the remembered session state, and every native toggle — mouse
+  // click, keyboard Enter/Space, find-in-page, programmatic — fires
+  // `toggle`, whose handler syncs React state and persists it. The old
+  // summary onClick + preventDefault suppressed the native toggle
+  // entirely, so `toggle` never fired (the reported "onToggle not
+  // firing") and every non-click toggle desynced React state; there is no
+  // `defaultOpen` for details in React (the prop renders inert), so the
+  // element's own `open` read in onToggle is the sync source.
   const [open, setOpen] = useState<boolean>(() => readStoredCustomize());
-  const flip = (event: { preventDefault: () => void }): void => {
-    event.preventDefault();
-    const next = !open;
+  const remember = (event: SyntheticEvent<HTMLDetailsElement>): void => {
+    const next = event.currentTarget.open;
     setOpen(next);
     writeStoredCustomize(next);
   };
   return (
-    <details className="customize" open={open ? true : undefined}>
-      {/* preventDefault suppresses the native toggle (keyboard activation
-          fires click too), so the session-remembered state stays in charge. */}
-      <summary onClick={flip}>Customize view</summary>
+    <details className="customize" open={open ? true : undefined} onToggle={remember}>
+      <summary>Customize view</summary>
       <div role="radiogroup" aria-label="Detail depth" style={{ margin: "16px 0" }}>
         <span className="quiet" style={{ marginRight: 12, fontSize: 14 }}>
           Detail:
@@ -965,6 +1007,7 @@ function OverviewSections({
         claims={result.explanation.claims}
         signals={sorted}
         templateVersion={result.explanation.templateVersion}
+        expert={mode === "expert"}
         onSignalLink={jumpToSignal}
       />
     ),
@@ -981,6 +1024,7 @@ function OverviewSections({
           target={result.target}
           codeHash={result.codeHash}
           deepening={result.deepening}
+          expert={mode === "expert"}
           open={openSignals}
           onToggle={onToggleSignal}
           templateLine={templateLine}
@@ -1034,7 +1078,7 @@ function OverviewSections({
           })}
           {mode === "expert" ? <ExpertDetail result={result} /> : null}
         </div>
-        <Sidebar result={result} />
+        <Sidebar result={result} expert={mode === "expert"} />
       </div>
     </div>
   );
@@ -1082,7 +1126,7 @@ export function errorCopy(reason: unknown): { title: string; detail: string } {
     if (reason.status === 401) {
       return {
         title: "Analysis needs an API key.",
-        detail: "The REST API rejected the request (401): set a valid API key and try again.",
+        detail: "The request was rejected (401): check the API key and try again.",
       };
     }
     if (reason.status === 429) {
@@ -1094,7 +1138,7 @@ export function errorCopy(reason: unknown): { title: string; detail: string } {
     if (reason.status >= 500) {
       return {
         title: "The analysis service is down.",
-        detail: `Server error (${reason.status}): the REST API failed; retry in a bit.`,
+        detail: `Server error (${reason.status}): please retry in a bit.`,
       };
     }
     return { title: "Analysis failed.", detail: reason.message };
@@ -1114,6 +1158,8 @@ function recordRecent(value: Extract<AnalyzeResult, { kind: "assessed" }>): void
       word: riskWord(value.score),
       probabilities: value.probabilities,
       topSignal: top === undefined ? null : signalTitle(top),
+      symbol: value.tokenSymbol ?? null,
+      name: value.tokenName ?? null,
       at: Date.now(),
     };
     const next = [entry, ...entries.filter((item) => (item as { address?: string }).address !== value.target)].slice(0, 5);

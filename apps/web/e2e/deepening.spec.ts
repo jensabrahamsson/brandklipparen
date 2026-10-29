@@ -98,6 +98,9 @@ test("s100_field_picker_limits_sections_without_changing_score", async ({ page }
 test("s100_stream_view_shows_analysis_before_deepening_status", async ({ page }) => {
   await mockAnalyze(page);
   await page.goto(`/#/token/${ADDRESS}`);
+  // Stream view is Expert-only (S-131); the mechanics below are unchanged.
+  await openCustomize(page);
+  await page.locator("details.customize").getByRole("radio", { name: "Expert" }).check();
   await page.getByRole("button", { name: "Stream analysis" }).click();
   const analysis = page.getByTestId("stream-analysis");
   const deepening = page.getByTestId("stream-deepening");

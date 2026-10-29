@@ -1,4 +1,4 @@
-import type { RiskBand, RiskWord } from "../types.ts";
+import type { RiskBand, RiskKind, RiskWord } from "../types.ts";
 
 // Risk bands per design/README.md: 0-29 Low (green), 30-59 Elevated
 // (orange), 60-100 High (red). Badges always carry number and word
@@ -20,3 +20,11 @@ export function riskBand(score: number): RiskBand {
 export function riskWord(score: number): RiskWord {
   return riskBand(score).word;
 }
+
+// Short risk labels for compact bars and strips (S-131): Rug, Honey,
+// Bot. Single source so the token page and the recent rows agree.
+export const RISK_SHORT: Record<RiskKind, string> = Object.freeze({
+  "rug-pull": "Rug",
+  honeypot: "Honey",
+  "bot-pump": "Bot",
+});

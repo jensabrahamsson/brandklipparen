@@ -3,19 +3,21 @@
 // external calls reachable in the transfer path from code paths. One
 // finding carries every external CALL site in a transfer region as
 // selector evidence with PC offsets, with the best-effort target source
-// of the first site. Only the `call` kind to a non-constant target
-// counts: static calls to precompiles (such as ecrecover in permit) or
-// balance lookups and delegatecalls never prove a hook, and neither does
-// a call to a hardcoded constant address. A call whose target the window
-// cannot resolve still counts: an unprovable target is not a constant
-// one. A transfer path with no such call stays silent. Pure and
-// synchronous: this module imports solely the plugin API and domain types
-// and pure functions (P-03).
+// of the first site. Only the `call` kind to a non-constant,
+// non-caller target counts: static calls to precompiles (such as ecrecover
+// in permit) or balance lookups and delegatecalls never prove a hook, and
+// neither does a call to a hardcoded constant address or a payout to
+// msg.sender (a withdraw sending ether back to the caller). A call whose
+// target the window cannot resolve still counts: an unprovable target is
+// not a constant one. A transfer path with no such call stays silent.
+// Pure and synchronous: this module imports solely the plugin API and
+// domain types and pure functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
+import { attributeFunctions } from "../../../domain/evmFlow.ts";
 import { analyzeOwnerControl } from "../../../domain/ownerControl.ts";
 import type { ExternalCallOp } from "../../../domain/ownerControl.ts";
-import { containingSelector, extractSelectors } from "../../../domain/selectors.ts";
+import { extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
 import type { DetectorInput, DetectorPlugin, PluginFinding } from "../../detector.ts";
@@ -115,12 +117,16 @@ function evidenceFor(
 // without selectors yields no findings, since a finding without selector
 // evidence is unrepresentable. Only `call` to a non-constant target
 // proves a hook: static calls (precompiles, balance views), delegatecalls
-// and constant-target calls stay silent.
+// and constant-target calls stay silent, and so does a payout to
+// msg.sender: a withdraw that sends ether back to the caller is not a hook
+// to a stored or caller-chosen target. Sites no unique function reaches
+// are skipped, never guessed to a neighbouring function.
 function detect(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
     return Object.freeze([]);
   }
+  const attribution = attributeFunctions(input.bytecode);
   const view = analyzeOwnerControl(input.bytecode);
   const transferSet = new Set(view.transfers);
   const sites: { pc: number; target: ExternalCallOp["target"]; region: EvidenceType["selector"] }[] = [];
@@ -132,7 +138,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       if (call.kind !== "call") {
         continue;
       }
-      if (call.target === "constant") {
+      if (call.target === "constant" || call.target === "caller") {
         continue;
       }
       sites.push({ pc: call.pc, target: call.target, region: region.selector });
@@ -144,7 +150,10 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   const ordered = sites.slice().sort((left, right) => left.pc - right.pc);
   const evidence: EvidenceType[] = [];
   for (const call of ordered.slice(0, MANIFEST.limits.maxEvidencePerFinding)) {
-    const holder = containingSelector(entries, call.pc) ?? call.region;
+    const holder = attribution.holderOf(call.pc);
+    if (holder === null) {
+      continue;
+    }
     const entry = evidenceFor(input.bytecode, holder, call.pc);
     if (entry !== null) {
       evidence.push(entry);

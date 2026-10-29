@@ -58,6 +58,12 @@ export type AnalyzeSuccess = {
   readonly block: number;
   readonly proxy: ProxyInfo;
   readonly codeHash: string;
+  // Display-only ERC-20 symbol()/name() read at the pinned block (never
+  // scored, never evidence): present when the chain answers, absent
+  // otherwise. The heading prefers these, then the live list, then the
+  // short address.
+  readonly tokenSymbol?: string | undefined;
+  readonly tokenName?: string | undefined;
   readonly modelVersion: string;
   readonly artifactChecksum: string;
   readonly indexVersion: string;

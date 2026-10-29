@@ -3,10 +3,10 @@
 // every AI unavailable state up front without inviting a click that
 // dead-ends. Fields are additive; older readers keep using the
 // top-level assessment field.
-import type { AssessmentService } from "../../../application/assessmentService.ts";
-import type { ExplainService } from "../../../application/explainService.ts";
-import type { InvestigationService } from "../../../application/investigationService.ts";
-import type { PersonalizeService } from "../../../application/personalizeService.ts";
+import type { AssessmentService } from "../../application/assessmentService.ts";
+import type { ExplainService } from "../../application/explainService.ts";
+import type { InvestigationService } from "../../application/investigationService.ts";
+import type { PersonalizeService } from "../../application/personalizeService.ts";
 
 export type HealthFeature = { readonly disabled: true } | { readonly provider: string; readonly modelId: string };
 

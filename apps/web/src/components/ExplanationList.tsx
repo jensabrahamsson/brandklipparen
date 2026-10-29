@@ -78,20 +78,26 @@ export function ExplanationList({
   claims,
   signals,
   templateVersion,
+  expert,
   onSignalLink,
 }: {
   readonly claims: readonly ExplanationClaim[];
   readonly signals: readonly Signal[];
   readonly templateVersion: string;
+  readonly expert: boolean;
   readonly onSignalLink: (key: string) => void;
 }): JSX.Element {
+  const versionLine =
+    expert === true
+      ? `Template explanation · v${templateVersion}`
+      : "Template explanation";
   return (
-    <section className="card" aria-label={`Template explanation · v${templateVersion}`} style={{ marginBottom: 20 }}>
+    <section className="card" aria-label={versionLine} style={{ marginBottom: 20 }}>
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
         <span>Why this score</span> <Explain explainKey="explanation:claim" label="Template claims" />
       </h2>
       <p className="quiet numeric" style={{ margin: "0 0 12px" }}>
-        Template explanation · v{templateVersion} · {claims.length} {claims.length === 1 ? "claim" : "claims"}
+        {versionLine} · {claims.length} {claims.length === 1 ? "claim" : "claims"}
       </p>
       {claims.length === 0 ? (
         <p className="muted" style={{ margin: 0 }}>

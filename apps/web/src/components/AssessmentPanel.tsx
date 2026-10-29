@@ -34,7 +34,7 @@ export function AssessmentPanel({
       {provider.status === "disabled" ? (
         <p className="assessment-label">
           <span className="assessment-dot" aria-hidden="true" />
-          <span>Assessment is not configured: the REST API reports no assessment provider.</span>
+          <span>Assessment is not configured: no assessment provider is set up on this server.</span>
         </p>
       ) : null}
       {provider.status === "ready" && state.status !== "ready" ? (

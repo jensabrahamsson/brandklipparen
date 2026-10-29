@@ -19,9 +19,11 @@ Structural ERC-20 bytecode capabilities, one finding per capability key:
 - `call`: the contract can forward calls to an outside contract.
 - `storage-write`: the contract can write storage.
 
-Detection fires solely on opcode presence in the linear disassembly with
+Detection fires solely on opcode presence in the reachable disassembly with
 PUSH data skipped, so constants never count as opcodes. No count, share, or
-size cutoff steers detection: one occurrence is enough.
+size cutoff steers detection: one occurrence is enough. A CALL that pays
+out to msg.sender stays silent: withdrawing is not an outside-contract
+power.
 
 ## Why it matters to you
 
@@ -41,9 +43,10 @@ A list of findings with the namespaced id
 selector evidence with the PC offset wherever derivable, and the payload
 `{ "capability": "<key>" }`. The payload carries one field, `capability`,
 and every finding carries at least one `evidence` entry with a `selector`.
-Each evidence entry names the dispatcher function whose body holds the
-opcode occurrence. An occurrence outside every paired function body
-(dispatcher preamble) is skipped, never guessed: a finding never cites a
+Each evidence entry names the dispatcher function whose control-flow walk
+reaches the opcode occurrence. An occurrence no unique function reaches
+(dispatcher preamble, fallback, shared tails jumped into from several
+bodies, dead code) is skipped, never guessed: a finding never cites a
 selector the occurrence does not sit in. As a first-party detector, its
 findings convert to calibrated signals through the versioned model
 artifact, and the artifact sets their effective weight, which the plugin

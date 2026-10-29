@@ -1,16 +1,19 @@
 // Bytecode-only owner-control analysis (S-115, K-009, K-010).
 // Pure domain module: a small structural analysis over the linear
-// disassembly and the landed dispatcher scan. It partitions the code into
-// one region per paired selector entry (the containing-selector rule from
-// selectors.ts: a region runs from its entry PC to the next entry PC) and
-// records per-region facts the owner-control detectors prove their
-// findings from: privileged caller guards, storage reads and writes with
-// best-effort slot resolution, transfer-path markers and external calls.
+// disassembly and the dispatcher reachability walk. It groups the code
+// into one region per paired selector entry (the reachability rule from
+// evmFlow.ts: a region holds exactly the instructions the CFG walk from
+// its entry block reaches, and instructions no unique entry reaches belong
+// to no region) and records per-region facts the owner-control detectors
+// prove their findings from: privileged caller guards, storage reads and
+// writes with best-effort slot resolution, transfer-path markers and
+// external calls.
 // Slot resolution is deliberately conservative: a PUSH slot directly
 // beside the access resolves to a constant slot, a KECCAK256 in the
 // short window marks mapping-derived access, and anything else stays
 // unknown. Where the proof is incomplete the detectors emit no positive
 // finding rather than a guessed one.
+import { attributeFunctions } from "./evmFlow.ts";
 import { disassemble, extractSelectors } from "./selectors.ts";
 import type { Instruction, SelectorEntry } from "./selectors.ts";
 import type { Bytecode as BytecodeType, Selector as SelectorType } from "./types.ts";
@@ -46,10 +49,12 @@ export type LoadOp = {
 export type ExternalCallOp = {
   readonly pc: number;
   readonly kind: "call" | "staticcall" | "delegatecall";
-  // Best-effort call-target source: a constant address pushed beside the
-  // call, an address loaded from storage, an argument from calldata, or
-  // unknown when the window shows none of these.
-  readonly target: "constant" | "storage" | "argument" | "unknown";
+  // Best-effort call-target source: msg.sender paid out directly, a
+  // constant address pushed beside the call, an address loaded from
+  // storage, an argument from calldata, or unknown when the window shows
+  // none of these. A payout to msg.sender (a withdraw) is not a hook to
+  // a stored or caller-chosen target.
+  readonly target: "caller" | "constant" | "storage" | "argument" | "unknown";
 };
 
 export type RegionFacts = {
@@ -181,7 +186,16 @@ function resolveStoreValue(insns: readonly Instruction[], index: number): {
   return { valueIsZero: false, valueConst: null };
 }
 
-function callTarget(insns: readonly Instruction[], index: number): ExternalCallOp["target"] {
+// Best-effort call-target source for one CALL-family instruction: the
+// window behind the call names msg.sender (CALLER) first, since a payout
+// to msg.sender beside balance bookkeeping still pays out rather than
+// calling a stored hook. Shared with the capability sweep, so a
+// send-to-caller CALL never proves an outside-contract power or a hook.
+export function callTargetOfInstruction(
+  insns: readonly Instruction[],
+  index: number,
+): ExternalCallOp["target"] {
+  let sawCaller = false;
   let sawSload = false;
   let sawCalldata = false;
   let sawPushAddress = false;
@@ -190,6 +204,9 @@ function callTarget(insns: readonly Instruction[], index: number): ExternalCallO
     const candidate = insns[back];
     if (candidate === undefined) {
       break;
+    }
+    if (candidate.opcode === 0x33) {
+      sawCaller = true;
     }
     if (candidate.opcode === 0x54) {
       sawSload = true;
@@ -205,6 +222,9 @@ function callTarget(insns: readonly Instruction[], index: number): ExternalCallO
       sawPushAddress = true;
     }
   }
+  if (sawCaller) {
+    return "caller";
+  }
   if (sawSload) {
     return "storage";
   }
@@ -217,10 +237,17 @@ function callTarget(insns: readonly Instruction[], index: number): ExternalCallO
   return "unknown";
 }
 
+
+
+// Region facts read the full instruction stream at each index, but only
+// member instructions contribute facts: adjacency and window scans keep
+// their code-order meaning even when the region skips shared or dead
+// instructions between two of its own.
 function regionOf(
   selector: SelectorType,
   entryPc: number,
   insns: readonly Instruction[],
+  isMember: (pc: number) => boolean,
 ): RegionFacts {
   let hasCaller = false;
   const callerPcs: number[] = [];
@@ -251,7 +278,7 @@ function regionOf(
   const calls: ExternalCallOp[] = [];
   for (let index = 0; index < insns.length; index += 1) {
     const instruction = insns[index];
-    if (instruction === undefined) {
+    if (instruction === undefined || !isMember(instruction.pc)) {
       continue;
     }
     switch (instruction.opcode) {
@@ -316,7 +343,7 @@ function regionOf(
       case 0xfa:
       case 0xf4: {
         const kind = instruction.opcode === 0xf1 ? "call" : instruction.opcode === 0xfa ? "staticcall" : "delegatecall";
-        calls.push({ pc: instruction.pc, kind, target: callTarget(insns, index) });
+        calls.push({ pc: instruction.pc, kind, target: callTargetOfInstruction(insns, index) });
         break;
       }
       default:
@@ -465,17 +492,20 @@ export function analyzeOwnerControl(bytecode: BytecodeType): OwnerControlView {
     (entry): entry is Extract<SelectorEntry, { kind: "paired" }> => entry.kind === "paired",
   );
   const byTarget = entries.slice().sort((left, right) => (left.target as number) - (right.target as number));
+  // One reachability lookup per instruction: a region holds exactly the
+  // instructions its entry reaches, so shared tails and dead code belong
+  // to no region instead of the neighbouring entry.
+  const attribution = attributeFunctions(bytecode);
+  const holderByPc = new Map<number, string>();
+  for (const instruction of code) {
+    const holder = attribution.holderOf(instruction.pc);
+    holderByPc.set(instruction.pc, holder === null ? "" : (holder as string));
+  }
   const regions: RegionFacts[] = [];
-  for (let order = 0; order < byTarget.length; order += 1) {
-    const entry = byTarget[order];
-    if (entry === undefined) {
-      continue;
-    }
+  for (const entry of byTarget) {
     const start = entry.target as number;
-    const next = byTarget[order + 1];
-    const end = next === undefined ? Number.MAX_SAFE_INTEGER : (next.target as number);
-    const slice = code.filter((instruction) => instruction.pc >= start && instruction.pc < end);
-    regions.push(regionOf(entry.selector, start, slice));
+    const wanted = entry.selector as string;
+    regions.push(regionOf(entry.selector, start, code, (pc) => holderByPc.get(pc) === wanted));
   }
 
   // Owner slot: a constant slot loaded in a region that also compares

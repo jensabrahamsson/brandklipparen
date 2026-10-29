@@ -38,6 +38,7 @@ describe("template explanation (design review P0-4)", () => {
         ]}
         signals={SIGNALS}
         templateVersion="1.0.0"
+        expert
         onSignalLink={() => undefined}
       />,
     );
@@ -49,13 +50,29 @@ describe("template explanation (design review P0-4)", () => {
     expect(html).not.toContain("owner-blacklist");
     expect(html).toContain("Owner can block transfers");
   });
+
+  test("s131_simple_mode_explanation_hides_template_version", () => {
+    const html = renderToString(
+      <ExplanationList
+        claims={[
+          { text: "The owner can stop you from selling.", signalLinks: ["owner-blacklist"], temporality: { kind: "can-change" } },
+        ]}
+        signals={SIGNALS}
+        templateVersion="1.0.0"
+        expert={false}
+        onSignalLink={() => undefined}
+      />,
+    );
+    expect(html).toContain("The owner can stop you from selling.");
+    expect(html).not.toContain("v1.0.0");
+  });
 });
 
 describe("expanded signal evidence (design review P0-5)", () => {
   test("design_review_snippet_slot_is_honest_while_pending", () => {
     const { open, onToggle, templateLine } = openAll();
     const html = renderToString(
-      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="pending" open={open} onToggle={onToggle} templateLine={templateLine} />,
+      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="pending" expert={false} open={open} onToggle={onToggle} templateLine={templateLine} />,
     );
     expect(html).toContain("Snippet arrives with deepening");
     expect(html).not.toContain("function ");
@@ -64,15 +81,25 @@ describe("expanded signal evidence (design review P0-5)", () => {
   test("design_review_snippet_slot_names_contract_gap_when_unavailable", () => {
     const { open, onToggle, templateLine } = openAll();
     const html = renderToString(
-      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="unavailable" open={open} onToggle={onToggle} templateLine={templateLine} />,
+      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="unavailable" expert open={open} onToggle={onToggle} templateLine={templateLine} />,
     );
     expect(html).toContain("contract gap");
+  });
+
+  test("s131_simple_mode_snippet_slot_stays_plain", () => {
+    const { open, onToggle, templateLine } = openAll();
+    const html = renderToString(
+      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="unavailable" expert={false} open={open} onToggle={onToggle} templateLine={templateLine} />,
+    );
+    expect(html).toContain("No decompiled snippet is available");
+    expect(html).not.toContain("contract gap");
+    expect(html).not.toContain("REST");
   });
 
   test("design_review_copy_and_bytecode_slots", () => {
     const { open, onToggle, templateLine } = openAll();
     const html = renderToString(
-      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="pending" open={open} onToggle={onToggle} templateLine={templateLine} />,
+      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="pending" expert={false} open={open} onToggle={onToggle} templateLine={templateLine} />,
     );
     expect(html).toContain("Copy evidence");
     expect(html).toContain("Open in bytecode");
@@ -82,7 +109,7 @@ describe("expanded signal evidence (design review P0-5)", () => {
   test("design_review_per_signal_template_line", () => {
     const { open, onToggle, templateLine } = openAll();
     const html = renderToString(
-      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="pending" open={open} onToggle={onToggle} templateLine={templateLine} />,
+      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="pending" expert={false} open={open} onToggle={onToggle} templateLine={templateLine} />,
     ).replace(/<!-- -->/g, "");
     expect(html).toContain("Template: The owner can stop you from selling.");
   });

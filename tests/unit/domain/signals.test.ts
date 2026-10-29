@@ -185,12 +185,14 @@ describe("k010 signals carry selector and offset", () => {
 
 describe("k010 structural detection on synthetic bytecode", () => {
   test("k010_each_structural_opcode_gives_one_capability_signal", () => {
-    // One dispatcher plus SELFDESTRUCT, DELEGATECALL, CALL and SSTORE each
-    // placed after the paired JUMPDEST, so every occurrence sits inside the
-    // paired function body and every PC offset is honestly attributable.
+    // One dispatcher plus SSTORE, CALL, DELEGATECALL and SELFDESTRUCT each
+    // placed after the paired JUMPDEST with no halting opcode between
+    // them, so every occurrence sits in reachable body code and every PC
+    // offset is honestly attributable. (Opcodes after a halt are dead
+    // code the walk cannot cite to any function.)
     const code = codeFromBytes([
       0x80, 0x63, 0xa9, 0x05, 0x9c, 0xbb, 0x14, 0x60, 0x0a, 0x57, 0x5b,
-      0xff, 0xf4, 0xf1, 0x60, 0x00, 0x55, 0x00,
+      0x60, 0x00, 0x55, 0xf1, 0xf4, 0xff, 0x00,
     ]);
     const signals = detectCapabilities(code, codeHashOf(code), TEST_CATALOGUE, testChanger());
     expect(signals).toHaveLength(CAPABILITY_KEYS.length);
@@ -233,7 +235,7 @@ describe("k010 structural detection on synthetic bytecode", () => {
   test("k010_signals_sorted_by_signal_id", () => {
     const code = codeFromBytes([
       0x80, 0x63, 0xa9, 0x05, 0x9c, 0xbb, 0x14, 0x60, 0x0a, 0x57, 0x5b,
-      0xff, 0xf4, 0xf1, 0x60, 0x00, 0x55, 0x00,
+      0x60, 0x00, 0x55, 0xf1, 0xf4, 0xff, 0x00,
     ]);
     const signals = detectCapabilities(code, codeHashOf(code), TEST_CATALOGUE, testChanger());
     const ids = signals.map((signal: SignalType) => signal.id as string);
@@ -243,9 +245,10 @@ describe("k010 structural detection on synthetic bytecode", () => {
   test("k010_signals_sharing_a_selector_share_signal_id", () => {
     // SignalId derives from code hash and the evidence selector (A-10), so
     // two structural capabilities found beside the same selector share one
-    // id; catalogue key order keeps the list deterministic on ties.
+    // id; catalogue key order keeps the list deterministic on ties. Both
+    // opcodes sit before any halt, so both are reachable body code.
     const code = codeFromBytes([
-      0x80, 0x63, 0xa9, 0x05, 0x9c, 0xbb, 0x14, 0x60, 0x0a, 0x57, 0x5b, 0xff, 0xf1, 0x00,
+      0x80, 0x63, 0xa9, 0x05, 0x9c, 0xbb, 0x14, 0x60, 0x0a, 0x57, 0x5b, 0xf1, 0xff, 0x00,
     ]);
     const signals = detectCapabilities(code, codeHashOf(code), TEST_CATALOGUE, testChanger());
     expect(signals).toHaveLength(2);

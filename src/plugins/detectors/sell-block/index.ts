@@ -20,7 +20,8 @@ import {
   constSlotLoadNearFlavor,
 } from "../../../domain/ownerControl.ts";
 import type { RegionFacts } from "../../../domain/ownerControl.ts";
-import { containingSelector, extractSelectors } from "../../../domain/selectors.ts";
+import { attributeFunctions } from "../../../domain/evmFlow.ts";
+import { extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
 import type { DetectorInput, DetectorPlugin, PluginFinding } from "../../detector.ts";
@@ -172,6 +173,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   if (entries.length === 0) {
     return Object.freeze([]);
   }
+  const attribution = attributeFunctions(input.bytecode);
   const view = analyzeOwnerControl(input.bytecode);
   const privilegedSet = new Set(view.privileged);
   if (privilegedSet.size === 0) {
@@ -189,7 +191,10 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
     }
     const evidence: EvidenceType[] = [];
     for (const pc of branch.reads.slice(0, MANIFEST.limits.maxEvidencePerFinding)) {
-      const holder = containingSelector(entries, pc) ?? transfer.selector;
+      const holder = attribution.holderOf(pc);
+      if (holder === null) {
+        continue;
+      }
       const entry = evidenceFor(input.bytecode, holder, pc);
       if (entry !== null) {
         evidence.push(entry);

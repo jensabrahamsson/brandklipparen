@@ -7,7 +7,9 @@
 // numeric threshold or weight. Risk, direction and severity mappings arrive
 // as an injected catalogue parameter; production values come from the
 // versioned model artifact per K-210 and A-20, never from this module.
-import { containingSelector, disassemble, extractSelectors } from "./selectors.ts";
+import { disassemble, extractSelectors } from "./selectors.ts";
+import { attributeFunctions } from "./evmFlow.ts";
+import { callTargetOfInstruction } from "./ownerControl.ts";
 import { Evidence, sortEvidence } from "./evidence.ts";
 import type { NonEmpty, Evidence as EvidenceType } from "./evidence.ts";
 import { err, ok } from "./result.ts";
@@ -261,10 +263,13 @@ export type CapabilityCatalogue = {
 // SignalId. Bytecode without selectors yields no signals, since a signal
 // without selector evidence is unrepresentable per A-13. Each opcode
 // occurrence becomes one evidence entry pairing the occurrence PC offset
-// with the selector of the dispatcher function holding that PC, so the
-// evidence names the function the capability sits in; occurrences outside
-// every paired function range (dispatcher preamble) are skipped, never
-// guessed: a finding must name the function the capability sits in.
+// with the selector of the dispatcher function whose body reaches that
+// PC, so the evidence names the function the capability sits in;
+// occurrences no unique function reaches (dispatcher preamble, fallback,
+// shared tails, dead code) are skipped, never guessed: a finding must
+// name the function the capability sits in. A CALL that pays out to
+// msg.sender is a withdraw, not an outside-contract power, and stays
+// silent here like in the registry detector.
 export function detectCapabilities(
   bytecode: BytecodeType,
   codeHash: CodeHashType,
@@ -275,10 +280,19 @@ export function detectCapabilities(
   if (entries.length === 0) {
     return Object.freeze([]);
   }
+  const code = disassemble(bytecode);
+  const attribution = attributeFunctions(bytecode);
   const pcsByKey = new Map<CapabilityKey, number[]>();
-  for (const instruction of disassemble(bytecode)) {
+  for (let index = 0; index < code.length; index += 1) {
+    const instruction = code[index];
+    if (instruction === undefined) {
+      continue;
+    }
     for (const key of CAPABILITY_KEYS) {
       if (instruction.opcode === CAPABILITY_OPCODES[key]) {
+        if (key === "call" && callTargetOfInstruction(code, index) === "caller") {
+          continue;
+        }
         const known = pcsByKey.get(key);
         if (known === undefined) {
           pcsByKey.set(key, [instruction.pc]);
@@ -298,7 +312,7 @@ export function detectCapabilities(
     const evidence: EvidenceType[] = [];
     for (let index = 0; index < pcs.length; index += 1) {
       const pc = pcs[index] ?? 0;
-      const selector = containingSelector(entries, pc);
+      const selector = attribution.holderOf(pc);
       if (selector === null) {
         continue;
       }

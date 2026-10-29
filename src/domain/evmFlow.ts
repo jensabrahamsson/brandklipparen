@@ -10,8 +10,9 @@
 import { err, ok } from "./result.ts";
 import type { Result } from "./result.ts";
 import { extractSelectors } from "./selectors.ts";
-import type { Bytecode as BytecodeType } from "./types.ts";
+import type { Bytecode as BytecodeType, Selector as SelectorType } from "./types.ts";
 import type { ControlFlowGraph } from "./evmLift.ts";
+import { buildCfg, lift } from "./evmLift.ts";
 
 // One resolved function entry: the dispatcher selector, its proven entry
 // PC, the entry block index, and whether the bounded forward walk from
@@ -309,6 +310,98 @@ export function analyzeStackDepth(cfg: ControlFlowGraph): StackDepthAnalysis {
     maxDepth,
     underflowBlocks: Object.freeze(Array.from(underflows).sort((left, right) => left - right)),
   });
+}
+
+// Reachability-based function attribution. For every paired dispatcher
+// entry, the bounded CFG walk from its entry block collects the blocks the
+// function body actually reaches: fall-through, proven jumps and both
+// sides of proven conditional jumps are followed, while unresolved jumps
+// end that path (an unproven edge is never followed). An opcode PC belongs
+// to the entry whose walk reaches its block; a PC reached by zero entries
+// (dispatcher preamble, fallback, dead code) or by more than one (shared
+// tails jumped into from several bodies) belongs to no function and reads
+// as unattributable, never guessed to an unrelated one. The old positional
+// rule ("greatest entry target at or below the PC") misattributed shared
+// tails and everything past the last entry target to the last dispatcher
+// entry, so it is retired: every consumer below reads this walk instead.
+export type FunctionAttribution = {
+  readonly holderOf: (pc: number) => SelectorType | null;
+};
+
+function blockAtPc(cfg: ControlFlowGraph, pc: number): number {
+  for (const block of cfg.blocks) {
+    if (pc >= block.range.startPc && pc < block.range.endPc) {
+      return block.index;
+    }
+  }
+  return -1;
+}
+
+function reachableFrom(cfg: ControlFlowGraph, from: number): ReadonlySet<number> {
+  const seen = new Set<number>();
+  const queue: number[] = [from];
+  while (queue.length > 0) {
+    const index = queue.pop() ?? -1;
+    if (seen.has(index)) {
+      continue;
+    }
+    seen.add(index);
+    const block = cfg.blocks[index];
+    if (block === undefined) {
+      continue;
+    }
+    for (const edge of block.successors) {
+      if (edge.kind === "fall-through" || edge.kind === "jump") {
+        queue.push(edge.to);
+      } else {
+        queue.push(edge.to);
+        queue.push(edge.fallThrough);
+      }
+    }
+  }
+  return seen;
+}
+
+export function attributeFunctions(bytecode: BytecodeType): FunctionAttribution {
+  const cfg = buildCfg(lift(bytecode));
+  const reachers = new Map<number, SelectorType[]>();
+  for (const candidate of extractSelectors(bytecode)) {
+    if (candidate.kind !== "paired") {
+      continue;
+    }
+    const selector = candidate.selector;
+    const entryPc = candidate.target as number;
+    let entryBlock = -1;
+    for (const block of cfg.blocks) {
+      if (block.range.startPc === entryPc) {
+        entryBlock = block.index;
+        break;
+      }
+    }
+    if (entryBlock === -1) {
+      continue;
+    }
+    for (const reached of reachableFrom(cfg, entryBlock)) {
+      const known = reachers.get(reached);
+      if (known === undefined) {
+        reachers.set(reached, [selector]);
+      } else if (!known.includes(selector)) {
+        known.push(selector);
+      }
+    }
+  }
+  const holderOf = (pc: number): SelectorType | null => {
+    const block = blockAtPc(cfg, pc);
+    if (block === -1) {
+      return null;
+    }
+    const holders = reachers.get(block);
+    if (holders === undefined || holders.length !== 1) {
+      return null;
+    }
+    return holders[0] ?? null;
+  };
+  return Object.freeze({ holderOf });
 }
 
 // One dispatcher branch: the selector, the block holding its conditional

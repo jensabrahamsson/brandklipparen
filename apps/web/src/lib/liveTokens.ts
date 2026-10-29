@@ -104,23 +104,24 @@ export async function fetchLiveTokens(apiKey: string | null): Promise<LiveTokens
   return (await response.json()) as LiveTokensSnapshot;
 }
 
-// Calm age text for the list ("45s", "2m", "1h", "3d"): whole units
-// only, so the column rarely changes width between 10 s polls. An
-// unknown chain age renders as "-".
+// Human age text for the list ("just now", "3 min ago", "2 h ago"):
+// whole units only, derived from the feed's own chain timestamp, so the
+// column rarely changes width between 10 s polls. An unknown chain age
+// reads as a labelled "unknown", never a bare dash that looks like a bug.
 export function formatAge(ageSeconds: number | null): string {
   if (ageSeconds === null || !Number.isFinite(ageSeconds)) {
-    return "-";
+    return "unknown";
   }
   if (ageSeconds < 60) {
-    return `${Math.max(0, Math.floor(ageSeconds))}s`;
+    return "just now";
   }
   if (ageSeconds < 3600) {
-    return `${Math.floor(ageSeconds / 60)}m`;
+    return `${Math.floor(ageSeconds / 60)} min ago`;
   }
   if (ageSeconds < 86400) {
-    return `${Math.floor(ageSeconds / 3600)}h`;
+    return `${Math.floor(ageSeconds / 3600)} h ago`;
   }
-  return `${Math.floor(ageSeconds / 86400)}d`;
+  return `${Math.floor(ageSeconds / 86400)} d ago`;
 }
 
 export function shortAddress(address: string): string {

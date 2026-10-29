@@ -4,7 +4,7 @@
 // any port call and cache behaviour without network access.
 import { err, ok } from "../../src/domain/result.ts";
 import type { Result } from "../../src/domain/result.ts";
-import { Bytecode, StorageWord } from "../../src/domain/types.ts";
+import { Bytecode, CallData, StorageWord } from "../../src/domain/types.ts";
 import type {
   Address as AddressType,
   BlockNumber as BlockNumberType,
@@ -49,6 +49,10 @@ export class FakeRpcAdapter implements RpcPort {
       readonly history?: ReadonlyMap<string, FakeCodeHistory> | undefined;
       readonly logs?: readonly ChainLog[] | undefined;
       readonly receipts?: ReadonlyMap<number, readonly BlockReceipt[]> | undefined;
+      // Stubbed eth_call answers by lowercase 0x-prefixed calldata hex.
+      // Absent stubs (and an absent map) answer the typed error, so
+      // metadata reads stay absent unless the test provides them.
+      readonly calls?: ReadonlyMap<string, string> | undefined;
     } = {},
   ) {
     this.codes = codes;
@@ -57,7 +61,10 @@ export class FakeRpcAdapter implements RpcPort {
     this.history = extra.history ?? new Map();
     this.logs = extra.logs ?? [];
     this.receipts = extra.receipts ?? new Map();
+    this.calls = extra.calls ?? new Map();
   }
+
+  private readonly calls: ReadonlyMap<string, string>;
 
   async getCode(address: AddressType, ctx: CallContext): Promise<Result<BytecodeResult, RpcError>> {
     this.getCodeCalls.push(address as string);
@@ -94,8 +101,23 @@ export class FakeRpcAdapter implements RpcPort {
     return ok(parsed.value);
   }
 
-  async call(): Promise<Result<CallDataType, RpcError>> {
-    return err({ kind: "invalid-response", message: "fake rpc carries no call support" });
+  async call(
+    to: AddressType,
+    data: CallDataType,
+    ctx: CallContext,
+  ): Promise<Result<CallDataType, RpcError>> {
+    void to;
+    void ctx;
+    const key = `0x${Buffer.from(data).toString("hex").toLowerCase()}`;
+    const raw = this.calls.get(key);
+    if (raw === undefined) {
+      return err({ kind: "invalid-response", message: "fake rpc carries no call support" });
+    }
+    const parsed = CallData.parse(raw);
+    if (!parsed.ok) {
+      return err({ kind: "invalid-response", message: parsed.error.message });
+    }
+    return ok(parsed.value);
   }
 
   async getBlockNumber(): Promise<Result<BlockNumberType, RpcError>> {

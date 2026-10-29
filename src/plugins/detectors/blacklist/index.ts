@@ -15,7 +15,8 @@ import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
 import { analyzeOwnerControl, flavorBetween, mappingLoadNearFlavor } from "../../../domain/ownerControl.ts";
 import type { RegionFacts } from "../../../domain/ownerControl.ts";
-import { containingSelector, extractSelectors } from "../../../domain/selectors.ts";
+import { attributeFunctions } from "../../../domain/evmFlow.ts";
+import { extractSelectors } from "../../../domain/selectors.ts";
 import { PcOffset } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
 import type { DetectorInput, DetectorPlugin, PluginFinding } from "../../detector.ts";
@@ -140,6 +141,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   if (entries.length === 0) {
     return Object.freeze([]);
   }
+  const attribution = attributeFunctions(input.bytecode);
   const view = analyzeOwnerControl(input.bytecode);
   const privilegedSet = new Set(view.privileged);
   const transferSet = new Set(view.transfers);
@@ -175,8 +177,11 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       if (gatePc === null) {
         continue;
       }
-      const holder = containingSelector(entries, write.pc) ?? region.selector;
-      const gateHolder = containingSelector(entries, gatePc) ?? transfer.selector;
+      const holder = attribution.holderOf(write.pc);
+      const gateHolder = attribution.holderOf(gatePc);
+      if (holder === null || gateHolder === null) {
+        continue;
+      }
       const evidence: EvidenceType[] = [];
       const written = evidenceFor(input.bytecode, holder, write.pc);
       if (written !== null) {

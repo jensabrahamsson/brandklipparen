@@ -14,7 +14,8 @@ import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
 import { analyzeOwnerControl } from "../../../domain/ownerControl.ts";
 import { bytecodeHasSelector, selectorOffsetInBytecode } from "../../../domain/proxy.ts";
-import { containingSelector, extractSelectors } from "../../../domain/selectors.ts";
+import { attributeFunctions } from "../../../domain/evmFlow.ts";
+import { extractSelectors } from "../../../domain/selectors.ts";
 import { Selector, keccak256HexOfUtf8 } from "../../../domain/types.ts";
 import type { Selector as SelectorType } from "../../../domain/types.ts";
 import { PcOffset } from "../../../domain/types.ts";
@@ -145,6 +146,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   if (entries.length === 0) {
     return Object.freeze([]);
   }
+  const attribution = attributeFunctions(input.bytecode);
   const view = analyzeOwnerControl(input.bytecode);
   const privilegedSet = new Set(view.privileged);
   for (const upgrade of upgradeSelectors()) {
@@ -190,7 +192,10 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       if (entry !== null) {
         evidence.push(entry);
       }
-      const holder = containingSelector(entries, call.pc) ?? region.selector;
+      const holder = attribution.holderOf(call.pc);
+      if (holder === null) {
+        continue;
+      }
       const forward = evidenceFor(input.bytecode, holder, call.pc);
       if (forward !== null) {
         evidence.push(forward);

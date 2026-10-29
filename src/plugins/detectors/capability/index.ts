@@ -9,7 +9,9 @@
 // domain types and pure functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { containingSelector, disassemble, extractSelectors } from "../../../domain/selectors.ts";
+import { attributeFunctions } from "../../../domain/evmFlow.ts";
+import { callTargetOfInstruction } from "../../../domain/ownerControl.ts";
+import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
 import { CAPABILITY_KEYS } from "../../../domain/signals.ts";
 import type { CapabilityKey } from "../../../domain/signals.ts";
 import { PcOffset } from "../../../domain/types.ts";
@@ -111,20 +113,31 @@ function toNonEmpty(items: EvidenceType[]): NonEmpty<EvidenceType> | null {
 // selectors yields no findings, since a finding without selector evidence
 // is unrepresentable. Each opcode occurrence becomes one evidence entry
 // pairing the occurrence PC offset with the selector of the dispatcher
-// function holding that PC, so the evidence names the function the
-// capability sits in; occurrences outside every paired function range are
-// skipped, never guessed. This mirrors the legacy domain sweep entry for
-// entry, so the host conversion through the catalogue reproduces the same
-// Signals.
+// function whose CFG walk reaches that PC, so the evidence names the
+// function the capability sits in; occurrences no unique function reaches
+// (dispatcher preamble, fallback, shared tails, dead code) are skipped,
+// never guessed. A CALL that pays out to msg.sender is a withdraw, not an
+// outside-contract power, and stays silent. This mirrors the legacy domain
+// sweep entry for entry, so the host conversion through the catalogue
+// reproduces the same Signals.
 function detect(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
     return Object.freeze([]);
   }
+  const code = disassemble(input.bytecode);
+  const attribution = attributeFunctions(input.bytecode);
   const pcsByKey = new Map<CapabilityKey, number[]>();
-  for (const instruction of disassemble(input.bytecode)) {
+  for (let index = 0; index < code.length; index += 1) {
+    const instruction = code[index];
+    if (instruction === undefined) {
+      continue;
+    }
     for (const key of CAPABILITY_KEYS) {
       if (instruction.opcode === CAPABILITY_OPCODES[key]) {
+        if (key === "call" && callTargetOfInstruction(code, index) === "caller") {
+          continue;
+        }
         const known = pcsByKey.get(key);
         if (known === undefined) {
           pcsByKey.set(key, [instruction.pc]);
@@ -143,7 +156,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
     const evidence: EvidenceType[] = [];
     for (let index = 0; index < pcs.length; index += 1) {
       const pc = pcs[index] ?? 0;
-      const selector = containingSelector(entries, pc);
+      const selector = attribution.holderOf(pc);
       if (selector === null) {
         continue;
       }

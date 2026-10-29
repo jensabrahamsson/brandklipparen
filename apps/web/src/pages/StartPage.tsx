@@ -1,6 +1,8 @@
 import { useState, type JSX } from "react";
 import { ChainSelector } from "../components/ChainSelector.tsx";
 import { LiveTokens } from "../components/LiveTokens.tsx";
+import { RISK_SHORT } from "../lib/risk.ts";
+import { recentRowTitle } from "../lib/tokenIdentity.ts";
 import { isValidAddress, normalizeAddress, validationMessage } from "../lib/validate.ts";
 
 // Start page: one search field for a contract address, the mainnet-only
@@ -12,6 +14,10 @@ type RecentEntry = {
   readonly word: string;
   readonly probabilities: Record<string, number>;
   readonly topSignal: string | null;
+  // Display-only token identity written by the token page when the chain
+  // answers: older rows without these fields read as null.
+  readonly symbol?: string | null | undefined;
+  readonly name?: string | null | undefined;
 };
 
 // Recently analyzed (design review P1-1): real results only, written by
@@ -119,7 +125,7 @@ export function StartPage({
               placeholder="Demo key"
               value={apiKey}
               onChange={(event) => onApiKeyChange(event.target.value)}
-              aria-label="REST API key for the demo"
+              aria-label="API key for the demo"
             />
           </label>
         </details>
@@ -131,31 +137,38 @@ export function StartPage({
             From this browser only: addresses you analyzed here.
           </p>
           <ul className="recent-list" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 12 }}>
-            {recent.map((entry) => (
+            {recent.map((entry) => {
+              const title = recentRowTitle(entry.symbol, entry.address);
+              return (
               <li key={entry.address} className="row-card">
                 <button
                   type="button"
                   className="button-ghost recent-row"
                   onClick={() => onAnalyze(entry.address)}
-                  aria-label={`Re-analyze ${entry.address}: score ${entry.score} ${entry.word}`}
+                  aria-label={`Re-analyze ${title}: score ${entry.score} ${entry.word}`}
                 >
+                  <span className="recent-title">{title}</span>
                   <span className="numeric" style={{ fontWeight: 700 }}>
                     {entry.score} {entry.word}
                   </span>
                   <span className="recent-bars" aria-hidden="true">
                     {(["rug-pull", "honeypot", "bot-pump"] as const).map((risk) => (
                       <span key={risk} className="recent-bar">
-                        <span
-                          className="recent-bar-fill"
-                          style={{ width: `${Math.round((entry.probabilities[risk] ?? 0) * 100)}%` }}
-                        />
+                        <span className="recent-bar-track">
+                          <span
+                            className="recent-bar-fill"
+                            style={{ width: `${Math.round((entry.probabilities[risk] ?? 0) * 100)}%` }}
+                          />
+                        </span>
+                        <span className="recent-bar-label">{RISK_SHORT[risk]}</span>
                       </span>
                     ))}
                   </span>
                   <span className="muted recent-top">{entry.topSignal ?? "No tracked risk patterns."}</span>
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </section>
       ) : null}

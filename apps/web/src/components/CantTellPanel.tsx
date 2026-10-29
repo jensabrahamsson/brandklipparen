@@ -1,9 +1,11 @@
 import type { JSX } from "react";
 import type { CantTellEntry } from "../types.ts";
+import { cantTellNeedsText, cantTellQuestionText } from "../lib/cantTellCopy.ts";
 import { Explain } from "./Explain.tsx";
 
 // Can't-tell panel (K-021): dashed border, hatched fill, labelled outside
-// the score. It never feeds the score and says so.
+// the score. It never feeds the score and says so. Entries render as
+// plain questions (S-131); the envelope keeps the stable slugs.
 export function CantTellPanel({ entries }: { readonly entries: readonly CantTellEntry[] }): JSX.Element {
   return (
     <section className="cant-tell" aria-label="What bytecode alone cannot tell you">
@@ -21,8 +23,8 @@ export function CantTellPanel({ entries }: { readonly entries: readonly CantTell
         <ul style={{ margin: 0, paddingLeft: 20 }}>
           {entries.map((entry) => (
             <li key={entry.question} style={{ marginBottom: 8 }}>
-              <div>{entry.question}</div>
-              <div className="quiet">Needs: {entry.dataSource}</div>
+              <div>{cantTellQuestionText(entry.question)}</div>
+              <div className="quiet">Needs {cantTellNeedsText(entry.dataSource)}</div>
             </li>
           ))}
         </ul>

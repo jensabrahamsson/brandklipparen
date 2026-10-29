@@ -16,10 +16,10 @@ External calls reachable in the transfer path. One finding carries every
 external CALL site in a transfer region as selector evidence with PC
 offsets, with the best-effort target source of the first site: an
 address loaded from storage, an argument from calldata, or unknown when
-the window shows neither. Only the `call` kind to a non-constant target
-counts: static calls to precompiles (such as ecrecover in permit) or
-balance lookups, delegatecalls, and calls to hardcoded constant
-addresses never prove a hook.
+the window shows neither. Only the `call` kind to a non-constant,
+non-caller target counts: static calls to precompiles (such as ecrecover
+in permit) or balance lookups, delegatecalls, calls to hardcoded
+constant addresses, and payouts to msg.sender never prove a hook.
 
 ## Why it matters to you
 
@@ -50,11 +50,14 @@ effective weight, which the plugin list exposes per plugin.
 
 ## Limitations / false positives
 
-The target source is resolved structurally over a short window: a load
-from storage wins over a pushed constant and calldata, and anything else
-stays unknown. A call through a computed jump target stays unknown. A
-finding never says the call was made, only that the bytecode proves the
-transfer path reaches it.
+The target source is resolved structurally over a short window: msg.sender
+(CALLER) in the window reads as a payout first, then a load from storage,
+then a pushed constant and calldata, and anything else stays unknown. A
+call through a computed jump target stays unknown. A finding never says
+the call was made, only that the bytecode proves the transfer path
+reaches it. Evidence names the function whose control-flow walk reaches
+the site; sites no unique function reaches are skipped, never guessed to
+a neighbouring function.
 
 ## Inputs
 

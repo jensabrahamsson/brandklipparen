@@ -15,7 +15,6 @@ import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
 import {
   CALLDATALOAD,
   ISZERO,
-  JUMPI,
   REVERT,
   SLOAD,
   STOP,
@@ -23,6 +22,7 @@ import {
   push1,
   sstoreConstSlot,
   tokenBytecode,
+  branchOk,
 } from "../../helpers/ownerControlFixtures.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
@@ -41,8 +41,7 @@ function gatedTransferBody(): number[] {
     ...push1(4),
     SLOAD,
     ISZERO,
-    ...push1(90),
-    JUMPI,
+    ...branchOk(),
     ...push1(0),
     0x80,
     REVERT,

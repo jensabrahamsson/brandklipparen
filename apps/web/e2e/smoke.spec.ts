@@ -100,6 +100,11 @@ test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await expect(page.getByText("91%", { exact: true })).toBeVisible();
   await expect(page.getByText("What bytecode alone cannot tell you")).toBeVisible();
   await expect(page.getByText("The owner can stop you from selling.").first()).toBeVisible();
+  // The template version is Expert-only detail (S-131): plain in Simple.
+  await expect(page.getByLabel(/Template explanation/)).not.toContainText("v1.0.0");
+  const customize = page.locator("details.customize");
+  await customize.locator("summary").click();
+  await customize.getByRole("radio", { name: "Expert" }).check();
   await expect(page.getByLabel(/Template explanation/)).toContainText("v1.0.0");
 });
 
