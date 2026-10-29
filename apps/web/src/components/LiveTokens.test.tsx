@@ -3,8 +3,10 @@ import { renderToString } from "react-dom/server";
 import { LiveTokensError, LiveTokensList } from "./LiveTokens.tsx";
 import {
   fetchLiveTokens,
+  feedStatusLabel,
   filterLiveEntries,
   formatAge,
+  isFeedStale,
   mergeShown,
   shortAddress,
   tokenCountLabel,
@@ -195,6 +197,25 @@ describe("live tokens client", () => {
     expect(formatAge(3700)).toBe("1 h ago");
     expect(formatAge(90000)).toBe("1 d ago");
     expect(formatAge(null)).toBe("unknown");
+  });
+
+  test("s132_updated_label_reads_plainly_and_flags_a_stale_feed", () => {
+    const base = 1700000000000;
+    expect(updatedAgoLabel(base, base + 3_000)).toBe("Updated just now");
+    expect(updatedAgoLabel(base, base + 12_000)).toBe("Updated 12 s ago");
+    expect(updatedAgoLabel(base, base + 180_000)).toBe("Updated 3 min ago");
+    expect(updatedAgoLabel(base, base - 5_000)).toBe("Updated just now");
+    expect(isFeedStale(base, base + 60_000)).toBe(false);
+    expect(isFeedStale(base, base + 119_000)).toBe(false);
+    expect(isFeedStale(base, base + 121_000)).toBe(true);
+    expect(feedStatusLabel(base, base + 12_000)).toBe("Updated 12 s ago");
+    expect(feedStatusLabel(base, base + 240_000)).toBe("Feed paused, last update 4 min ago");
+    const staleHtml = renderToString(
+      <LiveTokensList snapshot={snapshot([NEW])} lastPollAt={base + 300_000} />,
+    );
+    expect(staleHtml).toContain("Feed paused, last update 5 min ago");
+    const freshHtml = renderToString(<LiveTokensList snapshot={snapshot([NEW])} lastPollAt={base + 12_000} />);
+    expect(freshHtml).toContain("Updated 12 s ago");
   });
 
   test("short addresses keep head and tail", () => {

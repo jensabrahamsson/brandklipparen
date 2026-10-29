@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { ApiError } from "../lib/api.ts";
-import { errorCopy, meaningSentence, mergeDeepeningResult } from "./TokenPage.tsx";
+import { errorCopy, meaningSentence, mergeDeepeningResult, verdictBandColor } from "./TokenPage.tsx";
 import type { AnalyzeResult, Signal } from "../types.ts";
 
 function assessed(overrides: Partial<Extract<AnalyzeResult, { kind: "assessed" }>> = {}): AnalyzeResult {
@@ -111,6 +111,19 @@ describe("headline agrees with the score (S-117)", () => {
     expect(meaningSentence(result)).toBe(
       "High risk (91% honeypot): Honeypot — The owner can stop you from selling.",
     );
+  });
+});
+
+describe("verdict caret takes the risk colour (S-132)", () => {
+  test("s132_verdict_band_token_matches_badge_band", () => {
+    // Same riskBand source as RiskBadge: low scores read phosphor,
+    // elevated amber, high red, so the caret and badge always agree.
+    expect(verdictBandColor(0)).toBe("var(--low)");
+    expect(verdictBandColor(24)).toBe("var(--low)");
+    expect(verdictBandColor(30)).toBe("var(--elevated)");
+    expect(verdictBandColor(45)).toBe("var(--elevated)");
+    expect(verdictBandColor(60)).toBe("var(--high)");
+    expect(verdictBandColor(84)).toBe("var(--high)");
   });
 });
 

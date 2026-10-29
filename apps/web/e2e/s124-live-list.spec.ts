@@ -80,7 +80,9 @@ test("s124_live_list_buffers_inserts_and_labels", async ({ page, browser }) => {
   await mockStart(page, () => (secondPoll ? [CCC, AAA, BBB] : [AAA, BBB]));
   await page.goto("/#/");
   await expect(page.getByText("2 new tokens")).toBeVisible();
-  await expect(page.getByText(/Updated \d+ s ago/)).toBeVisible();
+  // The mocked feed timestamp is long past, so the header honestly reads
+  // as paused instead of ticking up seconds (S-132).
+  await expect(page.getByText(/Feed paused, last update .* ago/)).toBeVisible();
 
   // Honest labels: the middle filter names both bands it includes.
   await expect(page.getByRole("button", { name: "Elevated & high" })).toBeVisible();

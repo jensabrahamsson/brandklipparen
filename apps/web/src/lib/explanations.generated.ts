@@ -175,8 +175,8 @@ export const EXPLANATIONS = Object.freeze({
     "body": "Pinned summary of the score and the strongest single risk, shown once the score ring scrolls out of view and always on the assessment tab."
   },
   "explanation:claim": {
-    "title": "Template claim",
-    "body": "Template explanation v1.0.0: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data. Temporality says whether the pattern holds now or can change later."
+    "title": "About these claims",
+    "body": "Every claim links to the signal it renders and carries that signal's evidence pointers as quoted data. Temporality says whether the pattern holds now or can change later."
   },
   "cant-tell": {
     "title": "What bytecode cannot tell",
@@ -339,8 +339,8 @@ export const EXPLANATION_PAYLOAD = {
       "body": "Pinned summary of the score and the strongest single risk, shown once the score ring scrolls out of view and always on the assessment tab."
     },
     "explanation:claim": {
-      "title": "Template claim",
-      "body": "Template explanation v1.0.0: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data. Temporality says whether the pattern holds now or can change later."
+      "title": "About these claims",
+      "body": "Every claim links to the signal it renders and carries that signal's evidence pointers as quoted data. Temporality says whether the pattern holds now or can change later."
     },
     "cant-tell": {
       "title": "What bytecode cannot tell",

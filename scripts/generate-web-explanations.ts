@@ -164,7 +164,6 @@ export function generateExplanationsModule(repoRoot: string): string {
   const gaugeTitlesByRisk = gaugeTitles(gaugeSource);
   const bands = riskBands(riskSource);
   const bandWords = bands.map((band) => `${band.word} ${band.min}-${band.max}`).join(", ");
-  const templateVersion = requireMatch(explain, EXPLAIN_SOURCE, /SUPPORTED_TEMPLATE_VERSION[^=]*=\s*"([^"]+)"/);
   const claimSentence = requireSentence(
     explain,
     EXPLAIN_SOURCE,
@@ -266,9 +265,12 @@ export function generateExplanationsModule(repoRoot: string): string {
     title: "Result summary",
     body: "Pinned summary of the score and the strongest single risk, shown once the score ring scrolls out of view and always on the assessment tab.",
   };
+  // User-facing claim copy (S-128, S-132): plain wording only. The
+  // template version stays in the code (ExplanationList heading, API
+  // result) and never leaks into the tooltip text.
   entries["explanation:claim"] = {
-    title: "Template claim",
-    body: `Template explanation v${templateVersion}: ${claimSentence}. Temporality says whether the pattern holds now or can change later.`,
+    title: "About these claims",
+    body: `${claimSentence.charAt(0).toUpperCase()}${claimSentence.slice(1)}. Temporality says whether the pattern holds now or can change later.`,
   };
   entries["cant-tell"] = {
     title: "What bytecode cannot tell",

@@ -191,6 +191,21 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
     await expectBadgesVisible(page);
     await expectTapTargets(page);
 
+    // S-132: the verdict "?" stays inline at the end of the headline
+    // with its 44x44 tap box, and keyboard focus still opens its text.
+    const meaning = page.locator(".risk-meaning");
+    const help = page.getByTestId("explain-score:combined");
+    const meaningBox = await meaning.boundingBox();
+    const helpBox = await help.boundingBox();
+    expect(meaningBox).not.toBeNull();
+    expect(helpBox).not.toBeNull();
+    expect(helpBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+    expect(helpBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect((helpBox?.x ?? 0) - (meaningBox?.x ?? 0)).toBeGreaterThan(40);
+    await help.focus();
+    await expect(page.getByRole("tooltip")).toBeVisible();
+    await page.keyboard.press("Escape");
+
     for (const tab of ["Contract assessment", "Investigate"]) {
       await page.getByRole("tab", { name: tab }).click();
       await expectFitsViewport(page);
@@ -202,6 +217,47 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
     await openCustomize(page);
     await page.getByRole("radio", { name: "Expert" }).check();
     await expect(page.getByTestId("expert-detail")).toBeVisible();
+    await expectFitsViewport(page);
+    await expectTapTargets(page);
+
+    // S-132: compact legend stays readable on phones with the same
+    // three bands, and recent rows read as two-line cards.
+    await page.evaluate(() =>
+      sessionStorage.setItem(
+        "brandklipparen-recent",
+        JSON.stringify([
+          {
+            address: "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbee1",
+            score: 84,
+            word: "High",
+            probabilities: { "rug-pull": 0.62, honeypot: 0.91, "bot-pump": 0.34 },
+            topSignal: "The owner can stop you from selling.",
+            symbol: "LONGTOKENSYMBOL",
+            name: "Long Token Symbol",
+          },
+        ]),
+      ),
+    );
+    await page.goto("/");
+    const legend = page.locator(".legend");
+    await expect(legend).toBeVisible();
+    await expect(legend).toContainText("0–29");
+    await expect(legend).toContainText("LOW");
+    await expect(legend).toContainText("no strong owner powers seen");
+    const recentRow = page.locator(".recent-row").first();
+    await expect(recentRow).toBeVisible();
+    expect((await recentRow.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    const riskCell = recentRow.locator(".numeric").first();
+    await expect(riskCell).toContainText("High");
+    expect(await riskCell.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+    const titleBox = await recentRow.locator(".recent-title").boundingBox();
+    const barsBox = await recentRow.locator(".recent-bars").boundingBox();
+    expect(titleBox).not.toBeNull();
+    expect(barsBox).not.toBeNull();
+    expect(barsBox?.y ?? 0).toBeGreaterThanOrEqual((titleBox?.y ?? 0) + (titleBox?.height ?? 0) - 1);
+    const rowBox = await recentRow.boundingBox();
+    const view = page.viewportSize() ?? { width: 390, height: 844 };
+    expect((rowBox?.x ?? 0) + (rowBox?.width ?? 0)).toBeLessThanOrEqual(view.width);
     await expectFitsViewport(page);
     await expectTapTargets(page);
 

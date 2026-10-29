@@ -249,6 +249,15 @@ function contrastOf(first: string, second: string): number {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
+test("s132_headline_caret_reads_the_verdict_band_token", () => {
+  // The caret must take the verdict's risk colour from --verdict-band
+  // (set from riskBand, the badge's source), never a hardcoded red.
+  const marker = code.match(/\.headline-marker\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(marker.length).toBeGreaterThan(0);
+  expect(marker).toContain("var(--verdict-band");
+  expect(marker).not.toMatch(/#ff5a52/i);
+});
+
 test("s126_color_scheme_declared_dark", () => {
   expect(rootBlock()).toContain("color-scheme: dark");
 });

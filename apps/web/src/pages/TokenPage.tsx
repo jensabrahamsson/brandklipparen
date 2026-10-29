@@ -55,9 +55,11 @@ import { RISK_SHORT } from "../lib/risk.ts";
 
 const RISKS: readonly RiskKind[] = ["rug-pull", "honeypot", "bot-pump"];
 
-// Verdict header band colour (S-121): the risk band colour for the 1px
-// top border, passed as --verdict-band so the stylesheet owns the edge.
-function verdictBandColor(score: number): string {
+// Verdict header band colour (S-121, S-132): the risk band colour for
+// the 1px top border and the headline caret, passed as --verdict-band
+// so the stylesheet owns the edge. Same riskBand source as RiskBadge,
+// so caret, border and badge can never disagree.
+export function verdictBandColor(score: number): string {
   const word = riskBand(score).word;
   return word === "Low" ? "var(--low)" : word === "Elevated" ? "var(--elevated)" : "var(--high)";
 }

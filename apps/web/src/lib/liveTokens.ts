@@ -50,11 +50,49 @@ export function tokenCountLabel(count: number): string {
   return count === 1 ? "1 new token" : `${count} new tokens`;
 }
 
-// Quiet liveness note (S-124): whole seconds since the last successful
-// poll, so the column rarely changes width between 10 s polls.
+// Quiet liveness note (S-124, S-132): human-scale time since the feed's
+// last update, so the line reads plainly instead of ticking up seconds
+// forever. The feed counts as stale after two minutes without an update:
+// twelve missed 10 s polls and past the app's own 2-minute "new" window,
+// so a stuck feed reads as paused instead of merely old.
+export const FEED_STALE_AFTER_MS = 120_000;
+
+export function feedAgeSeconds(updatedAt: number, nowMs: number): number {
+  return Math.max(0, Math.round((nowMs - updatedAt) / 1000));
+}
+
+function humanDuration(totalSeconds: number): string {
+  if (totalSeconds < 60) {
+    return `${totalSeconds} s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  if (minutes < 60) {
+    return `${minutes} min`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours} h`;
+  }
+  return `${Math.floor(hours / 24)} d`;
+}
+
 export function updatedAgoLabel(updatedAt: number, nowMs: number): string {
-  const seconds = Math.max(0, Math.round((nowMs - updatedAt) / 1000));
-  return `Updated ${seconds} s ago`;
+  const seconds = feedAgeSeconds(updatedAt, nowMs);
+  if (seconds < 5) {
+    return "Updated just now";
+  }
+  return `Updated ${humanDuration(seconds)} ago`;
+}
+
+export function isFeedStale(updatedAt: number, nowMs: number): boolean {
+  return nowMs - updatedAt > FEED_STALE_AFTER_MS;
+}
+
+export function feedStatusLabel(updatedAt: number, nowMs: number): string {
+  if (isFeedStale(updatedAt, nowMs)) {
+    return `Feed paused, last update ${humanDuration(feedAgeSeconds(updatedAt, nowMs))} ago`;
+  }
+  return updatedAgoLabel(updatedAt, nowMs);
 }
 
 // Buffering (S-124): while the reader is scrolled or focused inside the

@@ -3,13 +3,13 @@ import { riskBand } from "../lib/risk.ts";
 import { RiskBadge } from "./RiskBadge.tsx";
 import {
   fetchLiveTokens,
+  feedStatusLabel,
   filterLiveEntries,
   formatAge,
   mergeShown,
   shortAddress,
   tokenCountLabel,
   unseenEntries,
-  updatedAgoLabel,
 } from "../lib/liveTokens.ts";
 import type { LiveFilter, LiveTokenEntry, LiveTokensSnapshot } from "../lib/liveTokens.ts";
 
@@ -164,7 +164,7 @@ export function LiveTokensList({
           {sourceLabel} · newest first · <span className="live" style={{ fontSize: 12 }}><i aria-hidden="true" />Live</span>
         </span>
         {lastPollAt === null ? null : (
-          <span className="quiet numeric">{updatedAgoLabel(snapshot.updatedAt, lastPollAt)}</span>
+          <span className="quiet numeric">{feedStatusLabel(snapshot.updatedAt, lastPollAt)}</span>
         )}
         <div className="chips" role="group" aria-label="Risk filters">
           {FILTERS.map((name) => (

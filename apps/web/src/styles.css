@@ -899,9 +899,12 @@ a {
   font-weight: 600;
 }
 
+/* Verdict headline caret: takes the verdict's risk colour from
+   --verdict-band, which TokenPage sets from riskBand just like the
+   badge, so caret and badge always agree. */
 .headline-marker {
-  color: var(--red);
-  text-shadow: 0 0 12px rgb(255 90 82 / 60%);
+  color: var(--verdict-band, var(--red));
+  text-shadow: 0 0 12px currentColor;
 }
 
 .risk-meaning {
@@ -913,10 +916,12 @@ a {
   overflow-wrap: anywhere;
 }
 
+/* Verdict hero: copy stays top-aligned under the token meta with the
+   dial beside it, so the card is only as tall as its content needs. */
 .score-ring-wrap {
   display: flex;
   gap: 48px;
-  align-items: center;
+  align-items: flex-start;
   flex-wrap: wrap;
 }
 
@@ -1713,6 +1718,51 @@ pre.code {
   margin-bottom: 4px;
 }
 
+/* Verdict headline trigger (S-132): the help glyph stays inline at the
+   end of the headline on narrow screens instead of wrapping to its own
+   line. The button keeps its 44x44 tap box while negative margins on the
+   wrapping span collapse its line footprint; the familiar 18 px circle
+   is a centered pseudo-element, so hover, keyboard focus and the
+   tooltip below behave exactly as before. */
+.risk-meaning .explain {
+  margin: -13px -13px -13px -7px;
+}
+
+.risk-meaning .explain-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-color: transparent;
+  font-size: 11px;
+  color: var(--phosphor);
+}
+
+.risk-meaning .explain-trigger::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--edge);
+  transition: border-color var(--dur-hover) var(--ease-out);
+}
+
+.risk-meaning .explain-trigger:hover {
+  border-color: transparent;
+}
+
+.risk-meaning .explain-trigger:hover::before {
+  border-color: var(--brand);
+}
+
 details[open] > *:not(summary) {
   animation: bk-fade var(--fade-sec) var(--ease-out) 1;
 }
@@ -1990,6 +2040,34 @@ details[open] > *:not(summary) {
   }
 }
 
+/* Recent rows as two-line cards on phones (S-132): name and risk on
+   top, bars and top signal below. The risk word never truncates; the
+   row button stays a 44 px target through the touch-target rule above. */
+@media (max-width: 640px) {
+  .recent-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+    row-gap: 6px;
+    align-items: center;
+  }
+
+  .recent-row > .numeric {
+    white-space: nowrap;
+  }
+
+  .recent-row .recent-bars {
+    grid-column: 1 / -1;
+  }
+
+  .recent-row .recent-top {
+    grid-column: 1 / -1;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+}
+
 @media (max-width: 760px) {
   body {
     padding: 8px;
@@ -2019,8 +2097,18 @@ details[open] > *:not(summary) {
     padding: 22px 0 18px;
   }
 
+  /* Compact legend on phones (S-132): same three bands and note,
+     tighter rows, so the meanings stay readable without hiding. */
   .legend {
-    display: none;
+    display: block;
+    padding: 12px 14px;
+    font-size: 12px;
+  }
+
+  .legend .legend-row {
+    grid-template-columns: 64px 80px minmax(0, 1fr);
+    gap: 8px;
+    padding: 4px 0;
   }
 
   .hero-sub {

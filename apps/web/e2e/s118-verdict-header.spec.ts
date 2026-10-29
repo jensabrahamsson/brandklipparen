@@ -136,6 +136,20 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     await expect(customize.locator("legend")).toContainText("Choose sections");
     await expect(customize.locator('[data-testid="priorities-field"]')).toHaveCount(1);
 
+    // S-132: verdict copy sits near the top under the token meta with
+    // the dial beside it, never vertically centred in a tall box.
+    const meaningBox = await header.locator(".risk-meaning").boundingBox();
+    const dialBox = await header.locator(".score-dial").boundingBox();
+    expect(meaningBox).not.toBeNull();
+    expect(dialBox).not.toBeNull();
+    expect(meaningBox?.y ?? 0).toBeLessThanOrEqual((dialBox?.y ?? 0) + 8);
+    // S-132: the headline caret takes the verdict's risk colour, here
+    // high red, from the same risk band as the badge.
+    const caretColor = await header
+      .locator(".headline-marker")
+      .evaluate((element) => getComputedStyle(element).color);
+    expect(caretColor).toBe("rgb(255, 90, 82)");
+
     // The score Explain is within 3 Tab stops after Back.
     await page.getByRole("button", { name: "← Back to search" }).focus();
     let reached = false;
