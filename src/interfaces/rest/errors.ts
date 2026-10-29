@@ -16,6 +16,7 @@ export type HttpErrorCode =
   | "not-found"
   | "assessment-not-configured"
   | "investigation-not-configured"
+  | "onchain-not-configured"
   | "rate-limited"
   | "upstream-unavailable"
   | "service-unavailable"
@@ -100,6 +101,15 @@ export function investigationNotConfigured(requestId: string): HttpError {
     501,
     "investigation-not-configured",
     "Investigation is not configured: set the investigation provider key to enable it.",
+    requestId,
+  );
+}
+
+export function onchainNotConfigured(requestId: string): HttpError {
+  return requestError(
+    501,
+    "onchain-not-configured",
+    "On-chain features are not configured: bind a chain port to enable them.",
     requestId,
   );
 }

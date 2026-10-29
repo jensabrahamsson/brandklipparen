@@ -194,6 +194,8 @@ function temporalityToCanonical(temporality: Temporality): CanonicalValue {
   switch (temporality.kind) {
     case "can-change":
       return { kind: "can-change", changer: temporality.changer as string };
+    case "can-change-unknown":
+      return { kind: "can-change-unknown" };
     case "applies-now":
       return {
         kind: "applies-now",

@@ -33,6 +33,7 @@ import { RequestId, Timestamp } from "../../domain/types.ts";
 import type { IndexVersion, ModelVersion, TemplateVersion } from "../../domain/types.ts";
 import type { CapabilityCatalogue } from "../../domain/signals.ts";
 import type { SecretString } from "../../ports/config.ts";
+import type { RpcPort } from "../../ports/rpc.ts";
 import { createApiKeyStore } from "../rest/apiKeys.ts";
 import type { ApiKeyStore } from "../rest/apiKeys.ts";
 import {
@@ -41,12 +42,14 @@ import {
   investigationNotConfigured,
   keyInToolArgs,
   missingApiKey,
+  onchainNotConfigured,
   rateLimited,
   requestTooLarge,
   toMcpError,
   unknownTool,
   validationError,
 } from "./errors.ts";
+import { readOnchainFeatures } from "../../application/onchainFeatures.ts";
 import { createRateLimiter } from "../rest/rateLimit.ts";
 import type { RateLimitConfig, RateLimiter } from "../rest/rateLimit.ts";
 import type { McpToolError } from "./errors.ts";
@@ -56,6 +59,7 @@ import {
   GET_PLUGIN_DOCS_TOOL,
   INVESTIGATE_TOKEN_TOOL,
   LIST_PLUGINS_TOOL,
+  ONCHAIN_FEATURES_TOOL,
   REQUEST_ASSESSMENT_TOOL,
   TOOL_DEFINITIONS,
   TOOL_LIST_VERSION,
@@ -65,6 +69,7 @@ import {
   parseGetPluginDocsInput,
   parseInvestigateInput,
   parseListPluginsInput,
+  parseOnchainFeaturesInput,
   parseRequestAssessmentInput,
 } from "./tools.ts";
 import type { AssessTokenInput, ToolDefinition } from "./tools.ts";
@@ -117,6 +122,11 @@ export type McpServerOptions = {
   // configuration (P-29): investigate_token answers
   // investigation-not-configured with zero model calls.
   readonly investigationService?: InvestigationService | undefined;
+  // On-chain feature reads (session A): the chain port behind serving-mode
+  // reads plus the operator-configured canonical WETH address (null when
+  // unset). Absent means onchain_features answers onchain-not-configured
+  // with zero chain calls. Read-only; the features never enter scoring.
+  readonly onchain?: { readonly rpc: RpcPort; readonly weth: string | null } | undefined;
   // Shared rate and quota limits with the REST adapter per M-08 (K-504);
   // absent limits disable the check, as in local development.
   readonly rateLimit?: RateLimitConfig | undefined;
@@ -440,6 +450,47 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     });
   }
 
+  // Point-in-time on-chain features (session A): the same gate as
+  // assess_token, then the shared on-chain service in serving mode.
+  // Display data only, never scored; an absent chain port answers
+  // onchain-not-configured with zero chain calls. Read-only like every
+  // other tool.
+  async function runOnchainFeatures(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const gated = gateToolArgs(args, parseOnchainFeaturesInput, requestId, callOptions);
+    if (!gated.ok) {
+      return err(gated.error);
+    }
+    const onchain = options.onchain;
+    if (onchain === undefined) {
+      return err(onchainNotConfigured(requestId as string));
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return err({
+        code: "internal-error",
+        message: "Analysis failed; retry with the same request ID.",
+        requestId,
+      } satisfies McpToolError);
+    }
+    const features = await readOnchainFeatures(onchain.rpc, {
+      token: gated.value.input.address,
+      requestId,
+      deadline: deadline.value,
+      mode: "serving",
+      weth: onchain.weth,
+      nowMs: Date.now,
+      headBlock: gated.value.input.block === "latest" ? undefined : (gated.value.input.block as number),
+    });
+    return ok({
+      content: Object.freeze([textBlock(JSON.stringify({ features }))]),
+      isError: false,
+    });
+  }
+
   // Registry exposure (S-046, K-031, P-10): the registry-derived reading
   // tool returns the same manifest list as GET /v1/plugins in a text
   // content block marked as data for the user (M-15). Findings keep riding
@@ -701,6 +752,9 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     }
     if (name === INVESTIGATE_TOKEN_TOOL) {
       return runInvestigate(args, requestId, callOptions);
+    }
+    if (name === ONCHAIN_FEATURES_TOOL) {
+      return runOnchainFeatures(args, requestId, callOptions);
     }
     const pluginId = pluginIdByToolName.get(name);
     if (pluginId !== undefined) {

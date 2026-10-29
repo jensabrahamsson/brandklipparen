@@ -325,7 +325,7 @@ describe("step 0 recall: slot resolution stays conservative", () => {
 });
 
 describe("step 0 recall: zero owner word stays can't-tell", () => {
-  test("offline zero word keeps can-change instead of applies-now", async () => {
+  test("offline zero word keeps changerless temporality instead of applies-now", async () => {
     const { Address, BlockNumber, IndexVersion, ModelVersion, RequestId, TemplateVersion, Timestamp } =
       await import("../../../src/domain/types.ts");
     const { FakeRpcAdapter } = await import("../../fakes/fakeRpc.ts");
@@ -406,7 +406,8 @@ describe("step 0 recall: zero owner word stays can't-tell", () => {
       if (signal.kind !== "capability") {
         continue;
       }
-      expect(signal.temporality.kind).toBe("can-change");
+      // A zero word proves no controller, so the signal names no changer.
+      expect(signal.temporality.kind).toBe("can-change-unknown");
     }
   });
 });

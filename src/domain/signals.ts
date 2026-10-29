@@ -54,8 +54,11 @@ export type MeasuredValue = {
 };
 
 // Holds-now versus can-change (K-303, A-13). The changer of a bytecode
-// capability is the authorised caller address; the proxy story (S-006)
-// widens the changer to the authority union per A-12.
+// capability is the authorised caller address proven from the ownership
+// evidence; the proxy story (S-006) widens the changer to the authority
+// union per A-12. Ownerless code carries the changerless can-change-unknown
+// marker: the capability exists in the code but no controlling account is
+// proven, so no address is named.
 export type Temporality =
   | {
       readonly kind: "applies-now";
@@ -63,7 +66,8 @@ export type Temporality =
       readonly block: BlockNumberType;
       readonly at: TimestampType;
     }
-  | { readonly kind: "can-change"; readonly changer: AddressType };
+  | { readonly kind: "can-change"; readonly changer: AddressType }
+  | { readonly kind: "can-change-unknown" };
 
 // Capability, clone-match and hard-to-analyze branches (A-12). Each branch
 // carries at least one evidence entry; the type makes empty evidence
@@ -259,8 +263,8 @@ export type CapabilityCatalogue = {
 // occurrence becomes one evidence entry pairing the occurrence PC offset
 // with the selector of the dispatcher function holding that PC, so the
 // evidence names the function the capability sits in; occurrences outside
-// every function range (dispatcher preamble) keep the positional fallback,
-// so the offset still travels with the signal wherever it is derivable.
+// every paired function range (dispatcher preamble) are skipped, never
+// guessed: a finding must name the function the capability sits in.
 export function detectCapabilities(
   bytecode: BytecodeType,
   codeHash: CodeHashType,
@@ -271,7 +275,6 @@ export function detectCapabilities(
   if (entries.length === 0) {
     return Object.freeze([]);
   }
-  const selectors = entries.map((entry) => entry.selector);
   const pcsByKey = new Map<CapabilityKey, number[]>();
   for (const instruction of disassemble(bytecode)) {
     for (const key of CAPABILITY_KEYS) {
@@ -295,8 +298,8 @@ export function detectCapabilities(
     const evidence: EvidenceType[] = [];
     for (let index = 0; index < pcs.length; index += 1) {
       const pc = pcs[index] ?? 0;
-      const selector = containingSelector(entries, pc) ?? selectors[index % selectors.length];
-      if (selector === undefined) {
+      const selector = containingSelector(entries, pc);
+      if (selector === null) {
         continue;
       }
       const offset = PcOffset.of(pc, bytecode);

@@ -26,7 +26,14 @@ import type {
   Slot as SlotType,
   StorageWord as StorageWordType,
 } from "../domain/types.ts";
-import type { BytecodeResult, RpcError, RpcPort } from "../ports/rpc.ts";
+import type {
+  BlockReceipt,
+  BytecodeResult,
+  ChainLog,
+  LogsQuery,
+  RpcError,
+  RpcPort,
+} from "../ports/rpc.ts";
 
 // Placeholder cost unit for every estimated assessment cost (K-107, I-14).
 // The unit names the estimate as a placeholder; real caps and spend are
@@ -157,6 +164,17 @@ export function withCountedRpc(rpc: RpcPort, counters: RequestCounterSink): RpcP
     getBlockNumber: (ctx: CallContext): Promise<Result<BlockNumberType, RpcError>> => {
       counters.recordRpcCalls(1);
       return rpc.getBlockNumber(ctx);
+    },
+    getLogs: (query: LogsQuery, ctx: CallContext): Promise<Result<readonly ChainLog[], RpcError>> => {
+      counters.recordRpcCalls(1);
+      return rpc.getLogs(query, ctx);
+    },
+    getBlockReceipts: (
+      block: BlockNumberType,
+      ctx: CallContext,
+    ): Promise<Result<readonly BlockReceipt[], RpcError>> => {
+      counters.recordRpcCalls(1);
+      return rpc.getBlockReceipts(block, ctx);
     },
   });
 }

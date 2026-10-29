@@ -72,6 +72,8 @@ const CLAIM_KEYS: readonly string[] = Object.freeze(["signalLinks", "temporality
 
 const CAN_CHANGE_KEYS: readonly string[] = Object.freeze(["changer", "kind"]);
 
+const CAN_CHANGE_UNKNOWN_KEYS: readonly string[] = Object.freeze(["kind"]);
+
 const APPLIES_NOW_KEYS: readonly string[] = Object.freeze([
   "at",
   "block",
@@ -124,6 +126,12 @@ function validateTemporality(raw: unknown): Temporality | null {
       return null;
     }
     return { kind: "can-change", changer: changer.value };
+  }
+  if (record["kind"] === "can-change-unknown") {
+    if (!hasExactlyKeys(record, CAN_CHANGE_UNKNOWN_KEYS)) {
+      return null;
+    }
+    return { kind: "can-change-unknown" };
   }
   if (record["kind"] === "applies-now") {
     if (!hasExactlyKeys(record, APPLIES_NOW_KEYS)) {
@@ -273,7 +281,7 @@ export function validateAssessmentOutput(
     }
     const temporality = validateTemporality(claimRecord["temporality"]);
     if (temporality === null) {
-      return err(invalid("assessment claim marker must be holds-now or can-change"));
+      return err(invalid("assessment claim marker must be holds-now, can-change or can-change-unknown"));
     }
     claims.push(
       Object.freeze({

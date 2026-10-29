@@ -208,7 +208,7 @@ export function buildAssessmentSystemPrompt(input: {
     'The "explanationVersion" value must be a semantic version string such as "1.0.0".',
     'The "text" value must be a non-empty assessment string within the output limit.',
     'The "claims" value must be an array; every claim carries exactly "signalLinks" (a non-empty array of signal id strings derived from the evidence entries), "temporality" and "text" (a non-empty string).',
-    'A "temporality" value is either {"kind":"can-change","changer":"<0x address>"} or {"kind":"applies-now","measuredValue":{"value":"<word>","slot":"<slot>","block":<number>,"at":<number>},"block":<number>,"at":<number>}.',
+    'A "temporality" value is either {"kind":"can-change","changer":"<0x address>"} or {"kind":"can-change-unknown"} (no proven controlling account) or {"kind":"applies-now","measuredValue":{"value":"<word>","slot":"<slot>","block":<number>,"at":<number>},"block":<number>,"at":<number>}. Name a changer address only when the evidence proves it; otherwise use can-change-unknown.',
   ].join("\n");
 }
 

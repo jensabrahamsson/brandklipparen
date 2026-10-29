@@ -38,7 +38,7 @@ export type Signal = {
 export type ExplanationClaim = {
   readonly text: string;
   readonly signalLinks: readonly string[];
-  readonly temporality: { readonly kind: "applies-now" | "can-change" };
+  readonly temporality: { readonly kind: "applies-now" | "can-change" | "can-change-unknown" };
 };
 
 export type CantTellEntry = {

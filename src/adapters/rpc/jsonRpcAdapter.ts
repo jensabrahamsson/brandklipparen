@@ -19,8 +19,11 @@ import type {
 } from "../../domain/types.ts";
 import type { ConfigError, SecretString } from "../../ports/config.ts";
 import type {
+  BlockReceipt,
   BytecodeResult,
   CallContext,
+  ChainLog,
+  LogsQuery,
   RpcError,
   RpcLimits,
   RpcPort,
@@ -196,6 +199,94 @@ function invalidResponse(method: string, reason: string): RpcError {
   return { kind: "invalid-response", message: `rpc response for ${method} ${reason}` };
 }
 
+// Range errors name the range, the limit or too many blocks; anything
+// else stays a plain node error. The driver halves its chunk size solely
+// on this kind, so the match stays narrow.
+function isRangeError(raw: unknown): boolean {
+  const record = recordOf(raw);
+  if (record === null) {
+    return false;
+  }
+  const message = record["message"];
+  if (typeof message !== "string") {
+    return false;
+  }
+  return /block range|range too|too many blocks|exceeds.*range|range.*exceed|query limit/i.test(message);
+}
+
+function parseQuantity(raw: unknown): number | null {
+  if (typeof raw !== "string" || !/^0x[0-9a-fA-F]+$/.test(raw)) {
+    return null;
+  }
+  const value = Number.parseInt(raw, 16);
+  return Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+// Validated chain log: every field keeps its hex shape and block and log
+// indexes become integers. Anything else is a malformed log.
+function parseChainLog(raw: unknown): ChainLog | null {
+  const record = recordOf(raw);
+  if (record === null) {
+    return null;
+  }
+  const address = record["address"];
+  const topics = record["topics"];
+  const data = record["data"];
+  const blockNumber = parseQuantity(record["blockNumber"]);
+  const logIndex = parseQuantity(record["logIndex"]);
+  const txHash = record["transactionHash"];
+  const blockHash = record["blockHash"];
+  if (
+    typeof address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(address) ||
+    !Array.isArray(topics) || !topics.every((topic) => typeof topic === "string" && /^0x[0-9a-fA-F]{64}$/.test(topic)) ||
+    typeof data !== "string" || !/^0x[0-9a-fA-F]*$/.test(data) ||
+    blockNumber === null || logIndex === null ||
+    typeof txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(txHash) ||
+    typeof blockHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(blockHash)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    address: address.toLowerCase(),
+    topics: Object.freeze(topics.map((topic) => (topic as string).toLowerCase())),
+    data: (data as string).toLowerCase(),
+    blockNumber,
+    blockHash: (blockHash as string).toLowerCase(),
+    txHash: (txHash as string).toLowerCase(),
+    logIndex,
+  });
+}
+
+// Validated block receipt: the sender, the recipient (null for creation)
+// and the created contract (null unless this receipt created one).
+function parseBlockReceipt(raw: unknown): BlockReceipt | null {
+  const record = recordOf(raw);
+  if (record === null) {
+    return null;
+  }
+  const txHash = record["transactionHash"];
+  const from = record["from"];
+  const to = record["to"];
+  const created = record["contractAddress"];
+  const status = record["status"];
+  if (
+    typeof txHash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(txHash) ||
+    typeof from !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(from) ||
+    (to !== null && (typeof to !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(to))) ||
+    (created !== null && (typeof created !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(created))) ||
+    typeof status !== "string" || !/^0x[0-9a-fA-F]+$/.test(status)
+  ) {
+    return null;
+  }
+  return Object.freeze({
+    txHash: txHash.toLowerCase(),
+    from: from.toLowerCase(),
+    to: to === null ? null : (to as string).toLowerCase(),
+    contractAddress: created === null ? null : (created as string).toLowerCase(),
+    status: (status as string).toLowerCase() !== "0x0",
+  });
+}
+
 // Module-private timeout marker: only the adapter's own timeout race
 // produces it, so a transport failure never maps to a timeout by accident.
 class RpcTimeout {
@@ -324,6 +415,130 @@ export class JsonRpcAdapter implements RpcPort {
     });
   }
 
+  async getLogs(query: LogsQuery, ctx: CallContext): Promise<Result<readonly ChainLog[], RpcError>> {
+    const filter: Record<string, unknown> = {
+      fromBlock: blockParam(query.fromBlock),
+      toBlock: blockParam(query.toBlock),
+    };
+    if (query.address !== undefined) {
+      filter["address"] = query.address;
+    }
+    if (query.topics !== undefined) {
+      filter["topics"] = query.topics.map((position) => (position === null ? null : [...position]));
+    }
+    return this.callMethod("eth_getLogs", [filter], ctx, (result): Result<readonly ChainLog[], RpcError> => {
+      if (!Array.isArray(result)) {
+        return err(invalidResponse("eth_getLogs", "holds no log array"));
+      }
+      const out: ChainLog[] = [];
+      for (const entry of result) {
+        const parsed = parseChainLog(entry);
+        if (parsed === null) {
+          return err(invalidResponse("eth_getLogs", "holds a malformed log"));
+        }
+        out.push(parsed);
+      }
+      return ok(Object.freeze(out));
+    });
+  }
+
+  async getBlockReceipts(
+    block: BlockNumberType,
+    ctx: CallContext,
+  ): Promise<Result<readonly BlockReceipt[], RpcError>> {
+    const direct = await this.callMethod(
+      "eth_getBlockReceipts",
+      [blockParam(block)],
+      ctx,
+      (result): Result<readonly BlockReceipt[], RpcError> => {
+        if (!Array.isArray(result)) {
+          return err(invalidResponse("eth_getBlockReceipts", "holds no receipt array"));
+        }
+        const out: BlockReceipt[] = [];
+        for (const entry of result) {
+          const parsed = parseBlockReceipt(entry);
+          if (parsed === null) {
+            return err(invalidResponse("eth_getBlockReceipts", "holds a malformed receipt"));
+          }
+          out.push(parsed);
+        }
+        return ok(Object.freeze(out));
+      },
+    );
+    if (direct.ok) {
+      return direct;
+    }
+    if (direct.error.kind !== "node-error") {
+      return direct;
+    }
+    return this.creationReceiptsFallback(block, ctx);
+  }
+
+  // Fallback for endpoints without eth_getBlockReceipts: list the block's
+  // transactions once and fetch receipts solely for top-level creations
+  // (to is null). A token created by a factory internally carries no
+  // top-level creation receipt, so an empty match honestly reports no
+  // direct creator instead of guessing one.
+  private async creationReceiptsFallback(
+    block: BlockNumberType,
+    ctx: CallContext,
+  ): Promise<Result<readonly BlockReceipt[], RpcError>> {
+    const fetched = await this.callMethod(
+      "eth_getBlockByNumber",
+      [blockParam(block), true],
+      ctx,
+      (result): Result<readonly { hash: string; to: string | null }[], RpcError> => {
+        const record = recordOf(result);
+        if (record === null) {
+          return err(invalidResponse("eth_getBlockByNumber", "holds no block"));
+        }
+        const rawTxs = record["transactions"];
+        if (!Array.isArray(rawTxs)) {
+          return err(invalidResponse("eth_getBlockByNumber", "holds no transaction list"));
+        }
+        const out: { hash: string; to: string | null }[] = [];
+        for (const raw of rawTxs) {
+          const tx = recordOf(raw);
+          if (tx === null || typeof tx["hash"] !== "string") {
+            return err(invalidResponse("eth_getBlockByNumber", "holds a malformed transaction"));
+          }
+          const to = tx["to"];
+          out.push({ hash: tx["hash"], to: typeof to === "string" ? to : null });
+        }
+        return ok(out);
+      },
+    );
+    if (!fetched.ok) {
+      return fetched;
+    }
+    const creations = fetched.value.filter((tx) => tx.to === null);
+    const out: BlockReceipt[] = [];
+    for (const tx of creations) {
+      const receipt = await this.callMethod(
+        "eth_getTransactionReceipt",
+        [tx.hash],
+        ctx,
+        (result): Result<BlockReceipt | null, RpcError> => {
+          if (result === null) {
+            return ok(null);
+          }
+          const parsed = parseBlockReceipt(result);
+          if (parsed === null) {
+            return err(invalidResponse("eth_getTransactionReceipt", "holds a malformed receipt"));
+          }
+          return ok(parsed);
+        },
+      );
+      if (!receipt.ok) {
+        return receipt;
+      }
+      if (receipt.value !== null) {
+        out.push(receipt.value);
+      }
+    }
+    return ok(Object.freeze(out));
+  }
+
   // A "latest" context pins the current head block first, so every
   // bytecode read binds to a concrete block number (K-102). A concrete
   // context passes through with zero extra calls.
@@ -426,6 +641,9 @@ export class JsonRpcAdapter implements RpcPort {
       return err(invalidResponse(method, "carries a mismatched envelope"));
     }
     if (record["error"] !== undefined) {
+      if (isRangeError(record["error"])) {
+        return err({ kind: "range-too-large", message: `rpc call ${method} exceeded the log range` });
+      }
       return err({ kind: "node-error", message: `rpc call ${method} failed` });
     }
     if (!("result" in record)) {

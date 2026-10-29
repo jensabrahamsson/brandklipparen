@@ -255,6 +255,13 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
   const loaded = deps.ports.modelArtifacts.load(config.modelVersion);
   const pluginWeights = loaded.ok ? loaded.value.artifact.pluginWeights : undefined;
   const apiKeys = config.apiKeys ?? Object.freeze([]);
+  // On-chain feature reads (session A): serving-mode reads through the
+  // bound chain port with the operator-configured canonical WETH (null
+  // when unset, in which case WETH-quoted pools do not qualify).
+  const onchain = Object.freeze({
+    rpc: deps.ports.rpc,
+    weth: config.feedWethAddress === undefined ? null : (config.feedWethAddress as string),
+  });
   const templateVersion = TemplateVersion.parse(PINNED_TEMPLATE_VERSION);
   if (!templateVersion.ok) {
     return err({
@@ -276,6 +283,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     pluginWeights,
     assessmentService: assessment.value,
     investigationService: investigation.value,
+    onchain,
     rateLimit: rateLimit.value,
     liveTokens,
   });
@@ -291,6 +299,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     pluginWeights,
     assessmentService: assessment.value,
     investigationService: investigation.value,
+    onchain,
     rateLimit: rateLimit.value,
   });
   return ok(

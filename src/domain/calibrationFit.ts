@@ -23,6 +23,12 @@ export type LogisticFitOptions = {
   // step, so a detector whose documented semantics are risk-increasing
   // can never learn a protective weight. Absent means unconstrained.
   readonly nonNegative?: readonly boolean[] | undefined;
+  // Per-column non-positive constraint (on-chain calibration): when true
+  // for a column, the weight projects to at most 0 after every gradient
+  // step, so a feature whose documented semantics are risk-decreasing
+  // (burned share, locker share, liquidity depth) can never learn a
+  // risk-increasing weight. Absent means unconstrained.
+  readonly nonPositive?: readonly boolean[] | undefined;
 };
 
 export function fitWeightedLogistic(
@@ -73,6 +79,9 @@ export function fitWeightedLogistic(
     for (let col = 0; col < width; col += 1) {
       weights[col] = (weights[col] ?? 0) - step * (gradW[col] ?? 0);
       if (options.nonNegative?.[col] === true && (weights[col] ?? 0) < 0) {
+        weights[col] = 0;
+      }
+      if (options.nonPositive?.[col] === true && (weights[col] ?? 0) > 0) {
         weights[col] = 0;
       }
     }
@@ -146,6 +155,7 @@ export function fitCalibratedHead(
   nonNegative: readonly boolean[],
   iterations = 500,
   step = 0.5,
+  nonPositive: readonly boolean[] = [],
 ): CalibratedHeadFit {
   let positives = 0;
   for (const label of labels) {
@@ -160,7 +170,7 @@ export function fitCalibratedHead(
       uncalibrated: true,
     });
   }
-  const fit = fitWeightedLogistic(features, labels, sampleWeights, lambda, iterations, step, { nonNegative });
+  const fit = fitWeightedLogistic(features, labels, sampleWeights, lambda, iterations, step, { nonNegative, nonPositive });
   const rawLogits = features.map((row) => predictLogit(row, fit));
   const scaled = fitPlattScaling(rawLogits, labels, sampleWeights, 0, iterations, step);
   if (scaled.slope <= 0) {

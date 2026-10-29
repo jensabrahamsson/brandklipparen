@@ -89,7 +89,9 @@ const TEST_CATALOGUE: CapabilityCatalogue = Object.freeze({
 });
 
 const TARGET = "0x0a0b0c0d0e0f1011121314151617181920212223";
-const DISPATCHER_BYTECODE = "0x8063a9059cbb1461005b57ff";
+// Dispatcher with a real function body at 0x0c holding SELFDESTRUCT, so
+// capability evidence is attributable to the paired function.
+const DISPATCHER_BYTECODE = "0x8063a9059cbb1461000c57005bff";
 
 function hardToAnalyzeSignals(signals: readonly Signal[]): Extract<Signal, { kind: "hard-to-analyze" }>[] {
   return signals.filter((signal): signal is Extract<Signal, { kind: "hard-to-analyze" }> => signal.kind === "hard-to-analyze");

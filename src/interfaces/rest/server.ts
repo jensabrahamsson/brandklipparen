@@ -74,12 +74,14 @@ import {
   keyInUrlOrBody,
   missingApiKey,
   notFound,
+  onchainNotConfigured,
   rateLimited,
   requestError,
   requestTooLarge,
   toHttpError,
   validationError,
 } from "./errors.ts";
+import { readOnchainFeatures } from "../../application/onchainFeatures.ts";
 import type { HttpError } from "./errors.ts";
 import { createRateLimiter } from "./rateLimit.ts";
 import type { RateLimitConfig, RateLimiter } from "./rateLimit.ts";
@@ -201,6 +203,12 @@ export type RestServerOptions = {
   // snapshot behind GET /v1/live-tokens. Absent reader means the list is
   // unavailable on this server (the route answers 500).
   readonly liveTokens?: LiveTokensReader | undefined;
+  // On-chain feature reads (session A): the chain port behind serving-mode
+  // reads plus the operator-configured canonical WETH address (null when
+  // unset, in which case WETH-quoted pools do not qualify). Absent means
+  // /v1/onchain-features answers onchain-not-configured. Read-only; the
+  // features never enter scoring.
+  readonly onchain?: { readonly rpc: RpcPort; readonly weth: string | null } | undefined;
   // Absent limits mean the demo runs without rate limiting, as in local
   // development and in older suites; the demo configuration always sets
   // the versioned values per I-12 (K-504, M-08).
@@ -1187,6 +1195,42 @@ export function createRestServer(options: RestServerOptions): RestServer {
         .send(serializeStoredAuditReport(report));
     },
   );
+
+  // On-chain feature read view (session A): serving-mode features at the
+  // current block (or a pinned block for reproduction) behind the same
+  // API-key gate as the analysis routes (K-024). Read-only: the features
+  // never enter scoring, and an absent chain port answers
+  // onchain-not-configured with zero chain calls.
+  app.get("/v1/onchain-features", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, request.query, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const onchain = options.onchain;
+    if (onchain === undefined) {
+      return sendError(reply, onchainNotConfigured(requestId as string));
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const { address, block } = gated.value;
+    const features = await readOnchainFeatures(onchain.rpc, {
+      token: address,
+      requestId,
+      deadline: deadline.value,
+      mode: "serving",
+      weth: onchain.weth,
+      nowMs: Date.now,
+      headBlock: block === "latest" ? undefined : (block as number),
+    });
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(JSON.stringify({ status: "ok", apiVersion: API_VERSION, features }));
+  });
 
   // Mapping provider label for the experimental toggle (S-070, K-519):
   // the UI names the provider and model id before the first call.

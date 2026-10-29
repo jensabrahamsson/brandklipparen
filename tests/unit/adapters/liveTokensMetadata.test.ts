@@ -43,6 +43,8 @@ function stubRpc(answers: ReadonlyMap<string, Uint8Array | null>): RpcPort {
     getCode: () => unsupported(),
     getStorageAt: () => unsupported(),
     getBlockNumber: () => unsupported(),
+    getLogs: () => unsupported(),
+    getBlockReceipts: () => unsupported(),
     call: async (_to: AddressType, data: CallDataType): Promise<Result<CallDataType, RpcError>> => {
       const hex = bytesToHex(data).toLowerCase();
       const answer = answers.get(hex) ?? null;
@@ -97,13 +99,13 @@ describe("token metadata reader", () => {
   test("requests the on-chain symbol() and name() selectors", async () => {
     const seen: string[] = [];
     const rpc = stubRpc(new Map());
-    const capturing = {
-      ...(rpc as unknown as Record<string, unknown>),
+    const capturing: RpcPort = {
+      ...rpc,
       call: async (to: AddressType, data: CallDataType): Promise<Result<CallDataType, RpcError>> => {
         seen.push(bytesToHex(data).toLowerCase());
         return rpc.call(to, data, undefined as never);
       },
-    } as unknown as RpcPort;
+    };
     const read = createTokenMetadataReader(capturing);
     await read(TOKEN);
     const expectedSymbol = keccak256HexOfUtf8("symbol()").slice(0, 10).toLowerCase();

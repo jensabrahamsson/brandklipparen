@@ -372,6 +372,36 @@ export async function fetchExplain(address: string, apiKey: string | null): Prom
   }
 }
 
+export type OnchainFeaturesState =
+  | { readonly status: "not-configured" }
+  | { readonly status: "ready"; readonly features: unknown }
+  | { readonly status: "failed" };
+
+// Point-in-time on-chain features (session A): serving-mode reads at the
+// current block, display data only. A 501 with the onchain-not-configured
+// code disables the panel; anything else unreadable is a failure.
+export async function fetchOnchainFeatures(address: string, apiKey: string | null): Promise<OnchainFeaturesState> {
+  try {
+    const response = await fetch(`/v1/onchain-features?address=${encodeURIComponent(address)}`, {
+      headers: apiHeaders(apiKey),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as { code?: unknown } | null;
+      if (response.status === 501 && body !== null && body.code === "onchain-not-configured") {
+        return { status: "not-configured" };
+      }
+      return { status: "failed" };
+    }
+    const body = (await response.json()) as { features?: unknown };
+    if (body.features === undefined || body.features === null || typeof body.features !== "object") {
+      return { status: "failed" };
+    }
+    return { status: "ready", features: body.features };
+  } catch {
+    return { status: "failed" };
+  }
+}
+
 export async function fetchPlugins(apiKey: string | null): Promise<readonly PluginListEntry[] | null> {
   try {
     const response = await fetch("/v1/plugins", { headers: apiHeaders(apiKey) });

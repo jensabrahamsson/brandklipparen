@@ -112,8 +112,8 @@ function toNonEmpty(items: EvidenceType[]): NonEmpty<EvidenceType> | null {
 // is unrepresentable. Each opcode occurrence becomes one evidence entry
 // pairing the occurrence PC offset with the selector of the dispatcher
 // function holding that PC, so the evidence names the function the
-// capability sits in; occurrences outside every function range keep the
-// positional fallback. This mirrors the legacy domain sweep entry for
+// capability sits in; occurrences outside every paired function range are
+// skipped, never guessed. This mirrors the legacy domain sweep entry for
 // entry, so the host conversion through the catalogue reproduces the same
 // Signals.
 function detect(input: DetectorInput): readonly PluginFinding[] {
@@ -121,7 +121,6 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   if (entries.length === 0) {
     return Object.freeze([]);
   }
-  const selectors = entries.map((entry) => entry.selector);
   const pcsByKey = new Map<CapabilityKey, number[]>();
   for (const instruction of disassemble(input.bytecode)) {
     for (const key of CAPABILITY_KEYS) {
@@ -144,8 +143,8 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
     const evidence: EvidenceType[] = [];
     for (let index = 0; index < pcs.length; index += 1) {
       const pc = pcs[index] ?? 0;
-      const selector = containingSelector(entries, pc) ?? selectors[index % selectors.length];
-      if (selector === undefined) {
+      const selector = containingSelector(entries, pc);
+      if (selector === null) {
         continue;
       }
       const offset = PcOffset.of(pc, input.bytecode);

@@ -109,6 +109,12 @@ class OutageRpcAdapter implements RpcPort {
   async getBlockNumber(): Promise<Result<never, RpcError>> {
     return { ok: false, error: { kind: "node-error", message: "fake rpc provider is down" } };
   }
+  async getLogs(): Promise<Result<never, RpcError>> {
+    return { ok: false, error: { kind: "node-error", message: "fake rpc provider is down" } };
+  }
+  async getBlockReceipts(): Promise<Result<never, RpcError>> {
+    return { ok: false, error: { kind: "node-error", message: "fake rpc provider is down" } };
+  }
 }
 
 describe("rate and cost limits (K-504, M-08, M-09)", () => {

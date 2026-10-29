@@ -128,7 +128,7 @@
                     "type": "object",
                     "required": ["kind"],
                     "properties": {
-                      "kind": { "enum": ["applies-now", "can-change"] }
+                      "kind": { "enum": ["applies-now", "can-change", "can-change-unknown"] }
                     }
                   }
                 }
@@ -181,7 +181,7 @@
                             "type": "object",
                             "required": ["kind"],
                             "properties": {
-                              "kind": { "enum": ["applies-now", "can-change"] }
+                              "kind": { "enum": ["applies-now", "can-change", "can-change-unknown"] }
                             }
                           }
                         }

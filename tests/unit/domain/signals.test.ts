@@ -186,9 +186,10 @@ describe("k010 signals carry selector and offset", () => {
 describe("k010 structural detection on synthetic bytecode", () => {
   test("k010_each_structural_opcode_gives_one_capability_signal", () => {
     // One dispatcher plus SELFDESTRUCT, DELEGATECALL, CALL and SSTORE each
-    // placed after the JUMPDEST so every PC offset is derivable.
+    // placed after the paired JUMPDEST, so every occurrence sits inside the
+    // paired function body and every PC offset is honestly attributable.
     const code = codeFromBytes([
-      0x80, 0x63, 0xa9, 0x05, 0x9c, 0xbb, 0x14, 0x60, 0x1e, 0x57, 0x5b,
+      0x80, 0x63, 0xa9, 0x05, 0x9c, 0xbb, 0x14, 0x60, 0x0a, 0x57, 0x5b,
       0xff, 0xf4, 0xf1, 0x60, 0x00, 0x55, 0x00,
     ]);
     const signals = detectCapabilities(code, codeHashOf(code), TEST_CATALOGUE, testChanger());
@@ -217,25 +218,21 @@ describe("k010 structural detection on synthetic bytecode", () => {
     );
   });
 
-  test("k010_unknown_jump_target_still_carries_opcode_offset", () => {
+  test("k010_unknown_jump_target_skips_unattributable_occurrence", () => {
     // The dispatcher target sits past the end of the code, so the selector
-    // is explicitly unknown, but the SSTORE opcode offset stays derivable.
+    // is explicitly unknown and no paired function body holds the SSTORE.
+    // Honest attribution skips the occurrence instead of guessing the
+    // selector: no signal, never a cited function the opcode does not sit
+    // in.
     const code = codeFromBytes([
       0x80, 0x63, 0x70, 0xa0, 0x82, 0x31, 0x14, 0x60, 0xff, 0x57, 0x60, 0x00, 0x55, 0x00,
     ]);
-    const signals = detectCapabilities(code, codeHashOf(code), TEST_CATALOGUE, testChanger());
-    expect(signals).toHaveLength(1);
-    const only = signals[0];
-    expect(only?.kind).toBe("capability");
-    if (only !== undefined && only.kind === "capability") {
-      expect(only.evidence[0]?.selector).toBe("0x70a08231");
-      expect(only.evidence[0]?.offset).toBe(12);
-    }
+    expect(detectCapabilities(code, codeHashOf(code), TEST_CATALOGUE, testChanger())).toEqual([]);
   });
 
   test("k010_signals_sorted_by_signal_id", () => {
     const code = codeFromBytes([
-      0x80, 0x63, 0xa9, 0x05, 0x9c, 0xbb, 0x14, 0x60, 0x1e, 0x57, 0x5b,
+      0x80, 0x63, 0xa9, 0x05, 0x9c, 0xbb, 0x14, 0x60, 0x0a, 0x57, 0x5b,
       0xff, 0xf4, 0xf1, 0x60, 0x00, 0x55, 0x00,
     ]);
     const signals = detectCapabilities(code, codeHashOf(code), TEST_CATALOGUE, testChanger());

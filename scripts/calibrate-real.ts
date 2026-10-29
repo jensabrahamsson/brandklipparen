@@ -16,6 +16,10 @@ import { parseSampleWeights, sampleWeightOf } from "../src/domain/labelWeights.t
 import { applyPlattScaling, fitCalibratedHead, fitWeightedLogistic } from "../src/domain/calibrationFit.ts";
 import { DEFAULT_BAND_THRESHOLDS, bandOfScore, chooseBandThresholds } from "../src/domain/thresholds.ts";
 import { freezeArtifactFile } from "../src/domain/artifact.ts";
+import { loadOnchainSnapshotFile } from "../src/adapters/onchain/snapshotFile.ts";
+import { joinOnchainSnapshot, rankAUC } from "../src/application/onchainCalibration.ts";
+import { ONCHAIN_FEATURE_NAMES, ONCHAIN_FEATURE_VERSION, SERVABLE_FEATURE_NAMES, featureAvailable, indexSnapshotById, snapshotFeaturesOf } from "../src/domain/onchain/snapshot.ts";
+import type { SnapshotFile, SnapshotRow } from "../src/domain/onchain/snapshot.ts";
 import { parseModelArtifact } from "../src/domain/risk.ts";
 import type { ModelArtifact } from "../src/domain/risk.ts";
 import { score } from "../src/domain/risk.ts";
@@ -128,6 +132,34 @@ if (!sampleWeightsParsed.ok) {
 }
 const sampleConfig = sampleWeightsParsed.value;
 const dataVersion = flagValue("data-version") ?? "calibration-v1";
+
+// Optional on-chain snapshot source (session B): a point-in-time snapshot
+// file supplied by another team, never scraped here. Absent means the run
+// stays bytecode-only with bit-identical behavior; present means the
+// snapshot loads, validates and joins for diagnostics and ablation fits.
+// The frozen artifact always carries the bytecode fit (score neutrality:
+// no serving-time conversion consumes on-chain weights yet).
+const onchainSnapshotPath = flagValue("onchain-snapshot") ?? process.env["BK_ONCHAIN_SNAPSHOT"];
+const onchainModeRaw = flagValue("onchain-mode") ?? process.env["BK_ONCHAIN_MODE"] ?? (onchainSnapshotPath === undefined ? "bytecode" : "both");
+if (onchainModeRaw !== "bytecode" && onchainModeRaw !== "onchain" && onchainModeRaw !== "both") {
+  fail(`invalid onchain mode: ${onchainModeRaw} (expected bytecode, onchain or both)`);
+  throw new Error("unreachable");
+}
+const onchainMode = onchainModeRaw;
+if (onchainMode !== "bytecode" && onchainSnapshotPath === undefined) {
+  fail("onchain mode needs a snapshot file: pass --onchain-snapshot or BK_ONCHAIN_SNAPSHOT");
+  throw new Error("unreachable");
+}
+if (onchainMode === "bytecode" && onchainSnapshotPath !== undefined) {
+  fail("a snapshot file is given but onchain mode is bytecode, which ignores it: drop the file or pick --onchain-mode onchain or both");
+  throw new Error("unreachable");
+}
+const skipHoldout = process.argv.includes("--skip-holdout") || process.env["BK_SKIP_HOLDOUT"] === "1";
+const extraSnapshotsRaw = flagValue("onchain-extra-snapshot") ?? process.env["BK_ONCHAIN_EXTRA_SNAPSHOTS"] ?? "";
+const extraSnapshotPaths = extraSnapshotsRaw
+  .split(",")
+  .map((entry) => entry.trim())
+  .filter((entry) => entry.length > 0);
 
 const calibrationRows = readRows(datasetPath);
 const holdoutRows = readRows(holdoutPath);
@@ -691,6 +723,7 @@ const holdoutBadLabels = holdoutRows.map(badLabel);
 const unknownSummary = summarize(unknownRows);
 
 const testFeatures = testRows.map(detectorFeatures);
+const holdoutFeatures = holdoutRows.map(detectorFeatures);
 const featureNames = FEATURE_PLUGINS.map(({ name }) => name);
 
 // TRAIN ablation importance on the fitted path: the TRAIN bad-AUC delta
@@ -713,6 +746,473 @@ const trainAuc = {
 const testBadAuc = aucRank(testSummary.badProbs, testBadLabels);
 const testBadAucCI = bootstrapAucCI(testSummary.badProbs, testBadLabels, 1000, seed + 1);
 const cofire = jaccardMatrix(trainFeatures);
+
+const appliedHigh = DEFAULT_BAND_THRESHOLDS.high;
+const appliedElevated = DEFAULT_BAND_THRESHOLDS.elevated;
+// On-chain snapshot ablation (onchain-v2 mapping): when a snapshot file is
+// given, join it to train, test and holdout rows by token id and fit the
+// onchain and combined arms beside the bytecode production fit. The
+// production fit above (rugHead/honeyHead, detectorHeadWeights, the frozen
+// artifact) never sees snapshot columns: these fits are diagnostics,
+// reported here with coverage, univariate AUCs, era checks and leakage
+// probes, so the scores cannot change until a serving-time conversion
+// exists. Only SERVABLE_FEATURE_NAMES columns (live computation matches
+// the snapshot definition) enter the arms; the rest are diagnostic-only.
+// Regularization per arm comes from grouped cross-validation inside TRAIN
+// only (grouped by codehash); test is never tuned on. With --skip-holdout
+// the holdout is not touched at all (seed-variance runs); otherwise it is
+// evaluated exactly once, after the fits are frozen.
+let onchainReport: Record<string, unknown> | null = null;
+if (onchainSnapshotPath !== undefined) {
+  const loaded = loadOnchainSnapshotFile(onchainSnapshotPath);
+  if (!loaded.ok) {
+    fail(`cannot load onchain snapshot: ${loaded.error.message}`);
+    throw new Error("unreachable");
+  }
+  const snapshot: SnapshotFile = loaded.value;
+  const trainJoin = joinOnchainSnapshot(trainRows, snapshot);
+  const testJoin = joinOnchainSnapshot(testRows, snapshot);
+  const holdoutJoin = skipHoldout ? null : joinOnchainSnapshot(holdoutRows, snapshot);
+  const unknownJoin = joinOnchainSnapshot(unknownRows, snapshot);
+  const { byId: snapshotById } = indexSnapshotById(snapshot);
+  const servableIndex = SERVABLE_FEATURE_NAMES.map((name) => ONCHAIN_FEATURE_NAMES.indexOf(name));
+  const pickServable = (matrix: readonly (readonly number[])[]): number[][] =>
+    matrix.map((row) => servableIndex.map((col) => row[col] ?? 0));
+  const trainOnchain = pickServable(trainJoin.matrix);
+  const testOnchain = pickServable(testJoin.matrix);
+  const holdoutOnchain = holdoutJoin === null ? [] : pickServable(holdoutJoin.matrix);
+  const withOnchain = (
+    base: readonly (readonly number[])[],
+    extra: readonly (readonly number[])[],
+  ): number[][] => base.map((row, index) => [...row, ...(extra[index] ?? [])]);
+  const trainBoth = withOnchain(trainFeatures, trainOnchain);
+  const testBoth = withOnchain(testFeatures, testOnchain);
+  const holdoutBoth = holdoutJoin === null ? [] : withOnchain(holdoutFeatures, holdoutOnchain);
+  // Documented risk directions for the on-chain columns (vs the missing
+  // baseline): retained control raises, renounced/burned/locked/deep
+  // lowers, drained/removed/concentrated raises, slow-to-liquidity lowers.
+  const onchainSign = (name: string): "pos" | "neg" | "free" => {
+    if (name === "owner_renounced" || name === "lp_burned_share" || name === "lp_locker_share") {
+      return "neg";
+    }
+    if (name === "liq_log10_1p_weth" || name === "blocks_deploy_to_first_capped") {
+      return "neg";
+    }
+    if (name === "conc_deployer_share" || name === "conc_top1_share" || name === "conc_top10_share") {
+      return "pos";
+    }
+    return "pos";
+  };
+  const servableSigns = SERVABLE_FEATURE_NAMES.map(onchainSign);
+  const servableNonNegative = servableSigns.map((sign) => sign === "pos");
+  const servableNonPositive = servableSigns.map((sign) => sign === "neg");
+  const bothNonNegative = [...NON_NEGATIVE, ...servableNonNegative];
+  const bothNonPositive = [...NON_NEGATIVE.map(() => false), ...servableNonPositive];
+  const headPrior = (head: "rug-pull" | "honeypot") => ({
+    bias: priorArtifact.biases[head] ?? 0,
+    slope: priorArtifact.calibration[head]?.slope ?? 1,
+    intercept: priorArtifact.calibration[head]?.intercept ?? 0,
+  });
+  // Grouped cross-validation inside TRAIN only (codehash groups, 3 folds):
+  // mean bad-AUC over folds picks the lambda per arm; ties keep the larger
+  // (simpler) lambda. Test and holdout never steer the choice.
+  const trainCodehashes = trainRows.map((row) => effectiveCodehash(row) ?? "");
+  const LAMBDA_GRID = [0.01, 0.1, 1];
+  const chooseLambda = (
+    matrix: readonly (readonly number[])[],
+    nonNegative: readonly boolean[],
+    nonPositive: readonly boolean[],
+  ): number => {
+    const folds: number[][] = [[], [], []];
+    const order = matrix.map((_, index) => index).sort((left, right) => {
+      const a = trainCodehashes[left] ?? "";
+      const b = trainCodehashes[right] ?? "";
+      return a < b ? -1 : a > b ? 1 : left - right;
+    });
+    order.forEach((rowIndex, position) => {
+      folds[position % 3]?.push(rowIndex);
+    });
+    let best = LAMBDA_GRID[LAMBDA_GRID.length - 1] ?? 0.1;
+    let bestScore = -1;
+    for (const lambda of LAMBDA_GRID) {
+      const foldScores: number[] = [];
+      for (let held = 0; held < 3; held += 1) {
+        const fitIdx: number[] = [];
+        for (let fold = 0; fold < 3; fold += 1) {
+          if (fold !== held) {
+            fitIdx.push(...(folds[fold] ?? []));
+          }
+        }
+        const heldIdx = folds[held] ?? [];
+        const fitMatrix = fitIdx.map((index) => matrix[index] ?? []);
+        const fitRugLabels = fitIdx.map((index) => trainRugLabels[index] ?? 0);
+        const fitHoneyLabels = fitIdx.map((index) => trainHoneyLabels[index] ?? 0);
+        const fitWeights = fitIdx.map((index) => trainWeights[index] ?? 0);
+        const rug = fitCalibratedHead(fitMatrix, fitRugLabels, fitWeights, lambda, headPrior("rug-pull"), nonNegative, ITERATIONS, STEP, nonPositive);
+        const honey = fitCalibratedHead(fitMatrix, fitHoneyLabels, fitWeights, lambda, headPrior("honeypot"), nonNegative, ITERATIONS, STEP, nonPositive);
+        const heldMatrix = heldIdx.map((index) => matrix[index] ?? []);
+        const heldBad = heldIdx.map((index) => trainBadLabels[index] ?? 0);
+        const probs = heldMatrix.map((features) => Math.max(headProbability(features, rug), headProbability(features, honey)));
+        foldScores.push(aucRank(probs, heldBad));
+      }
+      const mean = foldScores.reduce((total, value) => total + value, 0) / Math.max(1, foldScores.length);
+      if (mean > bestScore + 1e-9 || (Math.abs(mean - bestScore) <= 1e-9 && lambda > best)) {
+        bestScore = mean;
+        best = lambda;
+      }
+    }
+    return best;
+  };
+  const fitArm = (
+    matrix: readonly (readonly number[])[],
+    nonNegative: readonly boolean[],
+    nonPositive: readonly boolean[],
+    lambda: number,
+  ) => ({
+    rug: fitCalibratedHead(matrix, trainRugLabels, trainWeights, lambda, headPrior("rug-pull"), nonNegative, ITERATIONS, STEP, nonPositive),
+    honey: fitCalibratedHead(matrix, trainHoneyLabels, trainWeights, lambda, headPrior("honeypot"), nonNegative, ITERATIONS, STEP, nonPositive),
+    lambda,
+  });
+  const badProbsOf = (
+    matrix: readonly (readonly number[])[],
+    arm: { readonly rug: { readonly weights: readonly number[]; readonly bias: number; readonly slope: number; readonly intercept: number }; readonly honey: { readonly weights: readonly number[]; readonly bias: number; readonly slope: number; readonly intercept: number } },
+  ): number[] => matrix.map((features) => Math.max(headProbability(features, arm.rug), headProbability(features, arm.honey)));
+  const bytecodeLambda = LAMBDA;
+  const onchainLambda = chooseLambda(trainOnchain, servableNonNegative, servableNonPositive);
+  const bothLambda = chooseLambda(trainBoth, bothNonNegative, bothNonPositive);
+  const bytecodeArm = {
+    rug: rugHead,
+    honey: honeyHead,
+    lambda: bytecodeLambda,
+  };
+  const onchainArm = fitArm(trainOnchain, servableNonNegative, servableNonPositive, onchainLambda);
+  const bothArm = fitArm(trainBoth, bothNonNegative, bothNonPositive, bothLambda);
+  // Diagnostic band mapping for research arms (prob*100 through the
+  // applied bands): the arms output probabilities, not fitted scores, so
+  // this distribution is labelled diagnostic, never a product band.
+  const bandDistOf = (probs: readonly number[]) => {
+    const dist: Record<string, number> = { Low: 0, Elevated: 0, High: 0 };
+    for (const prob of probs) {
+      const band = bandOfScore((prob ?? 0) * 100, DEFAULT_BAND_THRESHOLDS);
+      dist[band] = (dist[band] ?? 0) + 1;
+    }
+    return { ...dist, note: "diagnostic prob*100 mapping, not a fitted score" };
+  };
+  const armMetrics = (
+    arm: { readonly rug: { readonly uncalibrated: boolean }; readonly honey: { readonly uncalibrated: boolean }; readonly lambda: number } & Parameters<typeof badProbsOf>[1],
+    trainMatrix: readonly (readonly number[])[],
+    testMatrix: readonly (readonly number[])[],
+    holdoutMatrix: readonly (readonly number[])[] | null,
+    testLabels: (0 | 1)[],
+    holdoutLabels: (0 | 1)[],
+  ) => {
+    const trainProbs = badProbsOf(trainMatrix, arm);
+    const testProbs = badProbsOf(testMatrix, arm);
+    const holdoutProbs = holdoutMatrix === null ? [] : badProbsOf(holdoutMatrix, arm);
+    return {
+      lambda: arm.lambda,
+      trainBadAuc: round6(aucRank(trainProbs, trainBadLabels)),
+      testBadAuc: round6(aucRank(testProbs, testLabels)),
+      testBadAucCI: bootstrapAucCI(testProbs, testLabels, 1000, seed + 1),
+      testBadBrier: round6(brier(testProbs, testLabels)),
+      testBandDist: bandDistOf(testProbs),
+      holdoutBadAuc: holdoutMatrix === null ? null : round6(aucRank(holdoutProbs, holdoutLabels)),
+      holdoutBadBrier: holdoutMatrix === null ? null : round6(brier(holdoutProbs, holdoutLabels)),
+      scoreSpread: spreadOf(testProbs),
+      rugUncalibrated: arm.rug.uncalibrated,
+      honeyUncalibrated: arm.honey.uncalibrated,
+    };
+  };
+  const eraOf = (blocks: readonly (number | null)[], labels: (0 | 1)[]) => {
+    const scores: number[] = [];
+    const kept: (0 | 1)[] = [];
+    let excluded = 0;
+    blocks.forEach((block, index) => {
+      if (block === null) {
+        excluded += 1;
+      } else {
+        scores.push(block);
+        kept.push(labels[index] ?? 0);
+      }
+    });
+    return { auc: round6(rankAUC(scores, kept)), rows: scores.length, excluded };
+  };
+  // Per-class score distribution (aggregate only, never per-token).
+  const spreadOf = (probs: readonly number[]): { count: number; mean: number; min: number; max: number } => {
+    if (probs.length === 0) {
+      return { count: 0, mean: 0, min: 0, max: 0 };
+    }
+    let total = 0;
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const prob of probs) {
+      total += prob;
+      if (prob < min) {
+        min = prob;
+      }
+      if (prob > max) {
+        max = prob;
+      }
+    }
+    return { count: probs.length, mean: round6(total / probs.length), min: round6(min), max: round6(max) };
+  };
+  const classSpread = (
+    rows: CalibrationRow[],
+    probs: readonly number[],
+  ): Record<string, { count: number; mean: number; min: number; max: number }> => {
+    const out: Record<string, { count: number; mean: number; min: number; max: number }> = {};
+    for (const label of ["honeypot", "legit", "rug", "scam", "unknown"] as const) {
+      const group = rows.map((row, index) => ({ row, prob: probs[index] ?? 0 })).filter(({ row }) => row.label === label);
+      out[label] = spreadOf(group.map(({ prob }) => prob));
+    }
+    const bad = rows.map((row, index) => ({ row, prob: probs[index] ?? 0 })).filter(({ row }) => badLabel(row) === 1);
+    const good = rows.map((row, index) => ({ row, prob: probs[index] ?? 0 })).filter(({ row }) => badLabel(row) === 0 && row.label !== "unknown");
+    out["bad=1"] = spreadOf(bad.map(({ prob }) => prob));
+    out["bad=0"] = spreadOf(good.map(({ prob }) => prob));
+    return out;
+  };
+  // Coverage per feature per class: available/total on the subset where
+  // the snapshot row exists, using the same availability the mapping
+  // uses. Binary target bad=1/bad=0 ride along.
+  const coverageOf = (rows: CalibrationRow[]): Record<string, Record<string, string>> => {
+    const out: Record<string, Record<string, string>> = {};
+    for (const feature of ONCHAIN_FEATURE_NAMES) {
+      const byLabel: Record<string, string> = {};
+      for (const label of ["honeypot", "legit", "rug", "scam", "unknown"] as const) {
+        const group = rows.filter((row) => row.label === label);
+        const hit = group.filter((row) => {
+          const snapshot: SnapshotRow | null = snapshotById.get(row.address.toLowerCase()) ?? null;
+          return featureAvailable(snapshot, feature);
+        }).length;
+        byLabel[label] = `${hit}/${group.length}`;
+      }
+      const badGroup = rows.filter((row) => badLabel(row) === 1);
+      const goodGroup = rows.filter((row) => row.label === "legit");
+      const badHit = badGroup.filter((row) => featureAvailable(snapshotById.get(row.address.toLowerCase()) ?? null, feature)).length;
+      const goodHit = goodGroup.filter((row) => featureAvailable(snapshotById.get(row.address.toLowerCase()) ?? null, feature)).length;
+      byLabel["bad=1"] = `${badHit}/${badGroup.length}`;
+      byLabel["bad=0"] = `${goodHit}/${goodGroup.length}`;
+      out[feature] = byLabel;
+    }
+    return out;
+  };
+  // Univariate AUC per on-chain feature evaluated only on the subset
+  // where it is available (train and test; holdout only without
+  // --skip-holdout). A feature with no positives or no negatives on its
+  // subset scores 0.5.
+  const univariateOf = (
+    rows: CalibrationRow[],
+    labels: (0 | 1)[],
+  ): Record<string, { auc: number; rows: number }> => {
+    const out: Record<string, { auc: number; rows: number }> = {};
+    for (const [col, feature] of ONCHAIN_FEATURE_NAMES.entries()) {
+      const scores: number[] = [];
+      const kept: (0 | 1)[] = [];
+      rows.forEach((row, index) => {
+        const snapshot: SnapshotRow | null = snapshotById.get(row.address.toLowerCase()) ?? null;
+        if (!featureAvailable(snapshot, feature)) {
+          return;
+        }
+        const vector = snapshot === null ? null : snapshotFeaturesOf(snapshot);
+        scores.push(vector?.[col] ?? 0);
+        kept.push(labels[index] ?? 0);
+      });
+      out[feature] = { auc: round6(rankAUC(scores, kept)), rows: scores.length };
+    }
+    return out;
+  };
+  // TRAIN-only error analysis (aggregate feature patterns, never
+  // per-token): false positives are legit rows at or above the applied
+  // high band, false negatives are bad rows below the applied elevated
+  // band. Mean feature values per group show what the arm leans on.
+  const trainErrorOf = (
+    probs: readonly number[],
+    matrix: readonly (readonly number[])[],
+    names: readonly string[],
+  ): {
+    falsePositives: { count: number; topFeatures: { feature: string; mean: number }[] };
+    falseNegatives: { count: number; topFeatures: { feature: string; mean: number }[] };
+  } => {
+    const falsePos: number[][] = [];
+    const falseNeg: number[][] = [];
+    trainRows.forEach((row, index) => {
+      const prob = probs[index] ?? 0;
+      if (row.label === "legit" && prob * 100 >= appliedHigh) {
+        falsePos.push([...(matrix[index] ?? [])]);
+      } else if (badLabel(row) === 1 && prob * 100 < appliedElevated) {
+        falseNeg.push([...(matrix[index] ?? [])]);
+      }
+    });
+    const topOf = (group: number[][]) => {
+      const means = names.map((feature, col) => ({
+        feature,
+        mean: round6(group.reduce((total, row) => total + (row[col] ?? 0), 0) / Math.max(1, group.length)),
+      }));
+      means.sort((left, right) => right.mean - left.mean);
+      return means.slice(0, 5);
+    };
+    return {
+      falsePositives: { count: falsePos.length, topFeatures: topOf(falsePos) },
+      falseNegatives: { count: falseNeg.length, topFeatures: topOf(falseNeg) },
+    };
+  };
+  // Leakage-check hook: extra snapshot files at other offsets load through
+  // the same validation and join, then report coverage, offset violations
+  // and the combined-arm AUC beside the era baseline. A W=0 file beating
+  // the primary offset would flag leakage, not a better feature.
+  const leakageChecks: Record<string, unknown>[] = [];
+  for (const extraPath of extraSnapshotPaths) {
+    const extra = loadOnchainSnapshotFile(extraPath);
+    if (!extra.ok) {
+      fail(`cannot load extra onchain snapshot: ${extra.error.message}`);
+      throw new Error("unreachable");
+    }
+    const extraTrain = joinOnchainSnapshot(trainRows, extra.value);
+    const extraTest = joinOnchainSnapshot(testRows, extra.value);
+    const extraBoth = fitArm(withOnchain(trainFeatures, pickServable(extraTrain.matrix)), bothNonNegative, bothNonPositive, bothLambda);
+    leakageChecks.push({
+      offsetBlocks: extra.value.offsetBlocks,
+      trainMatched: extraTrain.matched,
+      trainMissing: extraTrain.missing,
+      testMatched: extraTest.matched,
+      testMissing: extraTest.missing,
+      offsetViolations: extraTrain.violations.length,
+      eraTrainAuc: eraOf(extraTrain.deployBlocks, trainBadLabels).auc,
+      bothTrainBadAuc: round6(aucRank(badProbsOf(withOnchain(trainFeatures, pickServable(extraTrain.matrix)), extraBoth), trainBadLabels)),
+      bothTestBadAuc: round6(aucRank(badProbsOf(withOnchain(testFeatures, pickServable(extraTest.matrix)), extraBoth), testBadLabels)),
+    });
+  }
+  const allIds = new Set<string>();
+  for (const row of [...trainRows, ...testRows, ...holdoutRows, ...unknownRows]) {
+    allIds.add(row.address.toLowerCase());
+  }
+  let unmatchedSnapshots = 0;
+  for (const id of snapshotById.keys()) {
+    if (!allIds.has(id)) {
+      unmatchedSnapshots += 1;
+    }
+  }
+  const invalidReasons: Record<string, number> = {};
+  for (const invalid of snapshot.invalidRows) {
+    const key = invalid.reason.replace(/0x[0-9a-fA-F]{40}/g, "0x..").slice(0, 100);
+    invalidReasons[key] = (invalidReasons[key] ?? 0) + 1;
+  }
+  const violations = trainJoin.violations;
+  const bothNames = [...featureNames, ...SERVABLE_FEATURE_NAMES];
+  const selectedArm = onchainMode === "onchain" ? onchainArm : bothArm;
+  const selectedNames = onchainMode === "onchain" ? [...SERVABLE_FEATURE_NAMES] : bothNames;
+  const coefficientsOf = (names: readonly string[], weights: readonly number[]) =>
+    names.map((name, index) => ({ feature: name, weight: round6(weights[index] ?? 0) }));
+  const bytecodeMetrics = armMetrics(bytecodeArm, trainFeatures, testFeatures, skipHoldout ? null : holdoutFeatures, testBadLabels, holdoutBadLabels);
+  const onchainMetrics = armMetrics(onchainArm, trainOnchain, testOnchain, skipHoldout ? null : holdoutOnchain, testBadLabels, holdoutBadLabels);
+  const bothMetrics = armMetrics(bothArm, trainBoth, testBoth, skipHoldout ? null : holdoutBoth, testBadLabels, holdoutBadLabels);
+  const testBadProbs = {
+    bytecode: badProbsOf(testFeatures, bytecodeArm),
+    onchain: badProbsOf(testOnchain, onchainArm),
+    both: badProbsOf(testBoth, bothArm),
+  };
+  // Frozen 1.0.1 artifact as-is on this split vs the retrained bytecode
+  // arm: the Part A detector fix does not change the nine binary
+  // calibration features (presence only), so this comparison measures
+  // re-fit stability, and the report states that plainly.
+  let frozen101: Record<string, unknown> | null = null;
+  try {
+    const frozenRaw = JSON.parse(readFileSync(join(repoRoot, "model", "artifact-1.0.1.json"), "utf8")) as {
+      artifact: Record<string, unknown>;
+    };
+    const frozenParsed = parseModelArtifact(frozenRaw.artifact);
+    if (frozenParsed.ok) {
+      const frozenProbs = testRows.map((row) => {
+        const result = resultForRow(row, frozenParsed.value);
+        return Math.max(
+          result.probabilities["rug-pull"] as number,
+          result.probabilities.honeypot as number,
+        );
+      });
+      frozen101 = {
+        testBadAuc: round6(aucRank(frozenProbs, testBadLabels)),
+        testBadAucCI: bootstrapAucCI(frozenProbs, testBadLabels, 1000, seed + 1),
+        testBadBrier: round6(brier(frozenProbs, testBadLabels)),
+        testClassSpread: classSpread(testRows, frozenProbs),
+      };
+    }
+  } catch {
+    frozen101 = { error: "could not load artifact-1.0.1.json" };
+  }
+  onchainReport = {
+    mode: onchainMode,
+    binaryTarget: "bad=1 when label is rug, scam or honeypot; bad=0 when legit; unknown excluded from train/test and reported separately",
+    featureVersion: ONCHAIN_FEATURE_VERSION,
+    servableFeatures: [...SERVABLE_FEATURE_NAMES],
+    diagnosticOnlyFeatures: ONCHAIN_FEATURE_NAMES.filter((name) => !SERVABLE_FEATURE_NAMES.includes(name)),
+    offsetBlocks: snapshot.offsetBlocks,
+    skipHoldout,
+    coverage: {
+      train: { matched: trainJoin.matched, missing: trainJoin.missing },
+      test: { matched: testJoin.matched, missing: testJoin.missing },
+      holdout: holdoutJoin === null ? "skipped" : { matched: holdoutJoin.matched, missing: holdoutJoin.missing },
+      unknown: { matched: unknownJoin.matched, missing: unknownJoin.missing, count: unknownRows.length },
+      duplicateSnapshotRows: trainJoin.duplicateSnapshots,
+      unmatchedSnapshotRows: unmatchedSnapshots,
+      invalidSnapshotRows: snapshot.invalidRows.length,
+      invalidReasons,
+      perFeature: {
+        train: coverageOf(trainRows),
+        test: coverageOf(testRows),
+        holdout: skipHoldout ? "skipped" : coverageOf(holdoutRows),
+        unknown: coverageOf(unknownRows),
+      },
+    },
+    univariate: {
+      train: univariateOf(trainRows, trainBadLabels),
+      test: univariateOf(testRows, testBadLabels),
+      note: "each AUC uses only the subset where the feature is available",
+    },
+    drainedLp: {
+      note: "pairs with minimum-liquidity-only supply: burnedShare 1.0 means drained, mapped to burned 0 plus the affirmed flag",
+    },
+    offsetViolations: {
+      count: violations.length,
+      sample: violations.slice(0, 5),
+    },
+    era: {
+      deployBlock: {
+        train: eraOf(trainJoin.deployBlocks, trainBadLabels),
+        test: eraOf(testJoin.deployBlocks, testBadLabels),
+      },
+      snapshotBlock: {
+        train: eraOf(trainJoin.snapshotBlocks, trainBadLabels),
+        test: eraOf(testJoin.snapshotBlocks, testBadLabels),
+      },
+      note: "block numbers alone, reported but never used as features",
+    },
+    arms: {
+      bytecode: {
+        ...bytecodeMetrics,
+        testClassSpread: classSpread(testRows, testBadProbs.bytecode),
+        trainError: trainErrorOf(badProbsOf(trainFeatures, bytecodeArm), trainFeatures, featureNames),
+      },
+      onchain: {
+        ...onchainMetrics,
+        testClassSpread: classSpread(testRows, testBadProbs.onchain),
+        trainError: trainErrorOf(badProbsOf(trainOnchain, onchainArm), trainOnchain, SERVABLE_FEATURE_NAMES),
+      },
+      both: {
+        ...bothMetrics,
+        testClassSpread: classSpread(testRows, testBadProbs.both),
+        trainError: trainErrorOf(badProbsOf(trainBoth, bothArm), trainBoth, bothNames),
+      },
+    },
+    researchFit: {
+      arm: onchainMode,
+      rugHead: { uncalibrated: selectedArm.rug.uncalibrated, coefficients: coefficientsOf(selectedNames, selectedArm.rug.weights) },
+      honeyHead: { uncalibrated: selectedArm.honey.uncalibrated, coefficients: coefficientsOf(selectedNames, selectedArm.honey.weights) },
+    },
+    frozen101AsIs: frozen101,
+    leakageChecks,
+    note: "research fits are diagnostics only; the frozen artifact carries the bytecode fit",
+  };
+}
 
 // Reliability deciles on TEST bad probability: mean predicted vs
 // observed bad rate per tenth of the sorted predictions.
@@ -755,8 +1255,6 @@ function bandRows(
     }));
 }
 
-const appliedHigh = DEFAULT_BAND_THRESHOLDS.high;
-const appliedElevated = DEFAULT_BAND_THRESHOLDS.elevated;
 const worstLegitHigh = bandRows(
   testRows,
   testSummary,
@@ -771,7 +1269,6 @@ const worstBadLow = bandRows(
   (row, score) => row.label !== "legit" && score < appliedElevated,
   (left, right) => left.score - right.score,
 );
-const holdoutFeatures = holdoutRows.map(detectorFeatures);
 const holdoutWorstLegitHigh = bandRows(
   holdoutRows,
   holdoutSummary,
@@ -879,6 +1376,7 @@ const output = {
     detectors: featureNames,
     matrix: cofire.map((row) => row.map((value) => round6(value))),
   },
+  onchain: onchainReport,
   perDetectorTrainFire: FEATURE_PLUGINS.map(({ name }, index) => {
     const byLabel: Record<string, string> = {};
     for (const label of ["legit", "rug", "honeypot", "scam"]) {

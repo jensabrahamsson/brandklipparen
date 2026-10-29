@@ -41,16 +41,29 @@ A list of findings with the namespaced id
 selector evidence with the PC offset wherever derivable, and the payload
 `{ "capability": "<key>" }`. The payload carries one field, `capability`,
 and every finding carries at least one `evidence` entry with a `selector`.
-As a first-party detector, its findings convert to calibrated signals
-through the versioned model artifact, and the artifact sets their
-effective weight, which the plugin list exposes per plugin.
+Each evidence entry names the dispatcher function whose body holds the
+opcode occurrence. An occurrence outside every paired function body
+(dispatcher preamble) is skipped, never guessed: a finding never cites a
+selector the occurrence does not sit in. As a first-party detector, its
+findings convert to calibrated signals through the versioned model
+artifact, and the artifact sets their effective weight, which the plugin
+list exposes per plugin.
+
+## Who can activate it
+
+The converted signal names the proven owner address as its changer only
+when the ownership evidence plus the live owner word proves one. Code
+without a proven controller carries changerless temporality: the text
+says the code can activate the capability later but names no account.
+The analysed contract address is never named as the changer.
 
 ## Limitations / false positives
 
 The plugin sees opcodes, not intent: a capability in unreachable code, a
 guarded admin function, or a standard proxy pattern still reports. A
 finding never says the capability was used, only that the bytecode
-contains it.
+contains it. A skipped preamble occurrence means the capability was seen
+but could not be attributed, never that it is absent.
 
 ## Inputs
 

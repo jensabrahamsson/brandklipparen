@@ -25,7 +25,8 @@ import { score } from "../domain/risk.ts";
 import type { PluginFeatureMapping } from "../domain/risk.ts";
 import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
-import { CacheKey, CodeHash, Slot } from "../domain/types.ts";
+import { Address, CacheKey, CodeHash, Slot } from "../domain/types.ts";
+import { isZeroOrDead } from "../domain/onchain/topics.ts";
 import type {
   Address as AddressType,
   ArtifactChecksum as ArtifactChecksumType,
@@ -639,8 +640,9 @@ function signalsFromPluginResults(
 // when the owner-slot finding exists and its signal converts (the prior
 // artifact names the plugin with a weight above 0 and carries its feature
 // mapping); otherwise no storage read happens and scoring stays
-// untouched. A failed read or a zero word keeps the can-change
-// temporality: the live value is unknown, never guessed as renounced.
+// untouched. A failed read, a zero word or a dead (renounced) word keeps
+// the changerless can-change-unknown temporality: the live value is
+// unknown, never guessed as renounced, and no address is named.
 // The enriched signal carries applies-now; enriched analyses skip the
 // code-hash cache because the value is live chain state, not
 // code-derived.
@@ -714,8 +716,15 @@ async function attachOwnerState(
   }
   // A zero word is ambiguous: it may mean a renounced owner, an unwritten
   // slot or a stubbed offline read. Missing data yields can't-tell, never
-  // a renounced claim, so the run keeps its can-change temporality.
+  // a renounced claim, so the run keeps its changerless temporality.
   if (/^0+$/.test((stored.value as string).slice(2))) {
+    return { signals, enriched: false };
+  }
+  // The proven owner address behind the changer: the last 20 bytes of the
+  // stored word. A zero or dead address means renounced (no controller),
+  // so no address is named and the changerless marker stands.
+  const ownerAddress = addressOfStoredWord(stored.value as string);
+  if (ownerAddress === null) {
     return { signals, enriched: false };
   }
   const observed: Temporality = {
@@ -724,35 +733,70 @@ async function attachOwnerState(
     block,
     at,
   };
+  const changer: Temporality = { kind: "can-change", changer: ownerAddress };
   let enriched = false;
   const out = signals.map((signal) => {
     if (signal.kind !== "capability") {
       return signal;
     }
-    if (
-      signal.risk !== mapping.risk ||
-      signal.direction !== mapping.direction ||
-      signal.severity !== mapping.severity ||
-      evidenceKeyOf(signal.evidence) !== proof.evidenceKey
-    ) {
-      return signal;
+    const isOwnerSignal =
+      signal.risk === mapping.risk &&
+      signal.direction === mapping.direction &&
+      signal.severity === mapping.severity &&
+      evidenceKeyOf(signal.evidence) === proof.evidenceKey;
+    if (isOwnerSignal) {
+      const rebuilt = Signal.createCapability({
+        codeHash,
+        risk: signal.risk,
+        direction: signal.direction,
+        severity: signal.severity,
+        temporality: observed,
+        evidence: signal.evidence,
+        ...(signal.sourcePlugin === undefined ? {} : { sourcePlugin: signal.sourcePlugin }),
+      });
+      if (!rebuilt.ok) {
+        return signal;
+      }
+      enriched = true;
+      return rebuilt.value;
     }
-    const rebuilt = Signal.createCapability({
-      codeHash,
-      risk: signal.risk,
-      direction: signal.direction,
-      severity: signal.severity,
-      temporality: observed,
-      evidence: signal.evidence,
-      ...(signal.sourcePlugin === undefined ? {} : { sourcePlugin: signal.sourcePlugin }),
-    });
-    if (!rebuilt.ok) {
-      return signal;
+    // Every other capability names the proven owner as its changer instead
+    // of the analysed address: only the proven controller can activate it.
+    if (signal.temporality.kind === "can-change-unknown") {
+      const renamed = Signal.createCapability({
+        codeHash,
+        risk: signal.risk,
+        direction: signal.direction,
+        severity: signal.severity,
+        temporality: changer,
+        evidence: signal.evidence,
+        ...(signal.sourcePlugin === undefined ? {} : { sourcePlugin: signal.sourcePlugin }),
+      });
+      if (renamed.ok) {
+        return renamed.value;
+      }
     }
-    enriched = true;
-    return rebuilt.value;
+    return signal;
   });
   return { signals: Object.freeze(out), enriched };
+}
+
+// Proven controller behind a stored owner word: the last 20 bytes parsed
+// as an address, or null when the word is zero, dead (renounced) or not an
+// address at all. A null here keeps the changerless marker, never a guess.
+function addressOfStoredWord(word: string): AddressType | null {
+  const hex = word.toLowerCase();
+  if (!/^0x[0-9a-f]{64}$/.test(hex)) {
+    return null;
+  }
+  const parsed = Address.parse(`0x${hex.slice(-40)}`);
+  if (!parsed.ok) {
+    return null;
+  }
+  if (isZeroOrDead(parsed.value as string)) {
+    return null;
+  }
+  return parsed.value;
 }
 
 // Numbers first, text second: scoring and the template render run before the
@@ -853,7 +897,10 @@ export async function analyzeToken(
   if (!loaded.ok) {
     return err({ kind: "model-artifact-error", requestId: input.requestId, error: loaded.error });
   }
-  const observed: Temporality = { kind: "can-change", changer: input.address };
+  // Changerless by default: no controlling account is named until the
+  // ownership proof plus the live owner word below proves one. The analysed
+  // address is never the changer.
+  const observed: Temporality = { kind: "can-change-unknown" };
   // Clone-hit lookup ahead of detection (K-017): where a clone index is
   // bound, an exact code-hash or skeleton-hash hit becomes the `cloneMatch`
   // input fact for the single registry run below. A miss yields a null fact

@@ -41,8 +41,10 @@ import type { CapabilityCatalogue } from "../src/domain/signals.ts";
 import { extdecompAdapter } from "../src/adapters/extdecomp/extdecompAdapter.ts";
 import type { Result } from "../src/domain/result.ts";
 import type {
+  BlockReceipt,
   BytecodeResult,
   CallContext,
+  ChainLog,
   RpcError,
   RpcPort,
 } from "../src/ports/rpc.ts";
@@ -529,6 +531,12 @@ function createFixtureRpc(codes: ReadonlyMap<string, string>, headBlock: BlockNu
     },
     async getBlockNumber(): Promise<Result<BlockNumberType, RpcError>> {
       return { ok: true, value: headBlock };
+    },
+    async getLogs(): Promise<Result<readonly ChainLog[], RpcError>> {
+      return { ok: true, value: Object.freeze([]) };
+    },
+    async getBlockReceipts(): Promise<Result<readonly BlockReceipt[], RpcError>> {
+      return { ok: true, value: Object.freeze([]) };
     },
   };
 }

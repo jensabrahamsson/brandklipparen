@@ -126,7 +126,9 @@ describe("assessment envelope carries proxy information (K-002, K-005)", () => {
     const block = mustOk(BlockNumber.of(24000000));
     const codes = new Map<string, string>([
       [proxy as string, "0x6001600a600b600c600d600e600f55"],
-      [impl as string, "0x8063a9059cbb1461005b57ff"],
+      // Dispatcher jumps to a real body at 0x0c holding SELFDESTRUCT, so the
+      // occurrence is attributable to the paired function (no guessing).
+      [impl as string, "0x8063a9059cbb1461000c57005bff"],
     ]);
     const storage = new Map<string, Map<string, string>>([
       [

@@ -91,8 +91,9 @@ const HARD_TO_ANALYZE_LEAD: Readonly<Record<HardToAnalyzeCause, string>> = Objec
   "obfuscated-structure": "The code structure resists direct reading, so the analysis could not map all of it.",
 });
 
-// Holds-now carries value, block and time; can-change carries the authorised
-// changer (K-303). Numbers and addresses render as data.
+// Holds-now carries value, block and time; can-change carries the proven
+// changer (K-303), while can-change-unknown names no account because no
+// controlling account is proven. Numbers and addresses render as data.
 function renderMarker(temporality: Temporality): string {
   switch (temporality.kind) {
     case "applies-now": {
@@ -101,6 +102,8 @@ function renderMarker(temporality: Temporality): string {
     }
     case "can-change":
       return `Can change: account ${temporality.changer as string} can activate this later.`;
+    case "can-change-unknown":
+      return "Can change: the code can activate this later, but no controlling account is proven.";
   }
 }
 
@@ -223,6 +226,8 @@ function temporalityToCanonical(temporality: Temporality): CanonicalValue {
       };
     case "can-change":
       return { kind: "can-change", changer: temporality.changer as string };
+    case "can-change-unknown":
+      return { kind: "can-change-unknown" };
   }
 }
 

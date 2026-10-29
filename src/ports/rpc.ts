@@ -37,6 +37,7 @@ export type RpcError =
   | { kind: "rate-limited"; message: string }
   | { kind: "node-error"; message: string }
   | { kind: "invalid-response"; message: string }
+  | { kind: "range-too-large"; message: string }
   | { kind: "no-code"; message: string };
 
 // Per-port limits per A-17. Values come from the operational configuration
@@ -62,4 +63,38 @@ export interface RpcPort {
     ctx: CallContext,
   ): Promise<Result<CallDataType, RpcError>>;
   getBlockNumber(ctx: CallContext): Promise<Result<BlockNumberType, RpcError>>;
+  getLogs(query: LogsQuery, ctx: CallContext): Promise<Result<readonly ChainLog[], RpcError>>;
+  getBlockReceipts(block: BlockNumberType, ctx: CallContext): Promise<Result<readonly BlockReceipt[], RpcError>>;
 }
+
+// Historical log filter for eth_getLogs: optional address list, topic
+// filters with per-position OR lists (null matches any), and an inclusive
+// block range. Values travel as 0x hex, validated at the adapter boundary.
+export type LogsQuery = {
+  readonly address?: readonly string[] | undefined;
+  readonly topics?: readonly (readonly string[] | null)[] | undefined;
+  readonly fromBlock: BlockNumberType;
+  readonly toBlock: BlockNumberType;
+};
+
+// One decoded chain log: the minimal structural view the on-chain
+// features read. Hash fields stay hex strings; numbers are integers.
+export type ChainLog = {
+  readonly address: string;
+  readonly topics: readonly string[];
+  readonly data: string;
+  readonly blockNumber: number;
+  readonly blockHash: string;
+  readonly txHash: string;
+  readonly logIndex: number;
+};
+
+// One transaction receipt in a block: the sender and the created contract
+// (null for non-creation), used for deployer discovery.
+export type BlockReceipt = {
+  readonly txHash: string;
+  readonly from: string;
+  readonly to: string | null;
+  readonly contractAddress: string | null;
+  readonly status: boolean;
+};

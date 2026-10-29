@@ -68,6 +68,16 @@ describe("weighted logistic fitting", () => {
     expect(constrained.weights[0] ?? -1).toBe(0);
   });
 
+  test("non-positive constraint never learns a risk-increasing weight", () => {
+    const features = [[0], [0], [0], [1], [1], [1]];
+    const labels = [0, 0, 0, 1, 1, 1] as (0 | 1)[];
+    const weights = [1, 1, 1, 1, 1, 1];
+    const free = fitWeightedLogistic(features, labels, weights, 0.1, 200, 0.5);
+    expect(free.weights[0] ?? 0).toBeGreaterThan(0);
+    const constrained = fitWeightedLogistic(features, labels, weights, 0.1, 200, 0.5, { nonPositive: [true] });
+    expect(constrained.weights[0] ?? 1).toBe(0);
+  });
+
   test("platt slope floors at zero on inverted data and the map stays monotone", () => {
     const scaled = fitPlattScaling([2, 1, -1, -2], [0, 0, 1, 1], [1, 1, 1, 1], 0, 200, 0.5);
     expect(scaled.slope).toBeGreaterThanOrEqual(0);

@@ -26,6 +26,7 @@ import { ExplainPanel } from "../components/ExplainPanel.tsx";
 import { FieldPicker, PICKABLE_SECTIONS } from "../components/FieldPicker.tsx";
 import { StreamView } from "../components/StreamView.tsx";
 import { InvestigationPanel } from "../components/InvestigationPanel.tsx";
+import { OnchainPanel } from "../components/OnchainPanel.tsx";
 import { CantTellPanel } from "../components/CantTellPanel.tsx";
 import { ExplanationList } from "../components/ExplanationList.tsx";
 import { Gauge } from "../components/Gauge.tsx";
@@ -658,6 +659,7 @@ function AssessedView({
             />
             <StreamView address={address} apiKey={apiKey} />
             <ExplainPanel address={address} apiKey={apiKey} />
+            <OnchainPanel address={address} apiKey={apiKey} />
           </>
         ) : null}
       </div>

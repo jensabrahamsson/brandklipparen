@@ -55,6 +55,11 @@ export const REQUEST_ASSESSMENT_VERSION = "1.0.0";
 // their own fields and never move scores or evidence.
 export const INVESTIGATE_TOKEN_TOOL = "investigate_token";
 export const INVESTIGATE_TOKEN_VERSION = "1.0.0";
+// Point-in-time on-chain features (session A): a separate reading tool
+// over the shared on-chain service. Serving-mode features at the current
+// block (or a pinned block), display data only, never scored.
+export const ONCHAIN_FEATURES_TOOL = "onchain_features";
+export const ONCHAIN_FEATURES_VERSION = "1.0.0";
 
 export type JsonSchema = {
   readonly type: "object";
@@ -183,6 +188,13 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
     inputSchema: INVESTIGATE_TOKEN_INPUT_SCHEMA,
   }),
   Object.freeze({
+    name: ONCHAIN_FEATURES_TOOL,
+    description:
+      "Read point-in-time on-chain features for a token: owner seat, LP buckets, holder concentration, liquidity size, deployer provenance and age at the current block or a pinned block. Display data only, never scored. Read-only.",
+    version: ONCHAIN_FEATURES_VERSION,
+    inputSchema: ASSESS_TOKEN_INPUT_SCHEMA,
+  }),
+  Object.freeze({
     name: LIST_PLUGINS_TOOL,
     description:
       "List the registered detector plugins: id, version, display name, description, declared inputs, capabilities and weight. Same list as GET /v1/plugins. Read-only.",
@@ -298,6 +310,12 @@ export function parseRequestAssessmentInput(args: unknown): AssessInputError | {
 // Strict boundary check for investigate_token arguments: the same gate as
 // assess_token, so the investigation request faces identical limits (K-026).
 export function parseInvestigateInput(args: unknown): AssessInputError | { readonly input: AssessTokenInput } {
+  return parseTokenAddressInput(args);
+}
+
+// Strict boundary check for onchain_features arguments: the same gate as
+// assess_token, so the on-chain read faces identical limits.
+export function parseOnchainFeaturesInput(args: unknown): AssessInputError | { readonly input: AssessTokenInput } {
   return parseTokenAddressInput(args);
 }
 
