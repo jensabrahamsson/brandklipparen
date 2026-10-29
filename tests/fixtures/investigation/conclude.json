@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-recorded-1",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "meta-models/muse-spark-open-1026",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"provider\":\"hosted-open-weights\",\"modelId\":\"meta-models/muse-spark-open-1026\",\"decision\":{\"kind\":\"conclude\",\"narrativeDraft\":\"Recorded draft citing frozen evidence. [E:sig-1]\",\"rationale\":\"Recorded rationale: conclude from the frozen evidence.\"}}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 200,
+    "completion_tokens": 60,
+    "total_tokens": 260
+  }
+}

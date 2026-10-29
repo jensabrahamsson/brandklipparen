@@ -82,7 +82,7 @@ function fixedContext(): CallContext {
 
 function recordedAdapter(log: hostedAssessmentLogEntry[]): hostedOpenWeightsAdapter {
   return new hostedOpenWeightsAdapter({
-    endpoint: "https://hosted.example.invalid/assessment",
+    endpoint: "https://hosted.example.invalid",
     apiKey: new SecretString(FAKE_KEY),
     modelId: mustModelId(),
     transport: async () => ({ status: 200, bodyText: successBody() }),

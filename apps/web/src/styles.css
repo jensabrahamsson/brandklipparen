@@ -435,37 +435,6 @@ pre.code {
   color: var(--text-2);
 }
 
-.skeleton {
-  border-radius: var(--radius-button);
-  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface) 50%, var(--surface-2) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.4s linear infinite;
-}
-
-@keyframes skeleton-shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-.skeleton-ring {
-  width: 168px;
-  height: 168px;
-  border-radius: 50%;
-}
-
-.skeleton-gauge {
-  min-height: 120px;
-}
-
-.skeleton-line {
-  height: 16px;
-  margin-bottom: 12px;
-}
-
 .recent-row {
   display: flex;
   align-items: center;
@@ -509,7 +478,9 @@ pre.code {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
+  *,
+  *::before,
+  *::after {
     transition: none !important;
     animation: none !important;
   }
@@ -570,52 +541,38 @@ pre.code {
   margin-bottom: 4px;
 }
 
-/* Calm default depth (S-114): layered soft shadows on cards. Tilt only
-   applies while the tilt hook marks the hovered card .tilt-live, so an
-   untouched card always computes to transform none. Only the card plane
-   rotates a few degrees; glyphs inside stay untransformed and readable. */
+/* Calm static depth: a soft layered box-shadow on cards and slight
+   surface layering only. Nothing moves on scroll, hover, pointer move or
+   focus: interactive elements ease color, shadow and opacity changes
+   (at most 150 ms, ease-out) and never transform. Text is never
+   transformed and keeps its contrast. Focus rings stay clearly visible. */
 .card {
   box-shadow:
     0 1px 2px rgb(0 0 0 / 35%),
     0 10px 28px rgb(0 0 0 / 28%);
 }
 
-.card[data-tilt],
-.cant-tell[data-tilt] {
-  transform: none;
-  transition:
-    transform 220ms ease,
-    box-shadow 220ms ease;
-  will-change: transform;
-}
-
-.card[data-tilt].tilt-live,
-.cant-tell[data-tilt].tilt-live {
-  transform: perspective(900px) rotateX(var(--tilt-rx, 0deg)) rotateY(var(--tilt-ry, 0deg));
+.cant-tell {
   box-shadow:
-    0 2px 4px rgb(0 0 0 / 40%),
-    0 18px 44px rgb(0 0 0 / 38%);
+    0 1px 2px rgb(0 0 0 / 30%),
+    0 8px 22px rgb(0 0 0 / 24%);
 }
 
-/* Shared scene depth for tilted cards on wide layouts. */
-@media (min-width: 901px) {
-  .token-grid.parallax {
-    perspective: 1400px;
-  }
+.button,
+.button-ghost,
+.chip,
+.tab,
+.explain-trigger {
+  transition:
+    background-color 150ms ease-out,
+    border-color 150ms ease-out,
+    color 150ms ease-out,
+    box-shadow 150ms ease-out,
+    opacity 150ms ease-out;
 }
 
-/* Investigate-loop graph (S-114): the step list is the 3D scene. Steps
-   recede along the depth axis while every node faces the reader, so the
-   labels stay flat. Without 3D support the same list renders flat. */
-ol.graph3d {
-  list-style: none;
-  padding-left: 0;
-  perspective: 900px;
-  transform-style: preserve-3d;
-}
-
-ol.graph3d .graph3d-node {
-  transform: translateZ(var(--depth, 0px));
+/* Investigate-loop graph: a flat static 2D list in DOM order. */
+.graph-node {
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -625,23 +582,36 @@ ol.graph3d .graph3d-node {
     0 8px 22px rgb(0 0 0 / 30%);
 }
 
-@supports not (transform-style: preserve-3d) {
-  ol.graph3d {
-    perspective: none;
-  }
-
-  ol.graph3d .graph3d-node {
-    transform: none;
-  }
+/* Live new-tokens list: a static table with text-only updates. No
+transitions, no transforms, no animations: rows keep stable keys so
+polls never shift existing rows, and the "new" marker is plain text. */
+.live-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .card[data-tilt],
-  .card[data-tilt].tilt-live,
-  .cant-tell[data-tilt],
-  .cant-tell[data-tilt].tilt-live,
-  ol.graph3d,
-  ol.graph3d .graph3d-node {
-    transform: none !important;
-  }
+.live-table th,
+.live-table td {
+  text-align: left;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.live-table thead th {
+  font-size: 12px;
+  color: var(--text-3);
+  font-weight: 600;
+  border-top: none;
+}
+
+.live-new {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-left: 8px;
 }

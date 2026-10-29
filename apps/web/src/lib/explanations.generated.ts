@@ -5,6 +5,7 @@
 export const GENERATED_FROM = Object.freeze([
   "src/plugins/assessments/hosted-open-weights/PLUGIN.md",
   "src/plugins/assessments/meta-model-api/PLUGIN.md",
+  "src/plugins/assessments/generic-compatible/PLUGIN.md",
   "src/plugins/detectors/blacklist/PLUGIN.md",
   "src/plugins/detectors/capability/PLUGIN.md",
   "src/plugins/detectors/clone-match/PLUGIN.md",
@@ -36,6 +37,10 @@ export const EXPLANATIONS = Object.freeze({
   "plugin:dev.brandklipparen.assessment.meta-model-api": {
     "title": "Meta Model API assessment",
     "body": "What it checks: An opt-in Muse contract assessment of the analysed token: a short generated text beside the deterministic probabilities, score and evidence. The text never changes scores, signals or evidence. Why it matters: The deterministic page tells you what the bytecode contains; the assessment reads like a second opinion in plain words, useful when the signals alone do not answer whether you should buy."
+  },
+  "plugin:dev.brandklipparen.assessment.generic-compatible": {
+    "title": "Vendor-neutral assessment",
+    "body": "What it checks: An opt-in Muse contract assessment of the analysed token through a vendor-neutral chat-completions endpoint for local development: a short generated text beside the deterministic probabilities, score and evidence. The text never changes scores, signals or evidence. Why it matters: The deterministic page tells you what the bytecode contains; the assessment reads like a second opinion in plain words, useful when the signals alone do not answer whether you should buy."
   },
   "plugin:dev.brandklipparen.blacklist": {
     "title": "Blacklist detector",
@@ -197,6 +202,10 @@ export const EXPLANATION_PAYLOAD = {
       "title": "Meta Model API assessment",
       "body": "What it checks: An opt-in Muse contract assessment of the analysed token: a short generated text beside the deterministic probabilities, score and evidence. The text never changes scores, signals or evidence. Why it matters: The deterministic page tells you what the bytecode contains; the assessment reads like a second opinion in plain words, useful when the signals alone do not answer whether you should buy."
     },
+    "plugin:dev.brandklipparen.assessment.generic-compatible": {
+      "title": "Vendor-neutral assessment",
+      "body": "What it checks: An opt-in Muse contract assessment of the analysed token through a vendor-neutral chat-completions endpoint for local development: a short generated text beside the deterministic probabilities, score and evidence. The text never changes scores, signals or evidence. Why it matters: The deterministic page tells you what the bytecode contains; the assessment reads like a second opinion in plain words, useful when the signals alone do not answer whether you should buy."
+    },
     "plugin:dev.brandklipparen.blacklist": {
       "title": "Blacklist detector",
       "body": "What it checks: A transfer gate on a mapping entry that a privileged caller can set. The proof needs both at once: the transfer path reads a mapping entry beside an equality compare, or beside an ISZERO with no range compare between the load and the gate, with a conditional jump that can revert; and a caller-guarded function writes a mapping slot. The two may share one merged function. One finding names the first provable pair. A plain balance check or an allowance check never counts: both compile to a range compare closed by ISZERO, which the ordered veto excludes. Why it matters: A privileged block list lets the owner stop your sale while letting other transfers through. The finding names the function that writes the entry and the transfer function that reads it, so you can see both ends."
@@ -349,6 +358,7 @@ export const EXPLANATION_PAYLOAD = {
   "from": [
     "src/plugins/assessments/hosted-open-weights/PLUGIN.md",
     "src/plugins/assessments/meta-model-api/PLUGIN.md",
+    "src/plugins/assessments/generic-compatible/PLUGIN.md",
     "src/plugins/detectors/blacklist/PLUGIN.md",
     "src/plugins/detectors/capability/PLUGIN.md",
     "src/plugins/detectors/clone-match/PLUGIN.md",

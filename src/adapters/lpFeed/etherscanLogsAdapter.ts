@@ -17,6 +17,7 @@ import type {
   FeedCallContext,
   FeedLog,
   FeedPollInput,
+  FeedPollResult,
   LpFeedError,
   LpFeedPort,
 } from "../../ports/lpFeed.ts";
@@ -80,7 +81,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 // Not-configured adapter (K-505): bound when `ETHERSCAN_API_KEY` is
 // unset. Every call answers `not-configured` with zero sends.
 export class NotConfiguredEtherscanLogsAdapter implements LpFeedPort {
-  async pollLogs(): Promise<Result<readonly FeedLog[], LpFeedError>> {
+  async pollLogs(): Promise<Result<FeedPollResult, LpFeedError>> {
     return err({ kind: "not-configured", message: "the feed is not configured: set ETHERSCAN_API_KEY" });
   }
 }
@@ -145,20 +146,29 @@ export class EtherscanLogsAdapter implements LpFeedPort {
     return pages;
   }
 
-  async pollLogs(input: FeedPollInput, ctx: FeedCallContext): Promise<Result<readonly FeedLog[], LpFeedError>> {
+  async pollLogs(input: FeedPollInput, ctx: FeedCallContext): Promise<Result<FeedPollResult, LpFeedError>> {
     const checked = FeedPollInputCtor.create(input);
     if (!checked.ok) {
       return err({ kind: "invalid-response", message: checked.error.message });
     }
     const merged: FeedLog[] = [];
+    let coveredToBlock = checked.value.fromBlock - 1;
     for (const page of this.pageRange(checked.value.fromBlock, checked.value.toBlock)) {
       const paged = await this.pollPage(checked.value.factory, page.from, page.to, ctx);
       if (!paged.ok) {
-        return err(paged.error);
+        if (merged.length === 0) {
+          return err(paged.error);
+        }
+        // Partial progress is kept: pages fetched before the failure
+        // stay in the answer and the covered block names the last fully
+        // covered page, so the caller advances there and retries the rest
+        // instead of repeating the whole range.
+        return ok(Object.freeze({ logs: Object.freeze(merged), coveredToBlock }));
       }
       merged.push(...paged.value);
+      coveredToBlock = page.to;
     }
-    return ok(Object.freeze(merged));
+    return ok(Object.freeze({ logs: Object.freeze(merged), coveredToBlock }));
   }
 
   private async pollPage(
@@ -177,6 +187,7 @@ export class EtherscanLogsAdapter implements LpFeedPort {
         kind: "rate-limited",
         message: "feed backs off after a provider rate-limit answer",
         retryAfterMs: this.bucket.backoffUntilMs - at,
+        scope: "provider",
       });
     }
     if (this.bucket.tokens < 1) {
@@ -184,6 +195,7 @@ export class EtherscanLogsAdapter implements LpFeedPort {
         kind: "rate-limited",
         message: "feed token bucket is empty",
         retryAfterMs: Math.ceil(1000 / this.callsPerSecond),
+        scope: "local",
       });
     }
     if (this.bucket.dayCount >= this.dailyCap) {
@@ -191,6 +203,7 @@ export class EtherscanLogsAdapter implements LpFeedPort {
         kind: "rate-limited",
         message: "feed daily budget is spent",
         retryAfterMs: 24 * 60 * 60 * 1000,
+        scope: "local",
       });
     }
     this.bucket.tokens -= 1;
@@ -238,8 +251,9 @@ export class EtherscanLogsAdapter implements LpFeedPort {
       return err({ kind: "invalid-response", message: "feed log source gave logs in an unknown shape" });
     }
     const logs: FeedLog[] = [];
+    const stampedAt = this.now();
     for (const raw of result) {
-      const parsed = parseFeedLog(raw);
+      const parsed = parseFeedLog(raw, stampedAt);
       if (parsed === null) {
         this.skippedLogs += 1;
         continue;
@@ -313,7 +327,7 @@ export class EtherscanLogsAdapter implements LpFeedPort {
     const waitMs = this.bucket.backoffMs;
     this.bucket.backoffUntilMs = at + waitMs;
     this.bucket.backoffMs = Math.min(waitMs * 2, 60000);
-    return { kind: "rate-limited", message, retryAfterMs: waitMs };
+    return { kind: "rate-limited", message, retryAfterMs: waitMs, scope: "provider" };
   }
 
   private async withTimeout(url: string): Promise<EtherscanLogsTransportResponse> {

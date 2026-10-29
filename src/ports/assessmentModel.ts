@@ -24,7 +24,10 @@ import type {
 
 // Selected provider behind the port (K-309). The same union appears in the
 // validated configuration; the composition root maps one to the other.
-export type AssessmentProvider = "meta-model-api" | "hosted-open-weights";
+// The third value is the vendor-neutral chat-completions shape for a
+// temporary local endpoint during development; it shares the request and
+// validation logic with the other two through the shared core.
+export type AssessmentProvider = "meta-model-api" | "hosted-open-weights" | "generic-compatible";
 
 // Closed evidence list: the sole input source for the assessment (K-302).
 // Raw bytecode stays in the analysis path and never enters the prompt.
@@ -60,14 +63,20 @@ export type MuseAssessment = {
 };
 
 // Error union per A-15. Every branch keeps the template text standing under
-// K-306, with the assessment field stating the fallback.
+// K-306, with the assessment field stating the fallback. `unauthorized`
+// covers rejected credentials (HTTP 401/403) and `rejected` covers a
+// refused request (HTTP 400/404/422); both stay distinct from
+// `invalid-output` so the fallback reason never blames validation for a
+// provider refusal.
 export type AssessmentModelError =
   | { kind: "timeout"; message: string }
   | { kind: "rate-limited"; message: string }
   | { kind: "invalid-output"; message: string }
   | { kind: "output-too-large"; message: string; limitChars: number }
   | { kind: "provider-mismatch"; message: string }
-  | { kind: "unavailable"; message: string };
+  | { kind: "unavailable"; message: string }
+  | { kind: "unauthorized"; message: string }
+  | { kind: "rejected"; message: string };
 
 // Per-port limits per A-17. Values come from the operational configuration
 // (I-08, I-14); the port only names the fields.

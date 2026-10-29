@@ -2,6 +2,9 @@
 // transport (S-073, K-036, K-520, K-513). No test reaches the network:
 // each scenario replays a canned HTTP response. A missing key binds the
 // not-configured adapter with zero sends and the analysis standing.
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { ModelId } from "../../src/domain/types.ts";
 import { SecretString } from "../../src/ports/config.ts";
@@ -24,36 +27,30 @@ function mustModelId(): ModelId {
   return parsed.value;
 }
 
+const here = dirname(fileURLToPath(import.meta.url));
+const fixtureDir = join(here, "..", "fixtures", "investigation");
+
+// Every recorded body is a standard chat-completions envelope: the
+// decision travels as `choices[0].message.content`. File fixtures carry
+// the success shapes; error envelopes are built inline.
+function envelopeFor(inner: string): string {
+  return JSON.stringify({
+    id: "chatcmpl-recorded-1",
+    object: "chat.completion",
+    created: 1700000000,
+    model: investigationModelId(),
+    choices: [{ index: 0, message: { role: "assistant", content: inner }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 200, completion_tokens: 60, total_tokens: 260 },
+  });
+}
+
 function recordedTransport(scenario: InvestigationContractScenario): hostedInvestigateTransport {
   return async () => {
     switch (scenario) {
       case "run-tool":
-        return {
-          status: 200,
-          bodyText: JSON.stringify({
-            provider: "hosted-open-weights",
-            modelId: investigationModelId(),
-            decision: {
-              kind: "run-tool",
-              toolId: "evidence.list",
-              args: {},
-              rationale: "Recorded rationale: inspect the frozen evidence first.",
-            },
-          }),
-        };
+        return { status: 200, bodyText: readFileSync(join(fixtureDir, "run-tool.json"), "utf8") };
       case "conclude":
-        return {
-          status: 200,
-          bodyText: JSON.stringify({
-            provider: "hosted-open-weights",
-            modelId: investigationModelId(),
-            decision: {
-              kind: "conclude",
-              narrativeDraft: "Recorded draft citing frozen evidence. [E:sig-1]",
-              rationale: "Recorded rationale: conclude from the frozen evidence.",
-            },
-          }),
-        };
+        return { status: 200, bodyText: readFileSync(join(fixtureDir, "conclude.json"), "utf8") };
       case "timeout":
         return new Promise<never>(() => {});
       case "rate-limited":
@@ -61,17 +58,19 @@ function recordedTransport(scenario: InvestigationContractScenario): hostedInves
       case "invalid-output":
         return { status: 200, bodyText: "not json {" };
       case "output-too-large":
-        return { status: 200, bodyText: "x".repeat(300000) };
+        return { status: 200, bodyText: readFileSync(join(fixtureDir, "oversized.json"), "utf8") };
       case "unavailable":
         return { status: 503, bodyText: "down" };
       case "provider-mismatch":
         return {
           status: 200,
-          bodyText: JSON.stringify({
-            provider: "meta-model-api",
-            modelId: investigationModelId(),
-            decision: { kind: "conclude", narrativeDraft: "Wrong provider. [E:sig-1]" },
-          }),
+          bodyText: envelopeFor(
+            JSON.stringify({
+              provider: "meta-model-api",
+              modelId: investigationModelId(),
+              decision: { kind: "conclude", narrativeDraft: "Wrong provider. [E:sig-1]" },
+            }),
+          ),
         };
     }
   };
@@ -80,7 +79,7 @@ function recordedTransport(scenario: InvestigationContractScenario): hostedInves
 describe("hosted investigation adapter", () => {
   runInvestigationModelPortContract("hosted-recorded", (scenario: InvestigationContractScenario) => {
     return new hostedInvestigateAdapter({
-      endpoint: "https://api.example.test/investigate",
+      endpoint: "https://api.example.test",
       apiKey: new SecretString("test-key"),
       modelId: mustModelId(),
       timeoutMs: scenario === "timeout" ? 5 : 1000,

@@ -1,0 +1,173 @@
+import { describe, expect, test, vi } from "vitest";
+import { renderToString } from "react-dom/server";
+import { LiveTokensError, LiveTokensList } from "./LiveTokens.tsx";
+import { fetchLiveTokens, formatAge, shortAddress } from "../lib/liveTokens.ts";
+import { syntheticAddress } from "../lib/syntheticAddresses.ts";
+import type { LiveTokenEntry, LiveTokensSnapshot } from "../lib/liveTokens.ts";
+
+const NEW: LiveTokenEntry = {
+  tokenAddress: syntheticAddress(2),
+  symbol: "NEW",
+  name: "New Token",
+  pairAddress: syntheticAddress(10),
+  dex: "Uniswap V2",
+  block: 21600002,
+  createdAt: 1700000000000,
+  blockTimestampMs: 1700000000000 - 45 * 1000,
+  ageSeconds: 45,
+  initialLiquidityWeth: "1.5",
+  state: "done",
+  riskBand: "Low",
+  score: 12,
+};
+
+const PENDING: LiveTokenEntry = {
+  tokenAddress: syntheticAddress(3),
+  symbol: null,
+  name: null,
+  pairAddress: syntheticAddress(11),
+  dex: "Uniswap V3",
+  feeTier: 3000,
+  block: 21600001,
+  createdAt: 1699999990000,
+  blockTimestampMs: 1699999990000 - 3700 * 1000,
+  ageSeconds: 3700,
+  initialLiquidityWeth: null,
+  state: "analyzing",
+};
+
+const CANT_TELL: LiveTokenEntry = {
+  tokenAddress: syntheticAddress(4),
+  symbol: null,
+  name: null,
+  pairAddress: syntheticAddress(12),
+  dex: "Uniswap V2",
+  block: 21600000,
+  createdAt: 1699999900000,
+  blockTimestampMs: null,
+  ageSeconds: null,
+  initialLiquidityWeth: null,
+  state: "cant-tell",
+  reason: "no contract code at the pinned block",
+};
+
+function snapshot(items: readonly LiveTokenEntry[]): LiveTokensSnapshot {
+  return { source: "etherscan", status: "live", updatedAt: 1700000000000, items };
+}
+
+describe("live tokens list", () => {
+  test("rows render newest first with symbol, age, pair and liquidity", () => {
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} />);
+    const firstRow = html.indexOf(NEW.tokenAddress);
+    const secondRow = html.indexOf(PENDING.tokenAddress);
+    expect(firstRow).toBeGreaterThan(-1);
+    expect(secondRow).toBeGreaterThan(firstRow);
+    expect(html).toContain("NEW");
+    expect(html).toContain("45s");
+    expect(html).toContain("Uniswap V2");
+    expect(html).toContain("1.5 WETH");
+    expect(html).toContain("Uniswap V3");
+    expect(html).toContain("0.3%");
+    expect(html).toContain("1h");
+    expect(html).toContain("analyzing…");
+    expect(html).toContain("can&#x27;t tell");
+  });
+
+  test("queued rows read analyzing until the queue reaches them", () => {
+    const queued: LiveTokenEntry = { ...PENDING, state: "queued", reason: undefined };
+    const html = renderToString(<LiveTokensList snapshot={snapshot([queued])} />);
+    expect(html).toContain("analyzing…");
+    expect(html).not.toContain('data-testid="risk-badge"');
+  });
+
+  test("done rows carry the risk badge while missing data reads calm", () => {
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, CANT_TELL])} />);
+    expect(html).toContain('data-testid="risk-badge"');
+    expect(html).toContain("can&#x27;t tell");
+    expect(html).toContain(">-<");
+  });
+
+  test("unknown chain age reads as a dash with no new marker", () => {
+    const html = renderToString(<LiveTokensList snapshot={snapshot([CANT_TELL])} />);
+    expect(html).toContain(">-<");
+    expect(html).not.toContain('<span class="live-new">new</span>');
+  });
+
+  test("token links open the token page and rows keep stable keys", () => {
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} />);
+    expect(html).toContain(`href="#/token/${NEW.tokenAddress}"`);
+    expect(html).toContain(shortAddress(NEW.pairAddress));
+  });
+
+  test("the new marker is static text with no animation hooks", () => {
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} />);
+    expect(html).toContain('<span class="live-new">new</span>');
+    expect(html).not.toMatch(/animat|fade|slide|transition|keyframes|blink|flash/i);
+  });
+
+  test("the count line is the single polite live region", () => {
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} />);
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain("2 new tokens");
+    expect(html).not.toContain("<tableARIA");
+    const tableTag = html.slice(html.indexOf("<table"), html.indexOf("<table") + 120);
+    expect(tableTag).not.toContain("aria-live");
+  });
+
+  test("empty and not-configured states read plainly", () => {
+    expect(renderToString(<LiveTokensList snapshot={snapshot([])} />)).toContain("Waiting for new pairs…");
+    const off = renderToString(
+      <LiveTokensList snapshot={{ source: "none", status: "not-configured", updatedAt: 0, items: [] }} />,
+    );
+    expect(off).toContain("Set an Etherscan key to see new tokens");
+    expect(off).toContain("ETHERSCAN_API_KEY_FILE");
+  });
+});
+
+describe("live tokens client", () => {
+  test("age formats to whole calm units", () => {
+    expect(formatAge(5)).toBe("5s");
+    expect(formatAge(125)).toBe("2m");
+    expect(formatAge(3700)).toBe("1h");
+    expect(formatAge(90000)).toBe("1d");
+    expect(formatAge(null)).toBe("-");
+  });
+
+  test("short addresses keep head and tail", () => {
+    expect(shortAddress(syntheticAddress(2))).toBe(
+      `${syntheticAddress(2).slice(0, 6)}…${syntheticAddress(2).slice(-4)}`,
+    );
+    expect(shortAddress("short")).toBe("short");
+  });
+
+  test("fetch returns the snapshot and throws typed errors", async () => {
+    const body = snapshot([NEW]);
+    const fetchMock = vi.fn(async (): Promise<Response> => new Response(JSON.stringify(body), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const seen = await fetchLiveTokens("demo-key");
+      expect(seen.source).toBe("etherscan");
+      expect(seen.items).toHaveLength(1);
+      expect(fetchMock).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const failing = vi.fn(
+      async (): Promise<Response> =>
+        new Response(JSON.stringify({ code: "invalid-api-key", message: "Bad key." }), { status: 401 }),
+    );
+    vi.stubGlobal("fetch", failing);
+    try {
+      await expect(fetchLiveTokens("wrong")).rejects.toMatchObject({ status: 401, code: "invalid-api-key" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("a load failure is a polite status, not an alert, so it never competes with form errors", () => {
+    const html = renderToString(<LiveTokensError message="Could not load new tokens. Retrying…" />);
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain('role="alert"');
+    expect(html).toContain("Could not load new tokens. Retrying…");
+  });
+});

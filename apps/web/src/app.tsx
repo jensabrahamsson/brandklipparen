@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useState, type JSX, type MouseEvent } from "react";
 import { parseHash, type Route } from "./lib/route.ts";
+import { initialApiKey } from "./lib/initialApiKey.ts";
 import { StartPage } from "./pages/StartPage.tsx";
 import { TokenPage } from "./pages/TokenPage.tsx";
 
 function loadApiKey(): string {
+  let stored: string | null = null;
   try {
-    return sessionStorage.getItem("brandklipparen-api-key") ?? "";
+    stored = sessionStorage.getItem("brandklipparen-api-key");
   } catch {
-    return "";
+    stored = null;
   }
+  // Dev-only demo key (`npm run demo` sets VITE_DEMO_API_KEY for the dev
+  // server): initial field value solely when import.meta.env.DEV is true
+  // and the visitor has no entered or stored key. The branch is dead code
+  // in a production build, where neither DEV nor the variable is set.
+  const demoKey: unknown = import.meta.env.VITE_DEMO_API_KEY;
+  return initialApiKey(stored, import.meta.env.DEV, typeof demoKey === "string" ? demoKey : undefined);
 }
 
 export function App(): JSX.Element {

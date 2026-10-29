@@ -9,10 +9,26 @@
 // signed allowlist before any load (S-049): an entry the allowlist does
 // not name fails startup as a typed error, and an admitted entry with a
 // static worker module runs off the hot path through the plugin worker.
+import { randomUUID } from "node:crypto";
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
-import { TemplateVersion } from "../domain/types.ts";
+import { Address, RequestId, TemplateVersion, Timestamp } from "../domain/types.ts";
 import type { CapabilityCatalogue } from "../domain/signals.ts";
+import { FEED_FACTORIES, QUOTE_TOKENS } from "../domain/lpFeed.ts";
+import type { QuoteSet } from "../domain/lpFeed.ts";
+import { createEtherscanLogsAdapter } from "../adapters/lpFeed/etherscanLogsAdapter.ts";
+import { createRpcLogsAdapter } from "../adapters/lpFeed/rpcLogsAdapter.ts";
+import { loadLiveTokensFile, saveLiveTokensFile } from "../adapters/liveTokens/liveTokensFile.ts";
+import { systemLiveTokensTimers } from "../adapters/liveTokens/systemTimers.ts";
+import { createTokenMetadataReader } from "../adapters/liveTokens/tokenMetadata.ts";
+import {
+  bandForScore,
+  createLiveTokensService,
+} from "../application/liveTokensService.ts";
+import type {
+  LiveTokensAnalyzeResult,
+  LiveTokensService,
+} from "../application/liveTokensService.ts";
 import { buildDetectorSet, wireAppServices } from "./root.ts";
 import type {
   AnalyzeTokenPorts,
@@ -80,6 +96,10 @@ export type BuiltApp = {
   readonly detectors: DetectorSet;
   readonly assessment: AssessmentService;
   readonly investigation: InvestigationService;
+  // Live new-tokens service (E-11 follow-up): constructed here so the
+  // REST/demo runtime can start it; it runs nothing until start() is
+  // called, so tests and CLI one-shots that never start it stay idle.
+  readonly liveTokens: LiveTokensService;
   // Required rate limiting shared by both driving adapters (K-504, M-08).
   readonly rateLimit: RateLimitConfig;
   // Ready server options: the drivers construct their servers from these
@@ -229,6 +249,12 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
   if (!investigation.ok) {
     return err(investigation.error);
   }
+  // Calibrated detector weights read once at startup from the loaded
+  // artifact (S-047, P-05): absent on a load failure, in which case the
+  // routes expose the uncalibrated weight-0 list like the test wiring.
+  const loaded = deps.ports.modelArtifacts.load(config.modelVersion);
+  const pluginWeights = loaded.ok ? loaded.value.artifact.pluginWeights : undefined;
+  const apiKeys = config.apiKeys ?? Object.freeze([]);
   const templateVersion = TemplateVersion.parse(PINNED_TEMPLATE_VERSION);
   if (!templateVersion.ok) {
     return err({
@@ -237,12 +263,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
       reason: "the pinned template version must parse",
     });
   }
-  // Calibrated detector weights read once at startup from the loaded
-  // artifact (S-047, P-05): absent on a load failure, in which case the
-  // routes expose the uncalibrated weight-0 list like the test wiring.
-  const loaded = deps.ports.modelArtifacts.load(config.modelVersion);
-  const pluginWeights = loaded.ok ? loaded.value.artifact.pluginWeights : undefined;
-  const apiKeys = config.apiKeys ?? Object.freeze([]);
+  const liveTokens = buildLiveTokensService(config, services, deps, templateVersion.value);
   const rest: RestServerOptions = Object.freeze({
     services,
     apiKeys,
@@ -256,6 +277,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     assessmentService: assessment.value,
     investigationService: investigation.value,
     rateLimit: rateLimit.value,
+    liveTokens,
   });
   const mcp: McpServerOptions = Object.freeze({
     services,
@@ -277,9 +299,103 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
       detectors: wired,
       assessment: assessment.value,
       investigation: investigation.value,
+      liveTokens,
       rateLimit: rateLimit.value,
       rest,
       mcp,
     }),
   );
+}
+
+// Live new-tokens service wiring (E-11 follow-up): Etherscan logs as the
+// primary source with the RPC logs adapter as fallback, Uniswap V2 and
+// V3 factories only, WETH from BK_WETH_ADDRESS (never hard-coded), the
+// deterministic analyze pipeline for the queue (no model-assisted
+// assessment), ERC-20 name/symbol reads over the shared RPC port, and
+// the persisted list under the configured cache dir. Construction binds
+// ports only; the service polls solely after start(), which the REST
+// runtime calls.
+function buildLiveTokensService(
+  config: AppConfig,
+  services: AppServices,
+  deps: BuildAppDeps,
+  templateVersion: TemplateVersion,
+): LiveTokensService {
+  const quotes: QuoteSet = Object.freeze({
+    usdc: QUOTE_TOKENS.usdc,
+    usdt: QUOTE_TOKENS.usdt,
+    dai: QUOTE_TOKENS.dai,
+    weth: (config.feedWethAddress as string | undefined) ?? null,
+    allowNativeZero: false,
+  });
+  const factories = FEED_FACTORIES.filter(
+    (entry) => entry.dex === "uniswap-v2" || entry.dex === "uniswap-v3",
+  );
+  const filePath =
+    config.cacheDir === undefined ? undefined : `${config.cacheDir}/live-tokens.json`;
+  return createLiveTokensService({
+    timers: systemLiveTokensTimers,
+    primary: createEtherscanLogsAdapter({ apiKey: config.feedEtherscanApiKey }),
+    fallback: createRpcLogsAdapter({ url: config.feedRpcUrl }),
+    quotes,
+    factories,
+    getLatestBlock: async (): Promise<number | null> => {
+      const requestId = RequestId.parse(randomUUID());
+      const deadline = Timestamp.of(Date.now() + 15_000);
+      if (!requestId.ok || !deadline.ok) {
+        return null;
+      }
+      const numbered = await deps.ports.rpc.getBlockNumber({
+        requestId: requestId.value,
+        deadline: deadline.value,
+        block: "latest",
+      });
+      if (!numbered.ok) {
+        return null;
+      }
+      return numbered.value as number;
+    },
+    analyze: async (tokenAddress: string): Promise<LiveTokensAnalyzeResult> => {
+      const address = Address.parse(tokenAddress);
+      const requestId = RequestId.parse(randomUUID());
+      const deadline = Timestamp.of(Date.now() + 30_000);
+      if (!address.ok || !requestId.ok || !deadline.ok) {
+        return { kind: "cant-tell", reason: "invalid token address" };
+      }
+      const analysed = await services.analyzeToken({
+        address: address.value,
+        block: "latest",
+        requestId: requestId.value,
+        deadline: deadline.value,
+        modelVersion: config.modelVersion,
+        indexVersion: config.cloneIndexVersion,
+        templateVersion,
+        catalogue: DEFAULT_CAPABILITY_CATALOGUE,
+      });
+      if (!analysed.ok) {
+        if (analysed.error.kind === "rpc-error" && analysed.error.error.kind === "no-code") {
+          return { kind: "cant-tell", reason: "no contract code at the pinned block" };
+        }
+        return { kind: "error", reason: "the deterministic analysis failed" };
+      }
+      if (analysed.value.kind === "no-contract") {
+        return { kind: "cant-tell", reason: "no contract code at the pinned block" };
+      }
+      const score = analysed.value.envelope.score as number;
+      return { kind: "done", score, riskBand: bandForScore(score) };
+    },
+    readMetadata: createTokenMetadataReader(deps.ports.rpc),
+    store:
+      filePath === undefined
+        ? undefined
+        : {
+            load: () => {
+              const loaded = loadLiveTokensFile(filePath);
+              return loaded.ok ? loaded.value : null;
+            },
+            save: (doc) => {
+              saveLiveTokensFile(filePath, doc);
+            },
+          },
+  });
 }

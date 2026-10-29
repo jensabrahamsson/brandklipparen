@@ -25,14 +25,20 @@ import type { InvestigationService } from "../application/investigationService.t
 import { createDecompilerNamingService } from "../application/decompilerNaming.ts";
 import type { DecompilerNamingService } from "../application/decompilerNaming.ts";
 import type { DecompilerNamingPort } from "../ports/decompilerNaming.ts";
-import { createhostedInvestigateAdapterFromConfig } from "../adapters/investigation/hostedInvestigateAdapter.ts";
+import {
+  hostedInvestigateAdapter,
+  createhostedInvestigateAdapterFromConfig,
+} from "../adapters/investigation/hostedInvestigateAdapter.ts";
 import type { hostedInvestigateTransport } from "../adapters/investigation/hostedInvestigateAdapter.ts";
+import type { InvestigationModelPort } from "../ports/investigationModel.ts";
 import { DEFAULT_INVESTIGATION_LIMITS } from "../application/investigateToken.ts";
 import { createMetaModelApiAdapterFromConfig } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
 import type { MetaModelApiTransport } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
 import { createhostedOpenWeightsAdapterFromConfig } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 import { hosted_OPEN_WEIGHTS_MODEL_ID } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 import type { hostedOpenWeightsTransport } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
+import { createGenericCompatibleAdapterFromConfig } from "../adapters/assessment/GenericCompatible/GenericCompatibleAdapter.ts";
+import type { GenericCompatibleTransport } from "../adapters/assessment/GenericCompatible/GenericCompatibleAdapter.ts";
 import { PromptVersion } from "../domain/types.ts";
 import {
   assessmentPluginIdForProvider,
@@ -50,6 +56,7 @@ import type { PluginId } from "../plugins/api.ts";
 import type { AppConfig, ConfigError } from "../ports/config.ts";
 import type { MetaModelApiAdapter } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
 import type { hostedOpenWeightsAdapter } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
+import type { GenericCompatibleAdapter } from "../adapters/assessment/GenericCompatible/GenericCompatibleAdapter.ts";
 import type { ModelId } from "../domain/types.ts";
 import type { AssessmentProvider } from "../ports/assessmentModel.ts";
 
@@ -94,6 +101,7 @@ export type AssessmentHealthStatus =
 const PROVIDER_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_PROVIDER";
 const META_MODEL_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID";
 const hosted_MODEL_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID";
+const generic_COMPATIBLE_MODEL_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID";
 
 // Documented default assessment intent (S-029, K-309): Jens's demo default
 // is the hosted open-weights provider with the published open-weights
@@ -113,7 +121,10 @@ function hasProviderCredentials(config: AppConfig): boolean {
     config.assessmenthostedApiKey !== undefined ||
     config.assessmenthostedModelId !== undefined ||
     config.assessmenthostedBaseUrl !== undefined ||
-    config.assessmenthostedDeploymentId !== undefined
+    config.assessmenthostedDeploymentId !== undefined ||
+    config.assessmentGenericCompatibleApiKey !== undefined ||
+    config.assessmentGenericCompatibleModelId !== undefined ||
+    config.assessmentGenericCompatibleBaseUrl !== undefined
   );
 }
 
@@ -140,6 +151,12 @@ export function selectAssessmentBinding(config: AppConfig): Result<AssessmentBin
       return err({ kind: "missing-variable", variable: META_MODEL_VARIABLE });
     }
     return ok({ kind: "enabled", provider, modelId: config.assessmentMetaModelId, pluginId });
+  }
+  if (provider === "generic-compatible") {
+    if (config.assessmentGenericCompatibleModelId === undefined) {
+      return err({ kind: "missing-variable", variable: generic_COMPATIBLE_MODEL_VARIABLE });
+    }
+    return ok({ kind: "enabled", provider, modelId: config.assessmentGenericCompatibleModelId, pluginId });
   }
   if (config.assessmenthostedModelId === undefined) {
     return err({ kind: "missing-variable", variable: hosted_MODEL_VARIABLE });
@@ -195,6 +212,7 @@ function isPlaceholderModelId(modelId: string): boolean {
 export type AssessmentTransportOverrides = {
   readonly metaTransport?: MetaModelApiTransport | undefined;
   readonly hostedTransport?: hostedOpenWeightsTransport | undefined;
+  readonly GenericCompatibleTransport?: GenericCompatibleTransport | undefined;
 };
 
 // Static lookup of registered assessment plugins: the composition root
@@ -213,7 +231,7 @@ export function createAssessmentAdapterForPlugin(
   pluginId: PluginId,
   config: AppConfig,
   overrides: AssessmentTransportOverrides = {},
-): Result<MetaModelApiAdapter | hostedOpenWeightsAdapter, ConfigError> {
+): Result<MetaModelApiAdapter | hostedOpenWeightsAdapter | GenericCompatibleAdapter, ConfigError> {
   const assessed = buildDefaultAssessmentRegistry();
   if (!assessed.ok) {
     return err({
@@ -242,6 +260,21 @@ export function createAssessmentAdapterForPlugin(
         assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
       },
       overrides.metaTransport,
+    );
+  }
+  if (plugin.provider === "generic-compatible") {
+    return createGenericCompatibleAdapterFromConfig(
+      {
+        assessmentGenericCompatibleBaseUrl: config.assessmentGenericCompatibleBaseUrl,
+        assessmentGenericCompatibleApiKey: config.assessmentGenericCompatibleApiKey,
+        assessmentGenericCompatibleModelId: config.assessmentGenericCompatibleModelId,
+        assessmentDeadlineMs: config.assessmentDeadlineMs,
+        assessmentMaxInputBytes: config.assessmentMaxInputBytes,
+        assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
+        assessmentGenericCompatibleTemperature: config.assessmentGenericCompatibleTemperature,
+        assessmentGenericCompatibleMaxTokens: config.assessmentGenericCompatibleMaxTokens,
+      },
+      overrides.GenericCompatibleTransport,
     );
   }
   return createhostedOpenWeightsAdapterFromConfig(
@@ -331,8 +364,73 @@ export function buildDecompilerNamingService(
   return createDecompilerNamingService(port);
 }
 
+// Vendor-neutral sharing for local development: when the assessment
+// selects the vendor-neutral provider with a complete endpoint triple
+// and no investigation field is configured at all, the investigation
+// loop reuses the assessment endpoint, key and model id. Any explicit
+// investigation field keeps the existing path below (including the
+// not-configured adapter on a partial triple); without either, the loop
+// stays not-configured. Returns null when sharing does not apply.
+function sharedInvestigateAdapterFromAssessment(
+  config: AppConfig,
+  transport: hostedInvestigateTransport | undefined,
+): InvestigationModelPort | null {
+  if (
+    config.investigatehostedBaseUrl !== undefined ||
+    config.investigatehostedApiKey !== undefined ||
+    config.investigatehostedModelId !== undefined
+  ) {
+    return null;
+  }
+  if (config.assessmentProvider !== "generic-compatible") {
+    return null;
+  }
+  const endpoint = config.assessmentGenericCompatibleBaseUrl;
+  const apiKey = config.assessmentGenericCompatibleApiKey;
+  const modelId = config.assessmentGenericCompatibleModelId;
+  if (endpoint === undefined || apiKey === undefined || modelId === undefined) {
+    return null;
+  }
+  return new hostedInvestigateAdapter({
+    endpoint,
+    apiKey,
+    modelId,
+    provider: "generic-compatible",
+    timeoutMs: config.investigateDeadlineMs,
+    maxBytesIn: config.investigateMaxOutputBytes,
+    maxBytesOut: config.investigateMaxInputBytes,
+    maxOutputChars: config.investigateMaxOutputBytes,
+    transport,
+  });
+}
+
+function buildInvestigationService(
+  adapter: InvestigationModelPort,
+  config: AppConfig,
+  detectors: DetectorSet,
+): InvestigationService {
+  return createInvestigationService({
+    adapter,
+    detectors,
+    docs: {},
+    limits: {
+      maxSteps: config.investigateMaxSteps ?? DEFAULT_INVESTIGATION_LIMITS.maxSteps,
+      maxTokens: config.investigateMaxTokens ?? DEFAULT_INVESTIGATION_LIMITS.maxTokens,
+      deadlineMs: config.investigateDeadlineMs ?? DEFAULT_INVESTIGATION_LIMITS.deadlineMs,
+      toolTimeoutMs: config.investigateToolTimeoutMs ?? DEFAULT_INVESTIGATION_LIMITS.toolTimeoutMs,
+    },
+    promptVersion:
+      config.investigatePromptVersion === undefined
+        ? PLACEHOLDER_INVESTIGATION_PROMPT_VERSION
+        : (config.investigatePromptVersion as string),
+    dailyCapPerKey: config.investigateDailyCapPerKey ?? PLACEHOLDER_INVESTIGATION_DAILY_CAP_PER_KEY,
+  });
+}
+
 // Builds the investigation service from the validated configuration
 // (S-075, P-29): the hosted open-weights adapter when the key is set,
+// the shared vendor-neutral adapter when the assessment selects the
+// vendor-neutral provider without an explicit investigation triple,
 // otherwise the not-configured adapter whose every call answers
 // `not-configured` with zero sends. Missing values never fail startup:
 // the loop is opt-in and disabled by default. Transports stay injectable
@@ -342,6 +440,10 @@ export function createInvestigationServiceFromConfig(
   detectors: DetectorSet,
   overrides: { readonly transport?: hostedInvestigateTransport | undefined } = {},
 ): Result<InvestigationService, ConfigError> {
+  const shared = sharedInvestigateAdapterFromAssessment(config, overrides.transport);
+  if (shared !== null) {
+    return ok(buildInvestigationService(shared, config, detectors));
+  }
   const built = createhostedInvestigateAdapterFromConfig(
     {
       investigatehostedBaseUrl: config.investigatehostedBaseUrl,
@@ -356,22 +458,5 @@ export function createInvestigationServiceFromConfig(
   if (!built.ok) {
     return err(built.error);
   }
-  return ok(
-    createInvestigationService({
-      adapter: built.value,
-      detectors,
-      docs: {},
-      limits: {
-        maxSteps: config.investigateMaxSteps ?? DEFAULT_INVESTIGATION_LIMITS.maxSteps,
-        maxTokens: config.investigateMaxTokens ?? DEFAULT_INVESTIGATION_LIMITS.maxTokens,
-        deadlineMs: config.investigateDeadlineMs ?? DEFAULT_INVESTIGATION_LIMITS.deadlineMs,
-        toolTimeoutMs: config.investigateToolTimeoutMs ?? DEFAULT_INVESTIGATION_LIMITS.toolTimeoutMs,
-      },
-      promptVersion:
-        config.investigatePromptVersion === undefined
-          ? PLACEHOLDER_INVESTIGATION_PROMPT_VERSION
-          : (config.investigatePromptVersion as string),
-      dailyCapPerKey: config.investigateDailyCapPerKey ?? PLACEHOLDER_INVESTIGATION_DAILY_CAP_PER_KEY,
-    }),
-  );
+  return ok(buildInvestigationService(built.value, config, detectors));
 }

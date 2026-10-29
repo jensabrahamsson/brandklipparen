@@ -65,7 +65,7 @@ describe("etherscan large ranges and log hygiene (S-110)", () => {
     expect(sentUrls[0]).toContain("toBlock=999");
     expect(sentUrls[1]).toContain("fromBlock=1000");
     expect(sentUrls[1]).toContain("toBlock=1999");
-    expect(polled.value.map((log) => log.logIndex)).toEqual([0, 1]);
+    expect(polled.value.logs.map((log) => log.logIndex)).toEqual([0, 1]);
   });
 
   test("s110_zero_hex_parses_as_zero_and_bad_logs_skip_with_count", async () => {
@@ -88,7 +88,7 @@ describe("etherscan large ranges and log hygiene (S-110)", () => {
     if (!polled.ok) {
       throw new Error(`expected the poll to succeed, got ${polled.error.kind}`);
     }
-    expect(polled.value).toHaveLength(1);
+    expect(polled.value.logs).toHaveLength(1);
     if (!(adapter instanceof EtherscanLogsAdapter)) {
       throw new Error("expected the configured adapter");
     }

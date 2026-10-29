@@ -10,10 +10,11 @@ import type { ModelId as ModelIdType } from "../../domain/types.ts";
 import type {
   InvestigationDecision,
   InvestigationModelError,
+  InvestigationProvider,
 } from "../../ports/investigationModel.ts";
 
 export type InvestigationExpectation = {
-  readonly provider: "hosted-open-weights";
+  readonly provider: InvestigationProvider;
   readonly modelId: ModelIdType;
   readonly maxOutputChars: number;
 };

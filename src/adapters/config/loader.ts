@@ -143,6 +143,17 @@ function parsePositiveAmount(name: string, raw: string): Result<number, ConfigEr
   return ok(value);
 }
 
+function parseBoundedNumber(name: string, raw: string, min: number, max: number): Result<number, ConfigError> {
+  if (!/^\d+(\.\d+)?$/.test(raw)) {
+    return err(invalid(name, `must be a number in [${min}, ${max}]`));
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    return err(invalid(name, `must be a number in [${min}, ${max}]`));
+  }
+  return ok(parsed);
+}
+
 function parseHttpsUrl(name: string, raw: string): Result<string, ConfigError> {
   if (!raw.startsWith("https://") || raw.length > 2048 || raw.includes(" ")) {
     return err(invalid(name, "must be an https URL"));
@@ -276,6 +287,14 @@ const V = {
   assessmenthostedModelId: "BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID",
   assessmenthostedBaseUrl: "BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL",
   assessmenthostedDeploymentId: "BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID",
+  assessmentGenericCompatibleApiKey: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY",
+  assessmentGenericCompatibleModelId: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID",
+  assessmentGenericCompatibleBaseUrl: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL",
+  assessmentGenericCompatibleTemperature: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_TEMPERATURE",
+  assessmentGenericCompatibleMaxTokens: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MAX_TOKENS",
+  budgetDailyCapAssessmentCallsGenericCompatible:
+    "BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_generic_COMPATIBLE",
+  assessmentDailyCostCapGenericCompatible: "BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_generic_COMPATIBLE",
   investigatehostedBaseUrl: "BRANDKLIPPAREN_INVESTIGATE_hosted_BASE_URL",
   investigatehostedApiKey: "BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY",
   investigatehostedModelId: "BRANDKLIPPAREN_INVESTIGATE_hosted_MODEL_ID",
@@ -302,8 +321,8 @@ const parseLogLevel = (raw: string): Result<LogLevel, ConfigError> =>
 const parseProvider = (raw: string): Result<AssessmentProvider, ConfigError> =>
   parseEnum<AssessmentProvider>(
     V.assessmentProvider,
-    ["meta-model-api", "hosted-open-weights"],
-    "meta-model-api or hosted-open-weights",
+    ["meta-model-api", "hosted-open-weights", "generic-compatible"],
+    "meta-model-api, hosted-open-weights or generic-compatible",
   )(raw);
 
 // Every variable name from the schema, exported so the .env.example
@@ -580,6 +599,7 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   const provider = assessmentProvider.value;
   const needsMeta = isDemo && provider === "meta-model-api";
   const needshosted = isDemo && provider === "hosted-open-weights";
+  const needsGenericCompatible = isDemo && provider === "generic-compatible";
   const assessmentMetaApiKey = requiredWhen(env, V.assessmentMetaApiKey, needsMeta, (raw) =>
     parseSecret(V.assessmentMetaApiKey, raw),
   );
@@ -632,6 +652,82 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   );
   if (!assessmenthostedDeploymentId.ok) {
     return assessmenthostedDeploymentId;
+  }
+  // Vendor-neutral chat-completions triple for a temporary local endpoint
+  // during development (local development only): required in the demo
+  // exactly when selected, mirroring the Meta/hosted triples above. No
+  // deployment identifier: only the base URL, model id and key change
+  // next to the other providers.
+  const assessmentGenericCompatibleApiKey = requiredWhen(
+    env,
+    V.assessmentGenericCompatibleApiKey,
+    needsGenericCompatible,
+    (raw) => parseSecret(V.assessmentGenericCompatibleApiKey, raw),
+  );
+  if (!assessmentGenericCompatibleApiKey.ok) {
+    return assessmentGenericCompatibleApiKey;
+  }
+  const assessmentGenericCompatibleModelId = requiredWhen(
+    env,
+    V.assessmentGenericCompatibleModelId,
+    needsGenericCompatible,
+    (raw) =>
+      mapDomain(
+        V.assessmentGenericCompatibleModelId,
+        "must be a 1-256 character model identifier",
+        ModelId.parse(raw),
+      ),
+  );
+  if (!assessmentGenericCompatibleModelId.ok) {
+    return assessmentGenericCompatibleModelId;
+  }
+  const assessmentGenericCompatibleBaseUrl = requiredWhen(
+    env,
+    V.assessmentGenericCompatibleBaseUrl,
+    needsGenericCompatible,
+    (raw) => parseHttpsUrl(V.assessmentGenericCompatibleBaseUrl, raw),
+  );
+  if (!assessmentGenericCompatibleBaseUrl.ok) {
+    return assessmentGenericCompatibleBaseUrl;
+  }
+  // Matching daily caps for the vendor-neutral provider, mirroring the
+  // Meta/hosted cap variables. Optional in every setup, so local runs
+  // stay lean: the service falls back to its placeholder caps when unset.
+  const budgetDailyCapAssessmentCallsGenericCompatible = optionalField(
+    env,
+    V.budgetDailyCapAssessmentCallsGenericCompatible,
+    (raw) => parseInteger(V.budgetDailyCapAssessmentCallsGenericCompatible, raw, 1, 1000000000),
+  );
+  if (!budgetDailyCapAssessmentCallsGenericCompatible.ok) {
+    return budgetDailyCapAssessmentCallsGenericCompatible;
+  }
+  const assessmentDailyCostCapGenericCompatible = optionalField(
+    env,
+    V.assessmentDailyCostCapGenericCompatible,
+    (raw) => parsePositiveAmount(V.assessmentDailyCostCapGenericCompatible, raw),
+  );
+  if (!assessmentDailyCostCapGenericCompatible.ok) {
+    return assessmentDailyCostCapGenericCompatible;
+  }
+  // Optional sampling temperature in [0, 1] for the vendor-neutral
+  // provider: sent only when set, otherwise no sampling parameter
+  // travels. Optional completion budget override (default 4096, bounded
+  // so a thinking model is not cut off while caps stay meaningful).
+  const assessmentGenericCompatibleTemperature = optionalField(
+    env,
+    V.assessmentGenericCompatibleTemperature,
+    (raw) => parseBoundedNumber(V.assessmentGenericCompatibleTemperature, raw, 0, 1),
+  );
+  if (!assessmentGenericCompatibleTemperature.ok) {
+    return assessmentGenericCompatibleTemperature;
+  }
+  const assessmentGenericCompatibleMaxTokens = optionalField(
+    env,
+    V.assessmentGenericCompatibleMaxTokens,
+    (raw) => parseInteger(V.assessmentGenericCompatibleMaxTokens, raw, 1, 128000),
+  );
+  if (!assessmentGenericCompatibleMaxTokens.ok) {
+    return assessmentGenericCompatibleMaxTokens;
   }
   // Investigation loop settings (S-073, P-29, P-34): optional in every
   // setup, so local and CI runs stay key-free with the loop answering
@@ -844,6 +940,30 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(assessmenthostedDeploymentId.value === undefined
       ? {}
       : { assessmenthostedDeploymentId: assessmenthostedDeploymentId.value }),
+    ...(assessmentGenericCompatibleApiKey.value === undefined
+      ? {}
+      : { assessmentGenericCompatibleApiKey: assessmentGenericCompatibleApiKey.value }),
+    ...(assessmentGenericCompatibleModelId.value === undefined
+      ? {}
+      : { assessmentGenericCompatibleModelId: assessmentGenericCompatibleModelId.value }),
+    ...(assessmentGenericCompatibleBaseUrl.value === undefined
+      ? {}
+      : { assessmentGenericCompatibleBaseUrl: assessmentGenericCompatibleBaseUrl.value }),
+    ...(budgetDailyCapAssessmentCallsGenericCompatible.value === undefined
+      ? {}
+      : {
+          budgetDailyCapAssessmentCallsGenericCompatible:
+            budgetDailyCapAssessmentCallsGenericCompatible.value,
+        }),
+    ...(assessmentDailyCostCapGenericCompatible.value === undefined
+      ? {}
+      : { assessmentDailyCostCapGenericCompatible: assessmentDailyCostCapGenericCompatible.value }),
+    ...(assessmentGenericCompatibleTemperature.value === undefined
+      ? {}
+      : { assessmentGenericCompatibleTemperature: assessmentGenericCompatibleTemperature.value }),
+    ...(assessmentGenericCompatibleMaxTokens.value === undefined
+      ? {}
+      : { assessmentGenericCompatibleMaxTokens: assessmentGenericCompatibleMaxTokens.value }),
     ...(investigatehostedBaseUrl.value === undefined
       ? {}
       : { investigatehostedBaseUrl: investigatehostedBaseUrl.value }),

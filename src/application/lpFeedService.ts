@@ -402,7 +402,7 @@ export async function fetchLiquidityLogs(
       failed.push(pair);
       continue;
     }
-    for (const log of polled.value) {
+    for (const log of polled.value.logs) {
       if (LIQUIDITY_TOPIC0S.has((log.topics[0] ?? "").toLowerCase())) {
         logs.push(log);
       }
@@ -443,6 +443,7 @@ export async function pollFeedWithLiquidity(
   input: FeedCycleInput,
 ): Promise<Result<FeedCycleOutput, LpFeedError>> {
   const creationLogs: FeedLog[] = [];
+  let coveredToBlock = input.toBlock;
   for (const factory of input.factories) {
     const polled = await input.feed.pollLogs(
       { factory, fromBlock: input.fromBlock, toBlock: input.toBlock },
@@ -451,7 +452,8 @@ export async function pollFeedWithLiquidity(
     if (!polled.ok) {
       return err(polled.error);
     }
-    creationLogs.push(...polled.value);
+    creationLogs.push(...polled.value.logs);
+    coveredToBlock = Math.min(coveredToBlock, polled.value.coveredToBlock);
   }
   const pairs = pairAddressesOfCreations(creationLogs).slice(
     0,
@@ -477,7 +479,7 @@ export async function pollFeedWithLiquidity(
     Object.freeze({
       output,
       failedPairs: fetched.failed,
-      cursorBlock: input.toBlock,
+      cursorBlock: coveredToBlock,
     }),
   );
 }

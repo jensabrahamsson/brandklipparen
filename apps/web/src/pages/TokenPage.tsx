@@ -34,7 +34,6 @@ import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
 import { Sidebar } from "../components/Sidebar.tsx";
 import { SignalList } from "../components/SignalList.tsx";
 import { Explain } from "../components/Explain.tsx";
-import { useTiltGroup } from "../lib/tilt.ts";
 import type { AnalyzeResult, AssessmentState, InvestigationState, InvestigationStep, ProviderInfo, RiskKind } from "../types.ts";
 
 const RISKS: readonly RiskKind[] = ["rug-pull", "honeypot", "bot-pump"];
@@ -385,7 +384,7 @@ export function TokenPage({
           </button>
         </div>
       ) : null}
-      {result === null && loadError === null ? <LoadingSkeleton /> : null}
+      {result === null && loadError === null ? <LoadingNotice /> : null}
       {result !== null && result.kind === "no-contract" ? (
         <div className="card" role="status">
           <p style={{ marginTop: 0 }}>
@@ -580,9 +579,8 @@ function AssessedView({
   const ringRef = useRef<HTMLElement | null>(null);
   const ringGone = useRingOutOfView(ringRef, tab);
   const stripVisible = tab === "assessment" || tab === "investigate" || ringGone;
-  const tiltRef = useTiltGroup<HTMLDivElement>();
   return (
-    <div ref={tiltRef}>
+    <div>
       {stripVisible ? (
         <div className="compact-strip" aria-label="Result summary" data-testid="result-summary">
           <span className="numeric">
@@ -771,7 +769,7 @@ function OverviewSections({
   const blocks: Record<string, JSX.Element> = {
     score: (
       <>
-        <section className="card" data-tilt aria-label="Combined score" ref={ringRef} style={{ marginBottom: 20 }}>
+        <section className="card" aria-label="Combined score" ref={ringRef} style={{ marginBottom: 20 }}>
           <div className="score-ring-wrap">
             <ScoreRing score={result.score} />
             <div style={{ flex: "1 1 240px" }}>
@@ -823,7 +821,7 @@ function OverviewSections({
       />
     ),
     signals: (
-      <section className="card" data-tilt aria-label="Signals" style={{ marginBottom: 20 }}>
+      <section className="card" aria-label="Signals" style={{ marginBottom: 20 }}>
         <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
           <span>Signals</span> <Explain explainKey="evidence:selector" label="Signals" />
         </h2>
@@ -842,7 +840,7 @@ function OverviewSections({
       </section>
     ),
     "plugin-findings": (
-      <section className="card" data-tilt aria-label="Plugins section" style={{ marginBottom: 20 }}>
+      <section className="card" aria-label="Plugins section" style={{ marginBottom: 20 }}>
         <PluginsPanel
           plugins={plugins}
           results={pluginViews}
@@ -858,7 +856,7 @@ function OverviewSections({
   return (
     <div>
       <PrioritiesField value={priorities} onChange={onPrioritiesChange} onClear={onPrioritiesClear} />
-      <div className="token-grid parallax">
+      <div className="token-grid">
         <div>
           {shownSections.map((sectionId) => {
             const collapsedByAi = collapsed.has(sectionId) && !aiExpanded.has(sectionId);
@@ -895,31 +893,12 @@ function OverviewSections({
   );
 }
 
-function LoadingSkeleton(): JSX.Element {
-  const [seconds, setSeconds] = useState(0);
-  useEffect(() => {
-    const started = performance.now();
-    const timer = window.setInterval(() => setSeconds((performance.now() - started) / 1000), 100);
-    return () => window.clearInterval(timer);
-  }, []);
+function LoadingNotice(): JSX.Element {
   return (
-    <div aria-hidden="true">
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="skeleton skeleton-ring" />
-        <p className="quiet numeric" style={{ margin: "12px 0 0" }}>
-          Loading result… {seconds.toFixed(1)} s
-        </p>
-      </div>
-      <div className="gauges" style={{ marginBottom: 20 }}>
-        <div className="skeleton skeleton-gauge" />
-        <div className="skeleton skeleton-gauge" />
-        <div className="skeleton skeleton-gauge" />
-      </div>
-      <div className="card">
-        <div className="skeleton skeleton-line" />
-        <div className="skeleton skeleton-line" />
-        <div className="skeleton skeleton-line" />
-      </div>
+    <div className="card" role="status" style={{ marginBottom: 20 }}>
+      <p className="muted" style={{ margin: 0 }}>
+        Analyzing… the deterministic result appears here when ready.
+      </p>
     </div>
   );
 }

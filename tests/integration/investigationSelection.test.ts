@@ -134,6 +134,17 @@ async function assessedEnvelope(): Promise<AssessmentEnvelope> {
   return analysed.value.envelope;
 }
 
+function envelopeFor(inner: unknown, model: string): string {
+  return JSON.stringify({
+    id: "chatcmpl-recorded-1",
+    object: "chat.completion",
+    created: 1700000000,
+    model,
+    choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(inner) }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 200, completion_tokens: 60, total_tokens: 260 },
+  });
+}
+
 describe("investigation service selection", () => {
   test("k520_investigation_service_without_key_reports_not_configured", async () => {
     const config = mustConfig(loadConfig(baseCiEnv()));
@@ -159,15 +170,18 @@ describe("investigation service selection", () => {
       sends += 1;
       return {
         status: 200,
-        bodyText: JSON.stringify({
-          provider: "hosted-open-weights",
-          modelId: "meta-models/muse-spark-open-1026",
-          decision: {
-            kind: "conclude",
-            narrativeDraft: "Recorded conclusion without citations.",
-            rationale: "Recorded rationale: conclude from the frozen evidence.",
+        bodyText: envelopeFor(
+          {
+            provider: "hosted-open-weights",
+            modelId: "meta-models/muse-spark-open-1026",
+            decision: {
+              kind: "conclude",
+              narrativeDraft: "Recorded conclusion without citations.",
+              rationale: "Recorded rationale: conclude from the frozen evidence.",
+            },
           },
-        }),
+          "meta-models/muse-spark-open-1026",
+        ),
       };
     };
     const config = mustConfig(
@@ -202,5 +216,104 @@ describe("investigation service selection", () => {
   test("k520_investigate_limits_reject_non_positive_steps", () => {
     const config = loadConfig({ ...baseCiEnv(), BRANDKLIPPAREN_INVESTIGATE_MAX_STEPS: "0" });
     expect(config.ok).toBe(false);
+  });
+
+  test("investigation_shares_the_vendor_neutral_assessment_triple", async () => {
+    let sends = 0;
+    let seenUrl = "";
+    const transport: hostedInvestigateTransport = async (
+      url,
+    ): Promise<hostedInvestigateTransportResponse> => {
+      sends += 1;
+      seenUrl = url;
+      return {
+        status: 200,
+        bodyText: envelopeFor(
+          {
+            provider: "generic-compatible",
+            modelId: "fake-compat-model-1",
+            decision: {
+              kind: "conclude",
+              narrativeDraft: "Recorded conclusion without citations.",
+              rationale: "Recorded rationale: conclude from the frozen evidence.",
+            },
+          },
+          "fake-compat-model-1",
+        ),
+      };
+    };
+    const config = mustConfig(
+      loadConfig({
+        ...baseCiEnv(),
+        BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
+        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL: "https://compat.example.invalid/v1/chat",
+        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-key-for-tests-only",
+        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID: "fake-compat-model-1",
+      }),
+    );
+    const service = mustConfig(
+      createInvestigationServiceFromConfig(config, mustDetectors(buildDetectorSet()), { transport }),
+    );
+    expect(service.provider()).toBe("generic-compatible");
+    expect(service.modelId()).toBe("fake-compat-model-1");
+    const envelope = await assessedEnvelope();
+    const result = await service.investigateEnvelope(
+      envelope,
+      {
+        requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174003")),
+        deadline: mustOk(Timestamp.of(1700000000000 + 30000)),
+        block: "latest",
+      },
+      { now: () => 1700000000000 },
+    );
+    expect(sends).toBeGreaterThan(0);
+    expect(seenUrl).toBe("https://compat.example.invalid/v1/chat/chat/completions");
+    expect(result.status).toBe("done");
+  });
+
+  test("explicit_investigation_triple_wins_over_shared_assessment_config", async () => {
+    const transport: hostedInvestigateTransport = async (): Promise<hostedInvestigateTransportResponse> => ({
+      status: 200,
+      bodyText: envelopeFor(
+        {
+          provider: "hosted-open-weights",
+          modelId: "meta-models/muse-spark-open-1026",
+          decision: {
+            kind: "conclude",
+            narrativeDraft: "Recorded conclusion without citations.",
+            rationale: "Recorded rationale: conclude from the frozen evidence.",
+          },
+        },
+        "meta-models/muse-spark-open-1026",
+      ),
+    });
+    const config = mustConfig(
+      loadConfig({
+        ...baseCiEnv(),
+        BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
+        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL: "https://compat.example.invalid/v1/chat",
+        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-key-for-tests-only",
+        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID: "fake-compat-model-1",
+        BRANDKLIPPAREN_INVESTIGATE_hosted_BASE_URL: "https://api.example.invalid/v1/chat",
+        BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY: "fake-key-for-tests-only",
+        BRANDKLIPPAREN_INVESTIGATE_hosted_MODEL_ID: "meta-models/muse-spark-open-1026",
+      }),
+    );
+    const service = mustConfig(
+      createInvestigationServiceFromConfig(config, mustDetectors(buildDetectorSet()), { transport }),
+    );
+    expect(service.provider()).toBe("hosted-open-weights");
+    expect(service.modelId()).toBe("meta-models/muse-spark-open-1026");
+    const envelope = await assessedEnvelope();
+    const result = await service.investigateEnvelope(
+      envelope,
+      {
+        requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174004")),
+        deadline: mustOk(Timestamp.of(1700000000000 + 30000)),
+        block: "latest",
+      },
+      { now: () => 1700000000000 },
+    );
+    expect(result.status).toBe("done");
   });
 });

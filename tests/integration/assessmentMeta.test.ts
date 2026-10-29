@@ -81,7 +81,7 @@ function fixedContext(): CallContext {
 
 function recordedAdapter(log: MetaAssessmentLogEntry[]): MetaModelApiAdapter {
   return new MetaModelApiAdapter({
-    endpoint: "https://meta-api.example.invalid/assessment",
+    endpoint: "https://meta-api.example.invalid",
     apiKey: new SecretString(FAKE_KEY),
     modelId: mustModelId(),
     transport: async () => ({ status: 200, bodyText: successBody() }),

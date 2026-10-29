@@ -18,10 +18,11 @@ import type {
   Timestamp as TimestampType,
 } from "../domain/types.ts";
 
-// Single provider for the investigation loop (P-30): the judging headline
-// is the open-weights loop, so no second provider is bound. The port shape
-// leaves the door open for one later.
-export type InvestigationProvider = "hosted-open-weights";
+// Providers for the investigation loop (P-30): the open-weights loop by
+// default, or the vendor-neutral chat-completions shape sharing the
+// assessment endpoint configuration for a temporary local endpoint
+// during development. Exactly one is bound per run.
+export type InvestigationProvider = "hosted-open-weights" | "generic-compatible";
 
 // Closed decision union (P-31): the model proposes the next step only.
 // The runner validates the decision against the current node, the

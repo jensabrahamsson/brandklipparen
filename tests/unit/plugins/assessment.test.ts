@@ -1,5 +1,5 @@
 // Assessment plugin registry (S-045, K-030 proposed).
-// Written first (red) per A-21: the two assessment adapters register as
+// Written first (red) per A-21: the three assessment adapters register as
 // assessment plugins with fixed plugin ids, and configuration selects
 // exactly one of them by plugin id. The port, its error union, its limits
 // and the exactly-one rule (A-34) stay as they are.
@@ -18,6 +18,9 @@ import {
 import {
   metaModelApiAssessmentPlugin,
 } from "../../../src/plugins/assessments/meta-model-api/index.ts";
+import {
+  GenericCompatibleAssessmentPlugin,
+} from "../../../src/plugins/assessments/generic-compatible/index.ts";
 import { buildAssessmentRegistry } from "../../../src/plugins/registry.ts";
 import type { AssessmentProvider } from "../../../src/ports/assessmentModel.ts";
 
@@ -26,14 +29,21 @@ function asPluginId(raw: string): PluginId {
 }
 
 describe("assessment plugin registry (S-045)", () => {
-  test("exactly_two_assessment_plugins_registered_with_fixed_ids", () => {
-    const plugins = [metaModelApiAssessmentPlugin, hostedOpenWeightsAssessmentPlugin];
-    expect(plugins.length).toBe(2);
+  test("exactly_three_assessment_plugins_registered_with_fixed_ids", () => {
+    const plugins = [
+      metaModelApiAssessmentPlugin,
+      hostedOpenWeightsAssessmentPlugin,
+      GenericCompatibleAssessmentPlugin,
+    ];
+    expect(plugins.length).toBe(3);
     expect(metaModelApiAssessmentPlugin.manifest.id).toBe(
       "dev.brandklipparen.assessment.meta-model-api",
     );
     expect(hostedOpenWeightsAssessmentPlugin.manifest.id).toBe(
       "dev.brandklipparen.assessment.hosted-open-weights",
+    );
+    expect(GenericCompatibleAssessmentPlugin.manifest.id).toBe(
+      "dev.brandklipparen.assessment.generic-compatible",
     );
     for (const plugin of plugins) {
       expect(plugin.manifest.kind).toBe("assessment");
@@ -42,10 +52,15 @@ describe("assessment plugin registry (S-045)", () => {
     }
     expect(metaModelApiAssessmentPlugin.provider).toBe("meta-model-api");
     expect(hostedOpenWeightsAssessmentPlugin.provider).toBe("hosted-open-weights");
+    expect(GenericCompatibleAssessmentPlugin.provider).toBe("generic-compatible");
   });
 
   test("assessment_manifests_parse_with_supported_api_and_assessment_defaults", () => {
-    for (const plugin of [metaModelApiAssessmentPlugin, hostedOpenWeightsAssessmentPlugin]) {
+    for (const plugin of [
+      metaModelApiAssessmentPlugin,
+      hostedOpenWeightsAssessmentPlugin,
+      GenericCompatibleAssessmentPlugin,
+    ]) {
       expect(isSupportedApiVersion(plugin.manifest.apiVersion)).toBe(true);
       expect(plugin.manifest.capabilities.needsNetwork).toBe(true);
       expect(plugin.manifest.capabilities.needsSecrets).toBe(false);
@@ -63,6 +78,10 @@ describe("assessment plugin registry (S-045)", () => {
         provider: "hosted-open-weights",
         id: "dev.brandklipparen.assessment.hosted-open-weights",
       },
+      {
+        provider: "generic-compatible",
+        id: "dev.brandklipparen.assessment.generic-compatible",
+      },
     ];
     for (const { provider, id } of cases) {
       expect(assessmentPluginIdForProvider(provider)).toBe(id);
@@ -71,6 +90,7 @@ describe("assessment plugin registry (S-045)", () => {
     expect(Object.keys(ASSESSMENT_PLUGIN_IDS).sort()).toEqual([
       "hosted-open-weights",
       "meta-model-api",
+      "generic-compatible",
     ]);
   });
 
@@ -78,21 +98,24 @@ describe("assessment plugin registry (S-045)", () => {
     const built = buildAssessmentRegistry([
       metaModelApiAssessmentPlugin,
       hostedOpenWeightsAssessmentPlugin,
+      GenericCompatibleAssessmentPlugin,
     ]);
     expect(built.ok).toBe(true);
     if (!built.ok) {
       return;
     }
     const registry = built.value;
-    expect(registry.entries.length).toBe(2);
+    expect(registry.entries.length).toBe(3);
     expect(Object.isFrozen(registry)).toBe(true);
     const table = assessmentPluginTable([
       metaModelApiAssessmentPlugin,
       hostedOpenWeightsAssessmentPlugin,
+      GenericCompatibleAssessmentPlugin,
     ]);
     for (const id of [
       "dev.brandklipparen.assessment.meta-model-api",
       "dev.brandklipparen.assessment.hosted-open-weights",
+      "dev.brandklipparen.assessment.generic-compatible",
     ] as const) {
       const plugin = getAssessmentPlugin(table, id);
       expect(plugin?.manifest.id).toBe(id);

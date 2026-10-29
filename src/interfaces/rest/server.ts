@@ -65,6 +65,7 @@ import { canonicalSerialize } from "../../domain/serialize.ts";
 import { createApiKeyStore } from "./apiKeys.ts";
 import type { ApiKeyStore } from "./apiKeys.ts";
 import type { SecretString } from "../../ports/config.ts";
+import type { LiveTokensReader } from "../../ports/liveTokens.ts";
 import type { RpcPort } from "../../ports/rpc.ts";
 import {
   assessmentNotConfigured,
@@ -196,6 +197,10 @@ export type RestServerOptions = {
   // configuration (P-29): /v1/investigate answers
   // investigation-not-configured with zero model calls.
   readonly investigationService?: InvestigationService | undefined;
+  // Live new-tokens reader (E-11 follow-up): the application service
+  // snapshot behind GET /v1/live-tokens. Absent reader means the list is
+  // unavailable on this server (the route answers 500).
+  readonly liveTokens?: LiveTokensReader | undefined;
   // Absent limits mean the demo runs without rate limiting, as in local
   // development and in older suites; the demo configuration always sets
   // the versioned values per I-12 (K-504, M-08).
@@ -1049,6 +1054,53 @@ export function createRestServer(options: RestServerOptions): RestServer {
       .header(REQUEST_ID_HEADER, requestId)
       .type("application/json")
       .send(serializePluginList(exposeRegistry(detectors.registry, pluginWeights, pluginDocs)));
+  });
+
+  // Live new-tokens list (E-11 follow-up): the current snapshot newest
+  // first behind the same API-key gate as the other read routes (K-024).
+  // `?since=` (milliseconds since the epoch) trims to items created
+  // after that instant for incremental polling. A missing reader answers
+  // 500; a feed without a source answers `not-configured` inside the
+  // body, never as an error status.
+  app.get("/v1/live-tokens", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    const requestId = issueRequestId();
+    const gated = gateKeyOnly(request, request.query, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const reader = options.liveTokens;
+    if (reader === undefined) {
+      return sendError(
+        reply,
+        requestError(500, "internal-error", "Live tokens are not available on this server.", requestId as string),
+      );
+    }
+    const rawSince = (request.query as Record<string, unknown>)["since"];
+    let since: number | undefined;
+    if (rawSince !== undefined) {
+      if (typeof rawSince !== "string" || !/^\d+$/.test(rawSince)) {
+        return sendError(
+          reply,
+          validationError("Invalid since: expected milliseconds since the epoch.", requestId),
+        );
+      }
+      since = Number(rawSince);
+    }
+    const snapshot = reader.snapshot(since);
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(
+        JSON.stringify({
+          source: snapshot.source,
+          status: snapshot.status,
+          ...(snapshot.message === undefined ? {} : { message: snapshot.message }),
+          updatedAt: snapshot.updatedAt,
+          items: snapshot.items,
+          apiVersion: API_VERSION,
+        }),
+      );
   });
 
   app.get<{ Params: { id: string } }>(

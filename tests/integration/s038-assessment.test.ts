@@ -385,7 +385,7 @@ describe("S-038 assessment service over fakes (K-305, K-309)", () => {
     // Recorded tampered fixture through the real Meta adapter (K-513): an
     // unknown field fails validation and keeps the template standing.
     const tampered = new MetaModelApiAdapter({
-      endpoint: "https://meta-api.example.invalid/assessment",
+      endpoint: "https://meta-api.example.invalid",
       apiKey: new SecretString("fake-meta-key-for-tests-only"),
       modelId: mustOk(ModelId.parse("meta-muse-spark-test-1")),
       transport: async () => ({

@@ -7,7 +7,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { SecretString } from "../../../src/ports/config.ts";
+import { V2_PAIR_CREATED_TOPIC0 } from "../../../src/domain/lpFeed.ts";
 import { createEtherscanLogsAdapter } from "../../../src/adapters/lpFeed/etherscanLogsAdapter.ts";
+import { parseFeedLog } from "../../../src/adapters/lpFeed/feedLogCodec.ts";
+import { syntheticTxHash } from "../../helpers/syntheticAddresses.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const FIXTURE = readFileSync(
@@ -26,7 +29,11 @@ const EMPTY_RANGE_FIXTURE = readFileSync(
 
 const FACTORY_V2 = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f";
 
-function manualClock(startMs = 1_700_000_000_000): { now: () => number; advance: (ms: number) => void } {
+function syntheticNowMs(): number {
+  return 1730000000000;
+}
+
+function manualClock(startMs = syntheticNowMs()): { now: () => number; advance: (ms: number) => void } {
   let current = startMs;
   return {
     now: () => current,
@@ -34,6 +41,10 @@ function manualClock(startMs = 1_700_000_000_000): { now: () => number; advance:
       current += ms;
     },
   };
+}
+
+function stampHex(seconds: number): string {
+  return `0x${seconds.toString(16)}`;
 }
 
 describe("etherscan logs source", () => {
@@ -102,10 +113,10 @@ describe("etherscan logs source", () => {
     );
     expect(afterRefill.ok).toBe(true);
     if (afterRefill.ok) {
-      expect(afterRefill.value).toHaveLength(2);
-      expect(afterRefill.value[0]?.blockNumber).toBe(21600000);
-      expect(afterRefill.value[0]?.logIndex).toBe(0);
-      expect(afterRefill.value[0]?.txHash).toBe(
+      expect(afterRefill.value.logs).toHaveLength(2);
+      expect(afterRefill.value.logs[0]?.blockNumber).toBe(21600000);
+      expect(afterRefill.value.logs[0]?.logIndex).toBe(0);
+      expect(afterRefill.value.logs[0]?.txHash).toBe(
         "0x53dcb2e5ccbeaa8ee43360a826116afb791e69432d80637b5426465234361068",
       );
     }
@@ -173,7 +184,58 @@ describe("etherscan logs source", () => {
       if (!result.ok) {
         throw new Error(`expected an empty list, got error: ${result.error.kind}`);
       }
-      expect(result.value).toEqual([]);
+      expect(result.value.logs).toEqual([]);
+      expect(result.value.coveredToBlock).toBe(21600002);
     }
+  });
+
+  test("chain time parses from the hex timeStamp and stays null when unusable", async () => {
+    const clock = manualClock();
+    const adapter = createEtherscanLogsAdapter({
+      apiKey: new SecretString("test-key"),
+      transport: async () => ({ status: 200, bodyText: FIXTURE }),
+      now: clock.now,
+      callsPerSecond: 100,
+      dailyCap: 100000,
+    });
+    const polled = await adapter.pollLogs(
+      { factory: FACTORY_V2, fromBlock: 21600000, toBlock: 21600002 },
+      { requestId: "req-stamp", deadlineMs: Number.MAX_SAFE_INTEGER },
+    );
+    expect(polled.ok).toBe(true);
+    if (!polled.ok) {
+      throw new Error(`expected logs, got ${polled.error.kind}`);
+    }
+    expect(polled.value.logs).toHaveLength(2);
+    expect(polled.value.logs[0]?.blockTimestampMs).toBe(parseInt("0x67123456", 16) * 1000);
+  });
+
+  test("strict stamp parsing keeps the log with null on bad input", () => {
+    const nowMs = syntheticNowMs();
+    const base = {
+      address: FACTORY_V2,
+      topics: [V2_PAIR_CREATED_TOPIC0],
+      data: "0x00",
+      blockNumber: "0x1499700",
+      blockHash: syntheticTxHash(7),
+      transactionHash: syntheticTxHash(1),
+      logIndex: "0x0",
+    };
+    const pastSec = Math.floor((nowMs - 3600 * 1000) / 1000);
+    expect(parseFeedLog({ ...base, timeStamp: stampHex(pastSec) }, nowMs)?.blockTimestampMs).toBe(
+      pastSec * 1000,
+    );
+    // Missing stamp stays unknown but the log stays valid.
+    expect(parseFeedLog({ ...base }, nowMs)?.blockTimestampMs).toBeNull();
+    // Decimal, bare hex and far-future stamps never fabricate a time.
+    expect(parseFeedLog({ ...base, timeStamp: String(pastSec) }, nowMs)?.blockTimestampMs).toBeNull();
+    expect(parseFeedLog({ ...base, timeStamp: "0x" }, nowMs)?.blockTimestampMs).toBeNull();
+    const futureSec = Math.floor((nowMs + 3600 * 1000) / 1000);
+    expect(parseFeedLog({ ...base, timeStamp: stampHex(futureSec) }, nowMs)?.blockTimestampMs).toBeNull();
+    // A stamp inside the small skew still counts.
+    const nearSec = Math.floor((nowMs + 60 * 1000) / 1000);
+    expect(parseFeedLog({ ...base, timeStamp: stampHex(nearSec) }, nowMs)?.blockTimestampMs).toBe(
+      nearSec * 1000,
+    );
   });
 });

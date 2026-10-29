@@ -96,6 +96,16 @@ function demohostedEnv(): Record<string, string | undefined> {
   };
 }
 
+function demoGenericCompatibleEnv(): Record<string, string | undefined> {
+  return {
+    ...sharedDemoEnv(),
+    BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
+    BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-compat-key-for-tests-only",
+    BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID: "fake-compat-model-1",
+    BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL: "https://compat.example.invalid",
+  };
+}
+
 function manualBaseConfig(): AppConfig {
   return {
     env: "ci",
@@ -123,6 +133,12 @@ describe("composition-root assessment provider selection (K-309)", () => {
         provider: "hosted-open-weights",
         modelId: "fake-open-weights-1",
         pluginId: "dev.brandklipparen.assessment.hosted-open-weights",
+      },
+      {
+        env: demoGenericCompatibleEnv(),
+        provider: "generic-compatible",
+        modelId: "fake-compat-model-1",
+        pluginId: "dev.brandklipparen.assessment.generic-compatible",
       },
     ] as const;
     for (const { env, provider, modelId, pluginId } of cases) {
@@ -159,6 +175,11 @@ describe("composition-root assessment provider selection (K-309)", () => {
         pluginId: "dev.brandklipparen.assessment.hosted-open-weights",
         otherId: "dev.brandklipparen.assessment.meta-model-api",
       },
+      {
+        env: demoGenericCompatibleEnv(),
+        pluginId: "dev.brandklipparen.assessment.generic-compatible",
+        otherId: "dev.brandklipparen.assessment.hosted-open-weights",
+      },
     ] as const;
     for (const { env, pluginId, otherId } of cases) {
       const loaded = loadConfig(env);
@@ -183,7 +204,7 @@ describe("composition-root assessment provider selection (K-309)", () => {
       expect(ASSESSMENT_PLUGINS.some((entry) => entry.manifest.id === pluginId)).toBe(true);
       expect(activeAssessmentPluginId(binding.value)).not.toBe(otherId);
     }
-    expect(ASSESSMENT_PLUGINS.length).toBe(2);
+    expect(ASSESSMENT_PLUGINS.length).toBe(3);
   });
 
   test("k309_no_provider_disables_assessment", () => {
@@ -225,6 +246,19 @@ describe("composition-root assessment provider selection (K-309)", () => {
     expect(formatConfigError(hosted.error)).toContain(
       "BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID",
     );
+
+    const compat = selectAssessmentBinding({
+      ...manualBaseConfig(),
+      assessmentProvider: "generic-compatible",
+    });
+    expect(compat.ok).toBe(false);
+    if (compat.ok) {
+      return;
+    }
+    expect(compat.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID");
+    expect(formatConfigError(compat.error)).toContain(
+      "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID",
+    );
   });
 
   test("k309_credentials_without_provider_are_ambiguous_naming_the_variable", () => {
@@ -264,6 +298,12 @@ describe("default assessment intent is hosted open-weights (S-029, K-309)", () =
         assessmentProvider: "meta-model-api",
         assessmentMetaModelId: mustOk(ModelId.parse("fake-meta-spark-1")),
         assessmentMetaBaseUrl: "https://meta-api.example.invalid",
+      },
+      {
+        ...manualBaseConfig(),
+        assessmentProvider: "generic-compatible",
+        assessmentGenericCompatibleModelId: mustOk(ModelId.parse("fake-compat-model-1")),
+        assessmentGenericCompatibleBaseUrl: "https://compat.example.invalid",
       },
     ];
     for (const config of cases) {

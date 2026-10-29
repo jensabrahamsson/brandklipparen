@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-recorded-1",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "meta-models/muse-spark-open-1026",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "not json {"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 120,
+    "completion_tokens": 200,
+    "total_tokens": 320
+  }
+}

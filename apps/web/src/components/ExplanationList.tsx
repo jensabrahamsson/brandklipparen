@@ -15,7 +15,7 @@ export function ExplanationList({
   readonly onSignalLink: (signalId: string) => void;
 }): JSX.Element {
   return (
-    <section className="card" data-tilt aria-label={`Template explanation · v${templateVersion}`} style={{ marginBottom: 20 }}>
+    <section className="card" aria-label={`Template explanation · v${templateVersion}`} style={{ marginBottom: 20 }}>
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
         <span>Why this score</span> <Explain explainKey="explanation:claim" label="Template claims" />
       </h2>

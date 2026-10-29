@@ -14,6 +14,9 @@ apps/web/playwright-report/
 .env.*
 !.env.example
 
+# Runtime cache (analysis cache, feed cursors, live-tokens list)
+.cache/
+
 # Logs
 *.log
 

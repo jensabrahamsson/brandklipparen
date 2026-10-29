@@ -1,7 +1,6 @@
-import type { CSSProperties, JSX } from "react";
+import type { JSX } from "react";
 import type { InvestigationState, InvestigationStep } from "../types.ts";
 import { Explain } from "./Explain.tsx";
-import { useReducedMotion } from "../lib/tilt.ts";
 
 // Investigation loop in its own tab: the opt-in runtime agent loop over
 // the frozen deterministic result. The panel never receives score,
@@ -10,28 +9,16 @@ import { useReducedMotion } from "../lib/tilt.ts";
 // text and render as text only: React escapes them by default, and this
 // panel uses no raw-HTML rendering path anywhere.
 //
-// The trace renders as a calm real 3D graph: steps recede along the depth
-// axis inside a perspective scene while every node card faces the reader,
-// so labels stay flat and readable. Reduced motion (or no 3D support in
-// CSS) falls back to the plain 2D list with the same items and order.
+// The trace renders as a flat static 2D list: every step is a plain
+// list item in DOM order, so labels stay flat and readable.
 function StepGraph({ steps }: { readonly steps: readonly InvestigationStep[] }): JSX.Element | null {
-  const reduced = useReducedMotion();
   if (steps.length === 0) {
     return null;
   }
   return (
-    <ol
-      aria-label="Investigation steps"
-      data-graph={reduced ? "2d" : "3d"}
-      className={reduced ? undefined : "graph3d"}
-      style={{ margin: "12px 0", paddingLeft: 24 }}
-    >
-      {steps.map((step, index) => (
-        <li
-          key={step.step}
-          className={reduced ? undefined : "graph3d-node"}
-          style={reduced ? { marginBottom: 8 } : ({ "--depth": `${index * -70}px`, marginBottom: 8 } as CSSProperties)}
-        >
+    <ol aria-label="Investigation steps" data-graph="2d" style={{ margin: "12px 0", paddingLeft: 24 }}>
+      {steps.map((step) => (
+        <li key={step.step} className="graph-node" style={{ marginBottom: 8 }}>
           <p style={{ margin: 0 }}>
             <strong>
               Step {step.step}: {step.toolId}
@@ -61,7 +48,7 @@ export function InvestigationPanel({
 }): JSX.Element {
   void score;
   return (
-    <section className="card" data-tilt aria-label="Investigation">
+    <section className="card" aria-label="Investigation">
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Investigate with Muse</h2>
       {state.status === "idle" ? (
         <div>

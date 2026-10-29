@@ -27,7 +27,7 @@ export function Gauge({
   const color = band.word === "Low" ? "var(--low)" : band.word === "Elevated" ? "var(--elevated)" : "var(--high)";
   const signalWord = signalCount === 1 ? "signal" : "signals";
   return (
-    <section className="card gauge" data-tilt aria-label={`${TITLES[kind]} gauge: ${percent} percent`}>
+    <section className="card gauge" aria-label={`${TITLES[kind]} gauge: ${percent} percent`}>
       <h3 style={{ margin: "0 0 4px", fontSize: 16 }}>
         <span>{TITLES[kind]}</span> <Explain explainKey={`score:gauge:${kind}`} label={`${TITLES[kind]} gauge`} />
       </h3>

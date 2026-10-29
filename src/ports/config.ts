@@ -52,7 +52,7 @@ export function formatConfigError(error: ConfigError): string {
 
 export type EnvironmentName = "local" | "ci" | "demo";
 export type LogLevel = "debug" | "info" | "warn" | "error";
-export type AssessmentProvider = "meta-model-api" | "hosted-open-weights";
+export type AssessmentProvider = "meta-model-api" | "hosted-open-weights" | "generic-compatible";
 
 // Validated operational configuration (I-08). Fields required only in some
 // setups stay optional here; loadConfig enforces the per-setup rules and
@@ -105,6 +105,19 @@ export type AppConfig = {
   readonly assessmenthostedModelId?: ModelId;
   readonly assessmenthostedBaseUrl?: string;
   readonly assessmenthostedDeploymentId?: string;
+  // Vendor-neutral chat-completions triple for a temporary local endpoint
+  // during development (local development only). All optional here;
+  // loadConfig enforces the per-setup rules and freezes the whole value.
+  readonly assessmentGenericCompatibleApiKey?: SecretString;
+  readonly assessmentGenericCompatibleModelId?: ModelId;
+  readonly assessmentGenericCompatibleBaseUrl?: string;
+  // Optional sampling temperature in [0, 1] for the vendor-neutral
+  // provider: sent only when set, otherwise no sampling parameter
+  // travels. Optional completion budget override (default 4096).
+  readonly assessmentGenericCompatibleTemperature?: number;
+  readonly assessmentGenericCompatibleMaxTokens?: number;
+  readonly budgetDailyCapAssessmentCallsGenericCompatible?: number;
+  readonly assessmentDailyCostCapGenericCompatible?: number;
   // Investigation loop on open weights (S-073, P-29, P-30, P-34): all
   // optional in every setup. An absent key leaves the loop answering
   // `not-configured` with zero provider calls instead of failing startup.

@@ -1,14 +1,10 @@
 import { useState, type JSX } from "react";
 import { ChainSelector } from "../components/ChainSelector.tsx";
+import { LiveTokens } from "../components/LiveTokens.tsx";
 import { isValidAddress, normalizeAddress, validationMessage } from "../lib/validate.ts";
 
 // Start page: one search field for a contract address, the mainnet-only
-// chain badge, and the Just-deployed list. The deployment feed is not
-// wired yet, so the list renders an honest empty state instead of fake
-// chain data.
-// Filter chips stay visible but inert until the feed connects
-// (design review P1-1): disabled with a reason, never filtering fake rows.
-const FILTERS = ["All", "High risk", "Low risk"] as const;
+// chain badge, and the live new-tokens list below it.
 
 type RecentEntry = {
   readonly address: string;
@@ -55,7 +51,6 @@ export function StartPage({
 }): JSX.Element {
   const [raw, setRaw] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
   const [recent] = useState<RecentEntry[]>(loadRecent);
 
   const submit = (event: { preventDefault: () => void }): void => {
@@ -159,36 +154,7 @@ export function StartPage({
           </ul>
         </section>
       ) : null}
-      <section aria-label="Just deployed" style={{ marginTop: 56 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0, fontSize: 20 }}>Just deployed</h2>
-          <span className="quiet">Live feed not connected yet</span>
-          <span style={{ flex: 1 }} />
-          <div className="chips" role="group" aria-label="Risk filters">
-            {FILTERS.map((name) => (
-              <button
-                key={name}
-                type="button"
-                className="chip"
-                aria-pressed={filter === name}
-                aria-disabled="true"
-                disabled
-                title="Filters stay inert until the live feed connects."
-                onClick={() => setFilter(name)}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="card" style={{ marginTop: 16 }}>
-          <p className="muted" style={{ margin: 0 }}>
-            No deployments to show: the just-deployed feed is not connected yet, so this list stays empty rather
-            than showing sample data as live. Filters stay inert until the feed connects. Paste a contract address
-            above to analyze it.
-          </p>
-        </div>
-      </section>
+      <LiveTokens apiKey={apiKey} />
       <section aria-label="Guarantees" style={{ marginTop: 32 }}>
         <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }} className="muted">
           <span>Works on unverified contracts</span>

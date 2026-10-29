@@ -148,10 +148,15 @@ async function startRest(allowlistPath: string | null): Promise<void> {
     );
   }
   const server = createRestServer(built.value.rest);
+  // The live new-tokens feed runs only under the REST/demo runtime: the
+  // service polls after start() and stops cleanly on shutdown, so tests
+  // and CLI one-shots that never call start() stay idle with no timers.
+  built.value.liveTokens.start();
   const port = config.httpPort ?? 8080;
   const baseUrl = await server.listen("127.0.0.1", port);
   process.stdout.write(`brandklipparen rest listening on ${baseUrl}\n`);
   const shutdown = (): void => {
+    built.value.liveTokens.stop();
     void server.close().then(() => process.exit(0));
   };
   process.on("SIGINT", shutdown);

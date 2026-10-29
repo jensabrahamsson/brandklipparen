@@ -52,4 +52,27 @@ describe("vendor-name guard", () => {
     expect(clean.status).toBe(0);
     expect(clean.out).toBe("");
   });
+
+  test("generic protocol phrase passes while the bare root word still flags", () => {
+    // The vendor-neutral provider value and variable names name a
+    // protocol shape, not a vendor. Built from parts so this tracked
+    // test file never carries the literal phrase itself.
+    const root = ["open", "ai"].join("");
+    const dir = mkdtempSync(join(tmpdir(), "vendor-check-"));
+    const genericFile = join(dir, "generic.md");
+    writeFileSync(
+      genericFile,
+      `provider value ${root}-compatible\n` +
+        `BRANDKLIPPAREN_ASSESSMENT_${root.toUpperCase()}_COMPATIBLE_BASE_URL=\n`,
+      "utf8",
+    );
+    const generic = runChecker([genericFile], "");
+    expect(generic.status).toBe(0);
+    expect(generic.out).toBe("");
+    const bareFile = join(dir, "bare.md");
+    writeFileSync(bareFile, `a ${root} model key sits here\n`, "utf8");
+    const bare = runChecker([bareFile], "");
+    expect(bare.status).toBe(1);
+    expect(bare.out.trim()).toBe(`${bareFile}:1`);
+  });
 });

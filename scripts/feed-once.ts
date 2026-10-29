@@ -154,14 +154,14 @@ async function main(): Promise<void> {
     };
     const first = await source.pollLogs(input, ctx);
     if (first.ok) {
-      logs.push(...first.value);
+      logs.push(...first.value.logs);
       continue;
     }
     if (first.error.kind === "rate-limited") {
       await sleep(Math.min(first.error.retryAfterMs, 10000));
       const retry = await source.pollLogs(input, ctx);
       if (retry.ok) {
-        logs.push(...retry.value);
+        logs.push(...retry.value.logs);
         continue;
       }
       errors.push({ factory: factory.dex, message: retry.error.message });

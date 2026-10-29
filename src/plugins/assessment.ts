@@ -20,7 +20,7 @@ export type AssessmentPlugin = {
   readonly provider: AssessmentProvider;
 };
 
-// Fixed plugin ids for the two assessment adapters (S-045). The same
+// Fixed plugin ids for the three assessment adapters (S-045). The same
 // literals appear in the plugin manifests, where PluginManifest.parse
 // validates them; the cast below is safe because a mismatched literal
 // fails fast at module load.
@@ -28,11 +28,14 @@ const META_MODEL_API_PLUGIN_ID =
   "dev.brandklipparen.assessment.meta-model-api" as PluginId;
 const hosted_OPEN_WEIGHTS_PLUGIN_ID =
   "dev.brandklipparen.assessment.hosted-open-weights" as PluginId;
+const generic_COMPATIBLE_PLUGIN_ID =
+  "dev.brandklipparen.assessment.generic-compatible" as PluginId;
 
 export const ASSESSMENT_PLUGIN_IDS: Readonly<Record<AssessmentProvider, PluginId>> =
   Object.freeze({
     "meta-model-api": META_MODEL_API_PLUGIN_ID,
     "hosted-open-weights": hosted_OPEN_WEIGHTS_PLUGIN_ID,
+    "generic-compatible": generic_COMPATIBLE_PLUGIN_ID,
   });
 
 // Maps a configured provider to its registered plugin id. Exactly one
@@ -44,6 +47,8 @@ export function assessmentPluginIdForProvider(provider: AssessmentProvider): Plu
       return META_MODEL_API_PLUGIN_ID;
     case "hosted-open-weights":
       return hosted_OPEN_WEIGHTS_PLUGIN_ID;
+    case "generic-compatible":
+      return generic_COMPATIBLE_PLUGIN_ID;
   }
 }
 

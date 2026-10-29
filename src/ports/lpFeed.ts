@@ -10,7 +10,11 @@ import type { Result } from "../domain/result.ts";
 
 // One raw log as returned by either source, normalized to numbers.
 // `blockHash` travels per candidate so reorg handling can mark
-// `orphaned` on change (S-090).
+// `orphaned` on change (S-090). `blockTimestampMs` carries the chain
+// block time in milliseconds since the epoch, or null when the source
+// did not provide a usable timestamp; callers never fabricate it.
+// Optional so older callers constructing logs without a stamp still
+// typecheck; readers treat a missing stamp as unknown (null).
 export type FeedLog = {
   readonly address: string;
   readonly topics: readonly string[];
@@ -19,6 +23,7 @@ export type FeedLog = {
   readonly blockHash: string;
   readonly txHash: string;
   readonly logIndex: number;
+  readonly blockTimestampMs?: number | null | undefined;
 };
 
 export type FeedPollInput = {
@@ -49,12 +54,26 @@ export const FeedPollInput = {
 // Error union per A-15. `not-configured` answers without a key or URL with
 // zero sends; `rate-limited` covers the token bucket, the daily budget
 // and provider rate-limit answers, and carries the wait before retry.
+// The scope tells our own budget pacing (`local`) apart from a provider
+// refusal or backoff (`provider`), so the caller waits out its own
+// bucket instead of failing the range as provider-limited.
 export type LpFeedError =
   | { kind: "not-configured"; message: string }
-  | { kind: "rate-limited"; message: string; retryAfterMs: number }
+  | { kind: "rate-limited"; message: string; retryAfterMs: number; scope?: "local" | "provider" | undefined }
   | { kind: "timeout"; message: string }
   | { kind: "unavailable"; message: string }
   | { kind: "invalid-response"; message: string };
+
+// One poll result: the merged logs plus the last fully covered block.
+// A range wider than one page fans out to one request per chunk; pages
+// fetched before a mid-range failure are kept and `coveredToBlock` names
+// the last block that is complete across the polled range, so the caller
+// advances its cursor there and retries the rest. A value below
+// `fromBlock` means nothing was fully covered (the first page failed).
+export type FeedPollResult = {
+  readonly logs: readonly FeedLog[];
+  readonly coveredToBlock: number;
+};
 
 // Per-port limits per A-17. Values come from the operational
 // configuration; the port only names the fields.
@@ -71,5 +90,5 @@ export type FeedCallContext = {
 };
 
 export interface LpFeedPort {
-  pollLogs(input: FeedPollInput, ctx: FeedCallContext): Promise<Result<readonly FeedLog[], LpFeedError>>;
+  pollLogs(input: FeedPollInput, ctx: FeedCallContext): Promise<Result<FeedPollResult, LpFeedError>>;
 }

@@ -77,6 +77,107 @@ function demoEnv(): EnvInput {
   };
 }
 
+describe("vendor-neutral provider for local development", () => {
+  const COMPAT_KEY = "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY";
+  const COMPAT_MODEL = "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID";
+  const COMPAT_URL = "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL";
+
+  function compatDemoEnv(): EnvInput {
+    const env = demoEnv();
+    delete env["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY"];
+    delete env["BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID"];
+    delete env["BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL"];
+    return {
+      ...env,
+      BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
+      BRANDKLIPPAREN_ASSESSMENT_PROMPT_VERSION: "1.0.0",
+      [COMPAT_KEY]: "fake-compat-key-for-tests-only",
+      [COMPAT_MODEL]: "fake-compat-model-1",
+      [COMPAT_URL]: "https://compat.example.invalid",
+      BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_generic_COMPATIBLE: "500",
+      BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_generic_COMPATIBLE: "50",
+    };
+  }
+
+  test("generic-compatible is accepted with all three values", () => {
+    const loaded = loadConfig(compatDemoEnv());
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) {
+      return;
+    }
+    expect(loaded.value.assessmentProvider).toBe("generic-compatible");
+    expect(loaded.value.assessmentGenericCompatibleApiKey?.reveal()).toBe(
+      "fake-compat-key-for-tests-only",
+    );
+    expect(loaded.value.assessmentGenericCompatibleBaseUrl).toBe("https://compat.example.invalid");
+    expect(loaded.value.budgetDailyCapAssessmentCallsGenericCompatible).toBe(500);
+    expect(loaded.value.assessmentDailyCostCapGenericCompatible).toBe(50);
+  });
+
+  test("generic-compatible is rejected with a clear error when any value is missing", () => {
+    for (const variable of [COMPAT_KEY, COMPAT_MODEL, COMPAT_URL]) {
+      const env = compatDemoEnv();
+      delete env[variable];
+      const loaded = loadConfig(env);
+      expect(loaded.ok).toBe(false);
+      if (loaded.ok) {
+        continue;
+      }
+      expect(loaded.error.variable).toBe(variable);
+      const text = formatConfigError(loaded.error);
+      expect(text).toContain(variable);
+      expect(text.includes("fake-compat-key-for-tests-only")).toBe(false);
+    }
+  });
+
+  test("generic-compatible rejects a non-https base URL without values", () => {
+    const env = compatDemoEnv();
+    env[COMPAT_URL] = "http://compat.example.invalid";
+    const loaded = loadConfig(env);
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) {
+      expect(loaded.error.variable).toBe(COMPAT_URL);
+      const text = formatConfigError(loaded.error);
+      expect(text).toContain(COMPAT_URL);
+      expect(text.includes("fake-compat-key-for-tests-only")).toBe(false);
+    }
+  });
+
+  test("generic-compatible key is redacted in dumps and logs", () => {
+    const loaded = loadConfig(compatDemoEnv());
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) {
+      return;
+    }
+    const secret = loaded.value.assessmentGenericCompatibleApiKey;
+    expect(secret).toBeDefined();
+    if (secret === undefined) {
+      return;
+    }
+    expect(secret.reveal()).toBe("fake-compat-key-for-tests-only");
+    expect(String(secret)).toBe("[REDACTED]");
+    expect(JSON.stringify(secret)).toBe('"[REDACTED]"');
+    expect(inspect(secret)).toContain("[REDACTED]");
+    expect(inspect(secret).includes("fake-compat-key-for-tests-only")).toBe(false);
+    const serialized = JSON.stringify(loaded.value);
+    expect(serialized).toContain("[REDACTED]");
+    expect(serialized.includes("fake-compat-key-for-tests-only")).toBe(false);
+  });
+
+  test("generic-compatible triple stays optional outside the demo", () => {
+    const loaded = loadConfig({
+      ...baseCiEnv(),
+      BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
+      [COMPAT_KEY]: "fake-compat-key-for-tests-only",
+      [COMPAT_MODEL]: "fake-compat-model-1",
+      [COMPAT_URL]: "https://compat.example.invalid",
+    });
+    expect(loaded.ok).toBe(true);
+    const bare = loadConfig(baseCiEnv());
+    expect(bare.ok).toBe(true);
+  });
+});
+
 describe("typed config and secret handling at startup (K-505, K-510)", () => {
   test("k505_missing_variable_named_without_values", () => {
     const secrets: string[] = [

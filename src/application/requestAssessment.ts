@@ -73,6 +73,10 @@ function fallbackReasonFor(errorKind: AssessmentFallback["errorKind"]): string {
       return "assessment provider label did not match; template explanation stands";
     case "unavailable":
       return "assessment provider unavailable; template explanation stands";
+    case "unauthorized":
+      return "assessment provider rejected the credentials; template explanation stands";
+    case "rejected":
+      return "assessment provider rejected the request; template explanation stands";
   }
 }
 

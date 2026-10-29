@@ -23,6 +23,7 @@
     "lint": "eslint .",
     "start:rest": "node --experimental-strip-types src/main.ts rest",
     "start:mcp": "node --experimental-strip-types src/main.ts mcp",
+    "demo": "node --experimental-strip-types scripts/demo.ts",
     "gate": "depcruise --validate .dependency-cruiser.cjs src apps",
     "check:vendors": "node scripts/check-vendor-names.mjs",
     "check:english": "node scripts/check-english.mjs"
