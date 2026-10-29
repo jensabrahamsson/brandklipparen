@@ -8,6 +8,9 @@ import { expect, test, type Page } from "@playwright/test";
 const ADDRESS = "0x5ab1e0000000000000000000000000000000f005";
 const RECENT_SYMBOL = "0x5ab1e0000000000000000000000000000000a001";
 const RECENT_SHORT = "0x5ab1e0000000000000000000000000000000b002";
+// Row meta shows the EIP-55 form; session storage keeps the raw strings.
+const C_RECENT_SYMBOL = "0x5ab1E0000000000000000000000000000000a001";
+const C_RECENT_SHORT = "0x5AB1E0000000000000000000000000000000b002";
 
 // Implementation tokens that must never reach the Simple-mode DOM.
 const BANNED_SUBSTRINGS = ["REST", "contract gap", ".env", "ETHERSCAN_API_KEY", "set its key"];
@@ -148,8 +151,8 @@ test("s131_simple_mode_copy_has_no_dev_strings", async ({ page }) => {
   await expect(recent).toBeVisible();
   await expect(recent.getByRole("button", { name: /Re-analyze/ }).first()).toContainText("SYNTH");
   await expect(recent.getByRole("button", { name: /Re-analyze/ }).nth(1)).toContainText("0x5ab1…b002");
-  await expect(recent).toContainText(RECENT_SYMBOL);
-  await expect(recent).toContainText(RECENT_SHORT);
+  await expect(recent).toContainText(C_RECENT_SYMBOL);
+  await expect(recent).toContainText(C_RECENT_SHORT);
   await expect(recent.getByRole("button", { name: "Copy contract address" }).first()).toBeVisible();
   for (const label of ["Rug", "Honey", "Bot"]) {
     await expect(recent.getByText(label, { exact: true }).first()).toBeVisible();

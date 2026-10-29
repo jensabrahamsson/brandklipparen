@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type JSX, type RefObject } from "react";
+import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { riskBand } from "../lib/risk.ts";
 import { RiskBadge } from "./RiskBadge.tsx";
 import { CopyButton } from "./CopyButton.tsx";
@@ -220,7 +221,10 @@ export function LiveTokensList({
             {items.map((entry) => (
               <li key={entry.pairAddress} className={rowClass(entry) === undefined ? "live-card" : `live-card ${rowClass(entry)}`}>
                 <div className="live-card-top">
-                  <a href={`#/token/${encodeURIComponent(entry.tokenAddress)}`} title={entry.tokenAddress}>
+                  <a
+                    href={`#/token/${encodeURIComponent(entry.tokenAddress)}`}
+                    title={toChecksumAddress(entry.tokenAddress)}
+                  >
                     {entry.symbol ?? shortAddress(entry.tokenAddress)}
                   </a>
                   {riskCell(entry)}
@@ -241,16 +245,17 @@ export function LiveTokensList({
                 </div>
                 <div className="live-addr">
                   <span className="addr-full mono numeric" data-testid="live-card-token-full">
-                    {entry.tokenAddress}
+                    {toChecksumAddress(entry.tokenAddress)}
                   </span>{" "}
-                  <CopyButton value={entry.tokenAddress} label="Copy contract address" />
+                  <CopyButton value={toChecksumAddress(entry.tokenAddress)} label="Copy contract address" />
                 </div>
                 <div className="live-pair-full">
                   Pair{" "}
                   <span className="addr-full mono numeric" data-testid="live-card-pair-full">
-                    {entry.pairAddress}
+                    {toChecksumAddress(entry.pairAddress)}
                   </span>{" "}
-                  <CopyButton value={entry.pairAddress} label="Copy pair address" /> · block {entry.block}
+                  <CopyButton value={toChecksumAddress(entry.pairAddress)} label="Copy pair address" /> · block{" "}
+                  {entry.block}
                 </div>
                 <div className="quiet numeric live-meta">
                   {ageText(entry)} · {entry.dex}
@@ -269,9 +274,10 @@ export function LiveTokensList({
                 <div className="quiet numeric live-pair">
                   Pair{" "}
                   <span className="addr-full mono numeric" data-testid="live-card-pair-full-wide">
-                    {entry.pairAddress}
+                    {toChecksumAddress(entry.pairAddress)}
                   </span>{" "}
-                  <CopyButton value={entry.pairAddress} label="Copy pair address" /> · block {entry.block}
+                  <CopyButton value={toChecksumAddress(entry.pairAddress)} label="Copy pair address" /> · block{" "}
+                  {entry.block}
                 </div>
               </li>
             ))}
@@ -293,7 +299,10 @@ export function LiveTokensList({
               {items.map((entry) => (
                 <tr key={entry.pairAddress} className={rowClass(entry)}>
                   <td>
-                    <a href={`#/token/${encodeURIComponent(entry.tokenAddress)}`} title={entry.tokenAddress}>
+                    <a
+                      href={`#/token/${encodeURIComponent(entry.tokenAddress)}`}
+                      title={toChecksumAddress(entry.tokenAddress)}
+                    >
                       {entry.symbol ?? shortAddress(entry.tokenAddress)}
                     </a>
                     {entry.ageSeconds !== null && entry.ageSeconds < 120 ? (
@@ -302,18 +311,18 @@ export function LiveTokensList({
                   </td>
                   <td className="mono numeric addr-cell">
                     <span className="addr-full" data-testid="live-token-full">
-                      {entry.tokenAddress}
+                      {toChecksumAddress(entry.tokenAddress)}
                     </span>{" "}
-                    <CopyButton value={entry.tokenAddress} label="Copy contract address" />
+                    <CopyButton value={toChecksumAddress(entry.tokenAddress)} label="Copy contract address" />
                   </td>
                   <td className="numeric">{ageText(entry)}</td>
                   <td className="addr-cell">
                     {entry.dex}
                     {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
                     <span className="addr-full mono numeric" data-testid="live-pair-full">
-                      {entry.pairAddress}
+                      {toChecksumAddress(entry.pairAddress)}
                     </span>{" "}
-                    <CopyButton value={entry.pairAddress} label="Copy pair address" />
+                    <CopyButton value={toChecksumAddress(entry.pairAddress)} label="Copy pair address" />
                   </td>
                   <td className="numeric">
                     {entry.initialLiquidityWeth === null ? (

@@ -6,6 +6,7 @@
 // analysis and changes no score or evidence.
 import type { JSX } from "react";
 import type { AnalyzeResult } from "../types.ts";
+import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { canonicalJson } from "../lib/schemaValue.ts";
 import { toPluginResultViews } from "../lib/plugins.ts";
 
@@ -28,7 +29,7 @@ export function ExpertDetail({
       <dl className="mono" style={{ fontSize: 13 }}>
         <div>
           <dt style={{ display: "inline" }}>target </dt>
-          <dd style={{ display: "inline", margin: 0 }}>{result.target}</dd>
+          <dd style={{ display: "inline", margin: 0 }}>{toChecksumAddress(result.target)}</dd>
         </div>
         <div>
           <dt style={{ display: "inline" }}>block </dt>

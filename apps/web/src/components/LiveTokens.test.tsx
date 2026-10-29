@@ -13,6 +13,7 @@ import {
   unseenEntries,
   updatedAgoLabel,
 } from "../lib/liveTokens.ts";
+import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { syntheticAddress } from "../lib/syntheticAddresses.ts";
 import type { LiveTokenEntry, LiveTokensSnapshot } from "../lib/liveTokens.ts";
 
@@ -90,8 +91,8 @@ describe("live tokens list", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([first, second])} />);
     expect(html).toContain("0.3%");
     expect(html).toContain("1%");
-    expect(html).toContain(first.pairAddress);
-    expect(html).toContain(second.pairAddress);
+    expect(html).toContain(toChecksumAddress(first.pairAddress));
+    expect(html).toContain(toChecksumAddress(second.pairAddress));
   });
 
   test("queued rows read analyzing until the queue reaches them", () => {
@@ -156,18 +157,43 @@ describe("live tokens list", () => {
   test("token links open the token page and rows keep stable keys", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} />);
     expect(html).toContain(`href="#/token/${NEW.tokenAddress}"`);
-    expect(html).toContain(NEW.tokenAddress);
-    expect(html).toContain(NEW.pairAddress);
+    expect(html).toContain(toChecksumAddress(NEW.tokenAddress));
+    expect(html).toContain(toChecksumAddress(NEW.pairAddress));
   });
 
   test("s134_full_addresses_render_with_copy_and_no_short_form", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} />);
-    expect(html).toContain(NEW.tokenAddress);
-    expect(html).toContain(NEW.pairAddress);
-    expect(html).toContain(PENDING.tokenAddress);
-    expect(html).toContain(PENDING.pairAddress);
+    expect(html).toContain(toChecksumAddress(NEW.tokenAddress));
+    expect(html).toContain(toChecksumAddress(NEW.pairAddress));
+    expect(html).toContain(toChecksumAddress(PENDING.tokenAddress));
+    expect(html).toContain(toChecksumAddress(PENDING.pairAddress));
     expect(html).toContain('aria-label="Copy contract address"');
     expect(html).toContain('aria-label="Copy pair address"');
+  });
+
+  test("s36_live_list_shows_checksummed_addresses_but_routes_on_raw", () => {
+    const rawToken = "0x5ab1e0000000000000000000000000000000c001";
+    const rawPair = "0x5ab1e0000000000000000000000000000000c0cc";
+    const token = "0x5Ab1E0000000000000000000000000000000c001";
+    const pair = "0x5Ab1E0000000000000000000000000000000C0Cc";
+    expect(toChecksumAddress(rawToken)).toBe(token);
+    expect(toChecksumAddress(rawPair)).toBe(pair);
+    const entry: LiveTokenEntry = {
+      ...NEW,
+      tokenAddress: rawToken,
+      symbol: null,
+      name: null,
+      pairAddress: rawPair,
+    };
+    const html = renderToString(<LiveTokensList snapshot={snapshot([entry])} />);
+    // Table and mobile cards display the checksummed form only.
+    expect(html).toContain(`>${token}<`);
+    expect(html).toContain(`>${pair}<`);
+    expect(html).not.toContain(`>${rawToken}<`);
+    expect(html).not.toContain(`>${rawPair}<`);
+    // Routing keys stay raw: links still target the original address.
+    expect(html).toContain(`href="#/token/${rawToken}"`);
+    expect(html).not.toContain(`href="#/token/${token}"`);
   });
 
   test("the new marker is static text with no animation hooks", () => {

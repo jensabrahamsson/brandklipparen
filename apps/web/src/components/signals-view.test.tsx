@@ -1,8 +1,17 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { ExplanationList } from "./ExplanationList.tsx";
 import { SignalList } from "./SignalList.tsx";
 import type { Signal } from "../types.ts";
+import { toChecksumAddress } from "../lib/checksumAddress.ts";
+
+vi.mock("./CopyButton.tsx", async () => {
+  const React = await import("react");
+  return {
+    CopyButton: ({ value, label }: { readonly value: string; readonly label: string }) =>
+      React.createElement("button", { type: "button", "aria-label": label, "data-copy-value": value }, "Copy"),
+  };
+});
 
 const SIGNALS: readonly Signal[] = [
   {
@@ -69,6 +78,8 @@ describe("template explanation (design review P0-4)", () => {
 
   test("s134_account_chip_shows_full_address_with_copy", () => {
     const account = "0x5ab1e0000000000000000000000000000000a001";
+    const checksummed = "0x5ab1E0000000000000000000000000000000a001";
+    expect(toChecksumAddress(account)).toBe(checksummed);
     const html = renderToString(
       <ExplanationList
         claims={[
@@ -84,9 +95,12 @@ describe("template explanation (design review P0-4)", () => {
         onSignalLink={() => undefined}
       />,
     );
-    expect(html).toContain(account);
+    expect(html).toContain(checksummed);
     expect(html).toContain("claim-account-full");
+    expect(html).toContain(`data-testid="claim-account-full">${checksummed}<`);
+    expect(html).not.toContain(`>${account}<`);
     expect(html).toContain('aria-label="Copy account address"');
+    expect(html).toContain(`data-copy-value="${checksummed}"`);
   });
 });
 

@@ -7,7 +7,9 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 const ADDRESS = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
-const CHANGER = `0x${"aa".repeat(20)}`;
+const CHANGER = "0x5ab1e0000000000000000000000000000000beef";
+// The account chip shows the EIP-55 form of the claim account.
+const C_CHANGER = "0x5Ab1E0000000000000000000000000000000BeEF";
 
 function longClaim(risk: string, selector: string, account: string): string {
   const head =
@@ -195,7 +197,7 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   // "Can change" renders as a chip; the account shows in full with
   // copy (S-134).
   await expect(explanation.getByText("Owner can turn this on later").first()).toBeVisible();
-  await expect(explanation).toContainText(CHANGER);
+  await expect(explanation).toContainText(C_CHANGER);
 
   // Evidence lives in a disclosure that opens and closes from the keyboard.
   const evidence = explanation.locator("details").first();

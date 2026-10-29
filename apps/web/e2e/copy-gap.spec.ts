@@ -13,6 +13,9 @@ const PAIR_A = "0x5ab1e0000000000000000000000000000000a0aa";
 const TOKEN_B = "0x5ab1e0000000000000000000000000000000b002";
 const PAIR_B = "0x5ab1e0000000000000000000000000000000b0bb";
 const ACCOUNT = "0x5ab1e0000000000000000000000000000000c301";
+// Displayed (and copied) forms are EIP-55 checksummed; mocks keep raw strings.
+const C_TOKEN_A = "0x5ab1E0000000000000000000000000000000a001";
+const C_ACCOUNT = "0x5AB1e0000000000000000000000000000000C301";
 
 const HEALTH = {
   status: "ok",
@@ -191,7 +194,7 @@ test("copy_gap_header_meta_follows_button_with_live_announcement", async ({ page
   // Keyboard copy writes the exact address and announces exactly once.
   await headerCopy.focus();
   await page.keyboard.press("Enter");
-  await expect.poll(() => copiedValues(page), { timeout: 5000 }).toEqual([TOKEN_A]);
+  await expect.poll(() => copiedValues(page), { timeout: 5000 }).toEqual([C_TOKEN_A]);
   await expect(liveRegion).toHaveText("Copied.");
   await expect(headerCopy).toHaveText("Copied");
   await expect(headerCopy).toHaveAttribute("aria-label", "Copy contract address");
@@ -239,7 +242,7 @@ test("copy_gap_no_reserved_space_in_any_placement", async ({ page }) => {
     // Note: hash URLs build by concatenation (see token-symbol-heading).
     await page.goto("/#/token/" + TOKEN_A);
     await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
-    await expect(page.locator('[data-testid="claim-account-full"]').first()).toContainText(ACCOUNT);
+    await expect(page.locator('[data-testid="claim-account-full"]').first()).toContainText(C_ACCOUNT);
     const tokenReserved = await page.evaluate(() =>
       Array.from(document.querySelectorAll(".copy-wrap")).map((wrap) => {
         const button = wrap.querySelector("button");

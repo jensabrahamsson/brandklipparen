@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import type { AnalyzeSuccess } from "../types.ts";
+import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { formatAge } from "../lib/liveTokens.ts";
 import type { LiveTokenEntry } from "../lib/liveTokens.ts";
 import { CopyButton } from "./CopyButton.tsx";
@@ -9,13 +10,16 @@ import { CopyButton } from "./CopyButton.tsx";
 // addresses always show in full with a copy button (S-134). Copy
 // confirmations announce through a polite live region.
 function Copyable({ label, value, copyLabel }: { readonly label: string; readonly value: string; readonly copyLabel?: string | undefined }): JSX.Element {
+  // Displayed addresses show EIP-55 mixed case and copy the same
+  // string; labels and hashes pass through unchanged.
+  const shown = toChecksumAddress(value);
   return (
     <div className="fact-row">
       <dt>{label}</dt>
       <span className="lead" aria-hidden="true" />
-      <dd className="mono numeric" style={{ fontSize: 13 }} title={value}>
-        <span className="addr-full">{value}</span>{" "}
-        <CopyButton value={value} label={copyLabel ?? `Copy ${label}`} />
+      <dd className="mono numeric" style={{ fontSize: 13 }} title={shown}>
+        <span className="addr-full">{shown}</span>{" "}
+        <CopyButton value={shown} label={copyLabel ?? `Copy ${label}`} />
       </dd>
     </div>
   );

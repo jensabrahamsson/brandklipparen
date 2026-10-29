@@ -4,6 +4,7 @@
 import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
 import { Sidebar } from "./Sidebar.tsx";
+import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import type { AnalyzeSuccess } from "../types.ts";
 
 const TARGET = "0x5ab1e0000000000000000000000000000000a001";
@@ -51,8 +52,12 @@ describe("sidebar contract facts", () => {
         }}
       />,
     );
-    expect(html).toContain(TARGET);
-    expect(html).toContain(PAIR);
+    // Displayed facts and copied values use the checksummed form.
+    expect(toChecksumAddress(TARGET)).toBe("0x5ab1E0000000000000000000000000000000a001");
+    expect(toChecksumAddress(PAIR)).toBe("0x5aB1E0000000000000000000000000000000a0aa");
+    expect(html).toContain("0x5ab1E0000000000000000000000000000000a001");
+    expect(html).toContain("0x5aB1E0000000000000000000000000000000a0aa");
+    expect(html).not.toContain(`>${TARGET}<`);
     expect(html).toContain('aria-label="Copy contract address"');
     expect(html).toContain('aria-label="Copy pair address"');
   });

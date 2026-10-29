@@ -231,7 +231,7 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
   await expect(page.getByTestId("expert-detail")).toHaveCount(0);
   const simpleScore = await page.locator('section[aria-label="Combined score"]').innerText();
   await page.getByRole("radio", { name: "Expert" }).check();
-  await expect(page.getByTestId("expert-detail")).toContainText(ADDRESS);
+  await expect(page.getByTestId("expert-detail")).toContainText("0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF");
   await expect(page.getByTestId("expert-detail")).toContainText("0xabc");
   await expect(page.getByTestId("expert-selectors")).toContainText("0x44337ea1");
   await expect(page.getByTestId("expert-selectors")).toContainText("PC 0xa3f");

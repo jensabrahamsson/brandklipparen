@@ -10,6 +10,12 @@ const TOKEN_A = "0x5ab1e0000000000000000000000000000000a001";
 const PAIR_A = "0x5ab1e0000000000000000000000000000000a0aa";
 const TOKEN_B = "0x5ab1e0000000000000000000000000000000b002";
 const PAIR_B = "0x5ab1e0000000000000000000000000000000b0bb";
+// Displayed (and copied) forms are EIP-55 checksummed; mocks, routes and
+// API calls keep the raw lowercase strings above.
+const C_TOKEN_A = "0x5ab1E0000000000000000000000000000000a001";
+const C_PAIR_A = "0x5aB1E0000000000000000000000000000000a0aa";
+const C_TOKEN_B = "0x5AB1E0000000000000000000000000000000b002";
+const C_PAIR_B = "0x5ab1E0000000000000000000000000000000b0BB";
 
 function liveItems(): Record<string, unknown>[] {
   return [
@@ -155,13 +161,16 @@ test("s134_live_list_shows_full_addresses_without_overflow", async ({ page }) =>
     const live = page.locator('section[aria-label="New tokens"]');
     if (viewport.width >= 640) {
       await expect(live.locator('[data-testid="live-token-full"]').first()).toBeVisible();
-      await expect(live.locator('[data-testid="live-token-full"]').first()).toHaveText(TOKEN_A);
-      await expect(live.locator('[data-testid="live-token-full"]').nth(1)).toHaveText(TOKEN_B);
-      await expect(live.locator('[data-testid="live-pair-full"]').first()).toHaveText(PAIR_A);
+      await expect(live.locator('[data-testid="live-token-full"]').first()).toHaveText(C_TOKEN_A);
+      await expect(live.locator('[data-testid="live-token-full"]').nth(1)).toHaveText(C_TOKEN_B);
+      await expect(live.locator('[data-testid="live-pair-full"]').first()).toHaveText(C_PAIR_A);
+      await expect(live.locator('[data-testid="live-pair-full"]').nth(1)).toHaveText(C_PAIR_B);
     } else {
       await expect(live.locator('[data-testid="live-card-token-full"]').first()).toBeVisible();
-      await expect(live.locator('[data-testid="live-card-token-full"]').first()).toHaveText(TOKEN_A);
-      await expect(live.locator('[data-testid="live-card-pair-full"]').first()).toHaveText(PAIR_A);
+      await expect(live.locator('[data-testid="live-card-token-full"]').first()).toHaveText(C_TOKEN_A);
+      await expect(live.locator('[data-testid="live-card-token-full"]').nth(1)).toHaveText(C_TOKEN_B);
+      await expect(live.locator('[data-testid="live-card-pair-full"]').first()).toHaveText(C_PAIR_A);
+      await expect(live.locator('[data-testid="live-card-pair-full"]').nth(1)).toHaveText(C_PAIR_B);
     }
     // Pair addresses never shorten; the token title may stay short only
     // when the symbol is missing (TOKEN_B), with the full address in the
@@ -197,7 +206,7 @@ test("s134_copy_buttons_are_44px_and_keyboard_copy_writes_exact_address", async 
   const firstCopy = page.getByRole("button", { name: "Copy contract address" }).first();
   await firstCopy.focus();
   await page.keyboard.press("Enter");
-  await expect.poll(() => copiedValues(page), { timeout: 5000 }).toEqual([TOKEN_A]);
+  await expect.poll(() => copiedValues(page), { timeout: 5000 }).toEqual([C_TOKEN_A]);
   await expect(page.getByText("Copied.").first()).toBeVisible();
   // Copy never navigates away from the list.
   expect(new URL(page.url()).hash).toBe("");
@@ -221,7 +230,7 @@ test("s134_list_row_click_navigates_but_copy_click_does_not", async ({ page }) =
   await page.goto("/#/");
   await expect(page.getByText("2 new tokens")).toBeVisible();
   await page.getByRole("button", { name: "Copy contract address" }).first().click();
-  await expect.poll(() => copiedValues(page), { timeout: 5000 }).toEqual([TOKEN_A]);
+  await expect.poll(() => copiedValues(page), { timeout: 5000 }).toEqual([C_TOKEN_A]);
   expect(new URL(page.url()).hash).toBe("#/");
 });
 
@@ -233,19 +242,19 @@ test("s134_token_page_header_sidebar_and_recent_show_full_address", async ({ pag
   await expect(page.getByRole("img", { name: /Combined score 12 of 100, Low risk/ })).toBeVisible();
 
   // Header meta carries the exact full address with a copy control.
-  await expect(page.locator('[data-testid="token-address-full"]').first()).toHaveText(TOKEN_A);
+  await expect(page.locator('[data-testid="token-address-full"]').first()).toHaveText(C_TOKEN_A);
   await expect(page.getByRole("button", { name: "Copy contract address" }).first()).toBeVisible();
 
   // Sidebar facts carry the full address and pair with copy controls.
   const facts = page.locator('aside[aria-label="Contract facts"]');
-  await expect(facts).toContainText(TOKEN_A);
-  await expect(facts).toContainText(PAIR_A);
+  await expect(facts).toContainText(C_TOKEN_A);
+  await expect(facts).toContainText(C_PAIR_A);
   await expect(facts).not.toContainText("0x5ab1…");
 
   // Keyboard copy from the header writes the exact address.
   await page.locator('[data-testid="copy-contract-address"]').first().focus();
   await page.keyboard.press("Enter");
-  await expect.poll(() => copiedValues(page), { timeout: 5000 }).toContain(TOKEN_A);
+  await expect.poll(() => copiedValues(page), { timeout: 5000 }).toContain(C_TOKEN_A);
 
   for (const viewport of [
     { width: 1440, height: 900 },
@@ -262,7 +271,7 @@ test("s134_token_page_header_sidebar_and_recent_show_full_address", async ({ pag
   await page.goto("/#/");
   const recent = page.locator("section[aria-label='Recently analyzed']");
   await expect(recent).toBeVisible();
-  await expect(recent).toContainText(TOKEN_A);
+  await expect(recent).toContainText(C_TOKEN_A);
   const nested = await recent.evaluate((root) =>
     root.querySelectorAll("button button, a button, button a").length,
   );

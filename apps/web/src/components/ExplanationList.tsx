@@ -7,6 +7,7 @@
 // as React text only, so hostile content stays inert: no HTML sinks
 // anywhere.
 import type { JSX } from "react";
+import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { signalKey, signalTitle } from "../lib/signals.ts";
 import { claimSummary, evidenceLocationCount, extractAccount, extractEvidenceGroups } from "../lib/claims.ts";
 import type { ExplanationClaim, Signal } from "../types.ts";
@@ -14,13 +15,14 @@ import { Explain } from "./Explain.tsx";
 import { CopyButton } from "./CopyButton.tsx";
 
 function AccountChip({ address }: { readonly address: string }): JSX.Element {
+  const checksummed = toChecksumAddress(address);
   return (
     <span className="mono numeric" style={{ fontSize: 13 }}>
       Account{" "}
       <span className="addr-full" data-testid="claim-account-full">
-        {address}
+        {checksummed}
       </span>{" "}
-      <CopyButton value={address} label="Copy account address" />
+      <CopyButton value={checksummed} label="Copy account address" />
     </span>
   );
 }

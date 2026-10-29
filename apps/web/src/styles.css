@@ -1004,10 +1004,29 @@ a {
 }
 
 .token-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 2px;
   margin: 14px 0 0;
   color: var(--dim);
   font-size: 14px;
   overflow-wrap: anywhere;
+}
+
+/* Token meta items wrap only between each other: small items (name,
+   DEX, fee tier, age) never break inside, and each carries its own
+   leading separator so a separator never dangles at a line edge. The
+   address item alone may wrap onto two lines at phone widths. */
+.meta-item {
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.meta-addr {
+  white-space: normal;
+  min-width: 0;
 }
 
 .token-meta b {

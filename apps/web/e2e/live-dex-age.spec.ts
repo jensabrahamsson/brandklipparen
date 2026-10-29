@@ -110,7 +110,7 @@ test("live_list_dex_and_human_age", async ({ page }) => {
   // The repeated symbol stays distinguishable: three fee/pair variants
   // with full pair addresses (S-134).
   expect(await table.getByText("DUP").count()).toBeGreaterThanOrEqual(3);
-  expect(await table.getByText("0x5ab1e0000000000000000000000000000000a0aa").count()).toBeGreaterThanOrEqual(1);
+  expect(await table.getByText("0x5aB1E0000000000000000000000000000000a0aa").count()).toBeGreaterThanOrEqual(1);
 
   // Cards (narrow): same DEX, age and pair information.
   await page.setViewportSize({ width: 390, height: 844 });
@@ -119,5 +119,5 @@ test("live_list_dex_and_human_age", async ({ page }) => {
   await expect(cards.getByText("Uniswap V3 · 1%").first()).toBeVisible();
   await expect(cards.getByText("3 min ago").first()).toBeVisible();
   await expect(cards.getByText("unknown").first()).toHaveAttribute("title", /Pair creation time not reported/);
-  await expect(cards.getByText("0x5ab1e0000000000000000000000000000000b0bb").first()).toBeVisible();
+  await expect(cards.getByText("0x5ab1E0000000000000000000000000000000b0BB").first()).toBeVisible();
 });
