@@ -1007,21 +1007,85 @@ a {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  column-gap: 8px;
+  column-gap: calc(6px + 1.15em);
   row-gap: 2px;
   margin: 14px 0 0;
   color: var(--dim);
   font-size: 14px;
   overflow-wrap: anywhere;
+  overflow-x: clip;
+  overflow-y: visible;
+  padding-inline-start: 4px;
+  margin-inline-start: -4px;
 }
 
-/* Token meta items wrap only between each other: small items (name,
-   DEX, fee tier, age) never break inside, and each carries its own
-   leading separator so a separator never dangles at a line edge. The
-   address item alone may wrap onto two lines at phone widths. */
+/* Meta items wrap only between each other: small items never break
+   inside, and the address item alone may wrap onto two lines at phone
+   widths. */
+.token-meta b {
+  color: var(--phosphor);
+  font-weight: 600;
+}
+
+/* Separators never start or end a visual line: every meta row is a
+   flex-wrap row where each item after the first draws its own leading
+   separator through ::before. Pseudo-elements never enter the
+   accessibility tree, so separators stay hidden from assistive text and
+   accessible names are unchanged. The separator hangs 1em to the left of
+   its item into the inter-item gap, so when the item starts a new visual
+   line the separator sits outside the row box and the inline-start clip
+   removes it; overflow-y stays visible so focus rings and the 44 px copy
+   tap target are never cut. Items stay unbreakable (nowrap) except
+   addresses, which may wrap. A separator inside one unbreakable item
+   (the DEX · fee · age group) stays interior and can never strand. */
+.hero-meta,
+.live-sub,
+.live-meta,
+.live-pair,
+.live-pair-full {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  row-gap: 2px;
+  overflow-x: clip;
+  overflow-y: visible;
+  padding-inline-start: 4px;
+  margin-inline-start: -4px;
+}
+
+/* Rows that were plain text keep their old space-separated rhythm
+   exactly. Rows that hold a copy button keep the button-to-next-text
+   distance at the usual separator width (copy-gap budgets 24 px), so
+   their junctions sit a hair tighter than before. */
+.live-pair,
+.live-pair-full {
+  column-gap: calc(6px + 1.15em);
+  row-gap: 4px;
+}
+
+.hero-meta,
+.live-sub,
+.live-meta {
+  column-gap: 1.6em;
+}
+
 .meta-item {
-  white-space: nowrap;
   min-width: 0;
+  white-space: nowrap;
+}
+
+.meta-item + .meta-item::before {
+  content: "·";
+  display: inline-block;
+  margin-inline-start: -1em;
+  margin-inline-end: 0.6em;
+}
+
+.token-meta > .meta-item + .meta-item::before,
+.live-pair > .meta-item + .meta-item::before,
+.live-pair-full > .meta-item + .meta-item::before {
+  margin-inline-start: -1.15em;
+  margin-inline-end: 0.55em;
 }
 
 .meta-addr {
@@ -1029,9 +1093,14 @@ a {
   min-width: 0;
 }
 
-.token-meta b {
-  color: var(--phosphor);
-  font-weight: 600;
+/* The pair label, address and copy stay grouped as one wrapping item;
+   only the block number separates onto its own item, so only that
+   boundary can wrap onto a new line. */
+.pair-group {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 /* Verdict headline caret: takes the verdict's risk colour from
@@ -2173,7 +2242,7 @@ details[open] > *:not(summary) {
 
 @media (max-width: 639px) {
   .live-card .live-sub {
-    display: block;
+    display: flex;
   }
 }
 

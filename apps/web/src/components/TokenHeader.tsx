@@ -6,9 +6,11 @@
 // no motion, no transforms.
 //
 // The meta line wraps only between items on narrow screens: each small
-// item (name, DEX, fee tier, age) is one unbreakable unit that carries
-// its own leading separator, so a separator never dangles at a line
-// edge and "2 min ago" never splits. The address item alone may wrap.
+// item is one unbreakable unit. DEX, fee tier and age ride one shared
+// unit with interior separators, and every other boundary draws its
+// separator through CSS, clipped when the item starts a new line, so a
+// separator never strands at a line edge and "2 min ago" never splits.
+// The address item alone may wrap.
 import type { JSX } from "react";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { formatAge, shortAddress } from "../lib/liveTokens.ts";
@@ -36,39 +38,18 @@ export function TokenHeader({
           </span>
         )}
         <span className="meta-item meta-addr">
-          {identity.name === null ? null : (
-            <span aria-hidden="true" className="meta-sep">
-              {" · "}
-            </span>
-          )}
           <span className="addr-full" data-testid="token-address-full">
             {checksummed}
           </span>{" "}
           <CopyButton value={checksummed} label="Copy contract address" testId="copy-contract-address" />
         </span>
         {liveEntry === null ? null : (
-          <>
-            <span className="meta-item">
-              <span aria-hidden="true" className="meta-sep">
-                {" · "}
-              </span>
-              {liveEntry.dex}
-            </span>
-            {typeof liveEntry.feeTier !== "number" ? null : (
-              <span className="meta-item">
-                <span aria-hidden="true" className="meta-sep">
-                  {" · "}
-                </span>
-                {`${liveEntry.feeTier / 10000}%`}
-              </span>
-            )}
-            <span className="meta-item" data-testid="token-meta-age">
-              <span aria-hidden="true" className="meta-sep">
-                {" · "}
-              </span>
-              {formatAge(liveEntry.ageSeconds)}
-            </span>
-          </>
+          <span className="meta-item">
+            {liveEntry.dex}
+            {typeof liveEntry.feeTier !== "number" ? null : ` · ${liveEntry.feeTier / 10000}%`}
+            {" · "}
+            <span data-testid="token-meta-age">{formatAge(liveEntry.ageSeconds)}</span>
+          </span>
         )}
       </p>
     </header>

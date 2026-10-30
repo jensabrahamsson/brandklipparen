@@ -230,17 +230,22 @@ export function LiveTokensList({
                   {riskCell(entry)}
                 </div>
                 <div className="quiet numeric live-sub">
-                  {ageText(entry)} · {entry.dex}
-                  {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
-                  <span
-                    className="muted"
-                    title={
-                      entry.initialLiquidityWeth === null
-                        ? "No WETH liquidity seen in the pair's first logs"
-                        : undefined
-                    }
-                  >
-                    {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
+                  <span className="meta-item">{ageText(entry)}</span>
+                  <span className="meta-item">
+                    {entry.dex}
+                    {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null}
+                  </span>
+                  <span className="meta-item">
+                    <span
+                      className="muted"
+                      title={
+                        entry.initialLiquidityWeth === null
+                          ? "No WETH liquidity seen in the pair's first logs"
+                          : undefined
+                      }
+                    >
+                      {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
+                    </span>
                   </span>
                 </div>
                 <div className="live-addr">
@@ -250,34 +255,43 @@ export function LiveTokensList({
                   <CopyButton value={toChecksumAddress(entry.tokenAddress)} label="Copy contract address" />
                 </div>
                 <div className="live-pair-full">
-                  Pair{" "}
-                  <span className="addr-full mono numeric" data-testid="live-card-pair-full">
-                    {toChecksumAddress(entry.pairAddress)}
-                  </span>{" "}
-                  <CopyButton value={toChecksumAddress(entry.pairAddress)} label="Copy pair address" /> · block{" "}
-                  {entry.block}
+                  <span className="meta-item meta-addr pair-group">
+                    Pair{" "}
+                    <span className="addr-full mono numeric" data-testid="live-card-pair-full">
+                      {toChecksumAddress(entry.pairAddress)}
+                    </span>{" "}
+                    <CopyButton value={toChecksumAddress(entry.pairAddress)} label="Copy pair address" />
+                  </span>
+                  <span className="meta-item">block {entry.block}</span>
                 </div>
                 <div className="quiet numeric live-meta">
-                  {ageText(entry)} · {entry.dex}
-                  {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
-                  <span
-                    className="muted"
-                    title={
-                      entry.initialLiquidityWeth === null
-                        ? "No WETH liquidity seen in the pair's first logs"
-                        : undefined
-                    }
-                  >
-                    {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
+                  <span className="meta-item">{ageText(entry)}</span>
+                  <span className="meta-item">
+                    {entry.dex}
+                    {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null}
+                  </span>
+                  <span className="meta-item">
+                    <span
+                      className="muted"
+                      title={
+                        entry.initialLiquidityWeth === null
+                          ? "No WETH liquidity seen in the pair's first logs"
+                          : undefined
+                      }
+                    >
+                      {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
+                    </span>
                   </span>
                 </div>
                 <div className="quiet numeric live-pair">
-                  Pair{" "}
-                  <span className="addr-full mono numeric" data-testid="live-card-pair-full-wide">
-                    {toChecksumAddress(entry.pairAddress)}
-                  </span>{" "}
-                  <CopyButton value={toChecksumAddress(entry.pairAddress)} label="Copy pair address" /> · block{" "}
-                  {entry.block}
+                  <span className="meta-item meta-addr pair-group">
+                    Pair{" "}
+                    <span className="addr-full mono numeric" data-testid="live-card-pair-full-wide">
+                      {toChecksumAddress(entry.pairAddress)}
+                    </span>{" "}
+                    <CopyButton value={toChecksumAddress(entry.pairAddress)} label="Copy pair address" />
+                  </span>
+                  <span className="meta-item">block {entry.block}</span>
                 </div>
               </li>
             ))}

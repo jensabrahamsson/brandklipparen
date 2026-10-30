@@ -1,8 +1,9 @@
 // Token identity resolution and heading fallbacks: the analysis
 // response wins, then the live-list entry, then the short address for
 // the title only; the full address always rides the meta (S-134) in
-// EIP-55 checksummed form, and the DEX/age meta items are unbreakable
-// units that carry their own separators.
+// EIP-55 checksummed form, and DEX, fee tier and age ride one shared
+// unbreakable unit with interior separators while every other boundary
+// draws its separator through CSS.
 import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
 import { TokenHeader } from "./TokenHeader.tsx";
@@ -80,6 +81,35 @@ describe("token heading fallbacks", () => {
     expect(html).toContain("5 min ago");
     expect(html).toContain("token-meta-age");
     expect(html).toContain("meta-item");
+  });
+
+  test("dex, fee and age stay one unbreakable unit with interior separators", () => {
+    const html = renderToString(
+      <TokenHeader
+        address={address}
+        identity={{ symbol: "LIVE", name: null }}
+        liveEntry={{
+          tokenAddress: address,
+          symbol: "LIVE",
+          name: null,
+          pairAddress: "0x5ab1e0000000000000000000000000000000b0bb",
+          dex: "Uniswap V3",
+          feeTier: 3000,
+          block: 21600002,
+          createdAt: 1700000000000,
+          blockTimestampMs: null,
+          ageSeconds: 300,
+          initialLiquidityWeth: null,
+          state: "done",
+        }}
+      />,
+    );
+    // The heading meta reads as one contiguous run: the boundary
+    // separators live in CSS, so no inline separator can strand here.
+    // (Server rendering interleaves tags and comment markers; the
+    // browser text run itself is contiguous, as the heading e2e shows.)
+    expect(html.replace(/<!-- -->|<[^>]*>/g, "")).toContain("Uniswap V3 · 0.3% · 5 min ago");
+    expect(html).not.toContain("meta-sep");
   });
 
   test("short address heads when nothing names the token, full address in meta", () => {

@@ -649,9 +649,12 @@ function AssessedView({
           identity={resolveTokenIdentity(result, liveEntry)}
           liveEntry={liveEntry}
         />
-        <p className="quiet numeric" style={{ margin: "0 0 16px" }}>
-          Analysis complete{elapsed === null ? "" : ` in ${elapsed.toFixed(1)} s`} · Block {result.block} · model{" "}
-          {result.modelVersion}
+        <p className="quiet numeric hero-meta" data-testid="analysis-complete-meta" style={{ margin: "0 0 16px" }}>
+          <span className="meta-item">
+            Analysis complete{elapsed === null ? "" : ` in ${elapsed.toFixed(1)} s`}
+          </span>
+          <span className="meta-item">Block {result.block}</span>
+          <span className="meta-item">model {result.modelVersion}</span>
         </p>
         <div className="score-ring-wrap">
           <div className="hero-copy" style={{ flex: "1 1 240px" }}>
@@ -664,9 +667,15 @@ function AssessedView({
             <p className="muted" style={{ margin: "0 0 8px" }}>
               {combinedScoreLine(result.score, result.probabilities)}
             </p>
-            <p className="quiet numeric" style={{ margin: 0 }}>
-              {result.score} {riskWord(result.score)} ·{" "}
-              {RISKS.map((risk) => `${RISK_SHORT[risk]} ${Math.round(result.probabilities[risk] * 100)}%`).join(" · ")}
+            <p className="quiet numeric hero-meta" data-testid="hero-score-meta" style={{ margin: 0 }}>
+              <span className="meta-item">
+                {result.score} {riskWord(result.score)}
+              </span>
+              {RISKS.map((risk) => (
+                <span key={risk} className="meta-item">
+                  {RISK_SHORT[risk]} {Math.round(result.probabilities[risk] * 100)}%
+                </span>
+              ))}
             </p>
             {mode === "expert" ? (
               <p className="quiet" style={{ margin: "4px 0 0" }}>
