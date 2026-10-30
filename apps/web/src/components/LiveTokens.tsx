@@ -162,8 +162,15 @@ export function LiveTokensList({
     >
       <div className="feedhead">
         <h2>New pairs</h2>
-        <span className="count">
-          {sourceLabel} · newest first · <span className="live" style={{ fontSize: 12 }}><i aria-hidden="true" />Live</span>
+        <span className="count feed-count">
+          <span className="meta-item">{sourceLabel}</span>
+          <span className="meta-item">newest first</span>
+          <span className="meta-item">
+            <span className="live" style={{ fontSize: 12 }}>
+              <i aria-hidden="true" />
+              Live
+            </span>
+          </span>
         </span>
         {lastPollAt === null ? null : (
           <span className="quiet numeric">{feedStatusLabel(snapshot.updatedAt, lastPollAt)}</span>

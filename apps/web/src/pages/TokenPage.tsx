@@ -649,7 +649,7 @@ function AssessedView({
           identity={resolveTokenIdentity(result, liveEntry)}
           liveEntry={liveEntry}
         />
-        <p className="quiet numeric hero-meta" data-testid="analysis-complete-meta" style={{ margin: "0 0 16px" }}>
+        <p className="quiet numeric hero-meta" data-testid="analysis-complete-meta" style={{ marginBlock: "0 16px" }}>
           <span className="meta-item">
             Analysis complete{elapsed === null ? "" : ` in ${elapsed.toFixed(1)} s`}
           </span>
@@ -667,7 +667,7 @@ function AssessedView({
             <p className="muted" style={{ margin: "0 0 8px" }}>
               {combinedScoreLine(result.score, result.probabilities)}
             </p>
-            <p className="quiet numeric hero-meta" data-testid="hero-score-meta" style={{ margin: 0 }}>
+            <p className="quiet numeric hero-meta" data-testid="hero-score-meta" style={{ marginBlock: 0 }}>
               <span className="meta-item">
                 {result.score} {riskWord(result.score)}
               </span>

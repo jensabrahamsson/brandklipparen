@@ -1031,9 +1031,11 @@ a {
    flex-wrap row where each item after the first draws its own leading
    separator through ::before. Pseudo-elements never enter the
    accessibility tree, so separators stay hidden from assistive text and
-   accessible names are unchanged. The separator hangs 1em to the left of
-   its item into the inter-item gap, so when the item starts a new visual
-   line the separator sits outside the row box and the inline-start clip
+   accessible names are unchanged. The separator is absolutely positioned
+   1.2em to the left of its item into the inter-item gap, so it takes no
+   layout space: every wrapped line starts at the same left text edge as
+   the sibling lines above, and when the item starts a new visual line
+   the separator sits outside the row box and the inline-start clip
    removes it; overflow-y stays visible so focus rings and the 44 px copy
    tap target are never cut. Items stay unbreakable (nowrap) except
    addresses, which may wrap. A separator inside one unbreakable item
@@ -1042,7 +1044,8 @@ a {
 .live-sub,
 .live-meta,
 .live-pair,
-.live-pair-full {
+.live-pair-full,
+.feedhead .count {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -1065,27 +1068,30 @@ a {
 
 .hero-meta,
 .live-sub,
-.live-meta {
-  column-gap: 1.6em;
+.live-meta,
+.feedhead .count {
+  column-gap: 1.8em;
 }
 
 .meta-item {
   min-width: 0;
+  position: relative;
   white-space: nowrap;
 }
 
 .meta-item + .meta-item::before {
   content: "·";
-  display: inline-block;
-  margin-inline-start: -1em;
-  margin-inline-end: 0.6em;
+  display: block;
+  position: absolute;
+  inset-inline-start: -1.2em;
+  top: 0;
+  margin: 0;
 }
 
 .token-meta > .meta-item + .meta-item::before,
 .live-pair > .meta-item + .meta-item::before,
 .live-pair-full > .meta-item + .meta-item::before {
-  margin-inline-start: -1.15em;
-  margin-inline-end: 0.55em;
+  inset-inline-start: -1.15em;
 }
 
 .meta-addr {

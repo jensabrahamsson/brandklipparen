@@ -1,10 +1,11 @@
-// Brief 39: separators never start or end a visual line.
-// Meta rows that list items with " · " (token header meta, analysis hero
-// meta lines, live card meta and pair rows, recent rows) wrap at 390 px,
-// so every wrapped visual line must start and end with a real item
-// glyph, never "·". Separators drawn by the item itself are clipped when
-// the item starts a new line; separators inside one unbreakable item stay
-// interior. Desktop keeps the same separators visible between items.
+// Brief 40: separators never start or end a visual line, found generically.
+// Every separator row is discovered by walking the DOM for visible "·"
+// glyphs (own text nodes or ::before content), grouped by the nearest
+// block or flex row ancestor within the page scopes below. For each row
+// every visual line must start and end with a real item glyph, never
+// "·". A line-starting item must have its ::before separator clipped
+// (not painted); a mid-line item must show it painted. Desktop keeps
+// the same separators visible between items.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -133,29 +134,122 @@ async function seedRecent(page: Page): Promise<void> {
   );
 }
 
-type RowLine = { first: string; last: string; count: number };
-type RowAnalysis = { lines: RowLine[]; wraps: boolean };
+type ScanResult = {
+  failures: string[];
+  rowCount: number;
+  wrapped: boolean;
+  labels: string[];
+};
 
-// Visible glyph boxes per visual line: every rendered character of the
-// row's own text (screen-reader-only announcements excluded), grouped by
-// vertical position. Separators drawn with ::before are not DOM text, so
-// a second helper below checks their clipped/painted state directly.
-async function analyzeRow(page: Page, selector: string, index: number): Promise<RowAnalysis> {
-  return page.evaluate(
-    ({ sel, idx }) => {
-      const rows = Array.from(document.querySelectorAll(sel));
-      const row = rows[idx] as HTMLElement | undefined;
-      if (!row) {
-        return { lines: [], wraps: false };
+// Generic separator scan inside the given scope roots. No row class
+// names are listed here: any visible element whose own direct text or
+// ::before content holds "·" is grouped by its nearest block or flex
+// row ancestor, then checked line by line.
+async function genericScan(page: Page, scopes: string[]): Promise<ScanResult> {
+  return page.evaluate((scopeSelectors: string[]) => {
+    const failures: string[] = [];
+    const rows = new Map<Element, Element[]>();
+    const scopeRoots: Element[] = [];
+    for (const sel of scopeSelectors) {
+      for (const root of Array.from(document.querySelectorAll(sel))) {
+        scopeRoots.push(root);
       }
+    }
+    const inScope = (el: Element): boolean => scopeRoots.some((root) => root === el || root.contains(el));
+    const isRowLike = (cand: Element): boolean => {
+      const display = getComputedStyle(cand).display;
+      if (display === "none") {
+        return false;
+      }
+      if (display.includes("flex") || display.includes("grid")) {
+        return true;
+      }
+      return display === "block" || display === "list-item";
+    };
+    const visible = (el: Element): boolean => {
+      const style = getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") {
+        return false;
+      }
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    for (const root of scopeRoots) {
+      const candidates = [root, ...Array.from(root.querySelectorAll("*"))];
+      for (const el of candidates) {
+        if (!(el instanceof HTMLElement)) {
+          continue;
+        }
+        const tag = el.tagName.toLowerCase();
+        if (tag === "script" || tag === "style") {
+          continue;
+        }
+        if (el.closest(".sr-only") !== null) {
+          continue;
+        }
+        if (!visible(el)) {
+          continue;
+        }
+        let ownDot = false;
+        for (const node of Array.from(el.childNodes)) {
+          if (node.nodeType === 3 && (node.textContent ?? "").includes("·")) {
+            ownDot = true;
+            break;
+          }
+        }
+        let beforeDot = false;
+        try {
+          const content = getComputedStyle(el, "::before").content;
+          if (typeof content === "string" && content.includes("·")) {
+            beforeDot = true;
+          }
+        } catch {
+          beforeDot = false;
+        }
+        if (!ownDot && !beforeDot) {
+          continue;
+        }
+        let start: Element | null = el;
+        const elDisplay = getComputedStyle(el).display;
+        if (elDisplay.startsWith("inline") || beforeDot) {
+          start = el.parentElement;
+        }
+        let row: Element | null = null;
+        let cand: Element | null = start;
+        while (cand !== null && cand !== document.body) {
+          if (isRowLike(cand) && inScope(cand)) {
+            row = cand;
+            break;
+          }
+          cand = cand.parentElement;
+        }
+        if (row === null) {
+          continue;
+        }
+        if (!visible(row)) {
+          continue;
+        }
+        const list = rows.get(row);
+        if (list === undefined) {
+          rows.set(row, [el]);
+        } else {
+          list.push(el);
+        }
+      }
+    }
+    const labelOf = (row: Element): string => {
+      const cls = (row.getAttribute("class") ?? "").trim().split(/\s+/).filter(Boolean).slice(0, 3).join(".");
+      return `${row.tagName.toLowerCase()}${cls === "" ? "" : "." + cls}`;
+    };
+    const glyphLines = (row: Element): { first: string; last: string; firstLeft: number }[] => {
       const glyphs: { ch: string; top: number; left: number; right: number }[] = [];
       const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT, {
         acceptNode(node) {
           const parent = node.parentElement;
-          if (!parent) {
+          if (parent === null) {
             return NodeFilter.FILTER_REJECT;
           }
-          if (parent.closest(".sr-only")) {
+          if (parent.closest(".sr-only") !== null) {
             return NodeFilter.FILTER_REJECT;
           }
           return NodeFilter.FILTER_ACCEPT;
@@ -196,16 +290,163 @@ async function analyzeRow(page: Page, selector: string, index: number): Promise<
         }
         (buckets.get(key) as typeof glyphs).push(glyph);
       }
-      const ordered = Array.from(buckets.entries()).sort((a, b) => a[0] - b[0]);
-      const lines: RowLine[] = ordered.map(([, items]) => {
-        const byLeft = [...items].sort((a, b) => a.left - b.left);
-        const byRight = [...items].sort((a, b) => b.right - a.right);
-        return { first: byLeft[0]?.ch ?? "", last: byRight[0]?.ch ?? "", count: items.length };
+      return Array.from(buckets.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([, items]) => {
+          const byLeft = [...items].sort((a, b) => a.left - b.left);
+          const byRight = [...items].sort((a, b) => b.right - a.right);
+          return {
+            first: byLeft[0]?.ch ?? "",
+            last: byRight[0]?.ch ?? "",
+            firstLeft: byLeft[0]?.left ?? 0,
+          };
+        });
+    };
+    const labels: string[] = [];
+    let wrapped = false;
+    for (const [row, seps] of rows) {
+      const label = labelOf(row);
+      labels.push(label);
+      const lines = glyphLines(row);
+      if (lines.length > 1) {
+        wrapped = true;
+      }
+      for (const line of lines) {
+        if (line.first === "·") {
+          failures.push(`${label} visual line starts with separator`);
+        }
+        if (line.last === "·") {
+          failures.push(`${label} visual line ends with separator`);
+        }
+      }
+      void seps;
+    }
+    // Separator paint state: a line-starting item must have its ::before
+    // clipped away, a mid-line item must show it painted. Probe several
+    // points across the gap so the check does not depend on the exact
+    // dot width or offset.
+    for (const [row] of rows) {
+      const label = labelOf(row);
+      const items = Array.from(row.querySelectorAll(":scope > .meta-item")).filter(
+        (item): item is HTMLElement => item instanceof HTMLElement,
+      );
+      for (let k = 1; k < items.length; k += 1) {
+        const item = items[k] as HTMLElement;
+        let before = "";
+        try {
+          before = getComputedStyle(item, "::before").content ?? "";
+        } catch {
+          before = "";
+        }
+        if (!before.includes("·")) {
+          continue;
+        }
+        item.scrollIntoView({ block: "center" });
+        const rowRect = row.getBoundingClientRect();
+        const padLeft = Number.parseFloat(getComputedStyle(row).paddingLeft || "0") || 0;
+        const contentLeft = rowRect.left + padLeft;
+        const first = item.getClientRects()[0];
+        if (!first) {
+          failures.push(`${label} item ${k} has no rect`);
+          continue;
+        }
+        const fontSize = Number.parseFloat(getComputedStyle(item).fontSize || "12") || 12;
+        const startsLine = Math.abs(first.left - contentLeft) <= 2;
+        const midY = first.top + first.height / 2;
+        let painted = false;
+        for (const factor of [0.5, 0.8, 1.0]) {
+          const stack = document.elementsFromPoint(first.left - factor * fontSize, midY);
+          if (stack.some((hit) => hit === item || item.contains(hit))) {
+            painted = true;
+            break;
+          }
+        }
+        if (startsLine && painted) {
+          failures.push(`${label} item ${k} separator painted at line start`);
+        }
+        if (!startsLine && !painted) {
+          failures.push(`${label} item ${k} separator missing mid-line`);
+        }
+      }
+    }
+    return { failures, rowCount: rows.size, wrapped, labels };
+  }, scopes);
+}
+
+// First glyph left per visual line for one row selector.
+async function rowLineLefts(page: Page, selector: string, index: number): Promise<number[]> {
+  return page.evaluate(
+    ({ sel, idx }) => {
+      const rows = Array.from(document.querySelectorAll(sel));
+      const row = rows[idx] as HTMLElement | undefined;
+      if (!row) {
+        return [];
+      }
+      const glyphs: { top: number; left: number; ch: string }[] = [];
+      const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          const parent = node.parentElement;
+          if (!parent || parent.closest(".sr-only")) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
       });
-      return { lines, wraps: lines.length > 1 };
+      const range = document.createRange();
+      let node: Node | null;
+      while ((node = walker.nextNode()) !== null) {
+        const text = node.textContent ?? "";
+        // A copy button reserves room for its longest confirmation label
+        // and centers its text, so a button-owning line reports the
+        // button box edge: the control itself is left aligned.
+        const button = node.parentElement?.closest("button") as HTMLElement | null;
+        const buttonLeft = button !== null ? button.getBoundingClientRect().left : null;
+        for (let i = 0; i < text.length; i += 1) {
+          const ch = text[i] as string;
+          if (ch.trim() === "") {
+            continue;
+          }
+          range.setStart(node, i);
+          range.setEnd(node, i + 1);
+          for (const rect of Array.from(range.getClientRects())) {
+            if (rect.width === 0 && rect.height === 0) {
+              continue;
+            }
+            glyphs.push({ top: rect.top, left: buttonLeft ?? rect.left, ch });
+          }
+        }
+      }
+      const buckets = new Map<number, typeof glyphs>();
+      for (const glyph of glyphs) {
+        let key: number | null = null;
+        for (const existing of buckets.keys()) {
+          if (Math.abs(existing - glyph.top) <= 2) {
+            key = existing;
+            break;
+          }
+        }
+        if (key === null) {
+          key = glyph.top;
+          buckets.set(key, []);
+        }
+        (buckets.get(key) as typeof glyphs).push(glyph);
+      }
+      return Array.from(buckets.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([, items]) => Math.min(...items.map((item) => item.left)));
     },
     { sel: selector, idx: index },
   );
+}
+
+async function expectRowAligned(page: Page, selector: string, index: number): Promise<number> {
+  const lefts = await rowLineLefts(page, selector, index);
+  expect(lefts.length).toBeGreaterThan(0);
+  const first = lefts[0] as number;
+  for (const left of lefts) {
+    expect(Math.abs(left - first), `${selector}#${index} wrapped line offset`).toBeLessThanOrEqual(0.5);
+  }
+  return first;
 }
 
 type SepStatus = {
@@ -215,10 +456,6 @@ type SepStatus = {
   hitIsItem: boolean;
 };
 
-// Per item separator state: the ::before content plus clipping math. A
-// separator hanging left of a line-starting item sits outside the row box
-// and is removed by the row's inline-start clip, so a probe there must
-// not hit the item; a mid-line separator is painted and hit-tests to it.
 async function sepStatus(page: Page, selector: string, rowIndex: number, itemIndex: number): Promise<SepStatus> {
   return page.evaluate(
     ({ sel, rIdx, iIdx }) => {
@@ -228,7 +465,6 @@ async function sepStatus(page: Page, selector: string, rowIndex: number, itemInd
       if (!row || !item) {
         return { found: false, startsLine: false, beforeContent: "", hitIsItem: false };
       }
-      // Hit testing only sees the viewport, so bring the item on screen.
       item.scrollIntoView({ block: "center" });
       const rowRect = row.getBoundingClientRect();
       const padLeft = Number.parseFloat(getComputedStyle(row).paddingLeft || "0") || 0;
@@ -240,12 +476,15 @@ async function sepStatus(page: Page, selector: string, rowIndex: number, itemInd
       const fontSize = Number.parseFloat(getComputedStyle(item).fontSize || "12") || 12;
       const startsLine = Math.abs(first.left - contentLeft) <= 2;
       const beforeContent = getComputedStyle(item, "::before").content;
-      // Live cards stretch their heading link over the whole card, so a
-      // single topmost hit is the link overlay: read the full stack and
-      // look for the item itself. A clipped separator leaves the item out
-      // of the stack; a painted one keeps it in.
-      const stack = document.elementsFromPoint(first.left - 0.7 * fontSize, first.top + first.height / 2);
-      const hitIsItem = stack.some((hit) => hit === item || item.contains(hit));
+      const midY = first.top + first.height / 2;
+      let hitIsItem = false;
+      for (const factor of [0.5, 0.8, 1.0]) {
+        const stack = document.elementsFromPoint(first.left - factor * fontSize, midY);
+        if (stack.some((hit) => hit === item || item.contains(hit))) {
+          hitIsItem = true;
+          break;
+        }
+      }
       return { found: true, startsLine, beforeContent, hitIsItem };
     },
     { sel: selector, rIdx: rowIndex, iIdx: itemIndex },
@@ -263,64 +502,48 @@ async function itemCount(page: Page, selector: string, rowIndex: number): Promis
   );
 }
 
-async function expectNoStrandedSeparators(page: Page, selector: string, count: number): Promise<boolean> {
-  let wrapped = false;
-  for (let i = 0; i < count; i += 1) {
-    const analysis = await analyzeRow(page, selector, i);
-    expect(analysis.lines.length).toBeGreaterThan(0);
-    for (const line of analysis.lines) {
-      expect(line.first, `${selector}#${i} line starts with separator`).not.toBe("·");
-      expect(line.last, `${selector}#${i} line ends with separator`).not.toBe("·");
-    }
-    // Every non-first item draws its own separator; a line-starting item
-    // must have it clipped, a mid-line item must show it painted.
-    const items = await itemCount(page, selector, i);
-    for (let k = 1; k < items; k += 1) {
-      const sep = await sepStatus(page, selector, i, k);
-      expect(sep.found).toBe(true);
-      expect(sep.beforeContent, `${selector}#${i} item ${k} separator`).toContain("·");
-      if (sep.startsLine) {
-        expect(sep.hitIsItem, `${selector}#${i} item ${k} separator clipped at line start`).toBe(false);
-      } else {
-        expect(sep.hitIsItem, `${selector}#${i} item ${k} separator painted mid-line`).toBe(true);
-      }
-    }
-    wrapped = wrapped || analysis.wraps;
-  }
-  return wrapped;
-}
-
-test("brief39_mobile_meta_rows_never_strand_separators", async ({ page }) => {
+test("brief40_mobile_separators_found_generically", async ({ page }) => {
   await mockRest(page);
   await seedRecent(page);
   await page.setViewportSize({ width: 390, height: 844 });
 
   await page.goto("/#/");
   await expect(page.getByText("2 new tokens")).toBeVisible();
-  const liveSubCount = await page.locator(".live-cards .live-sub").count();
-  expect(liveSubCount).toBeGreaterThanOrEqual(2);
-  const pairFullCount = await page.locator(".live-cards .live-pair-full").count();
-  expect(pairFullCount).toBeGreaterThanOrEqual(2);
-  let wrapped = await expectNoStrandedSeparators(page, ".live-cards .live-sub", liveSubCount);
-  wrapped = (await expectNoStrandedSeparators(page, ".live-cards .live-pair-full", pairFullCount)) || wrapped;
-
-  // Recent rows carry no separators today; the wrap holds no stranded
-  // glyph either way.
   const recentCount = await page.locator(".recent-meta").count();
   expect(recentCount).toBeGreaterThanOrEqual(1);
-  wrapped = (await expectNoStrandedSeparators(page, ".recent-meta", recentCount)) || wrapped;
+
+  const startScan = await genericScan(page, [
+    'section[aria-label="New tokens"]',
+    'section[aria-label="Recently analyzed"]',
+  ]);
+  expect(startScan.labels.length).toBeGreaterThan(0);
+  expect(startScan.rowCount).toBeGreaterThanOrEqual(3);
+  expect(startScan.failures, startScan.failures.join("; ")).toEqual([]);
+  expect(startScan.wrapped).toBe(true);
+
+  // Live card rows share one left text edge per card.
+  const liveSubCount = await page.locator(".live-cards .live-sub").count();
+  expect(liveSubCount).toBeGreaterThanOrEqual(2);
+  for (let i = 0; i < liveSubCount; i += 1) {
+    const subLeft = await expectRowAligned(page, ".live-cards .live-sub", i);
+    const pairLeft = await expectRowAligned(page, ".live-cards .live-pair-full", i);
+    expect(Math.abs(pairLeft - subLeft), `live card ${i} rows share left edge`).toBeLessThanOrEqual(0.5);
+  }
 
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + TOKEN_A);
   await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
-  wrapped = (await expectNoStrandedSeparators(page, ".token-meta", 1)) || wrapped;
-  wrapped =
-    (await expectNoStrandedSeparators(page, '[data-testid="analysis-complete-meta"]', 1)) || wrapped;
-  wrapped = (await expectNoStrandedSeparators(page, '[data-testid="hero-score-meta"]', 1)) || wrapped;
+  const analysisScan = await genericScan(page, ['section[aria-label="Combined score"]']);
+  expect(analysisScan.rowCount).toBeGreaterThanOrEqual(3);
+  expect(analysisScan.failures, analysisScan.failures.join("; ")).toEqual([]);
+  expect(analysisScan.wrapped).toBe(true);
 
-  // The fixtures are long enough that at least one row really wraps, so
-  // the assertions above exercise real line breaks.
-  expect(wrapped).toBe(true);
+  // Hero lines share the token meta left edge.
+  const tokenLeft = await expectRowAligned(page, ".token-meta", 0);
+  const completeLeft = await expectRowAligned(page, '[data-testid="analysis-complete-meta"]', 0);
+  const scoreLeft = await expectRowAligned(page, '[data-testid="hero-score-meta"]', 0);
+  expect(Math.abs(completeLeft - tokenLeft), "analysis hero shares token meta edge").toBeLessThanOrEqual(0.5);
+  expect(Math.abs(scoreLeft - tokenLeft), "score hero shares token meta edge").toBeLessThanOrEqual(0.5);
 
   // No horizontal scroll at 390 px.
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -346,7 +569,7 @@ test("brief39_mobile_meta_rows_never_strand_separators", async ({ page }) => {
   expect(copyBox.overflowY).toBe("visible");
 });
 
-test("brief39_desktop_separators_stay_visible_between_items", async ({ page }) => {
+test("brief40_desktop_separators_stay_visible_between_items", async ({ page }) => {
   await mockRest(page);
   await page.setViewportSize({ width: 1440, height: 900 });
 
@@ -380,4 +603,17 @@ test("brief39_desktop_separators_stay_visible_between_items", async ({ page }) =
   await expect(page.getByText("2 new tokens")).toBeVisible();
   // The live table keeps its real inline separators on desktop.
   await expect(page.locator(".live-table").getByText("Uniswap V3 · 1%").first()).toBeVisible();
+  // The feed header keeps separators between its items on desktop.
+  const feedItems = await itemCount(page, ".feedhead .feed-count", 0);
+  expect(feedItems).toBeGreaterThanOrEqual(3);
+  let feedPainted = 0;
+  for (let k = 1; k < feedItems; k += 1) {
+    const sep = await sepStatus(page, ".feedhead .feed-count", 0, k);
+    expect(sep.beforeContent, `feed header item ${k} separator`).toContain("·");
+    if (!sep.startsLine) {
+      expect(sep.hitIsItem, `feed header item ${k} separator painted`).toBe(true);
+      feedPainted += 1;
+    }
+  }
+  expect(feedPainted).toBeGreaterThanOrEqual(1);
 });
