@@ -112,11 +112,12 @@ export type AppConfig = {
   readonly assessmentGenericCompatibleModelId?: ModelId;
   readonly assessmentGenericCompatibleBaseUrl?: string;
   // Experimental AI personalize toggle (S-069, P-27): unset means the
-  // feature stays off. The generic-compatible personalize adapter reuses
-  // the assessment triple above, so no second key or endpoint travels.
-  // The union mirrors PluginPersonalizeProvider beside the port, the same
-  // way AssessmentProvider is mirrored here (ports stay self-contained).
-  readonly personalizeProvider?: "hosted-open-weights" | "generic-compatible";
+  // feature stays off. The meta-model-api and generic-compatible
+  // personalize adapters reuse their assessment triples above, so no
+  // second key or endpoint travels. The union mirrors
+  // PluginPersonalizeProvider beside the port, the same way
+  // AssessmentProvider is mirrored here (ports stay self-contained).
+  readonly personalizeProvider?: "hosted-open-weights" | "generic-compatible" | "meta-model-api";
   // Daily cap for personalize mapping calls per API key (S-069): the
   // composition falls back to its small placeholder default when unset.
   readonly personalizeDailyCapPerKey?: number;

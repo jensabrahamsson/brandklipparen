@@ -329,13 +329,13 @@ const parseProvider = (raw: string): Result<AssessmentProvider, ConfigError> =>
   )(raw);
 
 // Experimental AI personalize provider (S-069, P-27): unset or "off"
-// leaves the feature disabled; the two named providers select the mapping
+// leaves the feature disabled; the two wired providers select the mapping
 // adapter. Anything else is a typed startup error naming the variable.
 const parsePersonalizeProvider = (raw: string): Result<PluginPersonalizeProvider | "off", ConfigError> =>
   parseEnum<PluginPersonalizeProvider | "off">(
     V.personalizeProvider,
-    ["off", "hosted-open-weights", "generic-compatible"],
-    "off, hosted-open-weights or generic-compatible",
+    ["off", "meta-model-api", "hosted-open-weights", "generic-compatible"],
+    "off, meta-model-api, hosted-open-weights or generic-compatible",
   )(raw);
 
 // Every variable name from the schema, exported so the .env.example

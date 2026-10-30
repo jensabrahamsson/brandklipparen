@@ -247,6 +247,32 @@ export function demoAssessmentStatus(
   return DEMO_ASSESSMENT_OFF_LINE;
 }
 
+// Experimental AI personalize default for the demo (brief 42): when the
+// personalize provider is unset and a Meta key is configured (directly
+// or via its pointer file), the demo defaults the mapping provider to
+// meta-model-api. An explicit value (including "off" and
+// "generic-compatible") always wins. Pure: reads names and presence
+// only, never key values or file contents.
+export const DEMO_PERSONALIZE_META_PROVIDER = "meta-model-api";
+
+export function withDemoPersonalizeDefault(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly env: Record<string, string | undefined>; readonly defaulted: boolean } {
+  const current = env["BRANDKLIPPAREN_PERSONALIZE_PROVIDER"] ?? "";
+  if (current !== "") {
+    return { env: { ...env }, defaulted: false };
+  }
+  const key = env["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY"] ?? "";
+  const keyFile = env["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE"] ?? "";
+  if (key === "" && keyFile === "") {
+    return { env: { ...env }, defaulted: false };
+  }
+  return {
+    env: { ...env, BRANDKLIPPAREN_PERSONALIZE_PROVIDER: DEMO_PERSONALIZE_META_PROVIDER },
+    defaulted: true,
+  };
+}
+
 // Single LP feed status line for the demo log: the key name only, never
 // the value. The generic `<NAME>_FILE` indirection resolves
 // ETHERSCAN_API_KEY_FILE into ETHERSCAN_API_KEY before this runs.
@@ -628,7 +654,11 @@ async function runDemo(): Promise<void> {
   for (const name of resolved.failed) {
     process.stdout.write(`warning: unreadable secret file for ${name}; leaving it unset.\n`);
   }
-  const keyed = ensureDemoApiKey(resolved.env, () => `demo-local-${randomBytes(16).toString("hex")}`);
+  const personalized = withDemoPersonalizeDefault(resolved.env);
+  if (personalized.defaulted) {
+    process.stdout.write("personalize provider: defaulted to meta-model-api (key loaded)\n");
+  }
+  const keyed = ensureDemoApiKey(personalized.env, () => `demo-local-${randomBytes(16).toString("hex")}`);
   const demoEnv = keyed.env;
   if (keyed.generated) {
     process.stdout.write(`demo api key: generated per-run local key ${keyed.preview} (full key never printed).\n`);

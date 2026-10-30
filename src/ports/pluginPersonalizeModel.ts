@@ -21,7 +21,7 @@ import type {
   BlockNumber as BlockNumberType,
 } from "../domain/types.ts";
 
-export type PluginPersonalizeProvider = "hosted-open-weights" | "generic-compatible";
+export type PluginPersonalizeProvider = "hosted-open-weights" | "generic-compatible" | "meta-model-api";
 
 // One plugin's quoted reference data for the mapping call (P-27): the
 // validated frontmatter tags plus capped excerpts of the `What it checks`

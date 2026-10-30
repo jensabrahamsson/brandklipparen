@@ -91,6 +91,15 @@ describe("the experimental AI layout label names the configured provider honestl
     ).toBe("Maps with hosted-open-weights · meta-models/muse-spark-open-1026.");
   });
 
+  test("a meta-model-api provider names its own provider and model id", () => {
+    expect(personalizeProviderLabel({ provider: "meta-model-api", modelId: "test-meta-1" })).toBe(
+      "Maps with meta-model-api · test-meta-1.",
+    );
+    expect(personalizeProviderName({ provider: "meta-model-api", modelId: "test-meta-1" })).toBe(
+      "meta-model-api · test-meta-1",
+    );
+  });
+
   test("an unconfigured server says so", () => {
     expect(personalizeProviderLabel(null)).toBe("Mapping provider not configured on this server.");
     expect(personalizeProviderName(null)).toBe("the mapping provider");

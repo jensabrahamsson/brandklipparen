@@ -20,6 +20,9 @@ apps/web/playwright-report/
 # Logs
 *.log
 
+# Local key files (secret file indirection targets) must never be committable.
+*.key
+
 # macOS
 .DS_Store
 

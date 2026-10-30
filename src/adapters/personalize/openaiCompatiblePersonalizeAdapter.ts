@@ -26,6 +26,7 @@ import type {
   PluginPersonalizeCallContext,
   PluginPersonalizeModelError,
   PluginPersonalizeModelPort,
+  PluginPersonalizeProvider,
 } from "../../ports/pluginPersonalizeModel.ts";
 import type { ModelId as ModelIdType } from "../../domain/types.ts";
 import type { PromptVersion as PromptVersionType } from "../../domain/types.ts";
@@ -41,6 +42,7 @@ import type {
 } from "../assessment/chatCompletions/chatCompletionsAdapter.ts";
 import {
   NotConfiguredPersonalizeAdapter,
+  classifyPersonalizeValidationCheck,
   parsePersonalizeResponse,
 } from "./hostedPersonalizeAdapter.ts";
 import type { hostedPersonalizeLogEntry } from "./hostedPersonalizeAdapter.ts";
@@ -145,18 +147,65 @@ function byteLength(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
+// Minimal complying example for the system instruction (brief 42): the
+// shape is fixed and the ids are literal values from this request's
+// closed id lists (at most two ranking ids, then the required summary
+// and score placements when the request lists them). The example names
+// ids only, never copy, and teaches the exact key set so a model can
+// comply without guessing the envelope.
+export function buildPersonalizeMappingExample(input: {
+  readonly provider: PluginPersonalizeProvider;
+  readonly modelId: ModelIdType;
+  readonly sectionIds: readonly string[];
+  readonly pluginIds: readonly string[];
+}): string {
+  const picks: string[] = [];
+  for (const id of ["summary", "score"]) {
+    if (input.sectionIds.includes(id)) {
+      picks.push(id);
+    }
+  }
+  for (const id of input.sectionIds) {
+    if (picks.length >= 2) {
+      break;
+    }
+    if (!picks.includes(id)) {
+      picks.push(id);
+    }
+  }
+  return JSON.stringify({
+    provider: input.provider,
+    modelId: input.modelId as string,
+    spec: {
+      specVersion: 1,
+      pluginRanking: input.pluginIds.slice(0, 2),
+      placements: picks.map((sectionId) => ({ sectionId, emphasis: "normal" })),
+    },
+  });
+}
+
 // Mapping system instruction in its own field (M-24): priorities and doc
 // excerpts are data to map, never instructions to follow. The text is
 // personalize-specific and shares no wording with the assessment prompt:
 // the model returns section and plugin ids only, never copy, code, urls
-// or styles.
+// or styles. The exact required JSON shape travels with a minimal
+// example built from this request's own section and plugin ids, so a
+// model can comply without guessing the envelope.
 export function buildPersonalizeSystemPrompt(input: {
   readonly provider: "generic-compatible";
   readonly modelId: ModelIdType;
   readonly promptVersion: PromptVersionType;
+  readonly sectionIds: readonly string[];
+  readonly pluginIds: readonly string[];
 }): string {
   const modelId = input.modelId as string;
   const promptVersion = input.promptVersion as string;
+  const example = buildPersonalizeMappingExample({
+    provider: input.provider,
+    modelId: input.modelId,
+    sectionIds: input.sectionIds,
+    pluginIds: input.pluginIds,
+  });
   return [
     `You are the Brandklipparen layout mapping model (mapping prompt version ${promptVersion}).`,
     "Task: map the quoted visitor priorities to the listed sections and plugin cards and reply with exactly one JSON object and no other text.",
@@ -165,8 +214,11 @@ export function buildPersonalizeSystemPrompt(input: {
     'The "provider" value must be exactly "generic-compatible".',
     `The "modelId" value must be exactly "${modelId}".`,
     'The "spec" value must carry exactly these keys: specVersion, pluginRanking, placements.',
+    'The "specVersion" value must be exactly 1.',
     'The "pluginRanking" value must be an array of plugin ids from the request in priority order.',
-    'The "placements" value must be an array of section ids from the request with emphasis normal, high or low.',
+    'The "placements" value must be an array with one entry per placed section: each entry carries exactly "sectionId" (a section id from the request) and "emphasis" (one of normal, high or low).',
+    "Every placement keeps summary and score present, and no placement collapses a floored section.",
+    `Minimal example using this request's ids: ${example}`,
     "Return section and plugin ids only, never copy, code, urls or styles.",
   ].join("\n");
 }
@@ -233,7 +285,13 @@ function buildRequestBody(
     messages: [
       {
         role: "system",
-        content: buildPersonalizeSystemPrompt({ provider: "generic-compatible", modelId, promptVersion }),
+        content: buildPersonalizeSystemPrompt({
+          provider: "generic-compatible",
+          modelId,
+          promptVersion,
+          sectionIds: input.sectionIds,
+          pluginIds: input.pluginIds,
+        }),
       },
       {
         role: "user",
@@ -330,8 +388,10 @@ function extractMappingPayload(content: string): Result<string, { kind: "invalid
 // the completion was cut off and maps to invalid output, as do missing
 // or empty choices and missing or empty content. Every invalid-output
 // branch carries the extraction path and check name for the warn log; the
-// detail never carries response content.
-function readAssistantContent(bodyText: string): Result<string, PluginPersonalizeModelError> {
+// detail never carries response content. Shared with the meta-model-api
+// mapping adapter, which answers the same envelope over the same
+// transport shape.
+export function readAssistantContent(bodyText: string): Result<string, PluginPersonalizeModelError> {
   let envelope: unknown;
   try {
     envelope = JSON.parse(bodyText) as unknown;
@@ -494,7 +554,7 @@ export class GenericCompatiblePersonalizeAdapter implements PluginPersonalizeMod
     }
     const content = readAssistantContent(response.bodyText);
     if (!content.ok) {
-      warnInvalid(response.status, "extraction", "choices[0].message.content", "json-parse");
+      warnInvalid(response.status, "extraction", "choices[0].message.content", "not-json");
       finish(content.error.kind);
       return content;
     }
@@ -505,9 +565,14 @@ export class GenericCompatiblePersonalizeAdapter implements PluginPersonalizeMod
     });
     if (!validated.ok) {
       if (validated.error.kind === "provider-mismatch") {
-        warnInvalid(response.status, "validation", "provider", "provider-match");
+        warnInvalid(response.status, "validation", "provider", "provider-echo");
       } else {
-        warnInvalid(response.status, "validation", "spec", "spec-shape");
+        warnInvalid(
+          response.status,
+          "validation",
+          "spec",
+          classifyPersonalizeValidationCheck({ kind: validated.error.kind, message: validated.error.message }),
+        );
       }
       finish(validated.error.kind);
       return validated;

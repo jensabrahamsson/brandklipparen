@@ -22,6 +22,8 @@ import { OverlayBudget } from "../application/overlayBudget.ts";
 import {
   NotConfiguredPersonalizeAdapter,
 } from "../adapters/personalize/hostedPersonalizeAdapter.ts";
+import { createMetaModelApiPersonalizeAdapterFromConfig } from "../adapters/personalize/metaModelApiPersonalizeAdapter.ts";
+import type { MetaModelApiPersonalizeTransport } from "../adapters/personalize/metaModelApiPersonalizeAdapter.ts";
 import { createGenericCompatiblePersonalizeAdapterFromConfig } from "../adapters/personalize/GenericCompatiblePersonalizeAdapter.ts";
 import type { GenericCompatiblePersonalizeTransport } from "../adapters/personalize/GenericCompatiblePersonalizeAdapter.ts";
 import type { PluginPersonalizeModelPort } from "../ports/pluginPersonalizeModel.ts";
@@ -271,6 +273,16 @@ export function selectPersonalizeBinding(config: AppConfig): Result<PersonalizeB
   if (provider === undefined) {
     return ok({ kind: "disabled" });
   }
+  if (provider === "meta-model-api") {
+    if (
+      config.assessmentMetaModelId === undefined ||
+      config.assessmentMetaApiKey === undefined ||
+      config.assessmentMetaBaseUrl === undefined
+    ) {
+      return ok({ kind: "disabled" });
+    }
+    return ok({ kind: "enabled", provider, modelId: config.assessmentMetaModelId });
+  }
   if (provider === "generic-compatible") {
     if (
       config.assessmentGenericCompatibleModelId === undefined ||
@@ -299,16 +311,17 @@ export function personalizeHealthStatus(binding: PersonalizeBinding): { provider
 
 export type PersonalizeTransportOverrides = {
   readonly transport?: GenericCompatiblePersonalizeTransport | undefined;
+  readonly metaTransport?: MetaModelApiPersonalizeTransport | undefined;
   readonly onWarn?: ((line: string) => void) | undefined;
 };
 
 // Builds the personalize service from the validated configuration
-// (S-069, P-27): the generic-compatible mapping adapter when the provider
-// is configured with its connection triple, otherwise undefined so the
-// routes answer not-configured with zero provider calls. Missing values
-// never fail startup: the feature is opt-in and off by default.
-// Transports stay injectable so tests replay recorded fixtures and never
-// touch the network.
+// (S-069, P-27): the meta-model-api or generic-compatible mapping adapter
+// when the provider is configured with its connection triple, otherwise
+// undefined so the routes answer not-configured with zero provider
+// calls. Missing values never fail startup: the feature is opt-in and
+// off by default. Transports stay injectable so tests replay recorded
+// fixtures and never touch the network.
 export function createPersonalizeServiceFromConfig(
   config: AppConfig,
   overrides: PersonalizeTransportOverrides = {},
@@ -324,7 +337,22 @@ export function createPersonalizeServiceFromConfig(
     return ok(undefined);
   }
   let adapter: PluginPersonalizeModelPort;
-  if (binding.value.provider === "generic-compatible") {
+  if (binding.value.provider === "meta-model-api") {
+    const built = createMetaModelApiPersonalizeAdapterFromConfig(
+      {
+        assessmentMetaBaseUrl: config.assessmentMetaBaseUrl,
+        assessmentMetaApiKey: config.assessmentMetaApiKey,
+        assessmentMetaModelId: config.assessmentMetaModelId,
+      },
+      overrides.metaTransport,
+      undefined,
+      overrides.onWarn,
+    );
+    if (!built.ok) {
+      return err(built.error);
+    }
+    adapter = built.value;
+  } else if (binding.value.provider === "generic-compatible") {
     const built = createGenericCompatiblePersonalizeAdapterFromConfig(
       {
         assessmentGenericCompatibleBaseUrl: config.assessmentGenericCompatibleBaseUrl,

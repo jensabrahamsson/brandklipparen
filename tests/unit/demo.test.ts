@@ -20,6 +20,7 @@ import {
   DEMO_DEFAULT_RPC_URL,
   DEMO_LP_FEED_OFF_LINE,
   DEMO_LP_FEED_READY_LINE,
+  DEMO_PERSONALIZE_META_PROVIDER,
   DEMO_REEXEC_MARKER,
   demoAssessmentStatus,
   demoLpFeedStatus,
@@ -34,6 +35,7 @@ import {
   readEnvLocalFile,
   resolveSecretFileVars,
   withDemoDefaults,
+  withDemoPersonalizeDefault,
 } from "../../scripts/demo.ts";
 
 function existing(paths: readonly string[]): (path: string) => boolean {
@@ -477,6 +479,56 @@ describe("demo Node 22 re-exec", () => {
       "~/.local/node22/bin/node",
     );
     expect(displayPathWithHome("/opt/node22/bin/node", home)).toBe("/opt/node22/bin/node");
+  });
+});
+
+describe("demo personalize provider default (meta-model-api)", () => {
+  const META_KEY = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY";
+  const META_KEY_FILE = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE";
+  const PROVIDER = "BRANDKLIPPAREN_PERSONALIZE_PROVIDER";
+  const FAKE_KEY = "fake-meta-key-for-tests-only";
+
+  test("an unset provider with a configured Meta key defaults to meta-model-api", () => {
+    expect(DEMO_PERSONALIZE_META_PROVIDER).toBe("meta-model-api");
+    for (const env of [{ [META_KEY]: FAKE_KEY }, { [META_KEY_FILE]: "secrets/meta-key.txt" }]) {
+      const { env: defaulted, defaulted: applied } = withDemoPersonalizeDefault(env);
+      expect(applied).toBe(true);
+      expect(defaulted[PROVIDER]).toBe("meta-model-api");
+    }
+    const { env: emptyDefaulted } = withDemoPersonalizeDefault({ [PROVIDER]: "", [META_KEY]: FAKE_KEY });
+    expect(emptyDefaulted[PROVIDER]).toBe("meta-model-api");
+  });
+
+  test("an explicit provider value always wins over the Meta key", () => {
+    for (const explicit of ["off", "generic-compatible", "meta-model-api", "hosted-open-weights"]) {
+      const { env: kept, defaulted: applied } = withDemoPersonalizeDefault({
+        [PROVIDER]: explicit,
+        [META_KEY]: FAKE_KEY,
+        [META_KEY_FILE]: "secrets/meta-key.txt",
+      });
+      expect(applied).toBe(false);
+      expect(kept[PROVIDER]).toBe(explicit);
+    }
+  });
+
+  test("no Meta key means no personalize default", () => {
+    const { env: kept, defaulted: applied } = withDemoPersonalizeDefault({});
+    expect(applied).toBe(false);
+    expect(kept[PROVIDER]).toBe(undefined);
+    const blank = withDemoPersonalizeDefault({ [META_KEY]: "", [META_KEY_FILE]: "" });
+    expect(blank.defaulted).toBe(false);
+    expect(blank.env[PROVIDER]).toBe(undefined);
+  });
+
+  test("a defaulted provider passes config validation with the Meta triple", () => {
+    const { env } = withDemoDefaults({
+      BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: FAKE_KEY,
+      BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "fake-meta-model-1",
+      BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta.example.invalid",
+    });
+    const { env: defaulted } = withDemoPersonalizeDefault(env);
+    expect(defaulted[PROVIDER]).toBe("meta-model-api");
+    expect(loadConfig(defaulted).ok).toBe(true);
   });
 });
 

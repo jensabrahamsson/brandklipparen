@@ -206,6 +206,12 @@ export class NotConfiguredPersonalizeAdapter implements PluginPersonalizeModelPo
         message: "AI personalize is not configured: set the assessment generic-compatible key and model",
       });
     }
+    if (this.providerValue === "meta-model-api") {
+      return err({
+        kind: "not-configured",
+        message: "AI personalize is not configured: set the assessment meta key and model",
+      });
+    }
     return err({ kind: "not-configured", message: "AI personalize is not configured: set the hosted key" });
   }
 }
@@ -252,6 +258,56 @@ export function parsePersonalizeResponse(
     return err({ kind: "invalid-output", message: `personalize response fails spec validation: ${checked.error.message}` });
   }
   return ok(checked.value);
+}
+
+// Maps a personalize validation failure to a fixed warn-log check name
+// (brief 42): the check names the failure class, never model text. The
+// classifier reads the fixed spec-validation message prefixes only; the
+// model-derived ids some messages carry never reach the warn line. The
+// envelope-level branches map beside the spec classes: a non-JSON payload
+// is `not-json`, and a provider or model echo mismatch is
+// `provider-echo`. Unknown fields are `unknown-field`, a ranking naming
+// an absent plugin is `unknown-plugin`, a placement naming an absent
+// section is `unknown-section`, repeated ids are `duplicate-id`, size
+// bound breaches are `oversize`, a collapsed or missing required section
+// is `floor-violated`, and every other shape failure is `missing-field`.
+export function classifyPersonalizeSpecCheck(message: string): string {
+  if (message.includes("names a plugin absent from the request")) {
+    return "unknown-plugin";
+  }
+  if (message.includes("names an unknown section id")) {
+    return "unknown-section";
+  }
+  if (message.includes("must not collapse a floored section") || message.includes("always include summary and score")) {
+    return "floor-violated";
+  }
+  if (message.includes("forbids the field")) {
+    return "unknown-field";
+  }
+  if (message.includes("repeats a plugin id") || message.includes("repeats a section id")) {
+    return "duplicate-id";
+  }
+  if (message.includes("exceeds the size bound")) {
+    return "oversize";
+  }
+  return "missing-field";
+}
+
+// Maps a rejected mapping envelope to the warn-log check name: the echo
+// mismatch first, then the non-JSON payload, then the spec classifier
+// above. The warn line carries this fixed constant only, never the
+// validation message or model text.
+export function classifyPersonalizeValidationCheck(error: { kind: string; message: string }): string {
+  if (error.kind === "provider-mismatch") {
+    return "provider-echo";
+  }
+  if (error.message === "personalize response is not valid JSON") {
+    return "not-json";
+  }
+  if (error.message === "personalize response must be an object") {
+    return "missing-field";
+  }
+  return classifyPersonalizeSpecCheck(error.message);
 }
 
 export class hostedPersonalizeAdapter implements PluginPersonalizeModelPort {

@@ -47,6 +47,17 @@ function compatEnv(overrides: EnvInput = {}): EnvInput {
   };
 }
 
+function metaEnv(overrides: EnvInput = {}): EnvInput {
+  return {
+    ...baseCiEnv(),
+    BRANDKLIPPAREN_PERSONALIZE_PROVIDER: "meta-model-api",
+    BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-meta-key-for-tests-only",
+    BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "fake-meta-model-1",
+    BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta.example.invalid",
+    ...overrides,
+  };
+}
+
 describe("personalize provider configuration", () => {
   test("unset provider leaves the feature off by default", () => {
     const loaded = loadConfig(baseCiEnv());
@@ -85,7 +96,7 @@ describe("personalize provider configuration", () => {
   });
 
   test("an invalid provider value is a typed startup error", () => {
-    const loaded = loadConfig(compatEnv({ BRANDKLIPPAREN_PERSONALIZE_PROVIDER: "meta-model-api" }));
+    const loaded = loadConfig(compatEnv({ BRANDKLIPPAREN_PERSONALIZE_PROVIDER: "unknown-provider" }));
     expect(loaded.ok).toBe(false);
     if (loaded.ok) {
       return;
@@ -161,6 +172,67 @@ describe("personalize provider configuration", () => {
     }
     expect(service.value.provider).toBe("generic-compatible");
     expect(service.value.modelId).toBe("fake-compat-model-1");
+  });
+
+  test("a configured meta triple binds the meta-model-api provider and model honestly", () => {
+    const loaded = loadConfig(metaEnv());
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) {
+      return;
+    }
+    expect(loaded.value.personalizeProvider).toBe("meta-model-api");
+    const binding = selectPersonalizeBinding(loaded.value);
+    expect(binding.ok).toBe(true);
+    if (!binding.ok) {
+      return;
+    }
+    expect(binding.value).toEqual({
+      kind: "enabled",
+      provider: "meta-model-api",
+      modelId: "fake-meta-model-1",
+    });
+    const service = createPersonalizeServiceFromConfig(loaded.value);
+    expect(service.ok).toBe(true);
+    if (!service.ok || service.value === undefined) {
+      throw new Error("expected the personalize service to be wired");
+    }
+    expect(service.value.provider).toBe("meta-model-api");
+    expect(service.value.modelId).toBe("fake-meta-model-1");
+  });
+
+  test("a meta triple missing its key, model id or endpoint stays not-configured", () => {
+    for (const overrides of [
+      { BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "" },
+      { BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "" },
+      { BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "" },
+    ]) {
+      const loaded = loadConfig(metaEnv(overrides));
+      expect(loaded.ok).toBe(true);
+      if (!loaded.ok) {
+        continue;
+      }
+      const binding = selectPersonalizeBinding(loaded.value);
+      expect(binding.ok).toBe(true);
+      if (!binding.ok) {
+        continue;
+      }
+      expect(binding.value).toEqual({ kind: "disabled" });
+      const service = createPersonalizeServiceFromConfig(loaded.value);
+      expect(service.ok).toBe(true);
+      if (!service.ok) {
+        continue;
+      }
+      expect(service.value).toBeUndefined();
+    }
+  });
+
+  test("a malformed meta endpoint stays a typed startup error", () => {
+    const loaded = loadConfig(metaEnv({ BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "http://meta.example.invalid" }));
+    expect(loaded.ok).toBe(false);
+    if (loaded.ok) {
+      return;
+    }
+    expect(loaded.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL");
   });
 
   test("selecting hosted keeps the previous unwired behaviour", () => {
