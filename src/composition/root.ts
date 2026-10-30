@@ -16,6 +16,16 @@ import type {
 } from "../application/analyzeToken.ts";
 import { createAssessmentService } from "../application/assessmentService.ts";
 import type { AssessmentService } from "../application/assessmentService.ts";
+import { createPersonalizeService } from "../application/personalizeService.ts";
+import type { PersonalizeService } from "../application/personalizeService.ts";
+import { OverlayBudget } from "../application/overlayBudget.ts";
+import {
+  NotConfiguredPersonalizeAdapter,
+} from "../adapters/personalize/hostedPersonalizeAdapter.ts";
+import { createGenericCompatiblePersonalizeAdapterFromConfig } from "../adapters/personalize/GenericCompatiblePersonalizeAdapter.ts";
+import type { GenericCompatiblePersonalizeTransport } from "../adapters/personalize/GenericCompatiblePersonalizeAdapter.ts";
+import type { PluginPersonalizeModelPort } from "../ports/pluginPersonalizeModel.ts";
+import type { PluginPersonalizeProvider } from "../ports/pluginPersonalizeModel.ts";
 import {
   PLACEHOLDER_INVESTIGATION_DAILY_CAP_PER_KEY,
   PLACEHOLDER_INVESTIGATION_PROMPT_VERSION,
@@ -228,6 +238,120 @@ export type AssessmentTransportOverrides = {
   readonly hostedTransport?: hostedOpenWeightsTransport | undefined;
   readonly GenericCompatibleTransport?: GenericCompatibleTransport | undefined;
 };
+
+export type PersonalizeBinding =
+  | { readonly kind: "disabled" }
+  | {
+      readonly kind: "enabled";
+      readonly provider: PluginPersonalizeProvider;
+      readonly modelId: ModelId;
+    };
+
+// Placeholder operational default for the per-key personalize daily cap:
+// read when the validated configuration carries no value (local and CI
+// runs). The mapping call is one small spec per uncached view, so the
+// default stays small; the demo configuration always sets the versioned
+// per-key cap when the feature is on.
+const DEFAULT_PERSONALIZE_DAILY_CAP_PER_KEY = 5;
+
+// Placeholder mapping prompt version for runs without a configured
+// prompt: tests and offline runs stay well-formed. The adapter prompt and
+// the cache key record this same version.
+export const PERSONALIZE_PROMPT_VERSION = "1.0.0";
+
+// Exactly one personalize mapping binding, or none when disabled (S-069,
+// P-27): unset or "off" leaves the feature disabled with zero provider
+// calls, and the deterministic baseline stands. A selected provider
+// without its key, model id or endpoint is not configured (S-135): the
+// binding stays disabled with zero provider calls instead of failing
+// startup. Present-but-malformed values never reach this point: the
+// config loader turns them away as typed startup errors.
+export function selectPersonalizeBinding(config: AppConfig): Result<PersonalizeBinding, ConfigError> {
+  const provider = config.personalizeProvider;
+  if (provider === undefined) {
+    return ok({ kind: "disabled" });
+  }
+  if (provider === "generic-compatible") {
+    if (
+      config.assessmentGenericCompatibleModelId === undefined ||
+      config.assessmentGenericCompatibleApiKey === undefined ||
+      config.assessmentGenericCompatibleBaseUrl === undefined
+    ) {
+      return ok({ kind: "disabled" });
+    }
+    return ok({ kind: "enabled", provider, modelId: config.assessmentGenericCompatibleModelId });
+  }
+  // The hosted mapping triple has no validated configuration fields, so
+  // selecting it keeps the previous behaviour: not configured with zero
+  // provider calls and the deterministic baseline standing.
+  return ok({ kind: "disabled" });
+}
+
+// Provider and model id for the health response (K-104, S-123): the
+// service reports its bound adapter, so the UI names the configured
+// provider and model id honestly instead of a hard-coded label.
+export function personalizeHealthStatus(binding: PersonalizeBinding): { provider: PluginPersonalizeProvider; modelId: ModelId } | { disabled: true } {
+  if (binding.kind === "disabled") {
+    return { disabled: true };
+  }
+  return { provider: binding.provider, modelId: binding.modelId };
+}
+
+export type PersonalizeTransportOverrides = {
+  readonly transport?: GenericCompatiblePersonalizeTransport | undefined;
+  readonly onWarn?: ((line: string) => void) | undefined;
+};
+
+// Builds the personalize service from the validated configuration
+// (S-069, P-27): the generic-compatible mapping adapter when the provider
+// is configured with its connection triple, otherwise undefined so the
+// routes answer not-configured with zero provider calls. Missing values
+// never fail startup: the feature is opt-in and off by default.
+// Transports stay injectable so tests replay recorded fixtures and never
+// touch the network.
+export function createPersonalizeServiceFromConfig(
+  config: AppConfig,
+  overrides: PersonalizeTransportOverrides = {},
+): Result<PersonalizeService | undefined, ConfigError> {
+  const binding = selectPersonalizeBinding(config);
+  if (!binding.ok) {
+    return err(binding.error);
+  }
+  if (binding.value.kind === "disabled") {
+    return ok(undefined);
+  }
+  if (isPlaceholderModelId(binding.value.modelId as string)) {
+    return ok(undefined);
+  }
+  let adapter: PluginPersonalizeModelPort;
+  if (binding.value.provider === "generic-compatible") {
+    const built = createGenericCompatiblePersonalizeAdapterFromConfig(
+      {
+        assessmentGenericCompatibleBaseUrl: config.assessmentGenericCompatibleBaseUrl,
+        assessmentGenericCompatibleApiKey: config.assessmentGenericCompatibleApiKey,
+        assessmentGenericCompatibleModelId: config.assessmentGenericCompatibleModelId,
+      },
+      overrides.transport,
+      undefined,
+      overrides.onWarn,
+    );
+    if (!built.ok) {
+      return err(built.error);
+    }
+    adapter = built.value;
+  } else {
+    adapter = new NotConfiguredPersonalizeAdapter(undefined, binding.value.provider);
+  }
+  return ok(
+    createPersonalizeService({
+      adapter,
+      budget: new OverlayBudget({
+        dailyCapPerKey: config.personalizeDailyCapPerKey ?? DEFAULT_PERSONALIZE_DAILY_CAP_PER_KEY,
+        today: () => new Date().toISOString().slice(0, 10),
+      }),
+    }),
+  );
+}
 
 // Static lookup of registered assessment plugins: the composition root
 // resolves the single active plugin through this table, so an

@@ -12,6 +12,8 @@ import {
   parseAiPersonalizeSpec,
   parsePersonalizeEnvelope,
   parseStoredAiPersonalize,
+  personalizeProviderLabel,
+  personalizeProviderName,
   readStoredAiPersonalize,
   requiredFlooredSections,
 } from "./personalize.ts";
@@ -72,6 +74,28 @@ function validSpecBody(): Record<string, unknown> {
     ],
   };
 }
+
+describe("the experimental AI layout label names the configured provider honestly", () => {
+  test("a configured provider names its provider and model id", () => {
+    expect(
+      personalizeProviderLabel({ provider: "generic-compatible", modelId: "test-model-1" }),
+    ).toBe("Maps with generic-compatible · test-model-1.");
+    expect(personalizeProviderName({ provider: "generic-compatible", modelId: "test-model-1" })).toBe(
+      "generic-compatible · test-model-1",
+    );
+  });
+
+  test("a hosted provider names its own provider and model id, never a hard-coded one", () => {
+    expect(
+      personalizeProviderLabel({ provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" }),
+    ).toBe("Maps with hosted-open-weights · meta-models/muse-spark-open-1026.");
+  });
+
+  test("an unconfigured server says so", () => {
+    expect(personalizeProviderLabel(null)).toBe("Mapping provider not configured on this server.");
+    expect(personalizeProviderName(null)).toBe("the mapping provider");
+  });
+});
 
 describe("AI spec validation falls back to the deterministic baseline", () => {
   test("a valid spec parses with ranking and placements", () => {

@@ -26,6 +26,7 @@ import type {
   EnvironmentName,
   LogLevel,
 } from "../../ports/config.ts";
+import type { PluginPersonalizeProvider } from "../../ports/pluginPersonalizeModel.ts";
 
 // Injected environment: a plain object mapping names to raw values.
 export type EnvInput = Readonly<Record<string, string | undefined>>;
@@ -295,6 +296,8 @@ const V = {
   budgetDailyCapAssessmentCallsGenericCompatible:
     "BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_generic_COMPATIBLE",
   assessmentDailyCostCapGenericCompatible: "BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_generic_COMPATIBLE",
+  personalizeProvider: "BRANDKLIPPAREN_PERSONALIZE_PROVIDER",
+  personalizeDailyCapPerKey: "BRANDKLIPPAREN_PERSONALIZE_DAILY_CAP_PER_KEY",
   investigatehostedBaseUrl: "BRANDKLIPPAREN_INVESTIGATE_hosted_BASE_URL",
   investigatehostedApiKey: "BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY",
   investigatehostedModelId: "BRANDKLIPPAREN_INVESTIGATE_hosted_MODEL_ID",
@@ -323,6 +326,16 @@ const parseProvider = (raw: string): Result<AssessmentProvider, ConfigError> =>
     V.assessmentProvider,
     ["meta-model-api", "hosted-open-weights", "generic-compatible"],
     "meta-model-api, hosted-open-weights or generic-compatible",
+  )(raw);
+
+// Experimental AI personalize provider (S-069, P-27): unset or "off"
+// leaves the feature disabled; the two named providers select the mapping
+// adapter. Anything else is a typed startup error naming the variable.
+const parsePersonalizeProvider = (raw: string): Result<PluginPersonalizeProvider | "off", ConfigError> =>
+  parseEnum<PluginPersonalizeProvider | "off">(
+    V.personalizeProvider,
+    ["off", "hosted-open-weights", "generic-compatible"],
+    "off, hosted-open-weights or generic-compatible",
   )(raw);
 
 // Every variable name from the schema, exported so the .env.example
@@ -728,6 +741,24 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!assessmentGenericCompatibleMaxTokens.ok) {
     return assessmentGenericCompatibleMaxTokens;
   }
+  // Experimental AI personalize toggle (S-069, P-27): optional in every
+  // setup, so local and CI runs stay key-free with the mapping route
+  // answering `not-configured`. Unset or "off" means disabled; a named
+  // provider reuses the assessment connection settings, so no second key
+  // or endpoint travels beside this variable.
+  const personalizeProvider = optionalField(env, V.personalizeProvider, parsePersonalizeProvider);
+  if (!personalizeProvider.ok) {
+    return personalizeProvider;
+  }
+  // Daily cap for personalize mapping calls per API key: optional in
+  // every setup, so local runs stay lean. The composition falls back to
+  // its small placeholder default when unset.
+  const personalizeDailyCapPerKey = optionalField(env, V.personalizeDailyCapPerKey, (raw) =>
+    parseInteger(V.personalizeDailyCapPerKey, raw, 1, 1000000),
+  );
+  if (!personalizeDailyCapPerKey.ok) {
+    return personalizeDailyCapPerKey;
+  }
   // Investigation loop settings (S-073, P-29, P-34): optional in every
   // setup, so local and CI runs stay key-free with the loop answering
   // `not-configured`. The demo sets the key alongside the assessment keys.
@@ -963,6 +994,12 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(assessmentGenericCompatibleMaxTokens.value === undefined
       ? {}
       : { assessmentGenericCompatibleMaxTokens: assessmentGenericCompatibleMaxTokens.value }),
+    ...(personalizeProvider.value === undefined || personalizeProvider.value === "off"
+      ? {}
+      : { personalizeProvider: personalizeProvider.value }),
+    ...(personalizeDailyCapPerKey.value === undefined
+      ? {}
+      : { personalizeDailyCapPerKey: personalizeDailyCapPerKey.value }),
     ...(investigatehostedBaseUrl.value === undefined
       ? {}
       : { investigatehostedBaseUrl: investigatehostedBaseUrl.value }),

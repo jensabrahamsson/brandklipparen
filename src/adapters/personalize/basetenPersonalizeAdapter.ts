@@ -180,16 +180,19 @@ class hostedPersonalizeTimeout {
 
 // Not-configured adapter (P-27): bound when the key is absent. Every call
 // answers `not-configured` with zero sends; the deterministic baseline
-// stands alone.
+// stands alone. The provider label travels per binding so the health and
+// status responses name the configured provider honestly.
 export class NotConfiguredPersonalizeAdapter implements PluginPersonalizeModelPort {
   private readonly modelIdValue: ModelIdType | undefined;
+  private readonly providerValue: PluginPersonalizeProvider;
 
-  constructor(modelId?: ModelIdType | undefined) {
+  constructor(modelId?: ModelIdType | undefined, provider?: PluginPersonalizeProvider | undefined) {
     this.modelIdValue = modelId;
+    this.providerValue = provider ?? "hosted-open-weights";
   }
 
   provider(): PluginPersonalizeProvider {
-    return "hosted-open-weights";
+    return this.providerValue;
   }
 
   modelId(): ModelIdType {
@@ -197,6 +200,12 @@ export class NotConfiguredPersonalizeAdapter implements PluginPersonalizeModelPo
   }
 
   async personalize(): Promise<Result<PersonalizeSpec, PluginPersonalizeModelError>> {
+    if (this.providerValue === "generic-compatible") {
+      return err({
+        kind: "not-configured",
+        message: "AI personalize is not configured: set the assessment generic-compatible key and model",
+      });
+    }
     return err({ kind: "not-configured", message: "AI personalize is not configured: set the hosted key" });
   }
 }

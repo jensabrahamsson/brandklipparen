@@ -18,6 +18,8 @@ import { PrioritiesField } from "../components/PrioritiesField.tsx";
 import {
   applyAiSectionOrder,
   parsePersonalizeEnvelope,
+  personalizeProviderLabel,
+  personalizeProviderName,
   readStoredAiPersonalize,
   requiredFlooredSections,
   writeStoredAiPersonalize,
@@ -938,16 +940,13 @@ function CustomizeView({
           data-testid="ai-personalize-label"
           style={{ margin: "4px 0", fontSize: 13 }}
         >
-          {aiProvider === null
-            ? "Mapping provider not configured on this server."
-            : `Maps with ${aiProvider.provider} · ${aiProvider.modelId}.`}
+          {personalizeProviderLabel(aiProvider)}
         </p>
         {aiOn ? (
           <div>
             <p className="quiet" data-testid="ai-personalize-preface" style={{ margin: "4px 0", fontSize: 13 }}>
-              Sends your priorities text and plugin references to{" "}
-              {aiProvider === null ? "the mapping provider" : `${aiProvider.provider} · ${aiProvider.modelId}`} for
-              this one mapping call. Nothing else is sent.
+              Sends your priorities text and plugin references to {personalizeProviderName(aiProvider)} for this one
+              mapping call. Nothing else is sent.
             </p>
             <button
               type="button"

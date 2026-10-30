@@ -12,7 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
-import { Address, RequestId, TemplateVersion, Timestamp } from "../domain/types.ts";
+import { Address, PromptVersion, RequestId, TemplateVersion, Timestamp } from "../domain/types.ts";
 import type { CapabilityCatalogue } from "../domain/signals.ts";
 import { FEED_FACTORIES, QUOTE_TOKENS } from "../domain/lpFeed.ts";
 import type { QuoteSet } from "../domain/lpFeed.ts";
@@ -37,6 +37,8 @@ import type {
 } from "../application/analyzeToken.ts";
 import { createAssessmentServiceFromConfig } from "./root.ts";
 import type { AssessmentTransportOverrides } from "./root.ts";
+import { PERSONALIZE_PROMPT_VERSION, createPersonalizeServiceFromConfig } from "./root.ts";
+import type { PersonalizeTransportOverrides } from "./root.ts";
 import { createInvestigationServiceFromConfig } from "./root.ts";
 import type { AssessmentService } from "../application/assessmentService.ts";
 import type { InvestigationService } from "../application/investigationService.ts";
@@ -89,6 +91,9 @@ export type BuildAppDeps = {
   // Recorded transports for the assessment adapters; tests replay
   // fixtures through these and never touch the network.
   readonly assessmentTransports?: AssessmentTransportOverrides | undefined;
+  // Recorded transport for the experimental AI personalize adapter; tests
+  // replay fixtures through it and never touch the network.
+  readonly personalizeTransports?: PersonalizeTransportOverrides | undefined;
 };
 
 export type BuiltApp = {
@@ -249,6 +254,25 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
   if (!investigation.ok) {
     return err(investigation.error);
   }
+  // Experimental AI personalize mapping (S-069, P-27): the service when
+  // the provider is configured, otherwise undefined so the routes answer
+  // not-configured with zero provider calls and the deterministic
+  // baseline stands. The prompt version travels beside the service for
+  // the route cache key; an absent service disables the route like an
+  // absent version.
+  const personalize = createPersonalizeServiceFromConfig(config, deps.personalizeTransports);
+  if (!personalize.ok) {
+    return err(personalize.error);
+  }
+  const personalizePromptVersion =
+    personalize.value === undefined ? undefined : PromptVersion.parse(PERSONALIZE_PROMPT_VERSION);
+  if (personalizePromptVersion !== undefined && !personalizePromptVersion.ok) {
+    return err({
+      kind: "invalid-value",
+      variable: "BRANDKLIPPAREN_PERSONALIZE_PROVIDER",
+      reason: "the pinned personalize prompt version must parse",
+    });
+  }
   // Calibrated detector weights read once at startup from the loaded
   // artifact (S-047, P-05): absent on a load failure, in which case the
   // routes expose the uncalibrated weight-0 list like the test wiring.
@@ -283,6 +307,9 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     pluginWeights,
     assessmentService: assessment.value,
     investigationService: investigation.value,
+    personalizeService: personalize.value,
+    personalizePromptVersion:
+      personalizePromptVersion === undefined ? undefined : personalizePromptVersion.value,
     onchain,
     rateLimit: rateLimit.value,
     liveTokens,

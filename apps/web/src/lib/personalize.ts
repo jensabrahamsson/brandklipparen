@@ -12,6 +12,28 @@ import { z } from "zod";
 
 export const AI_PERSONALIZE_KEY = "brandklipparen-ai-personalize:v1";
 
+// Provider label for the experimental toggle (S-070, K-519): the UI names
+// the configured provider and model id from the status/health response,
+// never a hard-coded provider name. Null means the server left the
+// feature unconfigured.
+export function personalizeProviderName(
+  provider: { readonly provider: string; readonly modelId: string } | null,
+): string {
+  if (provider === null) {
+    return "the mapping provider";
+  }
+  return `${provider.provider} · ${provider.modelId}`;
+}
+
+export function personalizeProviderLabel(
+  provider: { readonly provider: string; readonly modelId: string } | null,
+): string {
+  if (provider === null) {
+    return "Mapping provider not configured on this server.";
+  }
+  return `Maps with ${personalizeProviderName(provider)}.`;
+}
+
 // Closed read: exactly `on` opts in; everything else stays off.
 export function parseStoredAiPersonalize(raw: string | null | undefined): boolean {
   return raw === "on";

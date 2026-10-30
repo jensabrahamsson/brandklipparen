@@ -1,6 +1,7 @@
 // Shared contract for the experimental PluginPersonalizeModelPort
-// (S-069, K-519, P-27). Every adapter — the fake and the hosted adapter
-// over a recorded transport — gives equal outcomes: the "ordered"
+// (S-069, K-519, P-27). Every adapter — the fake, the hosted adapter and
+// the generic-compatible adapter over a recorded transport — gives equal
+// outcomes: the "ordered"
 // scenario returns the validated spec, every error scenario reports its
 // typed branch with no spec shown, and the input stays frozen.
 import { describe, expect, test } from "vitest";
@@ -84,6 +85,10 @@ const ERROR_SCENARIOS: readonly { scenario: PluginPersonalizeContractScenario; k
 export function runPluginPersonalizeModelPortContract(
   label: string,
   makeAdapter: (scenario: PluginPersonalizeContractScenario) => PluginPersonalizeModelPort,
+  expected: { readonly provider: string; readonly modelId: string } = {
+    provider: "hosted-open-weights",
+    modelId: "meta-models/muse-spark-open-1026",
+  },
 ): void {
   describe(`PluginPersonalizeModelPort contract: ${label}`, () => {
     test("ordered mapping returns the validated spec and leaves the input unchanged", async () => {
@@ -105,10 +110,10 @@ export function runPluginPersonalizeModelPortContract(
       expect(sections).toContain("score");
     });
 
-    test("adapter labels the open-weights provider and model id", () => {
+    test("adapter labels the provider and model id", () => {
       const adapter = makeAdapter("ordered");
-      expect(adapter.provider()).toBe("hosted-open-weights");
-      expect(String(adapter.modelId())).toBe("meta-models/muse-spark-open-1026");
+      expect(adapter.provider()).toBe(expected.provider);
+      expect(String(adapter.modelId())).toBe(expected.modelId);
     });
 
     test("spec carries no free text, markup, code, urls or styles", async () => {
