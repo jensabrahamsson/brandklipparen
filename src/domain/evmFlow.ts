@@ -12,7 +12,7 @@ import type { Result } from "./result.ts";
 import { extractSelectors } from "./selectors.ts";
 import type { Bytecode as BytecodeType, Selector as SelectorType } from "./types.ts";
 import type { ControlFlowGraph } from "./evmLift.ts";
-import { buildCfg, lift } from "./evmLift.ts";
+import { buildCfg, lift, resolveEntryReachV2 } from "./evmLift.ts";
 
 // One resolved function entry: the dispatcher selector, its proven entry
 // PC, the entry block index, and whether the bounded forward walk from
@@ -324,8 +324,27 @@ export function analyzeStackDepth(cfg: ControlFlowGraph): StackDepthAnalysis {
 // rule ("greatest entry target at or below the PC") misattributed shared
 // tails and everything past the last entry target to the last dispatcher
 // entry, so it is retired: every consumer below reads this walk instead.
+//
+// Attribution mode (P-10 session 1): `v1` is the scored default and stays
+// byte-identical; `v2` reruns reachability per entry through the
+// return-jump resolver in `./evmLift.ts`, so a shared helper reached through
+// a dynamic return belongs to every entry that reaches it. Session 2 wires
+// v2 into `ownerControl` behind its own flag; detectors keep `v1` until then.
+export type AttributionMode = "v1" | "v2";
+
+export type AttributionOptions = {
+  readonly mode?: AttributionMode;
+};
+
+const EMPTY_HOLDERS: readonly SelectorType[] = Object.freeze([]);
+
 export type FunctionAttribution = {
   readonly holderOf: (pc: number) => SelectorType | null;
+  // Every entry whose walk reaches the PC (empty when none reaches it). In
+  // v1 this mirrors `holderOf` (shared blocks read as empty); in v2 shared
+  // blocks list every entry that reaches them, and region membership reads
+  // this list instead of the single holder.
+  readonly holdersOf: (pc: number) => readonly SelectorType[];
 };
 
 function blockAtPc(cfg: ControlFlowGraph, pc: number): number {
@@ -362,9 +381,11 @@ function reachableFrom(cfg: ControlFlowGraph, from: number): ReadonlySet<number>
   return seen;
 }
 
-export function attributeFunctions(bytecode: BytecodeType): FunctionAttribution {
+export function attributeFunctions(bytecode: BytecodeType, options?: AttributionOptions): FunctionAttribution {
+  const mode = options?.mode ?? "v1";
   const cfg = buildCfg(lift(bytecode));
   const reachers = new Map<number, SelectorType[]>();
+  const entries: { readonly selector: SelectorType; readonly entryBlock: number }[] = [];
   for (const candidate of extractSelectors(bytecode)) {
     if (candidate.kind !== "paired") {
       continue;
@@ -381,14 +402,31 @@ export function attributeFunctions(bytecode: BytecodeType): FunctionAttribution 
     if (entryBlock === -1) {
       continue;
     }
-    for (const reached of reachableFrom(cfg, entryBlock)) {
-      const known = reachers.get(reached);
-      if (known === undefined) {
-        reachers.set(reached, [selector]);
-      } else if (!known.includes(selector)) {
-        known.push(selector);
+    entries.push({ selector, entryBlock });
+  }
+  const claim = (block: number, selector: SelectorType): void => {
+    const known = reachers.get(block);
+    if (known === undefined) {
+      reachers.set(block, [selector]);
+    } else if (!known.includes(selector)) {
+      known.push(selector);
+    }
+  };
+  if (mode === "v2") {
+    for (const entry of entries) {
+      for (const reached of resolveEntryReachV2(cfg, entry.entryBlock).reachedBlocks) {
+        claim(reached, entry.selector);
       }
     }
+  } else {
+    for (const entry of entries) {
+      for (const reached of reachableFrom(cfg, entry.entryBlock)) {
+        claim(reached, entry.selector);
+      }
+    }
+  }
+  for (const holders of reachers.values()) {
+    Object.freeze(holders);
   }
   const holderOf = (pc: number): SelectorType | null => {
     const block = blockAtPc(cfg, pc);
@@ -401,7 +439,18 @@ export function attributeFunctions(bytecode: BytecodeType): FunctionAttribution 
     }
     return holders[0] ?? null;
   };
-  return Object.freeze({ holderOf });
+  const holdersOf = (pc: number): readonly SelectorType[] => {
+    const block = blockAtPc(cfg, pc);
+    if (block === -1) {
+      return EMPTY_HOLDERS;
+    }
+    const holders = reachers.get(block);
+    if (mode !== "v2") {
+      return holders !== undefined && holders.length === 1 ? holders : EMPTY_HOLDERS;
+    }
+    return holders ?? EMPTY_HOLDERS;
+  };
+  return Object.freeze({ holderOf, holdersOf });
 }
 
 // One dispatcher branch: the selector, the block holding its conditional

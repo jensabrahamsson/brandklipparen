@@ -283,3 +283,154 @@ export function buildCfg(lifted: LiftOutput): ControlFlowGraph {
     diagnoses: Object.freeze(diagnoses),
   });
 }
+
+// V2 return-jump resolution (P-10 session 1, display-only path). The scored
+// v1 path above is untouched: `buildCfg` still records every dynamic JUMP
+// as unresolved exactly once, and this helper runs only when v2 attribution
+// asks for it. Per entry, a fixpoint over the CFG: proven edges close the
+// reached set, then every PUSH2/PUSH3 constant that equals a JUMPDEST and
+// appears in a block already reached from this entry becomes a candidate
+// successor of every dynamic JUMP the entry reaches. Iteration repeats
+// until the reached set is stable, so a return address pushed by code the
+// entry reaches late still resolves. Seeding is per entry only (walks start
+// at the entry block, never at the dispatcher), and a jump with more than
+// `V2_MAX_RETURN_TARGETS` candidates stays unresolved rather than joining
+// unrelated continuations.
+export const V2_MAX_RETURN_TARGETS = 16;
+
+export type EntryReachV2 = {
+  readonly reachedBlocks: ReadonlySet<number>;
+  readonly resolvedJumpAtPc: readonly number[];
+  readonly unresolvedJumpAtPc: readonly number[];
+};
+
+// A dynamic JUMP: the block ends in JUMP with no proven jump edge, so v1
+// records it as unresolved (a structural fall-through edge may still sit
+// beside it, and the v2 closure keeps following it like v1 does).
+function isDynamicJumpBlock(block: CfgBlock): boolean {
+  const last = block.instructions[block.instructions.length - 1];
+  return (
+    block.terminal === "jump" &&
+    last !== undefined &&
+    last.opcode === 0x56 &&
+    !block.successors.some((edge) => edge.kind === "jump")
+  );
+}
+
+function pushConstantValue(immediate: readonly number[]): number {
+  let value = 0;
+  for (const byte of immediate) {
+    value = value * 256 + byte;
+  }
+  return value;
+}
+
+export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryReachV2 {
+  const empty: EntryReachV2 = Object.freeze({
+    reachedBlocks: new Set<number>(),
+    resolvedJumpAtPc: Object.freeze([]),
+    unresolvedJumpAtPc: Object.freeze([]),
+  });
+  if (from < 0 || from >= cfg.blocks.length) {
+    return empty;
+  }
+  // Valid return targets: block starts that open with JUMPDEST.
+  const jumpTargets = new Map<number, number>();
+  for (const block of cfg.blocks) {
+    if (block.instructions[0]?.opcode === 0x5b) {
+      jumpTargets.set(block.range.startPc, block.index);
+    }
+  }
+  const reached = new Set<number>([from]);
+  const resolved = new Set<number>();
+  const givenUp = new Set<number>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    // Proven closure: every CFG edge is followed, exactly like v1.
+    const queue = [...reached];
+    while (queue.length > 0) {
+      const index = queue.pop() ?? -1;
+      const block = cfg.blocks[index];
+      if (block === undefined) {
+        continue;
+      }
+      for (const edge of block.successors) {
+        const targets = edge.kind === "conditional" ? [edge.to, edge.fallThrough] : [edge.to];
+        for (const to of targets) {
+          if (to >= 0 && to < cfg.blocks.length && !reached.has(to)) {
+            reached.add(to);
+            queue.push(to);
+            changed = true;
+          }
+        }
+      }
+    }
+    // Candidates: PUSH2/PUSH3 constants in reached blocks that name a
+    // JUMPDEST block start.
+    const candidates = new Set<number>();
+    for (const index of [...reached]) {
+      const block = cfg.blocks[index];
+      if (block === undefined) {
+        continue;
+      }
+      for (const instruction of block.instructions) {
+        if (instruction.opcode === 0x61 || instruction.opcode === 0x62) {
+          const target = jumpTargets.get(pushConstantValue(instruction.immediate));
+          if (target !== undefined) {
+            candidates.add(target);
+          }
+        }
+      }
+    }
+    // Resolve dynamic jumps reached from this entry. Past the cap the
+    // jump stays unresolved; with no candidates yet it waits for a later
+    // round (a jump resolved early keeps its edges even if later rounds
+    // push the candidate count past the cap).
+    for (const index of [...reached]) {
+      const block = cfg.blocks[index];
+      if (block === undefined || !isDynamicJumpBlock(block) || resolved.has(index) || givenUp.has(index)) {
+        continue;
+      }
+      if (candidates.size === 0) {
+        continue;
+      }
+      if (candidates.size > V2_MAX_RETURN_TARGETS) {
+        givenUp.add(index);
+        continue;
+      }
+      resolved.add(index);
+      for (const target of candidates) {
+        if (!reached.has(target)) {
+          reached.add(target);
+          changed = true;
+        }
+      }
+    }
+  }
+  const jumpPcOf = (index: number): number => {
+    const block = cfg.blocks[index];
+    return block?.instructions[(block?.instructions.length ?? 1) - 1]?.pc ?? -1;
+  };
+  const resolvedJumpAtPc = [...resolved]
+    .map(jumpPcOf)
+    .filter((pc) => pc >= 0)
+    .sort((left, right) => left - right);
+  const pending: number[] = [];
+  for (const index of reached) {
+    const block = cfg.blocks[index];
+    if (block === undefined || resolved.has(index) || !isDynamicJumpBlock(block)) {
+      continue;
+    }
+    const last = block.instructions[block.instructions.length - 1];
+    if (last !== undefined) {
+      pending.push(last.pc);
+    }
+  }
+  pending.sort((left, right) => left - right);
+  return Object.freeze({
+    reachedBlocks: reached,
+    resolvedJumpAtPc: Object.freeze(resolvedJumpAtPc),
+    unresolvedJumpAtPc: Object.freeze(pending),
+  });
+}
