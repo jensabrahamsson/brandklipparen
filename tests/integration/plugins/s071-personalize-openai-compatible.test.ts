@@ -131,15 +131,15 @@ function echoTransport(): GenericCompatiblePersonalizeTransport {
     };
     const sectionIds = Array.isArray(user.sectionIds) ? (user.sectionIds as string[]) : [];
     const pluginIds = Array.isArray(user.pluginIds) ? (user.pluginIds as string[]) : [];
-    const wanted = ["signals", "summary", "score", "evidence"];
+    const wanted = ["signals", "score", "explanation"];
     const placements = wanted
       .filter((id) => sectionIds.includes(id))
       .map((sectionId) => ({ sectionId, emphasis: "normal" }));
-    if (!placements.some((placement) => placement.sectionId === "summary")) {
-      placements.push({ sectionId: "summary", emphasis: "normal" });
-    }
     if (!placements.some((placement) => placement.sectionId === "score")) {
       placements.push({ sectionId: "score", emphasis: "normal" });
+    }
+    if (!placements.some((placement) => placement.sectionId === "explanation")) {
+      placements.push({ sectionId: "explanation", emphasis: "normal" });
     }
     return {
       status: 200,

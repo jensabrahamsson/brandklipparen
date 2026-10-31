@@ -24,12 +24,14 @@ import { canonicalSerialize } from "../domain/serialize.ts";
 import type { OverlayBudget } from "./overlayBudget.ts";
 
 
-// Floored sections derived from the envelope (P-26): `summary` and
-// `score` always, plus `signals` whenever a signal raises risk and
-// `signals` beside `evidence` whenever a high-severity signal is present.
-// Specs collapsing a floored section are rejected, so an AI layout (or
-// injected priorities steering it) can never bury a high finding. The
-// server and the web client compute the same set from the same envelope.
+// Floored sections derived from the envelope (P-26): `score` and
+// `explanation` always, plus legacy `summary` and `score` for backward
+// compatibility, plus `signals` whenever a signal raises risk and
+// `evidence` beside `explanation` whenever a high-severity signal is
+// present. Specs collapsing a floored section are rejected, so an AI
+// layout (or injected priorities steering it) can never bury the score,
+// the explanation or a high finding. The server and the web client
+// compute the same rendered set from the same envelope.
 export function requiredFlooredSections(signals: readonly Signal[]): readonly string[] {
   let raises = false;
   let high = false;
@@ -45,7 +47,7 @@ export function requiredFlooredSections(signals: readonly Signal[]): readonly st
       high = true;
     }
   }
-  const floored = ["summary", "score"];
+  const floored = ["summary", "score", "explanation"];
   if (raises || high) {
     floored.push("signals");
   }

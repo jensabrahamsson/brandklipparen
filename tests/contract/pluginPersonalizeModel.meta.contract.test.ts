@@ -47,8 +47,8 @@ function mappingEnvelope(): string {
       pluginRanking: ["dev.brandklipparen.clone-match", "dev.brandklipparen.capability"],
       placements: [
         { sectionId: "signals", emphasis: "high" },
-        { sectionId: "summary", emphasis: "normal" },
         { sectionId: "score", emphasis: "normal" },
+        { sectionId: "explanation", emphasis: "normal" },
       ],
     },
   });
@@ -86,8 +86,8 @@ function recordedTransport(scenario: PluginPersonalizeContractScenario): MetaMod
                 specVersion: 1,
                 pluginRanking: [],
                 placements: [
-                  { sectionId: "summary", emphasis: "normal" },
                   { sectionId: "score", emphasis: "normal" },
+                  { sectionId: "explanation", emphasis: "normal" },
                 ],
               },
             }),
@@ -159,9 +159,9 @@ describe("meta-model-api personalize adapter", () => {
           PersonalizeInput.create({
             codeHash: mustOk(CodeHash.of(bytecode)),
             scoreBand: "medium",
-            sectionIds: ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell"],
+            sectionIds: ["score", "explanation", "signals", "plugin-findings", "cant-tell"],
             pluginIds: ["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"],
-            flooredSectionIds: ["summary", "score"],
+            flooredSectionIds: ["score", "explanation"],
             priorities: "Can the owner stop me selling?",
             plugins: [],
             promptVersion: mustOk(PromptVersion.parse("1.0.0")),
@@ -198,9 +198,9 @@ describe("meta-model-api personalize adapter", () => {
         PersonalizeInput.create({
           codeHash: mustOk(CodeHash.of(bytecode)),
           scoreBand: "medium",
-          sectionIds: ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell"],
+          sectionIds: ["score", "explanation", "signals", "plugin-findings", "cant-tell"],
           pluginIds: ["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"],
-          flooredSectionIds: ["summary", "score"],
+          flooredSectionIds: ["score", "explanation"],
           priorities: injection,
           plugins: [
             {

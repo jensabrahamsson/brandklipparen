@@ -50,9 +50,9 @@ function fixedInput(): PersonalizeInputValue {
     PersonalizeInput.create({
       codeHash: mustOk(CodeHash.of(bytecode)),
       scoreBand: "medium",
-      sectionIds: ["summary", "score", "signals"],
+      sectionIds: ["score", "explanation", "signals"],
       pluginIds: ["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"],
-      flooredSectionIds: ["summary", "score"],
+      flooredSectionIds: ["score", "explanation"],
       priorities: "quux-priority-9: keep the score visible",
       plugins: [],
       promptVersion: mustOk(PromptVersion.parse("1.0.0")),
@@ -83,8 +83,8 @@ function validSpec(): Record<string, unknown> {
     specVersion: 1,
     pluginRanking: ["dev.brandklipparen.clone-match"],
     placements: [
-      { sectionId: "summary", emphasis: "normal" },
       { sectionId: "score", emphasis: "normal" },
+      { sectionId: "explanation", emphasis: "normal" },
       { sectionId: "signals", emphasis: "high" },
     ],
   };
@@ -157,8 +157,8 @@ describe("personalize mapping robustness over recorded transports", () => {
       expect(system).toContain("Minimal example");
       // The example is literal ids from this request's closed lists.
       expect(system).toContain("dev.brandklipparen.capability");
-      expect(system).toContain('"summary"');
       expect(system).toContain('"score"');
+      expect(system).toContain('"explanation"');
       // Quoted visitor data stays in the user message, never in the prompt.
       expect(system).not.toContain("quux-priority-9");
       const user = JSON.parse(String(sent.messages?.[1]?.content ?? "{}")) as {
@@ -204,8 +204,8 @@ describe("personalize mapping robustness over recorded transports", () => {
             ...validSpec(),
             placements: [
               { sectionId: "quux-section-7", emphasis: "normal" },
-              { sectionId: "summary", emphasis: "normal" },
               { sectionId: "score", emphasis: "normal" },
+              { sectionId: "explanation", emphasis: "normal" },
             ],
           }),
           check: "check=unknown-section",
@@ -216,15 +216,15 @@ describe("personalize mapping robustness over recorded transports", () => {
           content: envelopeText(provider, modelId, {
             ...validSpec(),
             placements: [
-              { sectionId: "summary", emphasis: "normal", collapsed: true },
-              { sectionId: "score", emphasis: "normal" },
+              { sectionId: "score", emphasis: "normal", collapsed: true },
+              { sectionId: "explanation", emphasis: "normal" },
             ],
           }),
           check: "check=floor-violated",
           kind: "invalid-output",
         },
         {
-          name: "missing-summary",
+          name: "missing-required",
           content: envelopeText(provider, modelId, {
             ...validSpec(),
             placements: [{ sectionId: "signals", emphasis: "high" }],

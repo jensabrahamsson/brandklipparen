@@ -33,8 +33,8 @@ function orderedBody(): string {
       pluginRanking: ["dev.brandklipparen.clone-match", "dev.brandklipparen.capability"],
       placements: [
         { sectionId: "signals", emphasis: "high" },
-        { sectionId: "summary", emphasis: "normal" },
         { sectionId: "score", emphasis: "normal" },
+        { sectionId: "explanation", emphasis: "normal" },
       ],
     },
   });
@@ -65,8 +65,8 @@ function recordedTransport(scenario: PluginPersonalizeContractScenario): hostedP
               specVersion: 1,
               pluginRanking: [],
               placements: [
-                { sectionId: "summary", emphasis: "normal" },
                 { sectionId: "score", emphasis: "normal" },
+                { sectionId: "explanation", emphasis: "normal" },
               ],
             },
           }),

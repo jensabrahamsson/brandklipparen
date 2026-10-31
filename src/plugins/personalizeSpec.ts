@@ -3,7 +3,7 @@
 // plugin-card ids from the deterministic plan: an ordered plugin ranking
 // plus section placements with closed emphasis. The spec carries no free
 // text, no HTML, no code, no URLs, no styles and no score or severity
-// value; `summary` and `score` are always present and never collapsible,
+// value; `score` and `explanation` are always present and never collapsible,
 // and no placement may collapse a P-26 floored section. TypeScript types
 // are normative with a JSON Schema descriptor beside them (draft-07
 // subset, `additionalProperties: false`); the plain-check smart
@@ -20,17 +20,22 @@ export const PERSONALIZE_SPEC_VERSION = 1;
 export const PERSONALIZE_MAX_RANKING = 16;
 export const PERSONALIZE_MAX_PLACEMENTS = 16;
 
-// Closed section whitelist (P-22 family, section 0.2): the sections the
-// deterministic plan emits. Ranking and placements operate at two levels
-// that cannot conflict: cards inside one section (pluginRanking), sections
-// on the page (placements).
+// Closed section whitelist (P-22 family, section 0.2): the rendered
+// overview ids the route offers (`score`, `explanation`, `signals`,
+// `plugin-findings`, `cant-tell`) plus legacy model ids kept for
+// backward compatibility (`summary` reads as `score`, `evidence` reads
+// as `explanation`, `assessment` and `expert-detail` have no overview
+// block). Ranking and placements operate at two levels that cannot
+// conflict: cards inside one section (pluginRanking), sections on the
+// page (placements).
 export const PERSONALIZE_SECTION_IDS: readonly string[] = Object.freeze([
-  "summary",
   "score",
+  "explanation",
   "signals",
   "plugin-findings",
-  "evidence",
   "cant-tell",
+  "summary",
+  "evidence",
   "assessment",
   "expert-detail",
 ]);
@@ -105,9 +110,10 @@ export function personalizeSpecJsonSchema(): JsonSchema {
 
 // Plain-check smart constructor: every model response passes here before
 // the UI applies it. Unknown or duplicate plugin ids, rankings naming
-// absent plugins, unknown or duplicate section ids, missing `summary` or
-// `score`, oversize specs, extra fields, and any collapse of a floored
-// section give `invalid-output` with no partial spec applied.
+// absent plugins, unknown or duplicate section ids, missing `score` or
+// `explanation` (legacy `summary` satisfies `score`, legacy `evidence`
+// satisfies `explanation`), oversize specs, extra fields, and any collapse
+// of a floored section give `invalid-output` with no partial spec applied.
 export function parsePersonalizeSpec(
   value: unknown,
   context: PersonalizeSpecContext,
@@ -188,8 +194,10 @@ export function parsePersonalizeSpec(
     }
     parsed.push(Object.freeze({ sectionId, emphasis, collapsed }));
   }
-  if (!seenSections.has("summary") || !seenSections.has("score")) {
-    return invalid("personalize spec placements always include summary and score");
+  const hasScore = seenSections.has("score") || seenSections.has("summary");
+  const hasExplanation = seenSections.has("explanation") || seenSections.has("evidence");
+  if (!hasScore || !hasExplanation) {
+    return invalid("personalize spec placements always include score and explanation");
   }
   return ok(
     Object.freeze({

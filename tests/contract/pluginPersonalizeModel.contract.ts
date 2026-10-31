@@ -43,9 +43,9 @@ function fixedInput(): PersonalizeInputValue {
     PersonalizeInput.create({
       codeHash: mustOk(CodeHash.of(bytecode)),
       scoreBand: "medium",
-      sectionIds: ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell"],
+      sectionIds: ["score", "explanation", "signals", "plugin-findings", "cant-tell"],
       pluginIds: ["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"],
-      flooredSectionIds: ["summary", "score"],
+      flooredSectionIds: ["score", "explanation"],
       priorities: "Can the owner stop me selling?",
       plugins: [
         {
@@ -107,8 +107,8 @@ export function runPluginPersonalizeModelPortContract(
         expect(input.pluginIds).toContain(id);
       }
       const sections = result.value.placements.map((placement) => placement.sectionId);
-      expect(sections).toContain("summary");
       expect(sections).toContain("score");
+      expect(sections).toContain("explanation");
     });
 
     test("adapter labels the provider and model id", () => {

@@ -184,11 +184,11 @@ export type PersonalizeContext = {
 };
 
 // Floored sections derived from the envelope (P-26), mirroring the server:
-// the `score` card always, plus `signals` whenever a signal raises risk
-// and `signals` beside `explanation` whenever a high-severity signal is
-// present. Specs collapsing a floored section are rejected, so an AI
-// layout can never bury a high finding. Rendered ids only: the single
-// shared source is SECTION_ORDER_STANDARD.
+// the `score` card and the `explanation` card ("Why this score") are
+// always floored, plus `signals` whenever a signal raises risk. Specs
+// collapsing a floored section are rejected, so an AI layout can never
+// bury the score, the explanation or a raised finding. Rendered ids
+// only: the single shared source is SECTION_ORDER_STANDARD.
 export function requiredFlooredSections(
   signals: readonly { readonly severity?: string; readonly direction?: string }[],
 ): readonly string[] {
@@ -202,12 +202,9 @@ export function requiredFlooredSections(
       high = true;
     }
   }
-  const floored = ["score"];
+  const floored = ["score", "explanation"];
   if (raises || high) {
     floored.push("signals");
-  }
-  if (high) {
-    floored.push("explanation");
   }
   return Object.freeze(floored);
 }
@@ -292,15 +289,16 @@ export function parseAiPersonalizeSpec(value: unknown, context: PersonalizeConte
   };
 }
 
-// Apply the validated spec to the section order: placements first in
-// their order (legacy aliases normalized to rendered ids, ids without an
-// overview block dropped, first occurrence wins), then every standard
-// section the spec never names, in standard relative order. Floored
-// sections clamp ahead (P-26), with `score` pinned first: extending the
-// floor with `signals` or `explanation` must never push a finding section
-// above the pinned card. The result holds rendered ids only, so the page
+// Apply the validated spec to the section order: the `score` card first
+// and the `explanation` card ("Why this score") second, always and in
+// that order, whatever the model returns and whatever the signals are.
+// Legacy aliases normalize to rendered ids, ids without an overview block
+// drop, first occurrence wins. Every remaining section follows in AI
+// order first, then standard relative order for unnamed sections; other
+// floored sections (P-26 `signals` when risk is raised) clamp directly
+// below the pinned pair. The result holds rendered ids only, so the page
 // never renders a wrapper for an id without content.
-const PINNED_FIRST: readonly string[] = Object.freeze(["score"]);
+const PINNED_FIRST: readonly string[] = Object.freeze(["score", "explanation"]);
 
 export function applyAiSectionOrder(
   standardIds: readonly string[],
@@ -329,11 +327,11 @@ export function applyAiSectionOrder(
   }
   const rest = renderedStandard.filter((id) => !listed.has(id));
   const combined = [...ordered, ...rest];
-  const flooredBlock = combined.filter((id) => floored.has(id));
-  const openBlock = combined.filter((id) => !floored.has(id));
-  const pinned = PINNED_FIRST.filter((id) => flooredBlock.includes(id));
-  const restFloored = flooredBlock.filter((id) => !(PINNED_FIRST as readonly string[]).includes(id));
-  return Object.freeze([...pinned, ...restFloored, ...openBlock]);
+  const pinned = PINNED_FIRST.filter((id) => combined.includes(id));
+  const withoutPinned = combined.filter((id) => !pinned.includes(id));
+  const flooredRest = withoutPinned.filter((id) => floored.has(id));
+  const openBlock = withoutPinned.filter((id) => !floored.has(id));
+  return Object.freeze([...pinned, ...flooredRest, ...openBlock]);
 }
 
 // Parse the mapping route envelope: `{ personalize: { kind: "ok", spec } }`

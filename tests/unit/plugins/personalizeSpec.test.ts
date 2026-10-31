@@ -13,9 +13,9 @@ import type { PersonalizeSpecContext } from "../../../src/plugins/personalizeSpe
 
 function context(): PersonalizeSpecContext {
   return Object.freeze({
-    sectionIds: Object.freeze(["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell"]),
+    sectionIds: Object.freeze(["score", "explanation", "signals", "plugin-findings", "cant-tell"]),
     pluginIds: Object.freeze(["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"]),
-    flooredSectionIds: Object.freeze(["summary", "score"]),
+    flooredSectionIds: Object.freeze(["score", "explanation"]),
     maxPlacements: 8,
     maxRanking: 8,
   });
@@ -27,8 +27,8 @@ function validSpec(): Record<string, unknown> {
     pluginRanking: ["dev.brandklipparen.clone-match", "dev.brandklipparen.capability"],
     placements: [
       { sectionId: "signals", emphasis: "high" },
-      { sectionId: "summary", emphasis: "normal" },
       { sectionId: "score", emphasis: "normal" },
+      { sectionId: "explanation", emphasis: "normal" },
     ],
   };
 }
@@ -69,11 +69,11 @@ describe("unified personalize spec contract (S-068)", () => {
     };
     expect(parsePersonalizeSpec(collapsedFloored, ctx).ok).toBe(false);
 
-    const missingSummary = {
+    const missingRequired = {
       ...validSpec(),
       placements: [{ sectionId: "signals", emphasis: "high" }],
     };
-    expect(parsePersonalizeSpec(missingSummary, ctx).ok).toBe(false);
+    expect(parsePersonalizeSpec(missingRequired, ctx).ok).toBe(false);
   });
 
   test("a valid spec parses with no partial application", () => {
@@ -87,8 +87,8 @@ describe("unified personalize spec contract (S-068)", () => {
     ]);
     expect(parsed.value.placements.map((placement) => placement.sectionId)).toEqual([
       "signals",
-      "summary",
       "score",
+      "explanation",
     ]);
   });
 
@@ -107,5 +107,31 @@ describe("unified personalize spec contract (S-068)", () => {
     expect(
       ((schema["properties"] as Record<string, unknown>)["pluginRanking"] as Record<string, unknown>)["maxItems"],
     ).toBeLessThanOrEqual(20);
+  });
+
+  test("rendered ids validate with legacy aliases kept for backward compatibility", () => {
+    const rendered = context();
+    expect(parsePersonalizeSpec(validSpec(), rendered).ok).toBe(true);
+    const legacyContext: PersonalizeSpecContext = {
+      sectionIds: ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell"],
+      pluginIds: ["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"],
+      flooredSectionIds: ["summary", "score"],
+      maxPlacements: 8,
+      maxRanking: 8,
+    };
+    expect(
+      parsePersonalizeSpec(
+        {
+          specVersion: PERSONALIZE_SPEC_VERSION,
+          pluginRanking: ["dev.brandklipparen.capability"],
+          placements: [
+            { sectionId: "summary", emphasis: "normal" },
+            { sectionId: "score", emphasis: "normal" },
+            { sectionId: "evidence", emphasis: "normal" },
+          ],
+        },
+        legacyContext,
+      ).ok,
+    ).toBe(true);
   });
 });

@@ -47,15 +47,20 @@ export class FakePluginPersonalizeModelAdapter implements PluginPersonalizeModel
       case "ordered": {
         const present = input.pluginIds;
         const ranking = present.slice().reverse();
+        const offered = new Set(input.sectionIds);
+        const scoreId = offered.has("score") ? "score" : "summary";
+        const explanationId = offered.has("explanation") ? "explanation" : "evidence";
+        const placements: { sectionId: string; emphasis: "high" | "normal" }[] = [];
+        if (offered.has("signals")) {
+          placements.push({ sectionId: "signals", emphasis: "high" });
+        }
+        placements.push({ sectionId: scoreId, emphasis: "normal" });
+        placements.push({ sectionId: explanationId, emphasis: "normal" });
         const checked = parsePersonalizeSpec(
           {
             specVersion: 1,
             pluginRanking: ranking,
-            placements: [
-              { sectionId: "signals", emphasis: "high" },
-              { sectionId: "summary", emphasis: "normal" },
-              { sectionId: "score", emphasis: "normal" },
-            ],
+            placements,
           },
           {
             sectionIds: input.sectionIds,

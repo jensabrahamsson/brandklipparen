@@ -1343,7 +1343,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
     }
     const analysis = analysed.value.envelope;
     const score = analysis.score;
-    const presentSections = ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell", "expert-detail"];
+    const presentSections = ["score", "explanation", "signals", "plugin-findings", "cant-tell"];
     const outcome = await service.requestPersonalize(
       {
         codeHash: analysis.codeHash,

@@ -262,17 +262,21 @@ describe("zod AI spec validation against the component whitelist", () => {
     ).toEqual(["score", "signals", "plugin-findings"]);
   });
 
-  test("floored sections follow the envelope: high signals floor signals and explanation", () => {
-    expect(requiredFlooredSections([])).toEqual(["score"]);
-    expect(requiredFlooredSections([{ severity: "low", direction: "lowers" }])).toEqual(["score"]);
+  test("floored sections follow the envelope: score and explanation always floor", () => {
+    expect(requiredFlooredSections([])).toEqual(["score", "explanation"]);
+    expect(requiredFlooredSections([{ severity: "low", direction: "lowers" }])).toEqual([
+      "score",
+      "explanation",
+    ]);
     expect(requiredFlooredSections([{ severity: "medium", direction: "raises" }])).toEqual([
       "score",
+      "explanation",
       "signals",
     ]);
     expect(requiredFlooredSections([{ severity: "high", direction: "raises" }])).toEqual([
       "score",
-      "signals",
       "explanation",
+      "signals",
     ]);
   });
 
@@ -348,5 +352,75 @@ describe("recorded model response keeps the explanation above cant-tell (P0-4)",
       expect(rendered.has(id)).toBe(true);
     }
     expect(new Set(applied).size).toBe(applied.length);
+  });
+});
+
+describe("score and explanation pin above AI order (N-1)", () => {
+  function buriedExplanationSpec(): ReturnType<typeof parseAiPersonalizeSpec> {
+    const context: PersonalizeContext = {
+      sectionIds: [...SECTION_ORDER_STANDARD],
+      pluginIds: ["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"],
+      flooredSectionIds: [...requiredFlooredSections([])],
+    };
+    return parseAiPersonalizeSpec(
+      {
+        specVersion: 1,
+        pluginRanking: ["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"],
+        placements: [
+          { sectionId: "plugin-findings", emphasis: "high" },
+          { sectionId: "signals", emphasis: "high" },
+          { sectionId: "cant-tell", emphasis: "normal" },
+          { sectionId: "score", emphasis: "normal" },
+          { sectionId: "explanation", emphasis: "normal" },
+        ],
+      },
+      context,
+    );
+  }
+
+  test("plugin findings and signals first with explanation last still pin score then explanation without a high signal", () => {
+    const spec = buriedExplanationSpec();
+    expect(spec).not.toBe(null);
+    if (spec === null) {
+      throw new Error("expected the buried spec to parse");
+    }
+    const floored = requiredFlooredSections([]);
+    const applied = applyAiSectionOrder([...SECTION_ORDER_STANDARD], spec, [...floored]);
+    expect(applied[0]).toBe("score");
+    expect(applied[1]).toBe("explanation");
+  });
+
+  test("the same buried order pins score then explanation with a high signal", () => {
+    const spec = buriedExplanationSpec();
+    expect(spec).not.toBe(null);
+    if (spec === null) {
+      throw new Error("expected the buried spec to parse");
+    }
+    const floored = requiredFlooredSections([{ severity: "high", direction: "raises" }]);
+    const applied = applyAiSectionOrder([...SECTION_ORDER_STANDARD], spec, [...floored]);
+    expect(applied[0]).toBe("score");
+    expect(applied[1]).toBe("explanation");
+    expect(applied.indexOf("signals")).toBeGreaterThan(1);
+  });
+
+  test("the synthetic fixture still yields score first and explanation second", () => {
+    const body = fixture as unknown;
+    const recorded = (body as { personalize?: { spec?: unknown } }).personalize?.spec as {
+      readonly pluginRanking?: readonly string[];
+    };
+    const ranking = [...(recorded?.pluginRanking ?? [])];
+    const context: PersonalizeContext = {
+      sectionIds: [...PERSONALIZE_SECTIONS],
+      pluginIds: [...ranking],
+      flooredSectionIds: [...requiredFlooredSections([])],
+    };
+    const spec = parsePersonalizeEnvelope(body, context);
+    expect(spec).not.toBe(null);
+    if (spec === null) {
+      throw new Error("the recorded fixture must parse");
+    }
+    const applied = applyAiSectionOrder([...SECTION_ORDER_STANDARD], spec, [...requiredFlooredSections([])]);
+    expect(applied[0]).toBe("score");
+    expect(applied[1]).toBe("explanation");
   });
 });

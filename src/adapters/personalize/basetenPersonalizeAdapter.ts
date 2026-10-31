@@ -278,7 +278,11 @@ export function classifyPersonalizeSpecCheck(message: string): string {
   if (message.includes("names an unknown section id")) {
     return "unknown-section";
   }
-  if (message.includes("must not collapse a floored section") || message.includes("always include summary and score")) {
+  if (
+    message.includes("must not collapse a floored section") ||
+    message.includes("always include score and explanation") ||
+    message.includes("always include summary and score")
+  ) {
     return "floor-violated";
   }
   if (message.includes("forbids the field")) {

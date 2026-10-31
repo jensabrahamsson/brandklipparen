@@ -37,9 +37,9 @@ function baseInput(overrides: Partial<PersonalizeRequestInput> = {}): Personaliz
   return {
     codeHash: mustOk(CodeHash.of(bytecode)),
     scoreBand: "medium",
-    sectionIds: ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell"],
+    sectionIds: ["score", "explanation", "signals", "plugin-findings", "cant-tell"],
     pluginIds: ["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"],
-    flooredSectionIds: ["summary", "score"],
+    flooredSectionIds: ["score", "explanation"],
     priorities: "Can the owner stop me selling?",
     plugins: [
       {
@@ -137,21 +137,21 @@ describe("k519_floored_sections_follow_the_envelope", () => {
   }
 
   test("a high signal floors signals and evidence, and collapsing specs are rejected", () => {
-    expect(requiredFlooredSections([])).toEqual(["summary", "score"]);
+    expect(requiredFlooredSections([])).toEqual(["summary", "score", "explanation"]);
     const floored = requiredFlooredSections([highSignal()]);
-    expect(floored).toEqual(["summary", "score", "signals", "evidence"]);
+    expect(floored).toEqual(["summary", "score", "explanation", "signals", "evidence"]);
     const collapsing = {
       specVersion: 1,
       pluginRanking: ["dev.brandklipparen.capability"],
       placements: [
         { sectionId: "signals", emphasis: "normal", collapsed: true },
-        { sectionId: "summary", emphasis: "normal" },
         { sectionId: "score", emphasis: "normal" },
+        { sectionId: "explanation", emphasis: "normal" },
       ],
     };
     expect(
       parsePersonalizeSpec(collapsing, {
-        sectionIds: ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell"],
+        sectionIds: ["score", "explanation", "signals", "plugin-findings", "cant-tell"],
         pluginIds: ["dev.brandklipparen.capability", "dev.brandklipparen.clone-match"],
         flooredSectionIds: [...floored],
         maxPlacements: 16,

@@ -187,7 +187,7 @@ export function buildMetaPersonalizeSystemPrompt(input: {
     'The "specVersion" value must be exactly 1.',
     'The "pluginRanking" value must be an array of plugin ids from the request in priority order.',
     'The "placements" value must be an array with one entry per placed section: each entry carries exactly "sectionId" (a section id from the request) and "emphasis" (one of normal, high or low).',
-    "Every placement keeps summary and score present, and no placement collapses a floored section.",
+    "Every placement keeps score and explanation present, and no placement collapses a floored section.",
     `Minimal example using this request's ids: ${example}`,
     "Return section and plugin ids only, never copy, code, urls or styles.",
   ].join("\n");
