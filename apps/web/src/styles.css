@@ -1799,19 +1799,82 @@ pre.code {
   max-width: 460px;
 }
 
+/* P0-2: the open panel spans the full width in columns so the results
+   below it never start after a 460 px right-aligned block. */
+.customize[open] {
+  max-width: none;
+  margin-left: 0;
+}
+
+.customize-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 20px;
+  align-items: start;
+}
+
+.customize-body > * {
+  min-width: 0;
+}
+
+.customize-body fieldset {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.customize-body .input {
+  max-width: 100%;
+}
+
 @media (max-width: 900px) {
   .customize {
     max-width: none;
   }
 }
 
+/* P0-3: the summary reads as a real control in phosphor, not dim text. */
 .customize > summary {
   cursor: pointer;
   font-size: 14px;
-  color: var(--dim);
+  color: var(--phosphor);
   width: fit-content;
   margin-left: auto;
-  padding: 6px 0;
+  padding: 8px 14px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-button);
+  display: inline-flex;
+  align-items: center;
+}
+
+/* P0-3: the always-visible AI bar sits next to the tab list and opens the
+   panel on the priorities field. Padding alone clears 24 px on desktop;
+   the global touch-target rule keeps 44 px on phones. */
+.ai-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 12px;
+}
+
+/* P0-5: moved sections glow once in place (background and glow only). */
+.ai-moved {
+  animation: bk-arrive var(--arrive) var(--ease-out) 1;
+}
+
+/* P0-5: emphasized sections keep the phosphor Console language: a
+   phosphor edge and deeper elevation for high, a dashed edge for low. */
+div[data-emphasis="high"] > .card {
+  border-color: var(--phosphor);
+  box-shadow: var(--elev-3);
+}
+
+div[data-emphasis="low"] > .card {
+  border-style: dashed;
+}
+
+/* Jump target: the focused section wrapper keeps the themed ring. */
+div[data-section]:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .customize > summary:focus-visible {

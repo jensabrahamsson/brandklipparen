@@ -16,7 +16,10 @@ import { clearStoredPriorities, readStoredPriorities, writeStoredPriorities } fr
 import { matchPriorities } from "../lib/matcher.ts";
 import { PrioritiesField } from "../components/PrioritiesField.tsx";
 import {
+  PERSONALIZE_SECTIONS,
+  aiOrderNotice,
   applyAiSectionOrder,
+  normalizeAiSectionId,
   parsePersonalizeEnvelope,
   personalizeProviderLabel,
   personalizeProviderName,
@@ -259,7 +262,7 @@ export function TokenPage({
       const pluginIds = (plugins ?? []).map((plugin) => plugin.id);
       const assessedSignals = result?.kind === "assessed" ? result.signals : [];
       const context: PersonalizeContext = {
-        sectionIds: ["summary", "score", "signals", "plugin-findings", "evidence", "cant-tell", "expert-detail"],
+        sectionIds: [...PERSONALIZE_SECTIONS],
         pluginIds,
         flooredSectionIds: [...requiredFlooredSections(assessedSignals)],
       };
@@ -269,7 +272,19 @@ export function TokenPage({
         setAiNotice("AI layout unavailable — showing deterministic order.");
       } else {
         setAiSpec(spec);
-        setAiNotice("AI order applied. Scores, evidence and text are unchanged.");
+        if (result?.kind === "assessed") {
+          const plan = planLayout({
+            score: result.score,
+            signalCount: result.signals.length,
+            severeSignalCount: result.signals.filter((signal) => signal.severity === "high").length,
+            pluginFindingCount: 0,
+            cantTellCount: result.cantTell.length,
+          });
+          const applied = applyAiSectionOrder(plan, spec, [...requiredFlooredSections(result.signals)]);
+          setAiNotice(aiOrderNotice(plan, applied));
+        } else {
+          setAiNotice("AI order applied. Scores, evidence and text are unchanged.");
+        }
       }
     });
   };
@@ -686,9 +701,9 @@ function AssessedView({
               </p>
             ) : null}
             {heroBreakdown && scoreEmphasis === "high" ? (
-              <p className="quiet" data-testid="ai-emphasis-score" style={{ fontSize: 13, margin: "8px 0 0" }}>
-                Highlighted for you.
-              </p>
+              <span className="live-new" data-testid="ai-emphasis-score">
+                AI PRIORITY
+              </span>
             ) : null}
             {heroBreakdown ? (
               <>
@@ -885,7 +900,7 @@ function CustomizeView({
   // at the microtask checkpoint of the flipping task, so React state and
   // session storage are synced before any reload navigation can start.
   // `onToggle` stays as the redundant sync for the same state.
-  const [open, setOpen] = useState<boolean>(() => readStoredCustomize());
+  const [open, setOpen] = useState<boolean>(() => readStoredCustomize() || aiOn);
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
   useEffect(() => {
     const element = detailsRef.current;
@@ -906,67 +921,120 @@ function CustomizeView({
     setOpen(next);
     writeStoredCustomize(next);
   };
+  const openPanelForEdit = useCallback((): void => {
+    setOpen(true);
+    writeStoredCustomize(true);
+    window.setTimeout(() => {
+      document.getElementById("priorities-field")?.focus();
+    }, 0);
+  }, []);
+  const jumpToResults = useCallback((): void => {
+    const target = document.querySelector("div.token-grid div[data-section]") as HTMLElement | null;
+    if (target === null) {
+      return;
+    }
+    target.scrollIntoView({ block: "start" });
+    window.setTimeout(() => {
+      target.focus({ preventScroll: true });
+    }, 0);
+  }, []);
+  const providerName = personalizeProviderName(aiProvider);
+  const aiApplied = aiNotice !== null && aiNotice.startsWith("AI order applied");
   return (
-    <details ref={detailsRef} className="customize" open={open ? true : undefined} onToggle={remember}>
-      <summary>Customize view</summary>
-      <div role="radiogroup" aria-label="Detail depth" style={{ margin: "16px 0" }}>
-        <span className="quiet" style={{ marginRight: 12, fontSize: 14 }}>
-          Detail:
-        </span>
-        <label style={{ marginRight: 12, fontSize: 14 }}>
-          <input type="radio" name="ui-mode" value="simple" checked={mode === "simple"} onChange={() => onModeChange("simple")} />{" "}
-          Simple
-        </label>
-        <label style={{ fontSize: 14 }}>
-          <input type="radio" name="ui-mode" value="expert" checked={mode === "expert"} onChange={() => onModeChange("expert")} />{" "}
-          Expert
-        </label>
-      </div>
-      <section aria-label="AI personalize" style={{ marginBottom: 16 }}>
-        <label style={{ fontSize: 14, fontWeight: 600 }}>
-          <input
-            type="checkbox"
-            data-testid="ai-personalize-toggle"
-            checked={aiOn}
-            disabled={aiProvider === null}
-            aria-describedby="ai-personalize-status"
-            onChange={(event) => onToggleAi(event.target.checked)}
-          />{" "}
-          AI personalize (experimental)
-        </label>
-        <p
-          id="ai-personalize-status"
-          className="quiet"
-          data-testid="ai-personalize-label"
-          style={{ margin: "4px 0", fontSize: 13 }}
+    <>
+      <div className="ai-bar">
+        <button
+          type="button"
+          className="chip"
+          aria-pressed={aiOn}
+          data-testid="ai-order-bar"
+          onClick={openPanelForEdit}
         >
-          {personalizeProviderLabel(aiProvider)}
-        </p>
-        {aiOn ? (
+          AI order: {aiOn ? "on" : "off"} · {providerName} · Edit priorities
+        </button>
+      </div>
+      <details ref={detailsRef} className="customize" open={open ? true : undefined} onToggle={remember}>
+        <summary>Customize view</summary>
+        <div className="customize-body">
           <div>
-            <p className="quiet" data-testid="ai-personalize-preface" style={{ margin: "4px 0", fontSize: 13 }}>
-              Sends your priorities text and plugin references to {personalizeProviderName(aiProvider)} for this one
-              mapping call. Nothing else is sent.
-            </p>
-            <button
-              type="button"
-              data-testid="ai-personalize-apply"
-              disabled={aiPending || priorities.trim().length === 0}
-              onClick={onApplyAiOrder}
-            >
-              {aiPending ? "Mapping…" : "Apply AI order"}
-            </button>
+            <div role="radiogroup" aria-label="Detail depth" style={{ margin: "0 0 16px" }}>
+              <span className="quiet" style={{ marginRight: 12, fontSize: 14 }}>
+                Detail:
+              </span>
+              <label style={{ marginRight: 12, fontSize: 14 }}>
+                <input type="radio" name="ui-mode" value="simple" checked={mode === "simple"} onChange={() => onModeChange("simple")} />{" "}
+                Simple
+              </label>
+              <label style={{ fontSize: 14 }}>
+                <input type="radio" name="ui-mode" value="expert" checked={mode === "expert"} onChange={() => onModeChange("expert")} />{" "}
+                Expert
+              </label>
+            </div>
+            <section aria-label="AI personalize" style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 14, fontWeight: 600 }}>
+                <input
+                  type="checkbox"
+                  data-testid="ai-personalize-toggle"
+                  checked={aiOn}
+                  disabled={aiProvider === null}
+                  aria-describedby="ai-personalize-status"
+                  onChange={(event) => onToggleAi(event.target.checked)}
+                />{" "}
+                AI personalize (experimental)
+              </label>
+              <p
+                id="ai-personalize-status"
+                className="quiet"
+                data-testid="ai-personalize-label"
+                style={{ margin: "4px 0", fontSize: 13 }}
+              >
+                {personalizeProviderLabel(aiProvider)}
+              </p>
+              {aiOn ? (
+                <div>
+                  <p className="quiet" data-testid="ai-personalize-preface" style={{ margin: "4px 0", fontSize: 13 }}>
+                    Sends your priorities text and plugin references to {providerName} for this one mapping call.
+                    Nothing else is sent.
+                  </p>
+                  <button
+                    type="button"
+                    className="button"
+                    data-testid="ai-personalize-apply"
+                    disabled={aiPending || priorities.trim().length === 0}
+                    onClick={onApplyAiOrder}
+                  >
+                    {aiPending ? "Mapping…" : "Apply AI order"}
+                  </button>
+                </div>
+              ) : null}
+              {aiNotice === null ? null : (
+                <p
+                  role="status"
+                  className="quiet"
+                  data-testid="ai-personalize-result"
+                  style={{ margin: "4px 0 0", fontSize: 13 }}
+                >
+                  {aiNotice}
+                </p>
+              )}
+              {aiApplied ? (
+                <button
+                  type="button"
+                  className="button-ghost"
+                  data-testid="ai-jump-results"
+                  style={{ marginTop: 8 }}
+                  onClick={jumpToResults}
+                >
+                  Jump to results
+                </button>
+              ) : null}
+            </section>
           </div>
-        ) : null}
-        {aiNotice === null ? null : (
-          <p className="quiet" data-testid="ai-personalize-result" style={{ margin: "4px 0 0", fontSize: 13 }}>
-            {aiNotice}
-          </p>
-        )}
-      </section>
-      <FieldPicker visible={visibleSections} onToggle={onToggleSection} />
-      <PrioritiesField value={priorities} onChange={onPrioritiesChange} onClear={onPrioritiesClear} />
-    </details>
+          <PrioritiesField value={priorities} onChange={onPrioritiesChange} onClear={onPrioritiesClear} />
+          <FieldPicker visible={visibleSections} onToggle={onToggleSection} />
+        </div>
+      </details>
+    </>
   );
 }
 
@@ -1037,8 +1105,9 @@ function OverviewSections({
     ? applyAiSectionOrder(plan, aiSpec, requiredFlooredSections(result.signals))
     : plan;
   // Field picker (S-100, K-023): picked sections render in plan order.
-  // Only pickable sections are ever hidden; the pinned score and any
-  // non-pickable id (AI layouts may order extra ids) always pass through.
+  // Only pickable sections are ever hidden; the pinned score always passes
+  // through. Rendered ids only: sectionOrder already holds normalized ids,
+  // so every entry below has an overview block.
   const pickableIds = new Set(PICKABLE_SECTIONS.map((section) => section.id));
   // S-133: on wide screens the risk breakdown lives in the verdict hero
   // beside the dial, so the overview grid skips it; the plan still leads
@@ -1049,10 +1118,20 @@ function OverviewSections({
       (sectionId !== "score" || !heroBreakdown) &&
       (!pickableIds.has(sectionId) || visibleSections.has(sectionId)),
   );
-  const emphasisOf = new Map((aiSpec?.placements ?? []).map((placement) => [placement.sectionId, placement.emphasis]));
-  const collapsed = new Set(
-    (aiSpec?.placements ?? []).filter((placement) => placement.collapsed).map((placement) => placement.sectionId),
-  );
+  const emphasisOf = new Map<string, string>();
+  const collapsed = new Set<string>();
+  for (const placement of aiSpec?.placements ?? []) {
+    const rendered = normalizeAiSectionId(placement.sectionId);
+    if (rendered === null) {
+      continue;
+    }
+    if (!emphasisOf.has(rendered)) {
+      emphasisOf.set(rendered, placement.emphasis);
+    }
+    if (placement.collapsed) {
+      collapsed.add(rendered);
+    }
+  }
   const [aiExpanded, setAiExpanded] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => {
     setAiExpanded(new Set());
@@ -1128,11 +1207,25 @@ function OverviewSections({
     ),
     "cant-tell": <CantTellPanel entries={result.cantTell} />,
   };
+  // Rendered ids only (P0-4): drop any section without an overview block so
+  // a legacy model id can never produce an empty wrapper.
+  const renderedSections = shownSections.filter((sectionId) => blocks[sectionId] !== undefined);
+  // One-time arrival glow (P0-5) on sections the AI moved: background and
+  // glow only, static under prefers-reduced-motion.
+  const planRank = new Map<string, number>(plan.map((id, index) => [id, index] as [string, number]));
+  const movedSections = new Set<string>();
+  if (aiActive) {
+    sectionOrder.forEach((id, index) => {
+      if (planRank.get(id) !== index) {
+        movedSections.add(id);
+      }
+    });
+  }
   return (
     <div>
       <div className="token-grid">
         <div>
-          {shownSections.map((sectionId, sectionIndex) => {
+          {renderedSections.map((sectionId, sectionIndex) => {
             const collapsedByAi = collapsed.has(sectionId) && !aiExpanded.has(sectionId);
             if (collapsedByAi) {
               return (
@@ -1148,18 +1241,20 @@ function OverviewSections({
                 </div>
               );
             }
+            const moved = aiActive && movedSections.has(sectionId);
             return (
               <div
                 key={sectionId}
                 data-section={sectionId}
                 data-emphasis={emphasisOf.get(sectionId) ?? "normal"}
-                className="fade-sec"
+                className={moved ? "fade-sec ai-moved" : "fade-sec"}
+                tabIndex={-1}
                 style={{ "--sec-i": sectionIndex + 1 } as CSSProperties}
               >
                 {emphasisOf.get(sectionId) === "high" ? (
-                  <p className="quiet" data-testid={`ai-emphasis-${sectionId}`} style={{ fontSize: 13 }}>
-                    Highlighted for you.
-                  </p>
+                  <span className="live-new" data-testid={`ai-emphasis-${sectionId}`}>
+                    AI PRIORITY
+                  </span>
                 ) : null}
                 {blocks[sectionId]}
               </div>

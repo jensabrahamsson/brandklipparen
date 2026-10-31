@@ -151,6 +151,15 @@ export function PluginsPanel({
   // (S-120), so a quiet detector costs one sentence, not a card.
   const withFindings = entries.filter((plugin) => findingsFor(plugin.id, results).length > 0);
   const withoutFindings = entries.filter((plugin) => findingsFor(plugin.id, results).length === 0);
+  // AI order (P0-5): name the top-ranked detectors the AI checked first
+  // even when they found nothing, so the ranking has a visible effect.
+  const displayNameOf = (pluginId: string): string =>
+    plugins?.find((plugin) => plugin.id === pluginId)?.displayName ?? pluginId;
+  const checkedFirst = active
+    ? (order ?? []).filter((pluginId) => findingsFor(pluginId, results).length === 0)
+    : [];
+  const checkedFirstNames = checkedFirst.map((pluginId) => displayNameOf(pluginId));
+  const remainingWithout = withoutFindings.filter((plugin) => !checkedFirst.includes(plugin.id));
   return (
     <section aria-label="Plugins">
       <h2>Plugins</h2>
@@ -192,10 +201,15 @@ export function PluginsPanel({
           </article>
         );
       })}
-      {withoutFindings.length === 0 ? null : (
+      {checkedFirstNames.length === 0 ? null : (
+        <p className="quiet" data-testid="ai-checked-first" style={{ margin: "8px 0 0", fontSize: 13 }}>
+          Checked first for you: {checkedFirstNames.join(", ")}: no findings.
+        </p>
+      )}
+      {remainingWithout.length === 0 ? null : (
         <p className="quiet" style={{ margin: "8px 0 0", fontSize: 13 }}>
-          {withoutFindings.length === 1 ? "1 detector found nothing" : `${withoutFindings.length} detectors found nothing`}
-          : {withoutFindings.map((plugin) => plugin.displayName).join(", ")}
+          {remainingWithout.length === 1 ? "1 detector found nothing" : `${remainingWithout.length} detectors found nothing`}
+          : {remainingWithout.map((plugin) => plugin.displayName).join(", ")}
         </p>
       )}
     </section>

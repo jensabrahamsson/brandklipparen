@@ -330,9 +330,9 @@ test("k519_ai_personalize_toggle_states_priorities_before_first_call", async ({ 
   await expect(page.getByTestId("ai-personalize-result")).toContainText("AI order applied");
   expect(counter.posts).toBe(1);
   expect(counter.lastBody).toContain("Can the owner stop me selling?");
-  await expect(page.getByTestId("ai-emphasis-signals")).toContainText("Highlighted for you");
+  await expect(page.getByTestId("ai-emphasis-signals")).toContainText("AI PRIORITY");
   const sections = await page.locator("div.token-grid div[data-section]").evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute("data-section")),
   );
-  expect(sections[0]).toBe("summary");
+  expect(sections[0]).toBe("signals");
 });

@@ -8,7 +8,11 @@
 import { describe, expect, test } from "vitest";
 import {
   AI_PERSONALIZE_KEY,
+  PERSONALIZE_SECTIONS,
+  aiOrderNotice,
   applyAiSectionOrder,
+  describeAiOrderChange,
+  normalizeAiSectionId,
   parseAiPersonalizeSpec,
   parsePersonalizeEnvelope,
   parseStoredAiPersonalize,
@@ -18,6 +22,8 @@ import {
   requiredFlooredSections,
 } from "./personalize.ts";
 import type { PersonalizeContext } from "./personalize.ts";
+import { SECTION_ORDER_STANDARD } from "./layout.ts";
+import fixture from "./__fixtures__/personalize-response.meta.json";
 
 function memoryStorage(initial: Record<string, string> = {}): Storage {
   const store = new Map<string, string>(Object.entries(initial));
@@ -235,41 +241,38 @@ describe("zod AI spec validation against the component whitelist", () => {
     if (spec === null) {
       throw new Error("expected the spec to parse");
     }
-    expect(applyAiSectionOrder(["score", "signals", "plugin-findings"], spec, ["summary", "score"])).toEqual([
-      "summary",
+    expect(applyAiSectionOrder(["score", "signals", "plugin-findings"], spec, ["score"])).toEqual([
       "score",
       "signals",
       "plugin-findings",
     ]);
   });
 
-  test("an extended floor never pushes signals above the pinned summary and score", () => {
+  test("an extended floor never pushes signals above the pinned score", () => {
     const spec = parseAiPersonalizeSpec(validSpecBody(), CONTEXT);
     if (spec === null) {
       throw new Error("expected the spec to parse");
     }
     expect(
       applyAiSectionOrder(
-        ["summary", "score", "signals", "plugin-findings"],
+        ["score", "signals", "plugin-findings"],
         spec,
-        ["summary", "score", "signals", "evidence"],
+        ["score", "signals", "explanation"],
       ),
-    ).toEqual(["summary", "score", "signals", "plugin-findings"]);
+    ).toEqual(["score", "signals", "plugin-findings"]);
   });
 
-  test("floored sections follow the envelope: high signals floor signals and evidence", () => {
-    expect(requiredFlooredSections([])).toEqual(["summary", "score"]);
-    expect(requiredFlooredSections([{ severity: "low", direction: "lowers" }])).toEqual(["summary", "score"]);
+  test("floored sections follow the envelope: high signals floor signals and explanation", () => {
+    expect(requiredFlooredSections([])).toEqual(["score"]);
+    expect(requiredFlooredSections([{ severity: "low", direction: "lowers" }])).toEqual(["score"]);
     expect(requiredFlooredSections([{ severity: "medium", direction: "raises" }])).toEqual([
-      "summary",
       "score",
       "signals",
     ]);
     expect(requiredFlooredSections([{ severity: "high", direction: "raises" }])).toEqual([
-      "summary",
       "score",
       "signals",
-      "evidence",
+      "explanation",
     ]);
   });
 
@@ -290,5 +293,60 @@ describe("zod AI spec validation against the component whitelist", () => {
       ),
     ).toBe(null);
     expect(parseAiPersonalizeSpec(validSpecBody(), context)).not.toBe(null);
+  });
+});
+
+describe("legacy model ids normalize to rendered sections (P0-4)", () => {
+  test("summary reads as score and evidence reads as explanation", () => {
+    expect(normalizeAiSectionId("summary")).toBe("score");
+    expect(normalizeAiSectionId("evidence")).toBe("explanation");
+    expect(normalizeAiSectionId("score")).toBe("score");
+    expect(normalizeAiSectionId("assessment")).toBe(null);
+    expect(normalizeAiSectionId("expert-detail")).toBe(null);
+    expect(normalizeAiSectionId("no-such-section")).toBe(null);
+  });
+
+  test("the offered ids share the rendered source", () => {
+    for (const rendered of SECTION_ORDER_STANDARD) {
+      expect(PERSONALIZE_SECTIONS).toContain(rendered);
+    }
+  });
+
+  test("the diff notice names moved sections and keeps the trust suffix", () => {
+    const plan = ["score", "signals", "cant-tell", "plugin-findings", "explanation"];
+    const applied = ["score", "signals", "plugin-findings", "explanation", "cant-tell"];
+    expect(describeAiOrderChange(plan, applied).movedUp).toEqual(["Plugins", "Why this score"]);
+    expect(describeAiOrderChange(plan, applied).lowered).toEqual(["Can't-tell"]);
+    expect(aiOrderNotice(plan, applied)).toContain("AI order applied");
+    expect(aiOrderNotice(plan, applied)).toContain("Scores, evidence and text are unchanged.");
+  });
+});
+
+describe("recorded model response keeps the explanation above cant-tell (P0-4)", () => {
+  test("applying the synthetic fixture keeps score first with no empty wrappers", () => {
+    const body = fixture as unknown;
+    const recorded = (body as { personalize?: { spec?: unknown } }).personalize?.spec as {
+      readonly pluginRanking?: readonly string[];
+      readonly placements?: readonly { readonly sectionId?: unknown }[];
+    };
+    const ranking = [...(recorded?.pluginRanking ?? [])];
+    const context: PersonalizeContext = {
+      sectionIds: [...PERSONALIZE_SECTIONS],
+      pluginIds: [...ranking],
+      flooredSectionIds: [...requiredFlooredSections([])],
+    };
+    const spec = parsePersonalizeEnvelope(body, context);
+    expect(spec).not.toBe(null);
+    if (spec === null) {
+      throw new Error("the recorded fixture must parse");
+    }
+    const applied = applyAiSectionOrder([...SECTION_ORDER_STANDARD], spec, [...requiredFlooredSections([])]);
+    expect(applied[0]).toBe("score");
+    expect(applied.indexOf("explanation")).toBeLessThan(applied.indexOf("cant-tell"));
+    const rendered = new Set(SECTION_ORDER_STANDARD);
+    for (const id of applied) {
+      expect(rendered.has(id)).toBe(true);
+    }
+    expect(new Set(applied).size).toBe(applied.length);
   });
 });

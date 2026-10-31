@@ -1,0 +1,66 @@
+{
+    "status": "ok",
+    "apiVersion": "v1",
+    "personalize": {
+        "cache": "miss",
+        "kind": "ok",
+        "modelId": "muse-spark-1.3",
+        "promptVersion": "1.0.0",
+        "provider": "meta-model-api",
+        "spec": {
+            "placements": [
+                {
+                    "collapsed": false,
+                    "emphasis": "normal",
+                    "sectionId": "summary"
+                },
+                {
+                    "collapsed": false,
+                    "emphasis": "normal",
+                    "sectionId": "score"
+                },
+                {
+                    "collapsed": false,
+                    "emphasis": "high",
+                    "sectionId": "signals"
+                },
+                {
+                    "collapsed": false,
+                    "emphasis": "high",
+                    "sectionId": "plugin-findings"
+                },
+                {
+                    "collapsed": false,
+                    "emphasis": "normal",
+                    "sectionId": "evidence"
+                },
+                {
+                    "collapsed": false,
+                    "emphasis": "low",
+                    "sectionId": "cant-tell"
+                },
+                {
+                    "collapsed": false,
+                    "emphasis": "low",
+                    "sectionId": "expert-detail"
+                }
+            ],
+            "pluginRanking": [
+                "dev.brandklipparen.sell-block",
+                "dev.brandklipparen.blacklist",
+                "dev.brandklipparen.transfer-limits",
+                "dev.brandklipparen.transfer-hooks",
+                "dev.brandklipparen.transfer-fee",
+                "dev.brandklipparen.ownership",
+                "dev.brandklipparen.mint",
+                "dev.brandklipparen.pause",
+                "dev.brandklipparen.proxy-upgrade",
+                "dev.brandklipparen.capability",
+                "dev.brandklipparen.clone-match",
+                "dev.brandklipparen.decompiler",
+                "dev.brandklipparen.hard-to-analyze"
+            ],
+            "specVersion": 1
+        }
+    }
+}
