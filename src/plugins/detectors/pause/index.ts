@@ -24,11 +24,14 @@ import {
   analyzeOwnerControl,
   constSlotLoadNearFlavor,
   flavorBetween,
-  hasOwnerCallerCheck,
   hasRevertingJumpiAfter,
+  interpretRegionExprs,
   interpretRegionSlots,
   isStandardTokenWriter,
+  ownerCheckVia,
   packedBoolWriteAt,
+  packedBoolWriteExpr,
+  packedGateReadExpr,
   packedGateShift,
 } from "../../../domain/ownerControl.ts";
 import type { RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
@@ -188,7 +191,9 @@ function toggleMode(regions: readonly RegionFacts[], slot: number): "pause" | "t
 // packed-bool read resolves the shifted bit into `valueConst`, so the
 // same check also proves a packed `owner|paused` slot-0 write; v1 views
 // never carry packed values, so the scored finding set stays unchanged.
-function flagWriter(region: RegionFacts, slot: number): number | null {
+// Exported for the extended-proof diagnostics beside the detectors, which
+// re-run the same search to explain a missing fact.
+export function flagWriter(region: RegionFacts, slot: number): number | null {
   const store = region.stores.find(
     (candidate) => candidate.slot.kind === "const" && candidate.slot.value === slot,
   );
@@ -301,8 +306,10 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
 // Extended gate proof (P-11 session 1 follow-up): the flag read beside a
 // compare, with the compare PC so the caller can prove the blocked side
 // reverts. Kept beside `gatedFlagRead` (which the scored path owns) so
-// the v1 proof never changes.
-function gatedFlagReadPrecise(
+// the v1 proof never changes. Exported for the extended-proof diagnostics
+// beside the detectors, which re-run the same search to explain a missing
+// fact.
+export function gatedFlagReadPrecise(
   region: RegionFacts,
   slot: number,
 ): { readonly loadPc: number; readonly cmpPc: number } | null {
@@ -359,10 +366,15 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     if (isStandardTokenWriter(region.selector)) {
       continue;
     }
-    // The v2 interpreter proves the writer guard through DUP/SWAP chains.
+    // The v2 interpreter proves the writer guard through DUP/SWAP chains
+    // and expression matching; the window matcher stays as the fallback.
     const candidateSlots = interpretRegionSlots(input.bytecode, region.selector);
     const candidateSlotOf: SlotLookup = (pc) => candidateSlots.get(pc);
-    if (!hasOwnerCallerCheck(code, memberOf(region.selector), ownerSlot, candidateSlotOf)) {
+    const candidateExprs = interpretRegionExprs(input.bytecode, region.selector);
+    if (
+      ownerCheckVia(code, memberOf(region.selector), ownerSlot, candidateSlotOf, candidateExprs.jumpis) ===
+      null
+    ) {
       continue;
     }
     for (const store of region.stores) {
@@ -370,6 +382,19 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         continue;
       }
       if (store.valueIsZero || (store.valueConst !== null && store.valueConst <= 1)) {
+        candidates.add(store.slot.value);
+        continue;
+      }
+      // A masked packed-bool write stores a computed word
+      // (`(SLOAD s & ~mask) | (1 << k)`), so no constant sits beside the
+      // store and the value filter above never sees the slot. Prove the
+      // packed write at this SSTORE directly, trying the expression
+      // matcher first with the window matcher as the fallback.
+      const writeIndex = sstoreIndexAt(store.pc);
+      const legacyPacked =
+        writeIndex >= 0 ? packedBoolWriteAt(code, writeIndex, store.slot.value, candidateSlotOf) : null;
+      const exprPacked = packedBoolWriteExpr(store.slot.value, candidateExprs.stores.get(store.pc));
+      if (legacyPacked !== null || exprPacked !== null) {
         candidates.add(store.slot.value);
       }
     }
@@ -383,20 +408,39 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       const writerMember = memberOf(region.selector);
       const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
       const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
-      if (!hasOwnerCallerCheck(code, writerMember, ownerSlot, writerSlotOf)) {
+      const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
+      if (ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis) === null) {
         continue;
       }
-      const writePc = flagWriter(region, slot);
+      const legacyWritePc = flagWriter(region, slot);
+      // Expression-packed writes carry no constant beside the store, so
+      // the legacy writer lookup stays silent for them: fall back to the
+      // lowest member store the expression matcher proves.
+      let writePc = legacyWritePc;
       if (writePc === null) {
-        continue;
+        const exprStores = [...writerExprs.stores.entries()]
+          .filter(([, record]) => packedBoolWriteExpr(slot, record) !== null)
+          .map(([pc]) => pc)
+          .sort((left, right) => left - right);
+        const first = exprStores[0];
+        if (first === undefined) {
+          continue;
+        }
+        writePc = first;
       }
       // A packed writer proves a bit position that the gate must read
       // back: same slot and same shift, or the pair never proves one
       // flag. A plain (non-packed) writer carries no position, so only
-      // the slot must match.
+      // the slot must match. The expression matcher runs first with the
+      // window matcher as the fallback.
       const writeIndex = sstoreIndexAt(writePc);
-      const packedWrite =
+      const legacyPacked =
         writeIndex >= 0 ? (packedBoolWriteAt(code, writeIndex, slot, writerSlotOf) ?? null) : null;
+      const exprPacked = packedBoolWriteExpr(slot, writerExprs.stores.get(writePc));
+      const packedWrite =
+        exprPacked !== null
+          ? { value: 1 as const, shift: exprPacked.bit }
+          : legacyPacked;
       const orderedTransfers = [TRANSFER_SELECTOR, TRANSFER_FROM_SELECTOR]
         .filter((selector) => selector !== region.selector)
         .sort();
@@ -408,16 +452,25 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         const gateMember = memberOf(transferSelector);
         let gateEvidencePc: number | null = null;
         if (packedWrite !== null && packedWrite.shift !== null) {
-          const transferSlots = interpretRegionSlots(input.bytecode, transferSelector);
-          const transferSlotOf: SlotLookup = (pc) => transferSlots.get(pc);
-          const gate = packedGateShift(code, gateMember, slot, transferSlotOf);
-          if (gate === null || gate.shift !== packedWrite.shift) {
-            continue;
+          const transferExprs = interpretRegionExprs(input.bytecode, transferSelector);
+          const exprGate = packedGateReadExpr(transferExprs.jumpis, gateMember, slot);
+          if (exprGate !== null && exprGate.shift === packedWrite.shift) {
+            if (!hasRevertingJumpiAfter(code, gateMember, exprGate.jumpiPc - 1)) {
+              continue;
+            }
+            gateEvidencePc = exprGate.jumpiPc;
+          } else {
+            const transferSlots = interpretRegionSlots(input.bytecode, transferSelector);
+            const transferSlotOf: SlotLookup = (pc) => transferSlots.get(pc);
+            const gate = packedGateShift(code, gateMember, slot, transferSlotOf);
+            if (gate === null || gate.shift !== packedWrite.shift) {
+              continue;
+            }
+            if (!hasRevertingJumpiAfter(code, gateMember, gate.cmpPc)) {
+              continue;
+            }
+            gateEvidencePc = gate.loadPc;
           }
-          if (!hasRevertingJumpiAfter(code, gateMember, gate.cmpPc)) {
-            continue;
-          }
-          gateEvidencePc = gate.loadPc;
         } else {
           const gate = gatedFlagReadPrecise(transfer, slot);
           if (gate === null) {

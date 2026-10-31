@@ -17,6 +17,7 @@ import {
   CALLDATALOAD,
   ISZERO,
   KECCAK,
+  PACKED_MAPPING_SET,
   REVERT,
   SHARED_BLACKLIST_SET,
   SLOAD,
@@ -24,6 +25,7 @@ import {
   STOP,
   TRANSFER_FROM_SELECTOR,
   ownerGuard,
+  packedMappingBlacklistToken,
   push1,
   sharedBaseGateTokenHex,
   sharedBlacklistTokenHex,
@@ -241,5 +243,42 @@ describe("blacklist extended precision (P-11 follow-up)", () => {
       gateBase: 8,
     });
     expect(blacklistDetectorPlugin.detect(input)).toEqual([]);
+  });
+});
+
+describe("blacklist packed bool-in-mapping (P-11 follow-up)", () => {
+  function packedInput(writeBase = 5, gateBase = 5): DetectorInput {
+    const bytecode = packedMappingBlacklistToken(writeBase, gateBase);
+    return Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+  }
+
+  test("packed bool-in-mapping write from calldata reports an extended fact", () => {
+    // The onlyOwner setter stores `OR(AND(SLOAD(keccak), NOT(0xff)), value)`
+    // with the bool value from calldata, and the transfer path reverts
+    // while packed fields of the same entry read set. The two-field gate
+    // spans more than the beside window, so the scored and beside-window
+    // proofs stay silent while the extended packed-gate proof pairs the
+    // writer with the gate.
+    const findings = blacklistDetectorPlugin.detect(packedInput());
+    expect(findings).toHaveLength(1);
+    const finding = findings[0];
+    if (finding === undefined) {
+      throw new Error("expected exactly one finding");
+    }
+    expect(finding.id).toBe("dev.brandklipparen.blacklist:blacklist-extended");
+    expect(finding.payload).toEqual({ fact: "blacklist", proof: "extended" });
+    const selectors = finding.evidence.map((entry) => entry.selector as string).sort();
+    expect(selectors).toEqual([PACKED_MAPPING_SET, TRANSFER].sort());
+    for (const entry of finding.evidence) {
+      expect(typeof entry.offset).toBe("number");
+    }
+    const plain = JSON.parse(JSON.stringify(findings)) as unknown;
+    expect(validatePluginOutput(plain, blacklistDetectorPlugin.manifest.outputSchema)).toBe(true);
+  });
+
+  test("packed write with the gate on another base stays silent", () => {
+    // The guarded setter packs base 7 while the packed gate reads base
+    // 8: different mappings, so the packed gate never pairs.
+    expect(blacklistDetectorPlugin.detect(packedInput(7, 8))).toEqual([]);
   });
 });

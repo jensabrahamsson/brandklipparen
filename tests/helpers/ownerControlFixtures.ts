@@ -415,7 +415,7 @@ function expClearBody(bit: number): number[] {
   ];
 }
 
-function expGatedTransferBody(bit: number): number[] {
+export function expGatedTransferBody(bit: number): number[] {
   return [
     ...push1(2),
     ...push1(bit),
@@ -441,5 +441,277 @@ export function expPackedPauseToken(bit = 8): BytecodeType {
     { selector: EXP_PAUSE_SET, body: expSetBody(bit) },
     { selector: EXP_PAUSE_CLEAR, body: expClearBody(bit) },
     { selector: TRANSFER_SELECTOR, body: expGatedTransferBody(bit) },
+  ]);
+}
+
+// Masked old-solc packed pause (P-11 follow-up): the write value is a
+// computed word, never a constant. `pause()` sets the bit with
+// `OR(AND(SLOAD, NOT(mask)), 1 << k)` and `unpause()` clears it with
+// `AND(OR(SLOAD, mask), NOT(1 << k))`, both shift-built with
+// `PUSH 0x02 PUSH k EXP` (2**k); the transfer path reads the same slot
+// and bit back through DIV by the same shift, AND with 0xff and a
+// reverting gate. The v1 proof stays silent (no plain flag value sits
+// beside the stores) and the unmasked packed proof stays silent too (the
+// masking hides both shapes), while the extended masked proof pairs the
+// set/unset writers with the gate, so the mode is pause. Synthetic
+// selectors and hand-assembled bytecode only.
+export const MASKED_PAUSE_SET = "0x1a2b3c4d";
+export const MASKED_PAUSE_CLEAR = "0x5e6f7a8b";
+
+export function maskedPauseSetBody(bit: number): number[] {
+  return [
+    ...ownerGuard(0, 200),
+    ...push1(0),
+    SLOAD,
+    0x63,
+    0xff,
+    0xff,
+    0xff,
+    0x00,
+    NOT,
+    AND,
+    ...push1(1),
+    ...push1(2),
+    ...push1(bit),
+    EXP,
+    MUL,
+    OR,
+    ...push1(0),
+    SSTORE,
+    STOP,
+  ];
+}
+
+export function maskedPauseClearBody(bit: number): number[] {
+  return [
+    ...ownerGuard(0, 200),
+    ...push1(0),
+    SLOAD,
+    ...push1(0x01),
+    OR,
+    ...push1(2),
+    ...push1(bit),
+    EXP,
+    NOT,
+    AND,
+    ...push1(0),
+    SSTORE,
+    STOP,
+  ];
+}
+
+export function maskedPackedPauseToken(bit = 8): BytecodeType {
+  return tokenBytecode([
+    { selector: MASKED_PAUSE_SET, body: maskedPauseSetBody(bit) },
+    { selector: MASKED_PAUSE_CLEAR, body: maskedPauseClearBody(bit) },
+    { selector: TRANSFER_SELECTOR, body: expGatedTransferBody(bit) },
+  ]);
+}
+
+// Packed bool-in-mapping blacklist (P-11 follow-up): the onlyOwner setter
+// writes a mapping entry with the packed read-modify-write
+// `SSTORE(keccak, OR(AND(SLOAD(keccak), NOT(0xff)), value))`, the bool
+// value coming from calldata with the hash kept for the store, and the
+// transfer path reverts while packed fields of the same entry read set.
+// A two-field gate (a plain-masked field plus an EXP-shifted field
+// combined with OR) spans more than the beside window, so the scored and
+// beside-window proofs stay silent while the extended packed-gate proof
+// pairs the writer with the gate. `writeBase` and `gateBase` hash the
+// same entry only when equal. Synthetic selectors and hand-assembled
+// bytecode only.
+export const PACKED_MAPPING_SET = "0x3c4d5e6f";
+
+function packedMappingWriteBody(base: number): number[] {
+  return [
+    ...ownerGuard(0, 200),
+    CALLDATALOAD,
+    ...push1(0),
+    MSTORE,
+    ...push1(base),
+    ...push1(0x20),
+    MSTORE,
+    ...push1(0x40),
+    ...push1(0x00),
+    KECCAK,
+    0x80,
+    SLOAD,
+    ...push1(0xff),
+    NOT,
+    AND,
+    CALLDATALOAD,
+    OR,
+    0x90,
+    SSTORE,
+    STOP,
+  ];
+}
+
+function packedMappingGateBody(base: number): number[] {
+  return [
+    CALLDATALOAD,
+    ...push1(0),
+    MSTORE,
+    ...push1(base),
+    ...push1(0x20),
+    MSTORE,
+    ...push1(0x40),
+    ...push1(0x00),
+    KECCAK,
+    SLOAD,
+    ...push1(0xff),
+    AND,
+    ...push1(0x01),
+    AND,
+    ...push1(2),
+    ...push1(8),
+    EXP,
+    DIV,
+    ...push1(0xff),
+    AND,
+    ...push1(0x01),
+    AND,
+    OR,
+    ISZERO,
+    ...branchOk(),
+    ...push1(0),
+    0x80,
+    REVERT,
+    0x5b,
+    ...sstoreConstSlot(2, [CALLDATALOAD]),
+    STOP,
+  ];
+}
+
+export function packedMappingBlacklistToken(writeBase = 5, gateBase = 5): BytecodeType {
+  return tokenBytecode([
+    { selector: PACKED_MAPPING_SET, body: packedMappingWriteBody(writeBase) },
+    { selector: TRANSFER_SELECTOR, body: packedMappingGateBody(gateBase) },
+  ]);
+}
+
+// Old-solc 0.4.x packed bool write (P-10d): the exact instruction sequence
+// from real bytecode, hand-assembled with synthetic selectors only:
+// PUSH1 1; PUSH1 0; PUSH1 20; PUSH2 0x0100; EXP; DUP2; SLOAD; DUP2;
+// PUSH1 0xff; MUL; NOT; AND; SWAP1; DUP4; ISZERO; ISZERO; MUL; OR; SWAP1;
+// SSTORE — i.e. SSTORE(0, OR(AND(SLOAD(0), NOT(0xff*256**20)),
+// ISZERO(ISZERO(1))*256**20)). The shift 256**20 is built with base
+// 0x0100, which the legacy window matcher never names; the expression
+// interpreter folds EXP leniently and proves bit 160.
+export const OLD_SOLC_PAUSE_SET = "0x0a0b0c0d";
+
+const DUP2 = 0x81;
+const DUP4 = 0x83;
+const SWAP1 = 0x90;
+
+export function oldSolcWriteSeq(): number[] {
+  return [
+    0x60, 0x01, 0x60, 0x00, 0x60, 0x14, 0x61, 0x01, 0x00, EXP,
+    DUP2, SLOAD, DUP2, 0x60, 0xff, MUL, NOT, AND, SWAP1, DUP4,
+    ISZERO, ISZERO, MUL, OR, SWAP1, SSTORE,
+  ];
+}
+
+function oldSolcPauseBody(): number[] {
+  return [...ownerGuard(0, 200), ...oldSolcWriteSeq(), STOP];
+}
+
+function oldSolcGatedTransferBody(): number[] {
+  return [
+    ...push1(0),
+    SLOAD,
+    ...push1(0x14),
+    0x61, 0x01, 0x00,
+    EXP,
+    DIV,
+    ...push1(0xff),
+    AND,
+    ISZERO,
+    ...branchOk(),
+    ...push1(0),
+    0x80,
+    REVERT,
+    0x5b,
+    ...sstoreConstSlot(2, [CALLDATALOAD]),
+    STOP,
+  ];
+}
+
+export function oldSolcPauseToken(): BytecodeType {
+  return tokenBytecode([
+    { selector: OLD_SOLC_PAUSE_SET, body: oldSolcPauseBody() },
+    { selector: TRANSFER_SELECTOR, body: oldSolcGatedTransferBody() },
+  ]);
+}
+
+export function oldSolcPauseUnguardedToken(): BytecodeType {
+  return tokenBytecode([
+    { selector: OLD_SOLC_PAUSE_SET, body: [...oldSolcWriteSeq(), STOP] },
+    { selector: TRANSFER_SELECTOR, body: oldSolcGatedTransferBody() },
+  ]);
+}
+
+export const OZ4_BLACKLIST_SET = "0x12345678";
+
+export function oz4BlacklistTokenHex(writeBase = 5, gateBase = 5, guarded = true): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(OZ4_BLACKLIST_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(gateBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  if (guarded) {
+    asm.pushLabel2("retOwner").pushLabel2("funcOwner").op(0x56);
+    asm.label("retOwner").op(0x5b);
+    asm.pushLabel2("retSender").pushLabel2("funcSender").op(0x56);
+    asm.label("retSender").op(0x5b);
+    asm.op(0x14);
+    asm.pushLabel2("ok").op(0x57);
+    asm.push1(0x00).op(0x80, 0xfd);
+    asm.label("ok").op(0x5b);
+  }
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(writeBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55, 0x00);
+  if (guarded) {
+    asm.label("funcOwner").op(0x5b);
+    asm.push1(0x00).op(0x54, 0x90, 0x56);
+    asm.label("funcSender").op(0x5b);
+    asm.op(0x33, 0x90, 0x56);
+  }
+  asm.label("end").op(0x5b, 0xfe);
+  return asm.build();
+}
+
+export function oldSolcPauseBitMismatchToken(): BytecodeType {
+  return tokenBytecode([
+    { selector: OLD_SOLC_PAUSE_SET, body: oldSolcPauseBody() },
+    {
+      selector: TRANSFER_SELECTOR,
+      body: [
+        ...push1(0),
+        SLOAD,
+        ...push1(8),
+        SHR,
+        ...push1(0xff),
+        AND,
+        ISZERO,
+        ...branchOk(),
+        ...push1(0),
+        0x80,
+        REVERT,
+        0x5b,
+        ...sstoreConstSlot(2, [CALLDATALOAD]),
+        STOP,
+      ],
+    },
   ]);
 }

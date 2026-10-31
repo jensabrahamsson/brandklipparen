@@ -188,81 +188,432 @@ function pickSlot(interpreter: SlotRef | undefined, legacy: SlotRef): SlotRef {
   return interpreter;
 }
 
-// Abstract stack interpreter for v2 slot resolution (P-10c). Old solc
-// puts storage slots on the stack through PUSH/DUP/SWAP chains and moves
-// mapping hashes the same way, which the adjacent-PUSH window proof
-// never sees. Per region (one selector under v2 reachability) abstract
-// values flow through the blocks the entry reaches: const(n) for short
-// pushes, keccak with the proven mapping base for SHA3 over [0x00,0x40),
-// unknown for anything else. PUSHn, DUPn, SWAPn and POP move values;
-// MSTORE/MLOAD track constants at memory 0x00/0x20; SHA3 over 0x00/0x40
-// reads the base constant stored at 0x20; ADD of keccak and const keeps
-// the mapping base (struct/array offset); every other opcode pops its
-// inputs and pushes unknown results. Blocks walk in CFG order from the
-// entry with a per-block entry state; joins merge differing values to
-// unknown. Total and bounded: the visit cap and the depth cap hold on
-// hostile input, and the interpreter never throws.
-type V2Abs =
-  | { readonly tag: "const"; readonly value: number }
-  | { readonly tag: "keccak"; readonly base: number | null }
-  | { readonly tag: "unknown" };
+// Symbolic expression interpreter for v2 slot resolution (P-10d).
+// Upgrades the P-10c slot-value walk to small symbolic expressions over
+// the region's v2 blocks, including through resolved internal call/return
+// jumps (bounded fixpoint; differing values merge to unknown):
+// const(bigint) | caller | callvalue | calldata(offset) | sload(slot) |
+// keccak(words) | op(name, args) | unknown, with constant folding for the
+// arithmetic/compare ops via bigint masked to 256 bits, depth/size caps
+// (unknown beyond), and a memory model for the 0x00/0x20 words backing
+// keccak mapping slots. Old solc moves slots through PUSH/DUP/SWAP
+// chains and builds shifts with EXP/SHL, which the adjacent-PUSH window
+// proof never sees. Blocks walk in CFG order from the entry with a
+// per-block entry state; joins merge differing values to unknown. Total
+// and bounded: the visit cap, the stack depth cap and the expression
+// caps hold on hostile input, and the interpreter never throws.
+export type Expr =
+  | { readonly kind: "const"; readonly value: bigint }
+  | { readonly kind: "caller" }
+  | { readonly kind: "callvalue" }
+  | { readonly kind: "unknown" }
+  | { readonly kind: "calldata"; readonly offset: Expr }
+  | { readonly kind: "sload"; readonly slot: Expr }
+  | { readonly kind: "keccak"; readonly words: readonly Expr[] }
+  | { readonly kind: "op"; readonly name: string; readonly args: readonly Expr[] };
 
-const V2_UNKNOWN: V2Abs = Object.freeze({ tag: "unknown" }) as V2Abs;
+const EXPR_UNKNOWN: Expr = Object.freeze({ kind: "unknown" }) as Expr;
+const EXPR_CALLER: Expr = Object.freeze({ kind: "caller" }) as Expr;
+const EXPR_CALLVALUE: Expr = Object.freeze({ kind: "callvalue" }) as Expr;
+
+const MASK256 = (1n << 256n) - 1n;
+const MASK160 = (1n << 160n) - 1n;
 
 // Total block-visit budget for one region walk: merging only ever moves
 // values toward unknown, so the walk settles on its own; the cap is the
 // backstop on hostile shapes.
 export const V2_SLOT_MAX_VISITS = 4096;
 const V2_SLOT_MAX_DEPTH = 64;
+const EXPR_MAX_DEPTH = 12;
+const EXPR_MAX_NODES = 64;
 
-type V2State = {
-  readonly stack: readonly V2Abs[];
-  readonly mem0: V2Abs;
-  readonly mem32: V2Abs;
+export type ExprStoreRecord = {
+  readonly slot: Expr;
+  readonly value: Expr;
 };
 
-function v2PushValue(immediate: readonly number[]): V2Abs {
-  if (immediate.length === 0 || immediate.length > MAX_SLOT_PUSH_BYTES) {
-    return V2_UNKNOWN;
+export type RegionExprs = {
+  readonly stores: ReadonlyMap<number, ExprStoreRecord>;
+  readonly loads: ReadonlyMap<number, Expr>;
+  readonly jumpis: ReadonlyMap<number, Expr>;
+};
+
+type V2State = {
+  readonly stack: readonly Expr[];
+  readonly mem0: Expr;
+  readonly mem32: Expr;
+};
+
+function exprConstOf(value: bigint): Expr {
+  return Object.freeze({ kind: "const", value: value & MASK256 }) as Expr;
+}
+
+function exprPushValue(immediate: readonly number[]): Expr {
+  if (immediate.length === 0) {
+    return exprConstOf(0n);
   }
-  let value = 0;
+  if (immediate.length > 32) {
+    return EXPR_UNKNOWN;
+  }
+  let value = 0n;
   for (const byte of immediate) {
-    value = value * 256 + (byte ?? 0);
-    if (value > 0xffffffff) {
-      return V2_UNKNOWN;
+    value = (value * 256n + BigInt(byte ?? 0)) & MASK256;
+  }
+  return exprConstOf(value);
+}
+
+export function exprConstValue(expr: Expr | undefined): bigint | null {
+  if (expr !== undefined && expr.kind === "const") {
+    return expr.value;
+  }
+  return null;
+}
+
+
+
+function exprDepth(expr: Expr): number {
+  if (expr.kind === "const" || expr.kind === "caller" || expr.kind === "callvalue" || expr.kind === "unknown") {
+    return 0;
+  }
+  if (expr.kind === "calldata") {
+    return 1 + exprDepth(expr.offset);
+  }
+  if (expr.kind === "sload") {
+    return 1 + exprDepth(expr.slot);
+  }
+  if (expr.kind === "keccak") {
+    let depth = 0;
+    for (const word of expr.words) {
+      const wordDepth = exprDepth(word);
+      if (wordDepth > depth) {
+        depth = wordDepth;
+      }
+    }
+    return 1 + depth;
+  }
+  let depth = 0;
+  for (const arg of expr.args) {
+    const argDepth = exprDepth(arg);
+    if (argDepth > depth) {
+      depth = argDepth;
     }
   }
-  return Object.freeze({ tag: "const", value }) as V2Abs;
+  return 1 + depth;
 }
 
-function v2Equal(left: V2Abs, right: V2Abs): boolean {
-  if (left.tag !== right.tag) {
+function exprNodeCount(expr: Expr): number {
+  if (expr.kind === "const" || expr.kind === "caller" || expr.kind === "callvalue" || expr.kind === "unknown") {
+    return 1;
+  }
+  if (expr.kind === "calldata") {
+    return 1 + exprNodeCount(expr.offset);
+  }
+  if (expr.kind === "sload") {
+    return 1 + exprNodeCount(expr.slot);
+  }
+  if (expr.kind === "keccak") {
+    let total = 1;
+    for (const word of expr.words) {
+      total += exprNodeCount(word);
+    }
+    return total;
+  }
+  let total = 1;
+  for (const arg of expr.args) {
+    total += exprNodeCount(arg);
+  }
+  return total;
+}
+
+function exprOverCaps(depth: number, nodes: number): boolean {
+  return depth > EXPR_MAX_DEPTH || nodes > EXPR_MAX_NODES;
+}
+
+function powMod(base: bigint, exp: bigint): bigint {
+  if (exp < 0n) {
+    return 0n;
+  }
+  let result = 1n;
+  let power = base & MASK256;
+  let shift = exp;
+  while (shift > 0n) {
+    if ((shift & 1n) === 1n) {
+      result = (result * power) & MASK256;
+    }
+    power = (power * power) & MASK256;
+    shift >>= 1n;
+  }
+  return result;
+}
+
+function foldConstOp(name: string, args: readonly bigint[]): bigint | null {
+  const at = (index: number): bigint => args[index] ?? 0n;
+  switch (name) {
+    case "ADD":
+      return (at(0) + at(1)) & MASK256;
+    case "SUB":
+      return (at(0) - at(1)) & MASK256;
+    case "MUL":
+      return (at(0) * at(1)) & MASK256;
+    case "EXP": {
+      // Lenient like the legacy window proof: a {2,k} or {0x0100,k}
+      // pair in either order names the shift 2**k or 256**k, so the
+      // old-solc PUSH 20 PUSH 0x0100 EXP order still folds to 256**20.
+      const left = at(0);
+      const right = at(1);
+      const two = 2n;
+      const base256 = 0x100n;
+      if (left === two && right >= 0n && right < 256n) {
+        return powMod(two, right);
+      }
+      if (right === two && left >= 0n && left < 256n) {
+        return powMod(two, left);
+      }
+      if (left === base256 && right >= 0n && right < 256n) {
+        return powMod(base256, right);
+      }
+      if (right === base256 && left >= 0n && left < 256n) {
+        return powMod(base256, left);
+      }
+      if (right < 0n || right > MASK256) {
+        return 0n;
+      }
+      return powMod(left, right);
+    }
+    case "DIV":
+      return at(1) === 0n ? 0n : at(0) / at(1);
+    case "AND":
+      return at(0) & at(1);
+    case "OR":
+      return at(0) | at(1);
+    case "NOT":
+      return (~at(0)) & MASK256;
+    case "ISZERO":
+      return at(0) === 0n ? 1n : 0n;
+    case "EQ":
+      return at(0) === at(1) ? 1n : 0n;
+    case "LT":
+      return at(0) < at(1) ? 1n : 0n;
+    case "GT":
+      return at(0) > at(1) ? 1n : 0n;
+    case "SHL": {
+      // Args are [value, shift] (second stack item, then top).
+      const value = at(0);
+      const shift = at(1);
+      if (shift < 0n || shift >= 256n) {
+        return 0n;
+      }
+      return (value << shift) & MASK256;
+    }
+    case "SHR": {
+      const value = at(0);
+      const shift = at(1);
+      if (shift < 0n || shift >= 256n) {
+        return 0n;
+      }
+      return value >> shift;
+    }
+    default:
+      return null;
+  }
+}
+
+const FOLDABLE_OPS: ReadonlySet<string> = new Set([
+  "ADD",
+  "SUB",
+  "MUL",
+  "EXP",
+  "DIV",
+  "AND",
+  "OR",
+  "NOT",
+  "ISZERO",
+  "EQ",
+  "LT",
+  "GT",
+  "SHL",
+  "SHR",
+]);
+
+function exprMakeOp(name: string, args: readonly Expr[]): Expr {
+  const frozenArgs = Object.freeze(args.slice());
+  let depth = 1;
+  let nodes = 1;
+  for (const arg of frozenArgs) {
+    const argDepth = exprDepth(arg);
+    if (argDepth + 1 > depth) {
+      depth = argDepth + 1;
+    }
+    nodes += exprNodeCount(arg);
+  }
+  if (exprOverCaps(depth, nodes)) {
+    return EXPR_UNKNOWN;
+  }
+  if (FOLDABLE_OPS.has(name)) {
+    const values: bigint[] = [];
+    for (const arg of frozenArgs) {
+      if (arg.kind !== "const") {
+        values.length = 0;
+        break;
+      }
+      values.push(arg.value);
+    }
+    if (values.length === frozenArgs.length) {
+      const folded = foldConstOp(name, values);
+      if (folded !== null) {
+        return exprConstOf(folded);
+      }
+    }
+  }
+  return Object.freeze({ kind: "op", name, args: frozenArgs }) as Expr;
+}
+
+function exprMakeCalldata(offset: Expr): Expr {
+  const depth = 1 + exprDepth(offset);
+  const nodes = 1 + exprNodeCount(offset);
+  if (exprOverCaps(depth, nodes)) {
+    return EXPR_UNKNOWN;
+  }
+  return Object.freeze({ kind: "calldata", offset }) as Expr;
+}
+
+function exprMakeSload(slot: Expr): Expr {
+  const depth = 1 + exprDepth(slot);
+  const nodes = 1 + exprNodeCount(slot);
+  if (exprOverCaps(depth, nodes)) {
+    return EXPR_UNKNOWN;
+  }
+  return Object.freeze({ kind: "sload", slot }) as Expr;
+}
+
+function exprMakeKeccak(words: readonly Expr[]): Expr {
+  const frozen = Object.freeze(words.slice());
+  let depth = 1;
+  let nodes = 1;
+  for (const word of frozen) {
+    const wordDepth = exprDepth(word);
+    if (wordDepth + 1 > depth) {
+      depth = wordDepth + 1;
+    }
+    nodes += exprNodeCount(word);
+  }
+  if (exprOverCaps(depth, nodes)) {
+    return EXPR_UNKNOWN;
+  }
+  return Object.freeze({ kind: "keccak", words: frozen }) as Expr;
+}
+
+export function exprEqual(left: Expr, right: Expr): boolean {
+  if (left.kind !== right.kind) {
     return false;
   }
-  if (left.tag === "const" && right.tag === "const") {
+  if (left.kind === "const" && right.kind === "const") {
     return left.value === right.value;
   }
-  if (left.tag === "keccak" && right.tag === "keccak") {
-    return left.base === right.base;
+  if (left.kind === "caller" || left.kind === "callvalue" || left.kind === "unknown") {
+    return true;
   }
-  return true;
+  if (left.kind === "calldata" && right.kind === "calldata") {
+    return exprEqual(left.offset, right.offset);
+  }
+  if (left.kind === "sload" && right.kind === "sload") {
+    return exprEqual(left.slot, right.slot);
+  }
+  if (left.kind === "keccak" && right.kind === "keccak") {
+    if (left.words.length !== right.words.length) {
+      return false;
+    }
+    for (let index = 0; index < left.words.length; index += 1) {
+      if (!exprEqual(left.words[index] ?? EXPR_UNKNOWN, right.words[index] ?? EXPR_UNKNOWN)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (left.kind === "op" && right.kind === "op") {
+    if (left.name !== right.name || left.args.length !== right.args.length) {
+      return false;
+    }
+    for (let index = 0; index < left.args.length; index += 1) {
+      if (!exprEqual(left.args[index] ?? EXPR_UNKNOWN, right.args[index] ?? EXPR_UNKNOWN)) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return false;
 }
 
-function v2MergeValue(left: V2Abs, right: V2Abs): V2Abs {
-  return v2Equal(left, right) ? left : V2_UNKNOWN;
+function exprMergeValue(left: Expr, right: Expr): Expr {
+  return exprEqual(left, right) ? left : EXPR_UNKNOWN;
 }
 
-function v2SlotOf(key: V2Abs): SlotRef {
-  if (key.tag === "const") {
-    return { kind: "const", value: key.value };
+// Mapping info for a slot expression: undefined when not a mapping slot,
+// null base when the hash proves mapping-shaped but the base stays
+// unknown, otherwise the constant base number.
+function exprMappingInfo(slot: Expr): { readonly mapping: false } | { readonly mapping: true; readonly base: number | null } {
+  const baseOf = (word: Expr): number | null | undefined => {
+    const value = exprConstValue(word);
+    if (value === null) {
+      return null;
+    }
+    if (value > 0xffffffffn) {
+      return null;
+    }
+    return Number(value);
+  };
+  if (slot.kind === "keccak") {
+    if (slot.words.length !== 2) {
+      return { mapping: true, base: null };
+    }
+    const base = baseOf(slot.words[1] ?? EXPR_UNKNOWN);
+    if (base === undefined) {
+      return { mapping: true, base: null };
+    }
+    return { mapping: true, base };
   }
-  if (key.tag === "keccak") {
-    return { kind: "mapping", base: key.base };
+  if (slot.kind === "op" && slot.name === "ADD" && slot.args.length === 2) {
+    const left = slot.args[0] ?? EXPR_UNKNOWN;
+    const right = slot.args[1] ?? EXPR_UNKNOWN;
+    const leftInfo = exprMappingInfo(left);
+    const rightInfo = exprMappingInfo(right);
+    if (leftInfo.mapping && exprConstValue(right) !== null) {
+      return leftInfo;
+    }
+    if (rightInfo.mapping && exprConstValue(left) !== null) {
+      return rightInfo;
+    }
+  }
+  return { mapping: false };
+}
+
+export function exprMappingBase(slot: Expr | undefined): number | null | undefined {
+  if (slot === undefined) {
+    return undefined;
+  }
+  const info = exprMappingInfo(slot);
+  if (!info.mapping) {
+    return undefined;
+  }
+  return info.base;
+}
+
+function exprSlotOf(key: Expr): SlotRef {
+  const constant = exprConstValue(key);
+  if (constant !== null) {
+    if (constant <= 0xffffffffn) {
+      return { kind: "const", value: Number(constant) };
+    }
+    return { kind: "unknown" };
+  }
+  const info = exprMappingInfo(key);
+  if (info.mapping) {
+    return { kind: "mapping", base: info.base };
   }
   return { kind: "unknown" };
 }
 
-function v2MergeSlot(left: SlotRef, right: SlotRef): SlotRef {
+function exprMergeSlot(left: SlotRef, right: SlotRef): SlotRef {
   if (left.kind === "const" && right.kind === "const" && left.value === right.value) {
     return left;
   }
@@ -379,37 +730,60 @@ function v2EffectOf(opcode: number): { readonly pops: number; readonly pushes: n
 }
 
 type V2Sim = {
-  stack: V2Abs[];
-  mem0: V2Abs;
-  mem32: V2Abs;
+  stack: Expr[];
+  mem0: Expr;
+  mem32: Expr;
 };
 
-function v2Pop(sim: V2Sim): V2Abs {
-  return sim.stack.pop() ?? V2_UNKNOWN;
+function v2Pop(sim: V2Sim): Expr {
+  return sim.stack.pop() ?? EXPR_UNKNOWN;
 }
 
-function v2Push(sim: V2Sim, value: V2Abs): void {
+function v2Push(sim: V2Sim, value: Expr): void {
   if (sim.stack.length >= V2_SLOT_MAX_DEPTH) {
     sim.stack.shift();
   }
   sim.stack.push(value);
 }
 
-// Simulate one member block from its entry state, recording the slot of
-// every member SLOAD/SSTORE into `found` (conflicts merge to unknown).
-// Stops at the first halting opcode; JUMP/JUMPI end the block after
-// popping their inputs.
+function v2Pop2(sim: V2Sim): { readonly second: Expr; readonly top: Expr } {
+  const top = v2Pop(sim);
+  const second = v2Pop(sim);
+  return { second, top };
+}
+
+// Simulate one member block from its entry state, recording per SSTORE
+// (slot, value), per SLOAD (slot) and per JUMPI (condition) expressions
+// for member PCs (conflicts merge to unknown). Stops at the first
+// halting opcode; JUMP/JUMPI end the block after popping their inputs.
+type V2BlockResult = {
+  readonly sim: V2Sim;
+  readonly dest: Expr | null;
+};
+
 function v2SimulateBlock(
   block: CfgBlock,
   entry: V2State,
   isMember: (pc: number) => boolean,
-  found: Map<number, SlotRef>,
-): V2Sim {
+  stores: Map<number, ExprStoreRecord>,
+  loads: Map<number, Expr>,
+  jumpis: Map<number, Expr>,
+): V2BlockResult {
   const sim: V2Sim = { stack: [...entry.stack], mem0: entry.mem0, mem32: entry.mem32 };
-  const record = (pc: number, key: V2Abs): void => {
-    const slot = v2SlotOf(key);
-    const known = found.get(pc);
-    found.set(pc, known === undefined ? slot : v2MergeSlot(known, slot));
+  const recordSlot = (map: Map<number, Expr>, pc: number, slot: Expr): void => {
+    const known = map.get(pc);
+    map.set(pc, known === undefined ? slot : exprMergeValue(known, slot));
+  };
+  const recordStore = (pc: number, slot: Expr, value: Expr): void => {
+    const known = stores.get(pc);
+    if (known === undefined) {
+      stores.set(pc, Object.freeze({ slot, value }));
+      return;
+    }
+    stores.set(
+      pc,
+      Object.freeze({ slot: exprMergeValue(known.slot, slot), value: exprMergeValue(known.value, value) }),
+    );
   };
   for (const instruction of block.instructions) {
     const opcode = instruction.opcode;
@@ -417,16 +791,16 @@ function v2SimulateBlock(
       continue;
     }
     if (opcode === 0x5f) {
-      v2Push(sim, Object.freeze({ tag: "const", value: 0 }) as V2Abs);
+      v2Push(sim, exprConstOf(0n));
       continue;
     }
     if (opcode >= 0x60 && opcode <= 0x7f) {
-      v2Push(sim, v2PushValue(instruction.immediate));
+      v2Push(sim, exprPushValue(instruction.immediate));
       continue;
     }
     if (opcode >= 0x80 && opcode <= 0x8f) {
       const depth = opcode - 0x7f;
-      v2Push(sim, sim.stack[sim.stack.length - depth] ?? V2_UNKNOWN);
+      v2Push(sim, sim.stack[sim.stack.length - depth] ?? EXPR_UNKNOWN);
       continue;
     }
     if (opcode >= 0x90 && opcode <= 0x9f) {
@@ -434,11 +808,11 @@ function v2SimulateBlock(
       const top = sim.stack.length - 1;
       const other = top - depth;
       if (top >= 0 && other >= 0) {
-        const saved = sim.stack[top] ?? V2_UNKNOWN;
-        sim.stack[top] = sim.stack[other] ?? V2_UNKNOWN;
+        const saved = sim.stack[top] ?? EXPR_UNKNOWN;
+        sim.stack[top] = sim.stack[other] ?? EXPR_UNKNOWN;
         sim.stack[other] = saved;
       } else {
-        v2Push(sim, V2_UNKNOWN);
+        v2Push(sim, EXPR_UNKNOWN);
       }
       continue;
     }
@@ -446,92 +820,148 @@ function v2SimulateBlock(
       v2Pop(sim);
       continue;
     }
-    if (opcode === 0x01) {
-      const right = v2Pop(sim);
-      const left = v2Pop(sim);
-      if (left.tag === "const" && right.tag === "const") {
-        const sum = left.value + right.value;
-        v2Push(sim, sum <= 0xffffffff ? ({ tag: "const", value: sum }) : V2_UNKNOWN);
-      } else if (left.tag === "keccak" && right.tag === "const") {
-        v2Push(sim, Object.freeze({ tag: "keccak", base: left.base }) as V2Abs);
-      } else if (left.tag === "const" && right.tag === "keccak") {
-        v2Push(sim, Object.freeze({ tag: "keccak", base: right.base }) as V2Abs);
-      } else {
-        v2Push(sim, V2_UNKNOWN);
-      }
+    if (
+      opcode === 0x01 ||
+      opcode === 0x02 ||
+      opcode === 0x03 ||
+      opcode === 0x04 ||
+      opcode === 0x0a ||
+      opcode === 0x10 ||
+      opcode === 0x11 ||
+      opcode === 0x14 ||
+      opcode === 0x16 ||
+      opcode === 0x17 ||
+      opcode === 0x1b ||
+      opcode === 0x1c
+    ) {
+      const { second, top } = v2Pop2(sim);
+      const name =
+        opcode === 0x01
+          ? "ADD"
+          : opcode === 0x02
+            ? "MUL"
+            : opcode === 0x03
+              ? "SUB"
+              : opcode === 0x04
+                ? "DIV"
+                : opcode === 0x0a
+                  ? "EXP"
+                  : opcode === 0x10
+                    ? "LT"
+                    : opcode === 0x11
+                      ? "GT"
+                      : opcode === 0x14
+                        ? "EQ"
+                        : opcode === 0x16
+                          ? "AND"
+                          : opcode === 0x17
+                            ? "OR"
+                            : opcode === 0x1b
+                              ? "SHL"
+                              : "SHR";
+      v2Push(sim, exprMakeOp(name, [second, top]));
       continue;
     }
-    if (opcode === 0x52 || opcode === 0x53) {
+    if (opcode === 0x15 || opcode === 0x19) {
+      const value = v2Pop(sim);
+      v2Push(sim, exprMakeOp(opcode === 0x15 ? "ISZERO" : "NOT", [value]));
+      continue;
+    }
+    if (opcode === 0x33) {
+      v2Push(sim, EXPR_CALLER);
+      continue;
+    }
+    if (opcode === 0x34) {
+      v2Push(sim, EXPR_CALLVALUE);
+      continue;
+    }
+    if (opcode === 0x35) {
+      const offset = v2Pop(sim);
+      v2Push(sim, exprMakeCalldata(offset));
+      continue;
+    }
+    if (opcode === 0x52) {
       const offset = v2Pop(sim);
       const value = v2Pop(sim);
-      if (offset.tag === "const" && offset.value === 0) {
+      const offsetValue = exprConstValue(offset);
+      if (offsetValue === 0n) {
         sim.mem0 = value;
-      } else if (offset.tag === "const" && offset.value === 0x20) {
+      } else if (offsetValue === 0x20n) {
         sim.mem32 = value;
       }
       continue;
     }
     if (opcode === 0x51) {
       const address = v2Pop(sim);
-      if (address.tag === "const" && address.value === 0) {
+      const addressValue = exprConstValue(address);
+      if (addressValue === 0n) {
         v2Push(sim, sim.mem0);
-      } else if (address.tag === "const" && address.value === 0x20) {
+      } else if (addressValue === 0x20n) {
         v2Push(sim, sim.mem32);
       } else {
-        v2Push(sim, V2_UNKNOWN);
+        v2Push(sim, EXPR_UNKNOWN);
       }
       continue;
     }
     if (opcode === 0x20) {
       const offset = v2Pop(sim);
       const size = v2Pop(sim);
-      if (offset.tag === "const" && offset.value === 0 && size.tag === "const" && size.value === 0x40) {
-        const base = sim.mem32.tag === "const" ? sim.mem32.value : null;
-        v2Push(sim, Object.freeze({ tag: "keccak", base }) as V2Abs);
+      if (exprConstValue(offset) === 0n && exprConstValue(size) === 0x40n) {
+        v2Push(sim, exprMakeKeccak([sim.mem0, sim.mem32]));
       } else {
-        v2Push(sim, V2_UNKNOWN);
+        v2Push(sim, EXPR_UNKNOWN);
       }
       continue;
     }
     if (opcode === 0x54) {
-      const key = sim.stack[sim.stack.length - 1] ?? V2_UNKNOWN;
+      const key = sim.stack[sim.stack.length - 1] ?? EXPR_UNKNOWN;
       if (isMember(instruction.pc)) {
-        record(instruction.pc, key);
+        recordSlot(loads, instruction.pc, key);
       }
       v2Pop(sim);
-      v2Push(sim, V2_UNKNOWN);
+      v2Push(sim, exprMakeSload(key));
       continue;
     }
     if (opcode === 0x55) {
-      const key = sim.stack[sim.stack.length - 1] ?? V2_UNKNOWN;
+      const key = sim.stack[sim.stack.length - 1] ?? EXPR_UNKNOWN;
+      const value = sim.stack[sim.stack.length - 2] ?? EXPR_UNKNOWN;
       if (isMember(instruction.pc)) {
-        record(instruction.pc, key);
+        recordStore(instruction.pc, key, value);
       }
+      v2Pop(sim);
+      v2Pop(sim);
+      continue;
+    }
+    if (opcode === 0x53) {
       v2Pop(sim);
       v2Pop(sim);
       continue;
     }
     if (opcode === 0x56) {
-      v2Pop(sim);
-      return sim;
+      const dest = v2Pop(sim);
+      return { sim, dest };
     }
     if (opcode === 0x57) {
       v2Pop(sim);
-      v2Pop(sim);
-      return sim;
+      const condition = v2Pop(sim);
+      if (isMember(instruction.pc)) {
+        const known = jumpis.get(instruction.pc);
+        jumpis.set(instruction.pc, known === undefined ? condition : exprMergeValue(known, condition));
+      }
+      return { sim, dest: null };
     }
     const effect = v2EffectOf(opcode);
     if (effect === null) {
-      return sim;
+      return { sim, dest: null };
     }
     for (let at = 0; at < effect.pops; at += 1) {
       v2Pop(sim);
     }
     for (let at = 0; at < effect.pushes; at += 1) {
-      v2Push(sim, V2_UNKNOWN);
+      v2Push(sim, EXPR_UNKNOWN);
     }
   }
-  return sim;
+  return { sim, dest: null };
 }
 
 // A dynamic JUMP block: ends in JUMP with no proven jump edge, so v1
@@ -552,14 +982,14 @@ function v2MergeState(known: V2State | undefined, incoming: V2State): { readonly
     return { state: incoming, changed: true };
   }
   const length = Math.min(known.stack.length, incoming.stack.length);
-  const stack: V2Abs[] = [];
+  const stack: Expr[] = [];
   for (let at = 0; at < length; at += 1) {
-    stack.push(v2MergeValue(known.stack[at] ?? V2_UNKNOWN, incoming.stack[at] ?? V2_UNKNOWN));
+    stack.push(exprMergeValue(known.stack[at] ?? EXPR_UNKNOWN, incoming.stack[at] ?? EXPR_UNKNOWN));
   }
   const state: V2State = Object.freeze({
     stack: Object.freeze(stack),
-    mem0: v2MergeValue(known.mem0, incoming.mem0),
-    mem32: v2MergeValue(known.mem32, incoming.mem32),
+    mem0: exprMergeValue(known.mem0, incoming.mem0),
+    mem32: exprMergeValue(known.mem32, incoming.mem32),
   });
   // Changed only when the merged content differs from the known entry:
   // truncation to the shorter stack counts, but an incoming state that
@@ -568,25 +998,27 @@ function v2MergeState(known: V2State | undefined, incoming: V2State): { readonly
   let changed = known.stack.length !== length;
   if (!changed) {
     for (let at = 0; at < length; at += 1) {
-      if (!v2Equal(known.stack[at] ?? V2_UNKNOWN, stack[at] ?? V2_UNKNOWN)) {
+      if (!exprEqual(known.stack[at] ?? EXPR_UNKNOWN, stack[at] ?? EXPR_UNKNOWN)) {
         changed = true;
         break;
       }
     }
   }
-  if (!changed && (!v2Equal(known.mem0, state.mem0) || !v2Equal(known.mem32, state.mem32))) {
+  if (!changed && (!exprEqual(known.mem0, state.mem0) || !exprEqual(known.mem32, state.mem32))) {
     changed = true;
   }
   return { state, changed };
 }
 
-// Resolve every member SLOAD/SSTORE slot of one v2 region through the
-// abstract stack interpreter: const slots surface through DUP/SWAP
+// Resolve every member SLOAD/SSTORE/JUMPI of one v2 region through the
+// symbolic expression interpreter: const slots surface through DUP/SWAP
 // chains and mapping slots carry their proven base (null when the base
-// stays unknown). Total: hostile bytecode yields a partial map, never
-// an exception.
-export function interpretRegionSlots(bytecode: BytecodeType, selector: SelectorType): ReadonlyMap<number, SlotRef> {
-  const found = new Map<number, SlotRef>();
+// stays unknown), with per-store values and per-jump conditions.
+// Total: hostile bytecode yields partial maps, never an exception.
+export function interpretRegionExprs(bytecode: BytecodeType, selector: SelectorType): RegionExprs {
+  const stores = new Map<number, ExprStoreRecord>();
+  const loads = new Map<number, Expr>();
+  const jumpis = new Map<number, Expr>();
   try {
     const cfg = buildCfg(lift(bytecode));
     let entryTarget: number | null = null;
@@ -597,7 +1029,7 @@ export function interpretRegionSlots(bytecode: BytecodeType, selector: SelectorT
       }
     }
     if (entryTarget === null) {
-      return found;
+      return { stores, loads, jumpis };
     }
     let entryBlock = -1;
     for (const block of cfg.blocks) {
@@ -607,7 +1039,7 @@ export function interpretRegionSlots(bytecode: BytecodeType, selector: SelectorT
       }
     }
     if (entryBlock < 0 || entryBlock >= cfg.blocks.length) {
-      return found;
+      return { stores, loads, jumpis };
     }
     const attribution = attributeFunctions(bytecode, { mode: "v2" });
     const isMember = (pc: number): boolean => attribution.holdersOf(pc).includes(selector);
@@ -633,7 +1065,11 @@ export function interpretRegionSlots(bytecode: BytecodeType, selector: SelectorT
       }
     }
     const entries = new Map<number, V2State>();
-    const empty: V2State = Object.freeze({ stack: Object.freeze([]), mem0: V2_UNKNOWN, mem32: V2_UNKNOWN });
+    const empty: V2State = Object.freeze({
+      stack: Object.freeze([]),
+      mem0: EXPR_UNKNOWN,
+      mem32: EXPR_UNKNOWN,
+    });
     entries.set(entryBlock, empty);
     const queue: number[] = [entryBlock];
     let visits = 0;
@@ -645,11 +1081,11 @@ export function interpretRegionSlots(bytecode: BytecodeType, selector: SelectorT
         continue;
       }
       visits += 1;
-      const simulated = v2SimulateBlock(block, entry, isMember, found);
+      const simulated = v2SimulateBlock(block, entry, isMember, stores, loads, jumpis);
       const exit: V2State = Object.freeze({
-        stack: Object.freeze(simulated.stack),
-        mem0: simulated.mem0,
-        mem32: simulated.mem32,
+        stack: Object.freeze(simulated.sim.stack),
+        mem0: simulated.sim.mem0,
+        mem32: simulated.sim.mem32,
       });
       const targets: number[] = [];
       for (const edge of block.successors) {
@@ -659,10 +1095,26 @@ export function interpretRegionSlots(bytecode: BytecodeType, selector: SelectorT
           targets.push(edge.to);
         }
       }
-      // A resolved dynamic return may continue at any reached member
-      // JUMPDEST, mirroring the v2 return-jump resolver.
+      // A resolved dynamic return continues at its pushed return
+      // address when the stack proves it (internal call/return through
+      // the v2 blocks); an unknown destination falls back to every
+      // reached member JUMPDEST, mirroring the v2 return-jump resolver.
       if (v2IsDynamicJump(block)) {
-        targets.push(...returnBlocks);
+        const destValue = exprConstValue(simulated.dest ?? EXPR_UNKNOWN);
+        let precise = -1;
+        if (destValue !== null) {
+          for (const candidate of returnBlocks) {
+            if (cfg.blocks[candidate]?.range.startPc === Number(destValue)) {
+              precise = candidate;
+              break;
+            }
+          }
+        }
+        if (precise >= 0) {
+          targets.push(precise);
+        } else {
+          targets.push(...returnBlocks);
+        }
       }
       for (const target of targets) {
         if (target < 0 || target >= cfg.blocks.length || !isWalkable(target)) {
@@ -674,6 +1126,27 @@ export function interpretRegionSlots(bytecode: BytecodeType, selector: SelectorT
           queue.push(target);
         }
       }
+    }
+  } catch {
+    // Bounded by construction; partial maps still beat no maps.
+  }
+  return { stores, loads, jumpis };
+}
+
+// Slot lookup derived from the expression walk, so the legacy SlotRef
+// consumers keep working while the detectors read the richer maps. A
+// known expression result always wins; unknown keeps the legacy unknown.
+export function interpretRegionSlots(bytecode: BytecodeType, selector: SelectorType): ReadonlyMap<number, SlotRef> {
+  const found = new Map<number, SlotRef>();
+  try {
+    const exprs = interpretRegionExprs(bytecode, selector);
+    for (const [pc, slot] of exprs.loads) {
+      found.set(pc, exprSlotOf(slot));
+    }
+    for (const [pc, record] of exprs.stores) {
+      const slot = exprSlotOf(record.slot);
+      const known = found.get(pc);
+      found.set(pc, known === undefined ? slot : exprMergeSlot(known, slot));
     }
   } catch {
     // Bounded by construction; a partial map still beats no map.
@@ -775,12 +1248,16 @@ export function callTargetOfInstruction(
 // by `PUSH 0x0100^k MUL`, by `SHL`, or (old solc) by `PUSH 0x02 PUSH k
 // EXP` (2**k), then the store back to `s`. A pure shifted-OR set with no
 // NOT proves bit 1; a shifted AND with NOT and no OR proves the clear to
-// bit 0. Anything else (both, neither, no shift, a jump between the load
-// and the store) stays unrecognised and keeps its null value, so an
-// ambiguous write never doubles as a flag write. The scan reads the
-// linear stream, so the no-jump requirement doubles as a linearity
-// guard: a threshold crossed between functions belongs to other code and
-// must not prove a packed write.
+// bit 0. Old solc with neighbouring packed fields masks first, so a
+// masked read-modify-write (`OR(AND(cur, NOT(mask)), 1 << k)` setting
+// bit k, `AND(OR(cur, mask), NOT(1 << k))` clearing it) proves the bit
+// the trailing combining op decides: a trailing OR sets it, a trailing
+// AND with NOT clears it. Anything else (no shift, a lone NOT-masked OR
+// with no AND, a jump between the load and the store) stays unrecognised
+// and keeps its null value, so an ambiguous write never doubles as a
+// flag write. The scan reads the linear stream, so the no-jump
+// requirement doubles as a linearity guard: a threshold crossed between
+// functions belongs to other code and must not prove a packed write.
 export type PackedBoolProof = {
   // The proven bit value, with the bit position when the shift constant
   // names it (null when the shift is proven but its position is not, as
@@ -827,6 +1304,7 @@ export function packedBoolWriteAt(
   let hasOr = false;
   let hasAnd = false;
   let hasNot = false;
+  let lastCombine: "or" | "and" | null = null;
   let hasMulShift = false;
   let hasShlShift = false;
   let hasExpShift = false;
@@ -850,8 +1328,10 @@ export function packedBoolWriteAt(
     }
     if (opcode === 0x17) {
       hasOr = true;
+      lastCombine = "or";
     } else if (opcode === 0x16) {
       hasAnd = true;
+      lastCombine = "and";
     } else if (opcode === 0x19) {
       hasNot = true;
     } else if (opcode === 0x02) {
@@ -950,6 +1430,14 @@ export function packedBoolWriteAt(
   }
   if (hasAnd && hasNot && !hasOr) {
     return Object.freeze({ value: 0 as const, shift: shiftPosition });
+  }
+  if (hasOr && hasAnd && hasNot) {
+    if (lastCombine === "or") {
+      return Object.freeze({ value: 1 as const, shift: shiftPosition });
+    }
+    if (lastCombine === "and") {
+      return Object.freeze({ value: 0 as const, shift: shiftPosition });
+    }
   }
   return null;
 }
@@ -1612,6 +2100,729 @@ export function packedGateShift(
         return Object.freeze({ loadPc: loadInsn.pc, cmpPc: candidate.pc, shift: shift ?? 0 });
       }
     }
+  }
+  return null;
+}
+
+// Packed-bool gate proof for bool-in-mapping entries (P-11 follow-up):
+// the transfer path reads a hashed entry and a packed field inside it —
+// SLOAD of the mapping entry, then a shift by the field position (DIV by
+// 2**k with the old-solc EXP-built constant, DIV by a pushed power of
+// two, or SHR by k), then AND with 0xff, then an EQ or ISZERO compare.
+// Real packed reads span more than the near-flavor window (a multi-field
+// entry reads every field before combining them), so this scan walks up
+// to 48 PCs past the load like the const-slot packed gate proof instead
+// of the 16-PC beside window the scored path owns. Returns the load and
+// compare PCs with the proven shift and the entry mapping base, or null.
+// A null base stays silent: an unknown mapping never proves a pair.
+export type PackedMappingGate = {
+  readonly loadPc: number;
+  readonly cmpPc: number;
+  readonly shift: number;
+  readonly base: number;
+};
+
+export function packedMappingGateShift(
+  insns: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  slotOf?: SlotLookup,
+): PackedMappingGate | null {
+  const divisorShift = (divIndex: number): number | null => {
+    for (let back = divIndex - 1, steps = 0; back >= 0 && steps < 8; back -= 1, steps += 1) {
+      const candidate = insns[back];
+      if (candidate === undefined) {
+        break;
+      }
+      if (candidate.opcode === 0x0a) {
+        const first = insns[back - 1];
+        const second = insns[back - 2];
+        if (
+          first === undefined ||
+          second === undefined ||
+          first.opcode < 0x60 ||
+          first.opcode > 0x7f ||
+          second.opcode < 0x60 ||
+          second.opcode > 0x7f
+        ) {
+          continue;
+        }
+        const firstValue = pushNumber(first.immediate);
+        const secondValue = pushNumber(second.immediate);
+        if (firstValue === 0x02 && secondValue !== null && secondValue > 0) {
+          return secondValue;
+        }
+        if (secondValue === 0x02 && firstValue !== null && firstValue > 0) {
+          return firstValue;
+        }
+      }
+    }
+    const adjacent = insns[divIndex - 1];
+    if (adjacent !== undefined && adjacent.opcode >= 0x60 && adjacent.opcode <= 0x7f) {
+      const value = pushNumber(adjacent.immediate);
+      if (value !== null && value > 1 && (value & (value - 1)) === 0) {
+        return Math.log2(value);
+      }
+    }
+    return null;
+  };
+  for (let load = 0; load < insns.length; load += 1) {
+    const loadInsn = insns[load];
+    if (loadInsn === undefined || loadInsn.opcode !== 0x54 || !isMember(loadInsn.pc)) {
+      continue;
+    }
+    const base = mappingBaseNearAccess(insns, isMember, loadInsn.pc, slotOf);
+    if (base === null) {
+      continue;
+    }
+    let shift: number | null = null;
+    let masked = false;
+    for (let at = load + 1, steps = 0; at < insns.length && steps < 48; at += 1, steps += 1) {
+      const candidate = insns[at];
+      if (candidate === undefined) {
+        break;
+      }
+      if (
+        candidate.opcode === 0x56 ||
+        candidate.opcode === 0x57 ||
+        candidate.opcode === 0x5b ||
+        candidate.opcode === 0x00 ||
+        candidate.opcode === 0xfd ||
+        candidate.opcode === 0xf3 ||
+        candidate.opcode === 0xfe
+      ) {
+        break;
+      }
+      if (!isMember(candidate.pc)) {
+        continue;
+      }
+      if (shift === null && candidate.opcode === 0x04) {
+        const proven = divisorShift(at);
+        if (proven !== null) {
+          shift = proven;
+        }
+        continue;
+      }
+      if (shift === null && candidate.opcode === 0x1c) {
+        const amount = insns[at - 1];
+        if (amount !== undefined && amount.opcode >= 0x60 && amount.opcode <= 0x7f) {
+          const value = pushNumber(amount.immediate);
+          if (value !== null && value > 0) {
+            shift = value;
+          }
+        }
+        continue;
+      }
+      if (shift !== null && !masked && candidate.opcode === 0x16) {
+        const mask = insns[at - 1];
+        if (
+          mask !== undefined &&
+          mask.opcode >= 0x60 &&
+          mask.opcode <= 0x7f &&
+          pushNumber(mask.immediate) === 0xff
+        ) {
+          masked = true;
+        }
+        continue;
+      }
+      if (masked && (candidate.opcode === 0x15 || candidate.opcode === 0x14)) {
+        return Object.freeze({ loadPc: loadInsn.pc, cmpPc: candidate.pc, shift: shift ?? 0, base });
+      }
+    }
+  }
+  return null;
+}
+
+// Expression matchers for v2 only (P-10d). Each tries the symbolic
+// interpreter result first; the legacy instruction-window matcher stays as
+// the fallback, so a proof the expressions cannot name still proves the
+// old way. The `Via` helpers name which matcher proved a step for the
+// extended-proof diagnostics.
+function exprStripIszero(expr: Expr): { readonly inner: Expr; readonly count: number } {
+  let inner = expr;
+  let count = 0;
+  while (inner.kind === "op" && inner.name === "ISZERO" && inner.args.length === 1) {
+    inner = inner.args[0] ?? EXPR_UNKNOWN;
+    count += 1;
+  }
+  return { inner, count };
+}
+
+function exprIsCallerSide(expr: Expr): boolean {
+  if (expr.kind === "caller") {
+    return true;
+  }
+  if (expr.kind === "op" && expr.name === "AND" && expr.args.length === 2) {
+    const left = expr.args[0] ?? EXPR_UNKNOWN;
+    const right = expr.args[1] ?? EXPR_UNKNOWN;
+    const maskOf = (candidate: Expr): boolean => exprConstValue(candidate) === MASK160;
+    if (left.kind === "caller" && maskOf(right)) {
+      return true;
+    }
+    if (right.kind === "caller" && maskOf(left)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function exprIsOwnerLoadSide(expr: Expr, ownerSlot: number): boolean {
+  const wanted = BigInt(ownerSlot);
+  if (expr.kind === "sload" && exprConstValue(expr.slot) === wanted) {
+    return true;
+  }
+  if (expr.kind === "op" && expr.name === "AND" && expr.args.length === 2) {
+    const left = expr.args[0] ?? EXPR_UNKNOWN;
+    const right = expr.args[1] ?? EXPR_UNKNOWN;
+    const maskOf = (candidate: Expr): boolean => exprConstValue(candidate) === MASK160;
+    const loadOf = (candidate: Expr): boolean =>
+      candidate.kind === "sload" && exprConstValue(candidate.slot) === wanted;
+    if (loadOf(left) && maskOf(right)) {
+      return true;
+    }
+    if (loadOf(right) && maskOf(left)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function exprIsOwnerEq(expr: Expr, ownerSlot: number): boolean {
+  if (expr.kind !== "op" || expr.name !== "EQ" || expr.args.length !== 2) {
+    return false;
+  }
+  const left = expr.args[0] ?? EXPR_UNKNOWN;
+  const right = expr.args[1] ?? EXPR_UNKNOWN;
+  return (
+    (exprIsOwnerLoadSide(left, ownerSlot) && exprIsCallerSide(right)) ||
+    (exprIsOwnerLoadSide(right, ownerSlot) && exprIsCallerSide(left))
+  );
+}
+
+// Owner caller check through expressions: a member JUMPI whose condition
+// (through ISZERO chains) is EQ of the owner load and caller (each
+// masked or not), with a revert on the failing side. Returns the proving
+// jump pc or null.
+export function ownerCheckExpr(
+  code: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  ownerSlot: number,
+  jumpis: ReadonlyMap<number, Expr>,
+): number | null {
+  for (const [pc, cond] of jumpis) {
+    if (!isMember(pc)) {
+      continue;
+    }
+    if (cond.kind === "unknown") {
+      continue;
+    }
+    const { inner } = exprStripIszero(cond);
+    if (!exprIsOwnerEq(inner, ownerSlot)) {
+      continue;
+    }
+    if (hasRevertingJumpiAfter(code, isMember, pc - 1)) {
+      return pc;
+    }
+  }
+  return null;
+}
+
+export function ownerCheckVia(
+  code: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  ownerSlot: number,
+  slotOf?: SlotLookup,
+  jumpis?: ReadonlyMap<number, Expr>,
+): "expr" | "window" | null {
+  if (jumpis !== undefined && ownerCheckExpr(code, isMember, ownerSlot, jumpis) !== null) {
+    return "expr";
+  }
+  if (hasOwnerCallerCheck(code, isMember, ownerSlot, slotOf)) {
+    return "window";
+  }
+  return null;
+}
+
+function exprLog2(value: bigint): number | null {
+  if (value <= 0n) {
+    return null;
+  }
+  if ((value & (value - 1n)) !== 0n) {
+    return null;
+  }
+  let bit = 0;
+  let rest = value;
+  while (rest > 1n) {
+    rest >>= 1n;
+    bit += 1;
+  }
+  return bit;
+}
+
+function exprShiftBit(expr: Expr): number | null {
+  const direct = exprConstValue(expr);
+  if (direct !== null) {
+    return exprLog2(direct);
+  }
+  if (expr.kind === "op" && expr.name === "EXP" && expr.args.length === 2) {
+    const left = exprConstValue(expr.args[0] ?? EXPR_UNKNOWN);
+    const right = exprConstValue(expr.args[1] ?? EXPR_UNKNOWN);
+    if (left === 2n && right !== null && right > 0n && right < 256n) {
+      return Number(right);
+    }
+    if (right === 2n && left !== null && left > 0n && left < 256n) {
+      return Number(left);
+    }
+    if (left === 0x100n && right !== null && right > 0n && right < 256n) {
+      return Number(right) * 8;
+    }
+    if (right === 0x100n && left !== null && left > 0n && left < 256n) {
+      return Number(left) * 8;
+    }
+    return null;
+  }
+  if (expr.kind === "op" && expr.name === "SHL" && expr.args.length === 2) {
+    const value = exprConstValue(expr.args[0] ?? EXPR_UNKNOWN);
+    const shift = exprConstValue(expr.args[1] ?? EXPR_UNKNOWN);
+    if (value === 1n && shift !== null && shift >= 0n && shift < 256n) {
+      return Number(shift);
+    }
+  }
+  return null;
+}
+
+function exprMaskBit(mask: Expr): number | null {
+  const direct = exprConstValue(mask);
+  if (direct !== null) {
+    const single = exprLog2(direct);
+    if (single !== null) {
+      return single;
+    }
+    if (direct % 0xffn === 0n) {
+      const shift = direct / 0xffn;
+      const bit = exprLog2(shift);
+      if (bit !== null && shift * 0xffn === direct) {
+        return bit;
+      }
+    }
+    return null;
+  }
+  if (mask.kind === "op" && mask.name === "MUL" && mask.args.length === 2) {
+    const left = mask.args[0] ?? EXPR_UNKNOWN;
+    const right = mask.args[1] ?? EXPR_UNKNOWN;
+    if (exprConstValue(left) === 0xffn) {
+      return exprShiftBit(right);
+    }
+    if (exprConstValue(right) === 0xffn) {
+      return exprShiftBit(left);
+    }
+  }
+  return exprShiftBit(mask);
+}
+
+function exprContainsCalldata(expr: Expr): boolean {
+  if (expr.kind === "calldata") {
+    return true;
+  }
+  if (expr.kind === "sload") {
+    return exprContainsCalldata(expr.slot);
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprContainsCalldata(word));
+  }
+  if (expr.kind === "op") {
+    return expr.args.some((arg) => exprContainsCalldata(arg));
+  }
+  return false;
+}
+
+function exprIsBoolish(expr: Expr): boolean {
+  const direct = exprConstValue(expr);
+  if (direct === 0n || direct === 1n) {
+    return true;
+  }
+  if (expr.kind === "op" && expr.name === "ISZERO" && expr.args.length === 1) {
+    const inner = expr.args[0] ?? EXPR_UNKNOWN;
+    if (inner.kind === "op" && inner.name === "ISZERO") {
+      return true;
+    }
+  }
+  if (expr.kind === "op" && expr.name === "AND" && expr.args.length === 2) {
+    const left = expr.args[0] ?? EXPR_UNKNOWN;
+    const right = expr.args[1] ?? EXPR_UNKNOWN;
+    const masked =
+      (exprConstValue(left) === 0xffn && exprContainsCalldata(right)) ||
+      (exprConstValue(right) === 0xffn && exprContainsCalldata(left));
+    if (masked) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function exprContainsSloadOf(expr: Expr, slot: number): boolean {
+  const wanted = BigInt(slot);
+  if (expr.kind === "sload" && exprConstValue(expr.slot) === wanted) {
+    return true;
+  }
+  if (expr.kind === "sload") {
+    return exprContainsSloadOf(expr.slot, slot);
+  }
+  if (expr.kind === "calldata") {
+    return exprContainsSloadOf(expr.offset, slot);
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprContainsSloadOf(word, slot));
+  }
+  if (expr.kind === "op") {
+    return expr.args.some((arg) => exprContainsSloadOf(arg, slot));
+  }
+  return false;
+}
+
+function exprIsShiftedBoolish(expr: Expr, bit: number): boolean {
+  const direct = exprConstValue(expr);
+  if (direct !== null) {
+    if (direct === 0n) {
+      return true;
+    }
+    const shiftBit = exprLog2(direct);
+    return shiftBit !== null && shiftBit === bit;
+  }
+  if (expr.kind === "op" && expr.name === "MUL" && expr.args.length === 2) {
+    const left = expr.args[0] ?? EXPR_UNKNOWN;
+    const right = expr.args[1] ?? EXPR_UNKNOWN;
+    const leftBit = exprShiftBit(left);
+    const rightBit = exprShiftBit(right);
+    if (exprIsBoolish(left) && rightBit !== null && rightBit === bit) {
+      return true;
+    }
+    if (exprIsBoolish(right) && leftBit !== null && leftBit === bit) {
+      return true;
+    }
+    return false;
+  }
+  if (expr.kind === "op" && expr.name === "SHL" && expr.args.length === 2) {
+    const value = expr.args[0] ?? EXPR_UNKNOWN;
+    const shift = exprConstValue(expr.args[1] ?? EXPR_UNKNOWN);
+    if (exprIsBoolish(value) && shift !== null && Number(shift) === bit) {
+      return true;
+    }
+  }
+  if (exprIsBoolish(expr) && bit === 0) {
+    return true;
+  }
+  return false;
+}
+
+function opArgs2(expr: Expr, name: "AND" | "OR"): readonly [Expr, Expr] | null {
+  if (expr.kind !== "op" || expr.name !== name || expr.args.length !== 2) {
+    return null;
+  }
+  return [expr.args[0] ?? EXPR_UNKNOWN, expr.args[1] ?? EXPR_UNKNOWN];
+}
+
+function notArg(expr: Expr): Expr | null {
+  if (expr.kind === "op" && expr.name === "NOT" && expr.args.length === 1) {
+    return expr.args[0] ?? EXPR_UNKNOWN;
+  }
+  return null;
+}
+
+// Packed bool write through expressions: SSTORE(slot, OR(AND(sload,
+// NOT(mask)), shiftedBool)) and its set/clear variants. The shift is any
+// power of two (from folded EXP/SHL/const), the mask the same bit or the
+// 0xff byte field over it, and the boolish side ISZERO(ISZERO(x)), a 0/1
+// const, or calldata masked to 0xff.
+export function packedBoolWriteExpr(slot: number, store: ExprStoreRecord | undefined): { readonly bit: number } | null {
+  if (store === undefined || exprConstValue(store.slot) !== BigInt(slot)) {
+    return null;
+  }
+  const value = store.value;
+  if (value.kind === "unknown") {
+    return null;
+  }
+  const orPair = opArgs2(value, "OR");
+  if (orPair !== null) {
+    const orders: readonly (readonly [Expr, Expr])[] = [orPair, [orPair[1], orPair[0]]];
+    for (const [andPart, shiftedPart] of orders) {
+      const andPair = opArgs2(andPart, "AND");
+      if (andPair === null) {
+        continue;
+      }
+      const andOrders: readonly (readonly [Expr, Expr])[] = [andPair, [andPair[1], andPair[0]]];
+      for (const [curPart, notPart] of andOrders) {
+        const mask = notArg(notPart);
+        if (mask === null) {
+          continue;
+        }
+        const maskBit = exprMaskBit(mask);
+        if (maskBit === null || !exprContainsSloadOf(curPart, slot)) {
+          continue;
+        }
+        if (exprIsShiftedBoolish(shiftedPart, maskBit)) {
+          return Object.freeze({ bit: maskBit });
+        }
+      }
+    }
+    for (const [curPart, shiftPart] of orPair !== null ? [[orPair[0], orPair[1]] as const, [orPair[1], orPair[0]] as const] : []) {
+      if (exprContainsSloadOf(curPart, slot)) {
+        const bit = exprShiftBit(shiftPart);
+        if (bit !== null) {
+          return Object.freeze({ bit });
+        }
+      }
+    }
+  }
+  if (value.kind === "op" && value.name === "AND" && value.args.length === 2) {
+    const left = value.args[0] ?? EXPR_UNKNOWN;
+    const right = value.args[1] ?? EXPR_UNKNOWN;
+    const orders: readonly (readonly [Expr, Expr])[] = [
+      [left, right],
+      [right, left],
+    ];
+    for (const [first, second] of orders) {
+      const orPairInner = opArgs2(first, "OR");
+      const shiftedMask = notArg(second);
+      if (orPairInner !== null && shiftedMask !== null) {
+        const innerOrders: readonly (readonly [Expr, Expr])[] = [
+          [orPairInner[0], orPairInner[1]],
+          [orPairInner[1], orPairInner[0]],
+        ];
+        for (const [curPart, maskPart] of innerOrders) {
+          const maskBit = exprMaskBit(maskPart);
+          if (maskBit === null || !exprContainsSloadOf(curPart, slot)) {
+            continue;
+          }
+          if (exprIsShiftedBoolish(shiftedMask, maskBit)) {
+            return Object.freeze({ bit: maskBit });
+          }
+        }
+        continue;
+      }
+      const shiftMask = notArg(second);
+      if (shiftMask !== null && exprContainsSloadOf(first, slot)) {
+        const bit = exprShiftBit(shiftMask) ?? exprMaskBit(shiftMask);
+        if (bit !== null) {
+          return Object.freeze({ bit });
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export function packedBoolWriteVia(
+  slot: number,
+  store: ExprStoreRecord | undefined,
+  legacy: { readonly shift: number | null } | null,
+): "expr" | "window" | null {
+  if (store !== undefined && packedBoolWriteExpr(slot, store) !== null) {
+    return "expr";
+  }
+  if (legacy !== null) {
+    return "window";
+  }
+  return null;
+}
+
+type GateHit = { readonly shift: number };
+
+function gateDivShift(side: Expr): { readonly shift: number; readonly inner: Expr } | null {
+  if (side.kind !== "op") {
+    return null;
+  }
+  if (side.name === "DIV" && side.args.length === 2) {
+    const left = side.args[0] ?? EXPR_UNKNOWN;
+    const right = side.args[1] ?? EXPR_UNKNOWN;
+    const leftBit = exprShiftBit(left);
+    const rightBit = exprShiftBit(right);
+    if (rightBit !== null) {
+      return { shift: rightBit, inner: left };
+    }
+    if (leftBit !== null) {
+      return { shift: leftBit, inner: right };
+    }
+    return null;
+  }
+  if (side.name === "SHR" && side.args.length === 2) {
+    const left = side.args[0] ?? EXPR_UNKNOWN;
+    const right = side.args[1] ?? EXPR_UNKNOWN;
+    const leftConst = exprConstValue(left);
+    const rightConst = exprConstValue(right);
+    if (rightConst !== null && rightConst >= 0n && rightConst < 256n) {
+      return { shift: Number(rightConst), inner: left };
+    }
+    if (leftConst !== null && leftConst >= 0n && leftConst < 256n) {
+      return { shift: Number(leftConst), inner: right };
+    }
+  }
+  return null;
+}
+
+function gateMaskedShift(expr: Expr): GateHit | null {
+  if (expr.kind === "op" && expr.name === "AND" && expr.args.length === 2) {
+    const left = expr.args[0] ?? EXPR_UNKNOWN;
+    const right = expr.args[1] ?? EXPR_UNKNOWN;
+    const orders: readonly (readonly [Expr, Expr])[] = [
+      [left, right],
+      [right, left],
+    ];
+    for (const [maybeMask, maybeDiv] of orders) {
+      if (exprConstValue(maybeMask) !== 0xffn) {
+        continue;
+      }
+      const div = gateDivShift(maybeDiv);
+      if (div !== null) {
+        return { shift: div.shift };
+      }
+    }
+  }
+  return null;
+}
+
+function findGateShift(expr: Expr): GateHit | null {
+  const direct = gateMaskedShift(expr);
+  if (direct !== null) {
+    return direct;
+  }
+  if (expr.kind === "sload") {
+    return findGateShift(expr.slot);
+  }
+  if (expr.kind === "calldata") {
+    return findGateShift(expr.offset);
+  }
+  if (expr.kind === "keccak") {
+    for (const word of expr.words) {
+      const hit = findGateShift(word);
+      if (hit !== null) {
+        return hit;
+      }
+    }
+    return null;
+  }
+  if (expr.kind === "op") {
+    for (const arg of expr.args) {
+      const hit = findGateShift(arg);
+      if (hit !== null) {
+        return hit;
+      }
+    }
+  }
+  return null;
+}
+
+function gateInnerHasConstSload(inner: Expr, slot: number): boolean {
+  return exprContainsSloadOf(inner, slot);
+}
+
+function gateInnerMappingBase(inner: Expr): number | null {
+  let found: number | null | undefined;
+  const visit = (expr: Expr): void => {
+    if (expr.kind === "sload") {
+      const base = exprMappingBase(expr.slot);
+      if (base !== undefined && base !== null && found === undefined) {
+        found = base;
+      }
+      visit(expr.slot);
+      return;
+    }
+    if (expr.kind === "calldata") {
+      visit(expr.offset);
+      return;
+    }
+    if (expr.kind === "keccak") {
+      for (const word of expr.words) {
+        visit(word);
+      }
+      return;
+    }
+    if (expr.kind === "op") {
+      for (const arg of expr.args) {
+        visit(arg);
+      }
+    }
+  };
+  visit(inner);
+  return found ?? null;
+}
+
+// Packed gate read through expressions: AND(DIV/SHR(sload, shift),
+// 0xff) feeding EQ/ISZERO into the JUMPI condition.
+export function packedGateExpr(cond: Expr, slot: number): { readonly shift: number } | null {
+  const visit = (expr: Expr): { readonly shift: number } | null => {
+    const masked = gateMaskedShift(expr);
+    if (masked !== null) {
+      return masked;
+    }
+    if (expr.kind === "sload") {
+      return visit(expr.slot);
+    }
+    if (expr.kind === "calldata") {
+      return visit(expr.offset);
+    }
+    if (expr.kind === "keccak") {
+      for (const word of expr.words) {
+        const hit = visit(word);
+        if (hit !== null) {
+          return hit;
+        }
+      }
+      return null;
+    }
+    if (expr.kind === "op") {
+      for (const arg of expr.args) {
+        const hit = visit(arg);
+        if (hit !== null) {
+          if (arg.kind === "op" || expr.name === "EQ" || expr.name === "ISZERO") {
+            return hit;
+          }
+          return hit;
+        }
+      }
+    }
+    return null;
+  };
+  const hit = visit(cond);
+  if (hit === null) {
+    return null;
+  }
+  return gateInnerHasConstSload(cond, slot) ? hit : null;
+}
+
+export function packedGateReadExpr(
+  jumpis: ReadonlyMap<number, Expr>,
+  isMember: (pc: number) => boolean,
+  slot: number,
+): { readonly jumpiPc: number; readonly shift: number } | null {
+  for (const [pc, cond] of jumpis) {
+    if (!isMember(pc) || cond.kind === "unknown") {
+      continue;
+    }
+    const hit = packedGateExpr(cond, slot);
+    if (hit !== null) {
+      return { jumpiPc: pc, shift: hit.shift };
+    }
+  }
+  return null;
+}
+
+export function packedMappingGateExpr(
+  jumpis: ReadonlyMap<number, Expr>,
+  isMember: (pc: number) => boolean,
+): { readonly jumpiPc: number; readonly shift: number; readonly base: number } | null {
+  for (const [pc, cond] of jumpis) {
+    if (!isMember(pc) || cond.kind === "unknown") {
+      continue;
+    }
+    const hit = findGateShift(cond);
+    if (hit === null) {
+      continue;
+    }
+    const base = gateInnerMappingBase(cond);
+    if (base === null) {
+      continue;
+    }
+    return { jumpiPc: pc, shift: hit.shift, base };
   }
   return null;
 }

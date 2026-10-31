@@ -62,7 +62,10 @@ the proven owner slot (standard token entries never count); the gate
 sits on a transfer/transferFrom path whose blocked side reverts;
 and a packed writer must write the same slot and bit the gate reads —
 including the old-solc shift built as `PUSH 0x02 PUSH k EXP` (2**k),
-read back through DIV or SHR by the same shift with AND `0xff`.
+read back through DIV or SHR by the same shift with AND `0xff`, and
+masked read-modify-write forms (`OR(AND(cur, NOT(mask)), 1 << k)`
+setting the bit, `AND(OR(cur, mask), NOT(1 << k))` clearing it), which
+resolve to the bit the trailing combining op decides.
 
 ## Limitations / false positives
 
@@ -99,3 +102,8 @@ Precision update: the extended writer must prove a caller check against
 the owner slot, only a reverting gate on the transfer path proper
 counts, and a packed writer must write the same slot and bit the gate
 reads (old-solc `PUSH 0x02 PUSH k EXP` shifts included).
+
+Follow-up: masked read-modify-write stores prove the written bit too,
+so a packed write with no constant beside the store still names its
+candidate slot; a lone NOT-masked OR with no AND, or a write with no
+shift idiom, still proves nothing.

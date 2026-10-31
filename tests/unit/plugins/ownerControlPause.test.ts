@@ -17,12 +17,18 @@ import {
   CALLDATALOAD,
   EXP_PAUSE_SET,
   ISZERO,
+  MASKED_PAUSE_CLEAR,
+  MASKED_PAUSE_SET,
   PACKED_PAUSE_SET,
   REVERT,
   SLOAD,
   STOP,
   ownerGuard,
+  expGatedTransferBody,
   expPackedPauseToken,
+  maskedPackedPauseToken,
+  maskedPauseClearBody,
+  maskedPauseSetBody,
   packedPauseToken,
   push1,
   sstoreConstSlot,
@@ -183,5 +189,47 @@ describe("pause extended analysis (P-11)", () => {
     expect(selectors).toEqual([EXP_PAUSE_SET, TRANSFER].sort());
     const plain = JSON.parse(JSON.stringify(findings)) as unknown;
     expect(validatePluginOutput(plain, pauseDetectorPlugin.manifest.outputSchema)).toBe(true);
+  });
+});
+
+describe("pause masked packed write (P-11 follow-up)", () => {
+  function maskedInput(): DetectorInput {
+    const bytecode = maskedPackedPauseToken();
+    return Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+  }
+
+  test("masked old-solc pause with a computed write value reports an extended fact", () => {
+    // Both stores write a computed word (`(SLOAD & ~mask) | (1 << k)`
+    // and its clear), so no constant sits beside either store and the
+    // value filter never sees slot 0. The extended masked proof resolves
+    // the set to bit 1 and the clear to bit 0, pairs the set writer with
+    // the gate reading the same slot and bit, and reports pause.
+    const findings = pauseDetectorPlugin.detect(maskedInput());
+    expect(findings).toHaveLength(1);
+    const finding = findings[0];
+    if (finding === undefined) {
+      throw new Error("expected exactly one finding");
+    }
+    expect(finding.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(finding.payload).toEqual({ fact: "pause", slot: 0, mode: "pause", proof: "extended" });
+    const selectors = finding.evidence.map((entry) => entry.selector as string).sort();
+    expect(selectors).toEqual([MASKED_PAUSE_SET, TRANSFER].sort());
+    for (const entry of finding.evidence) {
+      expect(typeof entry.offset).toBe("number");
+    }
+    const plain = JSON.parse(JSON.stringify(findings)) as unknown;
+    expect(validatePluginOutput(plain, pauseDetectorPlugin.manifest.outputSchema)).toBe(true);
+  });
+
+  test("masked writer on another bit than the gate stays silent", () => {
+    // The writers set and clear bit 9 while the transfer path gates on
+    // bit 8: same slot, different bit, so no pair is proven.
+    const bytecode = tokenBytecode([
+      { selector: MASKED_PAUSE_SET, body: maskedPauseSetBody(9) },
+      { selector: MASKED_PAUSE_CLEAR, body: maskedPauseClearBody(9) },
+      { selector: TRANSFER, body: expGatedTransferBody(8) },
+    ]);
+    const input: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+    expect(pauseDetectorPlugin.detect(input)).toEqual([]);
   });
 });

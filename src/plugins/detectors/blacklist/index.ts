@@ -21,13 +21,17 @@ import {
   TRANSFER_FROM_SELECTOR,
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
+  exprMappingBase,
   flavorBetween,
-  hasOwnerCallerCheck,
   hasRevertingJumpiAfter,
+  interpretRegionExprs,
   interpretRegionSlots,
   isStandardTokenWriter,
   mappingBaseNearAccess,
   mappingLoadNearFlavor,
+  ownerCheckVia,
+  packedMappingGateExpr,
+  packedMappingGateShift,
 } from "../../../domain/ownerControl.ts";
 import type { RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
@@ -230,8 +234,10 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
 // Extended gate proof (P-11 session 1 follow-up): the mapping read beside
 // a compare, with the compare PC so the caller can prove the blocked side
 // reverts. Kept beside `gatedMappingRead` (which the scored path owns)
-// so the v1 proof never changes.
-function gatedMappingReadPrecise(region: RegionFacts): { readonly loadPc: number; readonly cmpPc: number } | null {
+// so the v1 proof never changes. Exported for the extended-proof
+// diagnostics beside the detectors, which re-run the same search to
+// explain a missing fact.
+export function gatedMappingReadPrecise(region: RegionFacts): { readonly loadPc: number; readonly cmpPc: number } | null {
   if (!region.hasKeccak || !region.hasJumpi || !region.hasRevert) {
     return null;
   }
@@ -285,18 +291,22 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     }
     const writerMember = memberOf(region.selector);
     // The v2 interpreter proves the writer slot through DUP/SWAP chains
-    // and prefers its mapping base over the window scan.
+    // and expression matching, preferring its mapping base over the
+    // window scan with the window as the fallback.
     const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
     const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
-    if (!hasOwnerCallerCheck(code, writerMember, ownerSlot, writerSlotOf)) {
+    const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
+    if (ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis) === null) {
       continue;
     }
     for (const write of region.stores) {
       if (write.slot.kind !== "mapping") {
         continue;
       }
-      const writeBase = mappingBaseNearAccess(code, writerMember, write.pc, writerSlotOf);
-      if (writeBase === null) {
+      const exprBase = exprMappingBase(writerExprs.stores.get(write.pc)?.slot);
+      const windowBase = mappingBaseNearAccess(code, writerMember, write.pc, writerSlotOf);
+      const writeBase = exprBase ?? windowBase;
+      if (writeBase === null || writeBase === undefined) {
         continue;
       }
       const transferSelectors = [TRANSFER_SELECTOR, TRANSFER_FROM_SELECTOR]
@@ -307,18 +317,52 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         if (transfer === undefined) {
           continue;
         }
-        const gate = gatedMappingReadPrecise(transfer);
-        if (gate === null) {
-          continue;
-        }
         const gateMember = memberOf(transferSelector);
         const gateSlots = interpretRegionSlots(input.bytecode, transferSelector);
         const gateSlotOf: SlotLookup = (pc) => gateSlots.get(pc);
-        const gateBase = mappingBaseNearAccess(code, gateMember, gate.loadPc, gateSlotOf);
-        if (gateBase === null || gateBase !== writeBase) {
-          continue;
+        // The beside-window gate first, so every pair the scored-adjacent
+        // proof already proves keeps its load and compare PCs bit for bit.
+        let gateEvidencePc: number | null = null;
+        const gate = gatedMappingReadPrecise(transfer);
+        if (gate !== null) {
+          const gateBase = mappingBaseNearAccess(code, gateMember, gate.loadPc, gateSlotOf);
+          if (
+            gateBase !== null &&
+            gateBase === writeBase &&
+            hasRevertingJumpiAfter(code, gateMember, gate.cmpPc)
+          ) {
+            gateEvidencePc = gate.loadPc;
+          }
         }
-        if (!hasRevertingJumpiAfter(code, gateMember, gate.cmpPc)) {
+        if (gateEvidencePc === null) {
+          // Packed bool-in-mapping gate fallback: the expression matcher
+          // runs first with the window matcher as the fallback. Real
+          // packed reads span more than the beside window, so a gate the
+          // window cannot see still proves when it reads the written
+          // entry (same base) through a shift-and-mask read whose blocked
+          // side reverts.
+          const transferExprs = interpretRegionExprs(input.bytecode, transferSelector);
+          const exprGate = packedMappingGateExpr(transferExprs.jumpis, gateMember);
+          if (
+            exprGate !== null &&
+            exprGate.base === writeBase &&
+            hasRevertingJumpiAfter(code, gateMember, exprGate.jumpiPc - 1)
+          ) {
+            gateEvidencePc = exprGate.jumpiPc;
+          }
+        }
+        if (gateEvidencePc === null) {
+          // Window packed shift-and-mask fallback (P-11 follow-up).
+          const packedGate = packedMappingGateShift(code, gateMember, gateSlotOf);
+          if (
+            packedGate !== null &&
+            packedGate.base === writeBase &&
+            hasRevertingJumpiAfter(code, gateMember, packedGate.cmpPc)
+          ) {
+            gateEvidencePc = packedGate.loadPc;
+          }
+        }
+        if (gateEvidencePc === null) {
           continue;
         }
         // Shared code belongs to every entry that reaches it, so the
@@ -329,10 +373,10 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         const holder =
           attribution.holderOf(write.pc) ??
           (holdersOfWrite.includes(transferSelector) ? transferSelector : firstWriteHolder);
-        const holdersOfGate = [...attribution.holdersOf(gate.loadPc)].sort();
+        const holdersOfGate = [...attribution.holdersOf(gateEvidencePc)].sort();
         const firstGateHolder = holdersOfGate[0] === undefined ? null : holdersOfGate[0];
         const gateHolder =
-          attribution.holderOf(gate.loadPc) ??
+          attribution.holderOf(gateEvidencePc) ??
           (holdersOfGate.includes(transferSelector) ? transferSelector : firstGateHolder);
         if (holder === null || gateHolder === null) {
           continue;
@@ -342,7 +386,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         if (written !== null) {
           evidence.push(written);
         }
-        const gateEvidence = evidenceFor(input.bytecode, gateHolder, gate.loadPc);
+        const gateEvidence = evidenceFor(input.bytecode, gateHolder, gateEvidencePc);
         if (gateEvidence !== null) {
           evidence.push(gateEvidence);
         }

@@ -66,7 +66,9 @@ whose blocked side reverts.
 The mapping shape is resolved structurally: a hash-mixed access counts,
 a direct constant slot read in the transfer path does not. The gate
 compare must sit beside the loaded entry (within a short window), not
-merely in the same function. A gate that blocks by reverting with no
+merely in the same function; a packed shift-and-mask read of a
+bool-in-mapping entry may span more, proved separately with the same
+base and a reverting jump. A gate that blocks by reverting with no
 value compare, or by arithmetic instead of a compare, stays silent. A
 finding never says the gate was used, only that the bytecode proves the
 privileged path.
@@ -94,3 +96,8 @@ Precision update: the extended writer must prove a caller check against
 the owner slot, standard token entries never count as writers, the
 writer and gate mappings must share their base slot, and only a
 reverting gate on the transfer path proper counts.
+
+Follow-up: a packed shift-and-mask gate read that spans more than the
+beside window proves as a fallback when it reads the written base and
+its blocked side reverts; the beside-window proof keeps its load and
+compare PCs wherever it already proves.
