@@ -13,7 +13,8 @@
 // short window marks mapping-derived access, and anything else stays
 // unknown. Where the proof is incomplete the detectors emit no positive
 // finding rather than a guessed one.
-import { attributeFunctions } from "./evmFlow.ts";
+import { attributeFunctions, findFunctionEntries } from "./evmFlow.ts";
+import { buildCfg, lift, resolveEntryReachV2 } from "./evmLift.ts";
 import { disassemble, extractSelectors } from "./selectors.ts";
 import type { Instruction, SelectorEntry } from "./selectors.ts";
 import type { Bytecode as BytecodeType, Selector as SelectorType } from "./types.ts";
@@ -482,11 +483,25 @@ export function flavorBetween(
   return false;
 }
 
+// Reachability mode for region membership (P-10). `v1` is the scored
+// default: a region holds exactly the instructions one entry uniquely
+// reaches, so shared helpers belong to no region. `v2` reruns reachability
+// per entry through the return-jump resolver, so a shared helper reached
+// through a dynamic return belongs to every entry that reaches it. The
+// scored detector path always uses `v1`; `v2` is display-only until P-11
+// re-measures the plugins.
+export type ReachMode = "v1" | "v2";
+
+export type OwnerControlOptions = {
+  readonly reach?: ReachMode;
+};
+
 // Structural owner-control view over frozen bytecode. Total: any bytecode
 // maps to a view, possibly with no regions, no owner slot and no transfer
 // paths, and the detectors below turn an empty proof into no findings
 // rather than a guess.
-export function analyzeOwnerControl(bytecode: BytecodeType): OwnerControlView {
+export function analyzeOwnerControl(bytecode: BytecodeType, options?: OwnerControlOptions): OwnerControlView {
+  const reach = options?.reach ?? "v1";
   const code = disassemble(bytecode);
   const entries = extractSelectors(bytecode).filter(
     (entry): entry is Extract<SelectorEntry, { kind: "paired" }> => entry.kind === "paired",
@@ -494,18 +509,27 @@ export function analyzeOwnerControl(bytecode: BytecodeType): OwnerControlView {
   const byTarget = entries.slice().sort((left, right) => (left.target as number) - (right.target as number));
   // One reachability lookup per instruction: a region holds exactly the
   // instructions its entry reaches, so shared tails and dead code belong
-  // to no region instead of the neighbouring entry.
-  const attribution = attributeFunctions(bytecode);
+  // to no region instead of the neighbouring entry. In v2 the lookup
+  // reads every holder, so shared blocks reached through a resolved
+  // return join each entry that reaches them.
+  const attribution = attributeFunctions(bytecode, { mode: reach });
   const holderByPc = new Map<number, string>();
+  const holdersByPc = new Map<number, readonly SelectorType[]>();
   for (const instruction of code) {
     const holder = attribution.holderOf(instruction.pc);
     holderByPc.set(instruction.pc, holder === null ? "" : (holder as string));
+    holdersByPc.set(instruction.pc, attribution.holdersOf(instruction.pc));
   }
   const regions: RegionFacts[] = [];
   for (const entry of byTarget) {
     const start = entry.target as number;
-    const wanted = entry.selector as string;
-    regions.push(regionOf(entry.selector, start, code, (pc) => holderByPc.get(pc) === wanted));
+    const wanted = entry.selector;
+    if (reach === "v2") {
+      regions.push(regionOf(entry.selector, start, code, (pc) => holdersByPc.get(pc)?.includes(wanted) ?? false));
+    } else {
+      const expected = wanted as string;
+      regions.push(regionOf(entry.selector, start, code, (pc) => holderByPc.get(pc) === expected));
+    }
   }
 
   // Owner slot: a constant slot loaded in a region that also compares
@@ -567,6 +591,39 @@ function transferPaths(regions: readonly RegionFacts[]): readonly SelectorType[]
 // Regions of the view keyed by selector for one lookup per detector.
 export function regionBySelector(view: OwnerControlView, selector: SelectorType): RegionFacts | undefined {
   return view.regions.find((region) => region.selector === selector);
+}
+
+// Reachability diagnostics for later display (P-10, display-only): the
+// unresolved dynamic-jump count under v1 against the count left after the
+// v2 return-jump resolver. A v1 jump counts as resolved in v2 when at
+// least one function entry resolves it, so the v2 count never exceeds the
+// v1 count. Frozen and total like every other view in this module.
+export type ReachDiagnostics = {
+  readonly entries: number;
+  readonly v1UnresolvedJumps: number;
+  readonly v2UnresolvedJumps: number;
+};
+
+export function diagnoseReachability(bytecode: BytecodeType): ReachDiagnostics {
+  const cfg = buildCfg(lift(bytecode));
+  const found = findFunctionEntries(bytecode, cfg);
+  const resolved = new Set<number>();
+  for (const entry of found) {
+    for (const atPc of resolveEntryReachV2(cfg, entry.entryBlock).resolvedJumpAtPc) {
+      resolved.add(atPc);
+    }
+  }
+  let v2Unresolved = 0;
+  for (const jump of cfg.unresolvedJumps) {
+    if (!resolved.has(jump.atPc)) {
+      v2Unresolved += 1;
+    }
+  }
+  return Object.freeze({
+    entries: found.length,
+    v1UnresolvedJumps: cfg.unresolvedJumps.length,
+    v2UnresolvedJumps: v2Unresolved,
+  });
 }
 
 // Regions of the view keyed by selector for one lookup per detector.
