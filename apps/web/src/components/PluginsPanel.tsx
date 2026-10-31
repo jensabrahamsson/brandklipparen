@@ -59,6 +59,17 @@ function payloadSchemaOf(outputSchema: unknown): unknown {
   return outputSchema;
 }
 
+// Weight-0 extended-analysis findings (P-11) carry a `fact` key with
+// `proof: "extended"` instead of a scored `feature` key. They never enter
+// the score; the badge says so next to the finding title.
+function isExtendedFinding(payload: unknown): boolean {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return false;
+  }
+  const record = payload as { readonly [key: string]: unknown };
+  return typeof record["fact"] === "string" && record["proof"] === "extended";
+}
+
 function ResultBlock({
   heading,
   findings,
@@ -83,6 +94,11 @@ function ResultBlock({
       {findings.map((finding) => (
         <li key={finding.id}>
           {finding.title}{" "}
+          {isExtendedFinding(finding.payload) ? (
+            <span className="chip" data-testid={`extended-badge-${finding.id}`}>
+              Extended analysis · not in score
+            </span>
+          ) : null}{" "}
           <Explain explainKey="evidence:payload" label={`Finding ${finding.id}`} />
           {finding.payload === undefined ? null : (
             <div style={{ margin: "4px 0 4px 12px" }}>

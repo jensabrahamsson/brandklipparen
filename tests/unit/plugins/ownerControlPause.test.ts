@@ -9,16 +9,21 @@
 import { describe, expect, test } from "vitest";
 import { Bytecode, CodeHash } from "../../../src/domain/types.ts";
 import type { DetectorInput } from "../../../src/plugins/detector.ts";
+import { validatePluginOutput } from "../../../src/plugins/detector.ts";
 import type { Result } from "../../../src/domain/result.ts";
 import { pauseDetectorPlugin } from "../../../src/plugins/detectors/pause/index.ts";
 import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
 import {
   CALLDATALOAD,
+  EXP_PAUSE_SET,
   ISZERO,
+  PACKED_PAUSE_SET,
   REVERT,
   SLOAD,
   STOP,
   ownerGuard,
+  expPackedPauseToken,
+  packedPauseToken,
   push1,
   sstoreConstSlot,
   tokenBytecode,
@@ -122,5 +127,61 @@ describe("pause detector plugin", () => {
       codeHash: mustOk(CodeHash.of(parsed.value)),
     });
     expect(pauseDetectorPlugin.detect(input)).toEqual([]);
+  });
+});
+
+describe("pause extended analysis (P-11)", () => {
+  function packedInput(): DetectorInput {
+    const bytecode = packedPauseToken();
+    return Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+  }
+
+  test("packed owner|paused slot-0 pause/unpause reports an extended fact, never a feature", () => {
+    // The packed stores carry no adjacent value PUSH, so the v1 proof
+    // stays silent and only the v2 packed-bool read proves the writer.
+    // The set/unset pair writes both bit values, so the mode is pause.
+    const findings = pauseDetectorPlugin.detect(packedInput());
+    expect(findings).toHaveLength(1);
+    const finding = findings[0];
+    if (finding === undefined) {
+      throw new Error("expected exactly one finding");
+    }
+    expect(finding.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(finding.payload).toEqual({ fact: "pause", slot: 0, mode: "pause", proof: "extended" });
+    const selectors = finding.evidence.map((entry) => entry.selector as string).sort();
+    expect(selectors).toEqual([PACKED_PAUSE_SET, TRANSFER].sort());
+    for (const entry of finding.evidence) {
+      expect(typeof entry.offset).toBe("number");
+    }
+  });
+
+  test("extended fact payload validates against the manifest output schema", () => {
+    const findings = pauseDetectorPlugin.detect(packedInput());
+    const plain = JSON.parse(JSON.stringify(findings)) as unknown;
+    expect(validatePluginOutput(plain, pauseDetectorPlugin.manifest.outputSchema)).toBe(true);
+  });
+
+  test("old-solc EXP-shift packed pause reports an extended fact, never a feature", () => {
+    // The setters shift the bit with `PUSH 0x02 PUSH k EXP` (2**k) and
+    // the transfer path reads the same slot and bit back through DIV by
+    // the same shift, AND with 0xff and a reverting gate. The v1 proof
+    // stays silent (no plain flag value sits beside the stores) while
+    // the extended proof pairs the set/unset writers with the gate, so
+    // the mode is pause.
+    const bytecode = expPackedPauseToken();
+    const input: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+    const findings = pauseDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    const finding = findings[0];
+    if (finding === undefined) {
+      throw new Error("expected exactly one finding");
+    }
+    expect(finding.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(finding.payload).toEqual({ fact: "pause", slot: 0, mode: "pause", proof: "extended" });
+    expect(finding.evidence[0]?.selector).toBe(EXP_PAUSE_SET);
+    const selectors = finding.evidence.map((entry) => entry.selector as string).sort();
+    expect(selectors).toEqual([EXP_PAUSE_SET, TRANSFER].sort());
+    const plain = JSON.parse(JSON.stringify(findings)) as unknown;
+    expect(validatePluginOutput(plain, pauseDetectorPlugin.manifest.outputSchema)).toBe(true);
   });
 });

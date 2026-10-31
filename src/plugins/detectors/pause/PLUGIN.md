@@ -50,6 +50,20 @@ As a first-party detector, its findings convert to calibrated signals
 through the versioned model artifact, and the artifact sets their
 effective weight, which the plugin list exposes per plugin.
 
+When the scored proof above finds nothing, the detector re-runs a
+tightened proof on the v2 reachability view (shared helpers included,
+packed-bool writes in slot 0 resolved) and reports at most one weight-0
+`fact` finding with the namespaced id
+`dev.brandklipparen.pause:pause-extended` and the payload holding
+`fact`, `slot`, `mode` and `proof: "extended"`. It never converts to a
+signal and never enters the score; the UI labels it "not in score". The
+tightened proof needs all of: the writer carries a caller check against
+the proven owner slot (standard token entries never count); the gate
+sits on a transfer/transferFrom path whose blocked side reverts;
+and a packed writer must write the same slot and bit the gate reads —
+including the old-solc shift built as `PUSH 0x02 PUSH k EXP` (2**k),
+read back through DIV or SHR by the same shift with AND `0xff`.
+
 ## Limitations / false positives
 
 The mode is resolved structurally: a zero write anywhere means the flag
@@ -75,3 +89,13 @@ Version 1.0.0. Initial release.
 Specificity update: the writer must store a flag value, the compare must
 sit beside the loaded slot, and an ISZERO gate with a range compare
 between the load and the gate no longer counts.
+
+Extended analysis: when the scored proof finds nothing, the same proof
+re-runs on the v2 reachability view with packed-bool writes resolved and
+reports a weight-0 `fact` finding (`proof: "extended"`) that never
+converts to a signal.
+
+Precision update: the extended writer must prove a caller check against
+the owner slot, only a reverting gate on the transfer path proper
+counts, and a packed writer must write the same slot and bit the gate
+reads (old-solc `PUSH 0x02 PUSH k EXP` shifts included).

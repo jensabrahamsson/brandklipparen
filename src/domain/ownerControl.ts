@@ -15,15 +15,27 @@
 // finding rather than a guessed one.
 import { attributeFunctions, findFunctionEntries } from "./evmFlow.ts";
 import { buildCfg, lift, resolveEntryReachV2 } from "./evmLift.ts";
+import { nameForSelector } from "./evmNames.ts";
 import { disassemble, extractSelectors } from "./selectors.ts";
 import type { Instruction, SelectorEntry } from "./selectors.ts";
+import { Selector } from "./types.ts";
 import type { Bytecode as BytecodeType, Selector as SelectorType } from "./types.ts";
+
+// Hardcoded entry points parse through the Selector constructor; a failure
+// here is a broken invariant, never a caller error.
+function mustSelector(raw: string): SelectorType {
+  const parsed = Selector.parse(raw);
+  if (!parsed.ok) {
+    throw new Error(`invalid hardcoded selector: ${raw}`);
+  }
+  return parsed.value;
+}
 
 // Public ERC-20 transfer entry points. Regions under these selectors are
 // transfer paths by construction; anywhere else a region counts as a
 // transfer path only when it reads and writes storage around calldata.
-export const TRANSFER_SELECTOR = "0xa9059cbb";
-export const TRANSFER_FROM_SELECTOR = "0x23b872dd";
+export const TRANSFER_SELECTOR: SelectorType = mustSelector("0xa9059cbb");
+export const TRANSFER_FROM_SELECTOR: SelectorType = mustSelector("0x23b872dd");
 
 // Best-effort storage slot reference for one SLOAD or SSTORE.
 export type SlotRef =
@@ -112,6 +124,10 @@ export type OwnerControlView = {
 
 const MAX_SLOT_PUSH_BYTES = 4;
 const LOOKBACK = 12;
+
+// Straight-line window for the packed-bool read-modify-write scan: the
+// bit set/clear sits directly beside its slot load and store.
+const PACKED_BOOL_LOOKBACK = 64;
 
 function pushNumber(immediate: Uint8Array): number | null {
   if (immediate.length === 0 || immediate.length > MAX_SLOT_PUSH_BYTES) {
@@ -240,6 +256,195 @@ export function callTargetOfInstruction(
 
 
 
+// Packed-bool write proof (P-11): OpenZeppelin 1.x/2.x Pausable packs
+// `paused` with `owner` in slot 0, so no plain PUSH value ever sits
+// beside the SSTORE. The compiled read-modify-write is straight-line
+// code: `SLOAD s` with the slot pushed beside it, a `0`/`1` bit shifted
+// by `PUSH 0x0100^k MUL`, by `SHL`, or (old solc) by `PUSH 0x02 PUSH k
+// EXP` (2**k), then the store back to `s`. A pure shifted-OR set with no
+// NOT proves bit 1; a shifted AND with NOT and no OR proves the clear to
+// bit 0. Anything else (both, neither, no shift, a jump between the load
+// and the store) stays unrecognised and keeps its null value, so an
+// ambiguous write never doubles as a flag write. The scan reads the
+// linear stream, so the no-jump requirement doubles as a linearity
+// guard: a threshold crossed between functions belongs to other code and
+// must not prove a packed write.
+export type PackedBoolProof = {
+  // The proven bit value, with the bit position when the shift constant
+  // names it (null when the shift is proven but its position is not, as
+  // with a bare SHL beside an unrelated nonzero PUSH).
+  readonly value: 0 | 1;
+  readonly shift: number | null;
+};
+
+export function packedBoolWriteAt(
+  insns: readonly Instruction[],
+  index: number,
+  slot: number,
+): PackedBoolProof | null {
+  let loadIndex = -1;
+  for (let back = index - 1, steps = 0; back >= 0 && steps < PACKED_BOOL_LOOKBACK; back -= 1, steps += 1) {
+    const candidate = insns[back];
+    if (candidate === undefined) {
+      break;
+    }
+    if (candidate.opcode !== 0x54) {
+      continue;
+    }
+    const slotPush = insns[back - 1];
+    if (
+      slotPush === undefined ||
+      !((slotPush.opcode === 0x5f && slot === 0) ||
+        (slotPush.opcode >= 0x60 &&
+          slotPush.opcode <= 0x7f &&
+          pushNumber(slotPush.immediate) === slot))
+    ) {
+      continue;
+    }
+    loadIndex = back;
+    break;
+  }
+  if (loadIndex < 0) {
+    return null;
+  }
+  let hasOr = false;
+  let hasAnd = false;
+  let hasNot = false;
+  let hasMulShift = false;
+  let hasShlShift = false;
+  let hasExpShift = false;
+  const shlAt: number[] = [];
+  const expAt: number[] = [];
+  for (let at = loadIndex + 1; at < index; at += 1) {
+    const opcode = insns[at]?.opcode;
+    if (opcode === undefined) {
+      return null;
+    }
+    if (
+      opcode === 0x5b ||
+      opcode === 0x56 ||
+      opcode === 0x57 ||
+      opcode === 0x00 ||
+      opcode === 0xfd ||
+      opcode === 0xf3 ||
+      opcode === 0xfe
+    ) {
+      return null;
+    }
+    if (opcode === 0x17) {
+      hasOr = true;
+    } else if (opcode === 0x16) {
+      hasAnd = true;
+    } else if (opcode === 0x19) {
+      hasNot = true;
+    } else if (opcode === 0x02) {
+      hasMulShift = true;
+    } else if (opcode === 0x1b) {
+      hasShlShift = true;
+      shlAt.push(at);
+    } else if (opcode === 0x0a) {
+      hasExpShift = true;
+      expAt.push(at);
+    }
+  }
+  // The shift position, when the constant names it: a PUSH beside SHL,
+  // a 0x0100^k beside MUL, or a {0x02, k} pair beside EXP in either
+  // order. The boolean `shift` below keeps the older leniency (any
+  // nonzero PUSH beside an SHL), so the stored value proof never
+  // narrows; only the position may stay null.
+  let shiftPosition: number | null = null;
+  for (const at of shlAt) {
+    const before = insns[at - 1];
+    if (before !== undefined && before.opcode >= 0x60 && before.opcode <= 0x7f) {
+      const value = pushNumber(before.immediate);
+      if (value !== null && value > 0) {
+        shiftPosition = value;
+        break;
+      }
+    }
+  }
+  let shift = false;
+  if (hasShlShift) {
+    for (let at = loadIndex + 1; at < index; at += 1) {
+      const push = insns[at];
+      if (
+        push !== undefined &&
+        push.opcode >= 0x60 &&
+        push.opcode <= 0x7f &&
+        (pushNumber(push.immediate) ?? 0) > 0
+      ) {
+        shift = true;
+        break;
+      }
+    }
+  }
+  if (hasMulShift && !shift) {
+    for (let at = loadIndex + 1; at < index; at += 1) {
+      const push = insns[at];
+      if (push === undefined || push.opcode < 0x60 || push.opcode > 0x7f) {
+        continue;
+      }
+      const value = pushNumber(push.immediate);
+      if (value === 0x100 || value === 0x10000 || value === 0x1000000) {
+        if (shiftPosition === null) {
+          shiftPosition = value === 0x100 ? 8 : value === 0x10000 ? 16 : 24;
+        }
+        shift = true;
+        break;
+      }
+    }
+  }
+  if (hasExpShift && !shift) {
+    for (const at of expAt) {
+      const first = insns[at - 1];
+      const second = insns[at - 2];
+      if (
+        first === undefined ||
+        second === undefined ||
+        first.opcode < 0x60 ||
+        first.opcode > 0x7f ||
+        second.opcode < 0x60 ||
+        second.opcode > 0x7f
+      ) {
+        continue;
+      }
+      const firstValue = pushNumber(first.immediate);
+      const secondValue = pushNumber(second.immediate);
+      if (firstValue === null || secondValue === null) {
+        continue;
+      }
+      if (firstValue === 0x02 && secondValue > 0) {
+        shiftPosition = secondValue;
+        shift = true;
+        break;
+      }
+      if (secondValue === 0x02 && firstValue > 0) {
+        shiftPosition = firstValue;
+        shift = true;
+        break;
+      }
+    }
+  }
+  if (!shift) {
+    return null;
+  }
+  if (hasOr && !hasNot) {
+    return Object.freeze({ value: 1 as const, shift: shiftPosition });
+  }
+  if (hasAnd && hasNot && !hasOr) {
+    return Object.freeze({ value: 0 as const, shift: shiftPosition });
+  }
+  return null;
+}
+
+function resolvePackedBoolWrite(
+  insns: readonly Instruction[],
+  index: number,
+  slot: number,
+): number | null {
+  return packedBoolWriteAt(insns, index, slot)?.value ?? null;
+}
+
 // Region facts read the full instruction stream at each index, but only
 // member instructions contribute facts: adjacency and window scans keep
 // their code-order meaning even when the region skips shared or dead
@@ -249,6 +454,7 @@ function regionOf(
   entryPc: number,
   insns: readonly Instruction[],
   isMember: (pc: number) => boolean,
+  packedBools: boolean,
 ): RegionFacts {
   let hasCaller = false;
   const callerPcs: number[] = [];
@@ -334,7 +540,23 @@ function regionOf(
       case 0x55: {
         const slot = resolveSlot(insns, index);
         const value = resolveStoreValue(insns, index);
-        stores.push({ pc: instruction.pc, slot, valueIsZero: value.valueIsZero, valueConst: value.valueConst });
+        // Packed-bool writes resolve only in v2 views (P-11): the v1
+        // scored path never sees them, so existing feature findings and
+        // the score stay bit-identical while extended analysis reads the
+        // packed bit as the stored value.
+        const packed =
+          packedBools &&
+          !value.valueIsZero &&
+          value.valueConst === null &&
+          slot.kind === "const"
+            ? resolvePackedBoolWrite(insns, index, slot.value)
+            : null;
+        stores.push({
+          pc: instruction.pc,
+          slot,
+          valueIsZero: value.valueIsZero || packed === 0,
+          valueConst: packed ?? value.valueConst,
+        });
         break;
       }
       case 0x54:
@@ -483,6 +705,364 @@ export function flavorBetween(
   return false;
 }
 
+// Standard token entry points that can never prove a privileged writer
+// (P-11 session 1 follow-up): transfer, transferFrom, approve,
+// increaseAllowance, decreaseAllowance, permit, deposit and withdraw are
+// reachable by anyone, so a mapping or flag write inside one proves no
+// owner power even when the region happens to carry a caller compare.
+// The names resolve through the versioned selector table in
+// `./evmNames.ts`; unknown selectors keep their raw form and never match.
+const STANDARD_TOKEN_WRITER_NAMES: ReadonlySet<string> = new Set([
+  "transfer",
+  "transferFrom",
+  "approve",
+  "increaseAllowance",
+  "decreaseAllowance",
+  "permit",
+  "deposit",
+  "withdraw",
+]);
+
+export function isStandardTokenWriter(selector: SelectorType): boolean {
+  const named = nameForSelector(selector as string, { isFallback: false });
+  return STANDARD_TOKEN_WRITER_NAMES.has(named.name);
+}
+
+// Privileged-writer proof for extended analysis (P-11 session 1
+// follow-up): the writing region must carry a caller check against the
+// proven owner slot — CALLER, then an SLOAD of the owner slot, then an
+// EQ or ISZERO compare, then a JUMPI that jumps over a REVERT run to a
+// later JUMPDEST (the revert-free path). This is the ownership proof the
+// scored path uses, evaluated instruction by instruction instead of by
+// region flags, so a function reachable by anyone never counts.
+export function hasOwnerCallerCheck(
+  insns: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  ownerSlot: number,
+): boolean {
+  const isSlotPush = (candidate: Instruction | undefined): boolean => {
+    if (candidate === undefined) {
+      return false;
+    }
+    if (candidate.opcode === 0x5f) {
+      return ownerSlot === 0;
+    }
+    return (
+      candidate.opcode >= 0x60 &&
+      candidate.opcode <= 0x7f &&
+      pushNumber(candidate.immediate) === ownerSlot
+    );
+  };
+  // Position lists keep the nested proof linear: each stage scans only
+  // its own opcode hits inside the window instead of the whole stream.
+  const callers: number[] = [];
+  const loads: number[] = [];
+  const compares: number[] = [];
+  const jumps: number[] = [];
+  const reverts: number[] = [];
+  const dests: number[] = [];
+  for (let at = 0; at < insns.length; at += 1) {
+    const candidate = insns[at];
+    if (candidate === undefined || !isMember(candidate.pc)) {
+      continue;
+    }
+    if (candidate.opcode === 0x33) {
+      callers.push(at);
+    } else if (candidate.opcode === 0x54 && isSlotPush(insns[at - 1])) {
+      loads.push(at);
+    } else if (candidate.opcode === 0x14 || candidate.opcode === 0x15) {
+      compares.push(at);
+    } else if (candidate.opcode === 0x57) {
+      jumps.push(at);
+    } else if (candidate.opcode === 0xfd) {
+      reverts.push(at);
+    } else if (candidate.opcode === 0x5b) {
+      dests.push(at);
+    }
+  }
+  const after = (sorted: readonly number[], low: number, high: number): number[] =>
+    sorted.filter((at) => at > low && at <= high);
+  for (const caller of callers) {
+    for (const load of after(loads, caller, caller + 64)) {
+      for (const cmp of after(compares, load, load + SLOT_FLAVOR_WINDOW_PC)) {
+        for (const jump of after(jumps, cmp, cmp + 64)) {
+          for (const revert of after(reverts, jump, jump + 32)) {
+            if (after(dests, revert, revert + 64).length > 0) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// Mapping base-slot proof (P-11 session 1 follow-up): the keccak
+// `keccak(key . baseSlot)` pattern compiles to an MSTORE of the key at
+// memory 0x00, an MSTORE of the constant base at memory 0x20, and a
+// KECCAK256 over 0x00/0x40. Returns the base constant beside the 0x20
+// store, or null when the pattern is absent, so a writer and a gate that
+// hash different mappings never pair.
+const MAPPING_BASE_LOOKBACK = 40;
+
+function mappingBaseAt(insns: readonly Instruction[], keccakIndex: number): number | null {
+  let keyStore = false;
+  let base: number | null = null;
+  for (
+    let at = keccakIndex - 1, steps = 0;
+    at >= 0 && steps < MAPPING_BASE_LOOKBACK;
+    at -= 1, steps += 1
+  ) {
+    const candidate = insns[at];
+    if (candidate === undefined) {
+      break;
+    }
+    if (candidate.opcode !== 0x52) {
+      continue;
+    }
+    const address = insns[at - 1];
+    const value = insns[at - 2];
+    if (address === undefined || value === undefined) {
+      continue;
+    }
+    if (
+      address.opcode === 0x5f ||
+      (address.opcode >= 0x60 && address.opcode <= 0x7f && pushNumber(address.immediate) === 0)
+    ) {
+      // The hashed key normally arrives from calldata, so the stored
+      // value may be any stack item; the constant 0x00 destination is
+      // what proves the `keccak(key . baseSlot)` layout.
+      keyStore = true;
+    }
+    if (
+      base === null &&
+      address.opcode >= 0x60 &&
+      address.opcode <= 0x7f &&
+      pushNumber(address.immediate) === 0x20 &&
+      value.opcode >= 0x60 &&
+      value.opcode <= 0x7f
+    ) {
+      // Nearest first: the scan runs backward from the hash, so the
+      // first constant base wins over earlier unrelated stores.
+      base = pushNumber(value.immediate);
+    }
+  }
+  return keyStore ? base : null;
+}
+
+// Base slot of the mapping access at `accessPc` (an SLOAD or SSTORE whose
+// KECCAK256 sits within the slot window behind it), or null when the
+// base cannot be determined. Every pattern instruction must belong to the
+// region, so adjacent code from another function never proves the base.
+export function mappingBaseNearAccess(
+  insns: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  accessPc: number,
+): number | null {
+  let accessIndex = -1;
+  for (let at = 0; at < insns.length; at += 1) {
+    if (insns[at]?.pc === accessPc) {
+      accessIndex = at;
+      break;
+    }
+  }
+  if (accessIndex < 0) {
+    return null;
+  }
+  let steps = 0;
+  for (let back = accessIndex - 1; back >= 0 && steps < LOOKBACK; back -= 1, steps += 1) {
+    const candidate = insns[back];
+    if (candidate === undefined) {
+      break;
+    }
+    if (candidate.opcode !== 0x20 || !isMember(candidate.pc)) {
+      continue;
+    }
+    const base = mappingBaseAt(insns, back);
+    if (base === null) {
+      return null;
+    }
+    return base;
+  }
+  return null;
+}
+
+// Gate-on-the-blocked-side proof (P-11 session 1 follow-up): a member
+// JUMPI shortly after `afterPc` (the gate compare) whose fall-through
+// reaches a member REVERT before any member JUMPDEST. A compare that
+// jumps away while the fall-through continues normally never counts.
+export function hasRevertingJumpiAfter(
+  insns: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  afterPc: number,
+): boolean {
+  const jumpPcs: number[] = [];
+  const revertPcs: number[] = [];
+  const destPcs: number[] = [];
+  for (const candidate of insns) {
+    if (!isMember(candidate.pc)) {
+      continue;
+    }
+    if (candidate.opcode === 0x57) {
+      jumpPcs.push(candidate.pc);
+    } else if (candidate.opcode === 0xfd) {
+      revertPcs.push(candidate.pc);
+    } else if (candidate.opcode === 0x5b) {
+      destPcs.push(candidate.pc);
+    }
+  }
+  for (const jumpPc of jumpPcs) {
+    if (jumpPc <= afterPc || jumpPc > afterPc + 64) {
+      continue;
+    }
+    for (const revertPc of revertPcs) {
+      if (revertPc <= jumpPc || revertPc > jumpPc + 32) {
+        continue;
+      }
+      let blocked = true;
+      for (const destPc of destPcs) {
+        if (destPc > jumpPc && destPc < revertPc) {
+          blocked = false;
+          break;
+        }
+      }
+      if (blocked) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// Packed-bool gate proof (P-11 session 1 follow-up): the transfer path
+// reads the same slot and bit — SLOAD s, then a shift by the writer's
+// amount (DIV by 2**k with the old-solc EXP-built constant, DIV by a
+// pushed power of two, or SHR by k), then AND with 0xff, then an EQ or
+// ISZERO compare. Returns the load and compare PCs with the proven
+// shift, or null.
+export function packedGateShift(
+  insns: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  slot: number,
+): { readonly loadPc: number; readonly cmpPc: number; readonly shift: number } | null {
+  const isSlotPush = (candidate: Instruction | undefined): boolean => {
+    if (candidate === undefined) {
+      return false;
+    }
+    if (candidate.opcode === 0x5f) {
+      return slot === 0;
+    }
+    return (
+      candidate.opcode >= 0x60 &&
+      candidate.opcode <= 0x7f &&
+      pushNumber(candidate.immediate) === slot
+    );
+  };
+  const divisorShift = (divIndex: number): number | null => {
+    for (let back = divIndex - 1, steps = 0; back >= 0 && steps < 8; back -= 1, steps += 1) {
+      const candidate = insns[back];
+      if (candidate === undefined) {
+        break;
+      }
+      if (candidate.opcode === 0x0a) {
+        const first = insns[back - 1];
+        const second = insns[back - 2];
+        if (
+          first === undefined ||
+          second === undefined ||
+          first.opcode < 0x60 ||
+          first.opcode > 0x7f ||
+          second.opcode < 0x60 ||
+          second.opcode > 0x7f
+        ) {
+          continue;
+        }
+        const firstValue = pushNumber(first.immediate);
+        const secondValue = pushNumber(second.immediate);
+        if (firstValue === 0x02 && secondValue !== null && secondValue > 0) {
+          return secondValue;
+        }
+        if (secondValue === 0x02 && firstValue !== null && firstValue > 0) {
+          return firstValue;
+        }
+      }
+    }
+    const adjacent = insns[divIndex - 1];
+    if (adjacent !== undefined && adjacent.opcode >= 0x60 && adjacent.opcode <= 0x7f) {
+      const value = pushNumber(adjacent.immediate);
+      if (value !== null && value > 1 && (value & (value - 1)) === 0) {
+        return Math.log2(value);
+      }
+    }
+    return null;
+  };
+  for (let load = 0; load < insns.length; load += 1) {
+    const loadInsn = insns[load];
+    if (loadInsn === undefined || loadInsn.opcode !== 0x54 || !isMember(loadInsn.pc)) {
+      continue;
+    }
+    if (!isSlotPush(insns[load - 1])) {
+      continue;
+    }
+    let shift: number | null = null;
+    let masked = false;
+    for (let at = load + 1, steps = 0; at < insns.length && steps < 48; at += 1, steps += 1) {
+      const candidate = insns[at];
+      if (candidate === undefined) {
+        break;
+      }
+      if (
+        candidate.opcode === 0x56 ||
+        candidate.opcode === 0x57 ||
+        candidate.opcode === 0x5b ||
+        candidate.opcode === 0x00 ||
+        candidate.opcode === 0xfd ||
+        candidate.opcode === 0xf3 ||
+        candidate.opcode === 0xfe
+      ) {
+        break;
+      }
+      if (!isMember(candidate.pc)) {
+        continue;
+      }
+      if (shift === null && candidate.opcode === 0x04) {
+        const proven = divisorShift(at);
+        if (proven !== null) {
+          shift = proven;
+        }
+        continue;
+      }
+      if (shift === null && candidate.opcode === 0x1c) {
+        const amount = insns[at - 1];
+        if (amount !== undefined && amount.opcode >= 0x60 && amount.opcode <= 0x7f) {
+          const value = pushNumber(amount.immediate);
+          if (value !== null && value > 0) {
+            shift = value;
+          }
+        }
+        continue;
+      }
+      if (shift !== null && !masked && candidate.opcode === 0x16) {
+        const mask = insns[at - 1];
+        if (
+          mask !== undefined &&
+          mask.opcode >= 0x60 &&
+          mask.opcode <= 0x7f &&
+          pushNumber(mask.immediate) === 0xff
+        ) {
+          masked = true;
+        }
+        continue;
+      }
+      if (masked && (candidate.opcode === 0x15 || candidate.opcode === 0x14)) {
+        return Object.freeze({ loadPc: loadInsn.pc, cmpPc: candidate.pc, shift: shift ?? 0 });
+      }
+    }
+  }
+  return null;
+}
+
 // Reachability mode for region membership (P-10). `v1` is the scored
 // default: a region holds exactly the instructions one entry uniquely
 // reaches, so shared helpers belong to no region. `v2` reruns reachability
@@ -525,10 +1105,12 @@ export function analyzeOwnerControl(bytecode: BytecodeType, options?: OwnerContr
     const start = entry.target as number;
     const wanted = entry.selector;
     if (reach === "v2") {
-      regions.push(regionOf(entry.selector, start, code, (pc) => holdersByPc.get(pc)?.includes(wanted) ?? false));
+      regions.push(
+        regionOf(entry.selector, start, code, (pc) => holdersByPc.get(pc)?.includes(wanted) ?? false, true),
+      );
     } else {
       const expected = wanted as string;
-      regions.push(regionOf(entry.selector, start, code, (pc) => holderByPc.get(pc) === expected));
+      regions.push(regionOf(entry.selector, start, code, (pc) => holderByPc.get(pc) === expected, false));
     }
   }
 

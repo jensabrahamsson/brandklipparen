@@ -18,11 +18,11 @@ import {
   diagnoseReachability,
   regionBySelector,
 } from "../../../src/domain/ownerControl.ts";
-import type { Selector } from "../../../src/domain/types.ts";
+import { Selector } from "../../../src/domain/types.ts";
 import { Asm } from "../../helpers/evmAsm.ts";
 
-const TRANSFER = "0xa9059cbb";
-const TRANSFER_FROM = "0x23b872dd";
+const TRANSFER = mustOk(Selector.parse("0xa9059cbb"));
+const TRANSFER_FROM = mustOk(Selector.parse("0x23b872dd"));
 
 function mustOk<T>(result: Result<T, { message: string }>): T {
   if (!result.ok) {
@@ -259,8 +259,8 @@ describe("reachability v2 in owner control", () => {
     }
 
     for (const selector of [TRANSFER, TRANSFER_FROM]) {
-      const first = regionBySelector(v1, selector as Selector);
-      const second = regionBySelector(v2, selector as Selector);
+      const first = regionBySelector(v1, selector);
+      const second = regionBySelector(v2, selector);
       if (first === undefined || second === undefined) {
         throw new Error(`expected a region for ${selector}`);
       }

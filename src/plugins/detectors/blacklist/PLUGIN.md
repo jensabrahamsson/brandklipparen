@@ -46,6 +46,21 @@ As a first-party detector, its findings convert to calibrated signals
 through the versioned model artifact, and the artifact sets their
 effective weight, which the plugin list exposes per plugin.
 
+When the scored proof above finds nothing, the detector re-runs a
+tightened proof on the v2 reachability view (a shared
+`_beforeTokenTransfer` helper joins every entry that reaches it) and
+reports at most one weight-0 `fact` finding with the namespaced id
+`dev.brandklipparen.blacklist:blacklist-extended` and the payload holding
+`fact` and `proof: "extended"`. It never converts to a signal and never
+enters the score; the UI labels it "not in score". The tightened proof
+needs all of: the writer carries a caller check against the proven owner
+slot (standard token entries such as transfer, approve, deposit or
+withdraw never count, and neither does a function anyone can call);
+the writer mapping and the gate mapping hash the same base slot through
+the `keccak(key . baseSlot)` memory pattern (unknown on either side
+stays silent); and the gate sits on a transfer/transferFrom path
+whose blocked side reverts.
+
 ## Limitations / false positives
 
 The mapping shape is resolved structurally: a hash-mixed access counts,
@@ -69,3 +84,13 @@ Version 1.0.0. Initial release.
 Specificity update: the gate compare must sit beside the loaded entry,
 and ISZERO gates with a range compare between the load and the gate
 (balance and allowance checks) no longer count.
+
+Extended analysis: when the scored proof finds nothing, the same proof
+re-runs on the v2 reachability view with shared helpers included and
+reports a weight-0 `fact` finding (`proof: "extended"`) that never
+converts to a signal.
+
+Precision update: the extended writer must prove a caller check against
+the owner slot, standard token entries never count as writers, the
+writer and gate mappings must share their base slot, and only a
+reverting gate on the transfer path proper counts.

@@ -17,7 +17,7 @@
       }
     },
     {
-      "text": "The contract can call other contracts or send ETH (in `0x2e1a7d4d`). This raises the honeypot risk (severity medium). Can change: account 0x0102030405060708090a0b0c0d0e0f1011121314 can activate this later. Evidence: selector 0x2e1a7d4d at byte offset 30.",
+      "text": "The contract can call other contracts or send ETH (in `withdraw(uint256)`). This raises the honeypot risk (severity medium). Can change: account 0x0102030405060708090a0b0c0d0e0f1011121314 can activate this later. Evidence: selector 0x2e1a7d4d at byte offset 30.",
       "signalLinks": ["signal:3"],
       "temporality": {
         "kind": "can-change",

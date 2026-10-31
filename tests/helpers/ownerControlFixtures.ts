@@ -8,6 +8,13 @@
 import { Bytecode } from "../../src/domain/types.ts";
 import type { Bytecode as BytecodeType } from "../../src/domain/types.ts";
 import { disassemble } from "../../src/domain/selectors.ts";
+import { Asm } from "./evmAsm.ts";
+
+// Synthetic ERC-20-shaped selectors shared by the fixtures below. The
+// transfer entries mirror the domain constants; the setter selectors are
+// arbitrary synthetic values.
+export const TRANSFER_SELECTOR = "0xa9059cbb";
+export const TRANSFER_FROM_SELECTOR = "0x23b872dd";
 
 function mustCode(bytes: readonly number[]): BytecodeType {
   const hex = bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -133,6 +140,8 @@ export const CALLER = 0x33;
 export const CALLDATALOAD = 0x35;
 export const SLOAD = 0x54;
 export const SSTORE = 0x55;
+export const MSTORE = 0x52;
+export const EXP = 0x0a;
 export const EQ = 0x14;
 export const ISZERO = 0x15;
 export const JUMPI = 0x57;
@@ -144,6 +153,11 @@ export const SUB = 0x03;
 export const DIV = 0x04;
 export const LT = 0x10;
 export const GT = 0x11;
+export const SHL = 0x1b;
+export const SHR = 0x1c;
+export const AND = 0x16;
+export const OR = 0x17;
+export const NOT = 0x19;
 export const KECCAK = 0x20;
 export const CALL = 0xf1;
 export const STATICCALL = 0xfa;
@@ -155,4 +169,277 @@ export function push1(value: number): number[] {
 
 export function sstoreConstSlot(slot: number, valuePrefix: readonly number[]): number[] {
   return [...valuePrefix, ...push1(slot), SSTORE];
+}
+
+// Packed `owner|paused` slot-0 token (P-11 acceptance a): `pause()` sets
+// bit 8 with a shifted OR and `unpause()` clears it with a shifted
+// AND-NOT, while the transfer path reverts while the bit reads set. No
+// SSTORE carries an adjacent value PUSH, so the v1 flag proof stays
+// silent and only the v2 packed-bool read proves the writer. Synthetic
+// selectors and hand-assembled bytecode only; no real contract code.
+export const PACKED_PAUSE_SET = "0x0a9c6c1e";
+export const PACKED_PAUSE_CLEAR = "0x0b9c6c1e";
+
+function packedSetBody(): number[] {
+  return [
+    ...ownerGuard(0, 200),
+    ...push1(0),
+    SLOAD,
+    ...push1(1),
+    ...push1(8),
+    SHL,
+    OR,
+    ...push1(0),
+    SSTORE,
+    STOP,
+  ];
+}
+
+function packedClearBody(): number[] {
+  return [
+    ...ownerGuard(0, 200),
+    ...push1(0),
+    SLOAD,
+    ...push1(1),
+    ...push1(8),
+    SHL,
+    NOT,
+    AND,
+    ...push1(0),
+    SSTORE,
+    STOP,
+  ];
+}
+
+function packedGatedTransferBody(): number[] {
+  return [
+    ...push1(0),
+    SLOAD,
+    ...push1(8),
+    SHR,
+    ...push1(0xff),
+    AND,
+    ISZERO,
+    ...branchOk(),
+    ...push1(0),
+    0x80,
+    REVERT,
+    0x5b,
+    ...sstoreConstSlot(2, [CALLDATALOAD]),
+    STOP,
+  ];
+}
+
+export function packedPauseToken(): BytecodeType {
+  return tokenBytecode([
+    { selector: PACKED_PAUSE_SET, body: packedSetBody() },
+    { selector: PACKED_PAUSE_CLEAR, body: packedClearBody() },
+    { selector: TRANSFER_SELECTOR, body: packedGatedTransferBody() },
+  ]);
+}
+
+// Shared `_beforeTokenTransfer` blacklist token (P-11 acceptance b):
+// `transfer` and `transferFrom` push their return address, jump into a
+// shared helper that reverts while a mapping entry reads set, and return
+// through a dynamic JUMP; a privileged setter writes the mapping. v1
+// never follows the return jump, so the gate belongs to no region and the
+// v1 proof stays silent; v2 attributes the shared body to both entries.
+// A lone INVALID pads the structural fall-through of the dynamic jump.
+// Both the writer and the gate hash their mapping through the explicit
+// `keccak(key . baseSlot)` memory pattern (MSTORE key at 0x00, MSTORE
+// base at 0x20, KECCAK256 over 0x00/0x40), so the extended proof can
+// compare base slots. Synthetic selectors and hand-assembled bytecode
+// only.
+export const SHARED_BLACKLIST_SET = "0x0a9c6c1e";
+
+// A table-named privileged list setter for the precision tests: it
+// resolves through the selector table but is not a standard token
+// entry, so it can prove a writer.
+export const ADD_LIST_SET = "0x0ecb93c0";
+
+export type SharedBaseGateConfig = {
+  readonly writerSelector: string;
+  readonly guarded: boolean;
+  readonly writeBase: number;
+  readonly gateBase: number;
+};
+
+export function sharedBaseGateTokenHex(config: SharedBaseGateConfig): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(TRANSFER_FROM_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferFromEntry").op(0x57);
+  asm.op(0x80).push4(config.writerSelector.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("ret1");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("transferFromEntry").op(0x5b);
+  asm.pushLabel2("ret2");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  // Mapping setter with an onlyOwner guard when configured.
+  asm.label("setEntry").op(0x5b);
+  if (config.guarded) {
+    asm.op(0x33).push1(0x00).op(0x54, 0x14);
+    asm.pushLabel2("setOk").op(0x57);
+    asm.push1(0x00).op(0x80, 0xfd);
+    asm.label("setOk").op(0x5b);
+  }
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(config.writeBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  // Shared transfer gate: revert while the mapping entry reads set.
+  asm.label("shared").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(config.gateBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  asm.label("ret1").op(0x5b, 0x00);
+  asm.label("ret2").op(0x5b, 0x00);
+  return asm.build();
+}
+
+export function sharedBlacklistTokenHex(): string {
+  return sharedBaseGateTokenHex({
+    writerSelector: SHARED_BLACKLIST_SET,
+    guarded: true,
+    writeBase: 3,
+    gateBase: 3,
+  });
+}
+
+// Unguarded mapping write to an explicit base slot (linear body): the
+// key comes from calldata, the base is a constant, and the value below
+// the hash on the stack is stored. No caller check, so the writer never
+// proves privilege.
+function unguardedMappingWriteBody(base: number): number[] {
+  return [
+    CALLDATALOAD,
+    CALLDATALOAD,
+    ...push1(0),
+    MSTORE,
+    ...push1(base),
+    ...push1(0x20),
+    MSTORE,
+    ...push1(0x40),
+    ...push1(0x00),
+    KECCAK,
+    SSTORE,
+    STOP,
+  ];
+}
+
+// Unprivileged balance write plus a gate on another mapping (precision
+// test a): `transfer` writes its balance mapping while gating on a
+// foreign mapping no privileged writer touches, beside an owner setter
+// that proves the owner slot elsewhere.
+export function unprivilegedForeignGateToken(): BytecodeType {
+  return tokenBytecode([
+    { selector: "0x11111111", body: unguardedMappingWriteBody(5) },
+    {
+      selector: "0x22222222",
+      body: [...ownerGuard(0, 200), ...sstoreConstSlot(0, [CALLDATALOAD]), STOP],
+    },
+    {
+      selector: TRANSFER_SELECTOR,
+      body: [
+        ...unguardedMappingWriteBody(2).slice(0, -1),
+        CALLDATALOAD,
+        ...push1(0),
+        MSTORE,
+        ...push1(5),
+        ...push1(0x20),
+        MSTORE,
+        ...push1(0x40),
+        ...push1(0x00),
+        KECCAK,
+        SLOAD,
+        ISZERO,
+        ...branchOk(),
+        ...push1(0),
+        0x80,
+        REVERT,
+        0x5b,
+        STOP,
+      ],
+    },
+  ]);
+}
+
+// Old-solc EXP-shift packed pause (precision test e): `pause()` sets
+// the bit with `PUSH 0x02 PUSH k EXP` (2**k) while `unpause()` clears
+// it, and the transfer path reads the same slot and bit back through
+// DIV by the same shift, AND with 0xff and a reverting gate. Synthetic
+// selectors and hand-assembled bytecode only.
+export const EXP_PAUSE_SET = "0x8456cb59";
+export const EXP_PAUSE_CLEAR = "0x3f4ba83a";
+
+function expSetBody(bit: number): number[] {
+  return [
+    ...ownerGuard(0, 200),
+    ...push1(0),
+    SLOAD,
+    ...push1(1),
+    ...push1(2),
+    ...push1(bit),
+    EXP,
+    MUL,
+    OR,
+    ...push1(0),
+    SSTORE,
+    STOP,
+  ];
+}
+
+function expClearBody(bit: number): number[] {
+  return [
+    ...ownerGuard(0, 200),
+    ...push1(0),
+    SLOAD,
+    ...push1(2),
+    ...push1(bit),
+    EXP,
+    NOT,
+    AND,
+    ...push1(0),
+    SSTORE,
+    STOP,
+  ];
+}
+
+function expGatedTransferBody(bit: number): number[] {
+  return [
+    ...push1(2),
+    ...push1(bit),
+    EXP,
+    ...push1(0),
+    SLOAD,
+    DIV,
+    ...push1(0xff),
+    AND,
+    ISZERO,
+    ...branchOk(),
+    ...push1(0),
+    0x80,
+    REVERT,
+    0x5b,
+    ...sstoreConstSlot(2, [CALLDATALOAD]),
+    STOP,
+  ];
+}
+
+export function expPackedPauseToken(bit = 8): BytecodeType {
+  return tokenBytecode([
+    { selector: EXP_PAUSE_SET, body: expSetBody(bit) },
+    { selector: EXP_PAUSE_CLEAR, body: expClearBody(bit) },
+    { selector: TRANSFER_SELECTOR, body: expGatedTransferBody(bit) },
+  ]);
 }

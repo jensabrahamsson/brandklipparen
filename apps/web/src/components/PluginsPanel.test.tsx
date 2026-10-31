@@ -79,6 +79,39 @@ describe("generic plugins panel (S-046)", () => {
     expect(html).toContain("Contract can self-destruct");
   });
 
+  test("extended fact findings carry the not-in-score badge and scored findings do not", () => {
+    const html = renderToString(
+      <PluginsPanel
+        plugins={[
+          ...PLUGINS,
+          { id: "dev.brandklipparen.pause", version: "1.0.0", displayName: "Pause detector", description: "Quiet." },
+        ]}
+        results={[
+          ...RESULTS,
+          {
+            pluginId: "dev.brandklipparen.pause",
+            pluginVersion: "1.0.0",
+            outcome: "ok",
+            findings: [
+              {
+                id: "dev.brandklipparen.pause:pause-extended",
+                title: "The owner can freeze all transfers. Found by extended analysis; not counted in the score.",
+                payload: { fact: "pause", slot: 0, mode: "pause", proof: "extended" },
+                evidence: [{ selector: "0x0a9c6c1e", offset: 123 }],
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    expect(html).toContain("Extended analysis · not in score");
+    expect(html).toContain("The owner can freeze all transfers.");
+    // The badge renders once: the scored capability finding above carries
+    // a `feature`-less capability payload, so it stays unbadged.
+    const badges = html.match(/Extended analysis · not in score/g) ?? [];
+    expect(badges).toHaveLength(1);
+  });
+
   test("s120_quiet_plugins_collapse_to_one_line_with_one_explain_per_finding", () => {
     const html = renderToString(
       <PluginsPanel
