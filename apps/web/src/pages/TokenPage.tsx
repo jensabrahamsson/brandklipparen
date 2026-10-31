@@ -76,7 +76,7 @@ const DEEPEN_POLL_MAX = 10;
 
 type Tab = "overview" | "assessment" | "investigate";
 
-// AI personalize notice (P1-9, P1-10): the always-rendered status region
+// AI order notice (P1-9, P1-10): the always-rendered status region
 // shows the text for every kind. "failed" renders in the unavailable pill
 // with a Retry button, "applied" renders in phosphor with a check prefix,
 // and "info" renders as plain quiet text.
@@ -927,7 +927,7 @@ function AssessedView({
 // visual order, and every section stays present in every band. Only order
 // changes; scores, evidence and finding text never move.
 // Collapsed "Customize view" disclosure (S-118, P1-13): Detail radios, AI
-// personalize (with the priorities field), and the section picker live
+// order (with the priorities field), and the section picker live
 // here, inside the Overview panel above the sections they affect, so the
 // tab-to-panel relationship stays intact on every tab. Collapsed by
 // default; the open state is remembered for the session only. Scores,
@@ -1087,7 +1087,7 @@ function CustomizeView({
               </label>
           </fieldset>
           <FieldPicker visible={visibleSections} onToggle={onToggleSection} />
-          <section aria-label="AI personalize" className="card ai-panel">
+          <section aria-label="AI order" className="card ai-panel">
               <h2 className="customize-h">
                 AI order <span className="cantword">experimental</span>
               </h2>
@@ -1100,7 +1100,7 @@ function CustomizeView({
                   aria-describedby="ai-personalize-status"
                   onChange={(event) => onToggleAi(event.target.checked)}
                 />{" "}
-                AI personalize (experimental)
+                Use AI order
               </label>
               {aiOn ? (
                 <p id="ai-personalize-status" className="quiet ai-preface" data-testid="ai-personalize-preface">
@@ -1122,11 +1122,14 @@ function CustomizeView({
               />
               {aiOn ? (
                 <div className="ai-apply">
-                  {applyEmpty ? (
-                    <p id="ai-apply-hint" className="quiet ai-apply-hint">
-                      Type what matters to you above to enable.
-                    </p>
-                  ) : null}
+                  <p
+                    id="ai-apply-hint"
+                    className="quiet ai-apply-hint"
+                    style={applyEmpty ? undefined : { visibility: "hidden" }}
+                    aria-hidden={applyEmpty ? undefined : true}
+                  >
+                    Type what matters to you above to enable.
+                  </p>
                   <div className="ai-apply-row">
                     <button
                       type="button"
@@ -1147,16 +1150,17 @@ function CustomizeView({
                         "Apply AI order"
                       )}
                     </button>
-                    {aiApplied ? (
-                      <button
-                        type="button"
-                        className="button-ghost"
-                        data-testid="ai-personalize-reset"
-                        onClick={onResetAiOrder}
-                      >
-                        Reset to standard order
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      className="button-ghost"
+                      data-testid="ai-personalize-reset"
+                      onClick={onResetAiOrder}
+                      style={aiApplied ? undefined : { visibility: "hidden" }}
+                      aria-hidden={aiApplied ? undefined : true}
+                      tabIndex={aiApplied ? undefined : -1}
+                    >
+                      Reset to standard order
+                    </button>
                   </div>
                 </div>
               ) : null}
@@ -1410,8 +1414,15 @@ function OverviewSections({
                     type="button"
                     className="button-ghost"
                     data-testid={`ai-expand-${sectionId}`}
-                    aria-expanded="false"
-                    onClick={() => setAiExpanded(new Set([...aiExpanded, sectionId]))}
+                    onClick={() => {
+                      setAiExpanded(new Set([...aiExpanded, sectionId]));
+                      window.setTimeout(() => {
+                        const target = document.querySelector(
+                          `div[data-section="${sectionId}"]`,
+                        ) as HTMLElement | null;
+                        target?.focus({ preventScroll: true });
+                      }, 0);
+                    }}
                   >
                     Show {pickableLabel}
                   </button>

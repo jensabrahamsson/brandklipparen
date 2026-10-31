@@ -140,3 +140,51 @@ describe("personalized order source (P2-18)", () => {
     expect(html).toContain("Ordered by what matters to you.");
   });
 });
+
+describe("top-ranked detectors copy (N-14)", () => {
+  const plugins = [
+    { id: "a.sell-block", version: "1.0.0", displayName: "Sell-block", description: "Quiet." },
+    { id: "a.ownership", version: "1.0.0", displayName: "Ownership", description: "Quiet." },
+    { id: "a.pause", version: "1.0.0", displayName: "Pause", description: "Quiet." },
+    { id: "a.mint", version: "1.0.0", displayName: "Mint", description: "Quiet." },
+    { id: "a.fee", version: "1.0.0", displayName: "Fee", description: "Quiet." },
+  ] as const;
+  const emptyResults = [
+    {
+      pluginId: "a.sell-block",
+      pluginVersion: "1.0.0",
+      outcome: "ok",
+      findings: [],
+    },
+  ] as const;
+
+  test("names up to three top-ranked detectors that found nothing", () => {
+    const html = renderToString(
+      <PluginsPanel
+        plugins={[...plugins]}
+        results={[...emptyResults]}
+        order={["a.sell-block", "a.ownership", "a.pause"]}
+        personalized
+        source="ai"
+        aiModelId="example-model-1"
+      />,
+    );
+    expect(html).toContain("Your top-ranked detectors found nothing: Sell-block, Ownership, Pause.");
+    expect(html).not.toContain("Checked first for you");
+  });
+
+  test("caps the top-ranked list at three names", () => {
+    const html = renderToString(
+      <PluginsPanel
+        plugins={[...plugins]}
+        results={[...emptyResults]}
+        order={["a.sell-block", "a.ownership", "a.pause", "a.mint", "a.fee"]}
+        personalized
+        source="ai"
+        aiModelId="example-model-1"
+      />,
+    );
+    expect(html).toContain("Your top-ranked detectors found nothing: Sell-block, Ownership, Pause.");
+    expect(html).not.toContain("Sell-block, Ownership, Pause, Mint");
+  });
+});

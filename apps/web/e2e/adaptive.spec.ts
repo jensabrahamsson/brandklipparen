@@ -385,3 +385,69 @@ test("turning AI off mid-request shows no applied order and no jump", async ({ p
   await expect(page.getByTestId("ai-personalize-result")).not.toContainText("AI order applied");
   await expect(page.getByTestId("ai-jump-results")).toHaveCount(0);
 });
+
+test("n12_show_collapsed_section_reveals_it_and_moves_focus", async ({ page }) => {
+  const collapsedBody = (): Record<string, unknown> => ({
+    status: "ok",
+    apiVersion: "v1",
+    personalize: {
+      kind: "ok",
+      provider: "hosted-open-weights",
+      modelId: "meta-models/muse-spark-open-1026",
+      promptVersion: "1.0.0",
+      cache: "miss",
+      spec: {
+        specVersion: 1,
+        pluginRanking: ["dev.brandklipparen.clone-match", "dev.brandklipparen.capability"],
+        placements: [
+          { sectionId: "signals", emphasis: "normal" },
+          { sectionId: "cant-tell", emphasis: "normal", collapsed: true },
+          { sectionId: "score", emphasis: "normal" },
+        ],
+      },
+    },
+  });
+  await page.route("**/health", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
+  });
+  await page.route("**/v1/analyze*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "x-deepening-status": "pending" },
+      body: JSON.stringify(ANALYZE_FIXTURE),
+    });
+  });
+  await page.route("**/v1/plugins", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PLUGINS_FIXTURE) });
+  });
+  await page.route("**/v1/personalize/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PERSONALIZE_STATUS) });
+  });
+  await page.route("**/v1/personalize", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(collapsedBody()) });
+  });
+  await page.goto(`/#/token/${ADDRESS}`);
+  await openCustomize(page);
+  await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
+  await page.getByTestId("ai-personalize-toggle").check();
+  await page.getByTestId("ai-personalize-apply").click();
+  const show = page.getByRole("button", { name: "Show Can't-tell" });
+  await expect(show).toBeVisible();
+  await expect(show).not.toHaveAttribute("aria-expanded");
+  await show.click();
+  const revealed = page.locator('div.token-grid div[data-section="cant-tell"]');
+  await expect(revealed).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const active = document.activeElement;
+        if (active === null) {
+          return null;
+        }
+        const wrapper = active.closest('div[data-section="cant-tell"]');
+        return wrapper?.getAttribute("data-section") ?? null;
+      }),
+    )
+    .toBe("cant-tell");
+});

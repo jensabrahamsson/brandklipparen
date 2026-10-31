@@ -2,7 +2,7 @@
 // visitor's own words stay data: the value renders solely as the input
 // value and, when echoed, as escaped text. Clearing removes the stored
 // key. The deterministic baseline (P-25) never sends this text anywhere;
-// only the explicit experimental AI personalize toggle (P-27) may send it
+// only the explicit experimental AI order toggle (P-27) may send it
 // for that one mapping call.
 import type { JSX } from "react";
 
