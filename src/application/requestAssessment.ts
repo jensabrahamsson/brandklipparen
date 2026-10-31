@@ -11,9 +11,11 @@ import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
 import { renderExplanation } from "../domain/explain.ts";
 import type { ExplainError, Explanation } from "../domain/explain.ts";
+import { capMeaningsForModel, claimBySignalId, meaningForSignal } from "../domain/modelMeanings.ts";
 import { score } from "../domain/risk.ts";
 import type { ModelArtifact, RiskResult } from "../domain/risk.ts";
 import type { Signal, Temporality } from "../domain/signals.ts";
+import { EvidenceList } from "../ports/assessmentModel.ts";
 import type {
   PromptVersion as PromptVersionType,
   TemplateVersion as TemplateVersionType,
@@ -22,7 +24,6 @@ import type {
   AssessmentModelError,
   AssessmentModelPort,
   CallContext,
-  EvidenceList,
   MuseAssessment,
 } from "../ports/assessmentModel.ts";
 
@@ -103,7 +104,22 @@ export async function requestAssessment(
       fallback: { errorKind: "not-requested", reason: fallbackReasonFor("not-requested") },
     });
   }
-  const assessed = await input.adapter.assess(input.evidence, input.promptVersion, input.ctx);
+  // Meanings for the model input (M-02e): every signal quotes its
+  // rendered template claim beside its plugin id, kind, severity,
+  // direction, temporality and labelled selectors. The evidence entries
+  // travel unchanged beside them, so citations still resolve.
+  const byId = claimBySignalId(rendered.value.claims);
+  const meanings = capMeaningsForModel(
+    input.signals.map((signal) =>
+      meaningForSignal(signal, byId.get(`signal:${signal.id as string}`) ?? null, input.observed),
+    ),
+  );
+  const enriched = EvidenceList.create(input.evidence.codeHash, input.evidence.evidence, meanings);
+  const assessed = await input.adapter.assess(
+    enriched.ok ? enriched.value : input.evidence,
+    input.promptVersion,
+    input.ctx,
+  );
   if (!assessed.ok) {
     return ok({
       risk,

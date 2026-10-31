@@ -11,6 +11,7 @@ import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
 import type { Evidence as EvidenceType } from "../domain/evidence.ts";
 import type { Claim as ClaimType } from "../domain/explain.ts";
+import type { FindingMeaning as FindingMeaningType } from "../domain/modelMeanings.ts";
 import type {
   BlockNumber as BlockNumberType,
   CodeHash as CodeHashType,
@@ -31,15 +32,21 @@ export type AssessmentProvider = "meta-model-api" | "hosted-open-weights" | "gen
 
 // Closed evidence list: the sole input source for the assessment (K-302).
 // Raw bytecode stays in the analysis path and never enters the prompt.
+// Meanings pair each finding and signal id with its stated meaning
+// (M-02e): plugin id, kind, severity, direction, the template sentence,
+// temporality and labelled selectors. They are optional display data
+// for the prompt only; the evidence entries above stay the cited ids.
 export type EvidenceList = {
   readonly codeHash: CodeHashType;
   readonly evidence: readonly EvidenceType[];
+  readonly meanings?: readonly FindingMeaningType[] | undefined;
 };
 
 export const EvidenceList = {
   create(
     codeHash: CodeHashType,
     evidence: readonly EvidenceType[],
+    meanings?: readonly FindingMeaningType[] | undefined,
   ): Result<EvidenceList, DomainError> {
     if (evidence.length === 0) {
       return err({
@@ -47,7 +54,13 @@ export const EvidenceList = {
         message: "assessment needs at least one evidence entry",
       });
     }
-    return ok(Object.freeze({ codeHash, evidence: Object.freeze(evidence.slice()) }));
+    return ok(
+      Object.freeze({
+        codeHash,
+        evidence: Object.freeze(evidence.slice()),
+        ...(meanings === undefined ? {} : { meanings: Object.freeze(meanings.slice()) }),
+      }),
+    );
   },
 };
 

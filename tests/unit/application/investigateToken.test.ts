@@ -24,6 +24,7 @@ import {
   stripTraceTiming,
   emptyRunnerState,
 } from "../../../src/application/investigateToken.ts";
+import { meaningForEvidenceFinding } from "../../../src/domain/modelMeanings.ts";
 import type {
   FrozenInvestigationFacts,
   InvestigationLimits,
@@ -535,5 +536,42 @@ describe("m2d conclude prompt and tolerant citation check", () => {
     const capped = collectedIdsForPrompt(crowded);
     expect(capped.length).toBe(20);
     expect(capped[0]).toBe("signal:ev-0");
+  });
+});
+
+describe("m02e runner carries meanings into model inputs", () => {
+  test("m02e_frozen_meanings_reach_every_model_input_unchanged", async () => {
+    const meaning = meaningForEvidenceFinding({
+      id: "dev.brandklipparen.blacklist:blacklist",
+      pluginId: "dev.brandklipparen.blacklist",
+      title: "Privileged caller can set a mapping entry that gates the transfer path",
+      selectors: ["0xa9059cbb"],
+    });
+    const withMeanings: FrozenInvestigationFacts = Object.freeze({
+      ...frozenFacts(),
+      meanings: Object.freeze([meaning]),
+    });
+    const seen: InvestigationModelInput[] = [];
+    const modelId = mustOk(ModelId.parse("meta-models/muse-spark-open-1026"));
+    const adapter: InvestigationModelPort = {
+      provider: () => "hosted-open-weights",
+      modelId: () => modelId,
+      async decide(input: InvestigationModelInput): Promise<Result<InvestigationDecision, InvestigationModelError>> {
+        seen.push(input);
+        return ok({
+          kind: "conclude",
+          narrativeDraft: "The frozen evidence shows the finding. [E:sig-1]",
+          rationale: "Conclude from the frozen evidence.",
+        });
+      },
+    };
+    const done = await investigateToken(adapter, catalogue(), withMeanings, context(), limits(), {
+      now: () => 1000,
+    });
+    expect(done.status).toBe("done");
+    expect(seen.length).toBeGreaterThan(0);
+    for (const input of seen) {
+      expect(input.meanings).toEqual([meaning]);
+    }
   });
 });

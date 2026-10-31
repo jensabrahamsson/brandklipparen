@@ -573,3 +573,49 @@ function signalLinkOfLinked(evidence: EvidenceList): string {
   }
   return mustOk(SignalId.of(evidence.codeHash, entry.selector)) as string;
 }
+
+describe("m02e assessment request carries meanings", () => {
+  test("m02e_adapter_receives_signal_meanings_beside_unchanged_evidence", async () => {
+    const code = syntheticCode();
+    const hash = codeHashOf(code);
+    const artifact = placeholderArtifact();
+    const selector = mustOk(Selector.parse("0x8456cb59"));
+    const entry = mustOk(Evidence.create({ selector }));
+    const signal = mustOk(
+      Signal.createCapability({
+        codeHash: hash,
+        risk: "honeypot",
+        direction: "raises",
+        severity: "high",
+        temporality: changeableObserved(),
+        evidence: [entry],
+      }),
+    );
+    const evidence = mustOk(EvidenceList.create(hash, [entry]));
+    const fake = new FakeAssessmentModelAdapter({ provider: "meta-model-api", modelId: "fake-meta-spark-1" });
+    const outcome = await requestAssessment({
+      signals: [signal],
+      artifact,
+      evidence,
+      templateVersion: SUPPORTED_TEMPLATE_VERSION,
+      observed: changeableObserved(),
+      promptVersion: fixedPrompt(),
+      ctx: fixedContext(),
+      adapter: fake,
+    });
+    if (!outcome.ok) {
+      throw new Error("template render must succeed for the constructed signal");
+    }
+    expect(outcome.value.assessment).not.toBeNull();
+    const sent = fake.lastRequest?.evidence;
+    expect(sent?.evidence).toEqual([entry]);
+    const meanings = sent?.meanings ?? [];
+    expect(meanings.length).toBe(1);
+    expect(meanings[0]?.id).toBe(`signal:${signal.id as string}`);
+    expect(meanings[0]?.kind).toBe("capability");
+    expect(meanings[0]?.severity).toBe("high");
+    expect(meanings[0]?.direction).toBe("raises");
+    expect(meanings[0]?.meaning).toContain("lets an account");
+    expect(meanings[0]?.selectors).toContainEqual({ selector: "0x8456cb59", name: "pause()" });
+  });
+});

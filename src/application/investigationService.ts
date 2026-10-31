@@ -11,6 +11,7 @@ import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
 import { serializeAssessment } from "./analyzeToken.ts";
 import type { AssessmentEnvelope, DetectorSet } from "./analyzeToken.ts";
+import { envelopeMeanings } from "./modelMeanings.ts";
 import {
   buildInvestigationCatalogue,
   investigateToken,
@@ -42,7 +43,8 @@ export function scoreBandOf(score: number): string {
 // score band, signal ids and the collected evidence ids (one
 // `signal:<id>` per signal plus every plugin finding id). The score and
 // the snapshot travel for the unchanged-proof only; they never enter the
-// model input.
+// model input. Meanings pair each id with its stated meaning (M-02e);
+// they travel to the model only.
 export function frozenFactsOfEnvelope(envelope: AssessmentEnvelope): FrozenInvestigationFacts {
   const signalIds = envelope.signals.map((signal) => signal.id as string);
   const evidenceIds: string[] = signalIds.map((id) => `signal:${id}`);
@@ -58,6 +60,7 @@ export function frozenFactsOfEnvelope(envelope: AssessmentEnvelope): FrozenInves
     evidenceIds: Object.freeze(evidenceIds),
     score: envelope.score as number,
     snapshot: snapshotOfEnvelope(envelope),
+    meanings: envelopeMeanings(envelope),
   });
 }
 
@@ -79,20 +82,29 @@ function snapshotOfEnvelope(envelope: AssessmentEnvelope): unknown {
 // Catalogue derived from the one registry (P-32): one `detector.<id>` per
 // registered entry serving its frozen finding ids, plus the frozen-fact
 // readers. Docs excerpts travel as quoted data under the caller's cap.
+// Finding titles travel beside each tool (M-02e), so the model reads what
+// each returned id means instead of a bare id.
 export function catalogueOfEnvelope(
   detectors: DetectorSet,
   envelope: AssessmentEnvelope,
   docs: Readonly<Record<string, string>>,
 ): InvestigationCatalogue {
   const findingsByPlugin = new Map<string, string[]>();
+  const titlesByPlugin = new Map<string, Record<string, string>>();
   for (const entry of envelope.pluginResults) {
     findingsByPlugin.set(entry.pluginId as string, entry.findings.map((finding) => finding.id));
+    const titles: Record<string, string> = {};
+    for (const finding of entry.findings) {
+      titles[finding.id] = finding.title;
+    }
+    titlesByPlugin.set(entry.pluginId as string, titles);
   }
   return buildInvestigationCatalogue({
     detectors: detectors.registry.entries.map((plugin) => ({
       pluginId: plugin.manifest.id as string,
       description: plugin.manifest.description,
       findings: findingsByPlugin.get(plugin.manifest.id as string) ?? [],
+      findingTitles: titlesByPlugin.get(plugin.manifest.id as string) ?? {},
     })),
     evidenceIds: frozenFactsOfEnvelope(envelope).evidenceIds.slice(),
     summary: `score band ${scoreBandOf(envelope.score as number)}`,

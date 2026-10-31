@@ -24,6 +24,7 @@ import type {
 import {
   assessmentToCanonical,
 } from "./analyzeToken.ts";
+import { envelopeMeanings } from "./modelMeanings.ts";
 import type {
   AnalyzeTokenInput,
   AppServices,
@@ -345,7 +346,13 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
         fromCache: false,
       });
     }
-    const evidence = EvidenceList.create(envelope.codeHash, [first, ...flat.slice(1)]);
+    // Meanings for the model input (M-02e): every signal and finding
+    // travels with its stated meaning beside the cited evidence ids.
+    const evidence = EvidenceList.create(
+      envelope.codeHash,
+      [first, ...flat.slice(1)],
+      envelopeMeanings(envelope),
+    );
     if (!evidence.ok) {
       return ok({
         kind: "assessed",

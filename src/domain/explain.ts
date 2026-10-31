@@ -94,7 +94,9 @@ const HARD_TO_ANALYZE_LEAD: Readonly<Record<HardToAnalyzeCause, string>> = Objec
 // Holds-now carries value, block and time; can-change carries the proven
 // changer (K-303), while can-change-unknown names no account because no
 // controlling account is proven. Numbers and addresses render as data.
-function renderMarker(temporality: Temporality): string {
+// Exported so model input builders quote the same sentence the template
+// renders (M-02e); the claim text stays the single source of meaning.
+export function describeTemporality(temporality: Temporality): string {
   switch (temporality.kind) {
     case "applies-now": {
       const measured = temporality.measuredValue;
@@ -133,7 +135,7 @@ function renderEvidence(evidence: NonEmpty<EvidenceType>): string {
 }
 
 function renderClaimText(signal: Signal, temporality: Temporality): string {
-  const marker = renderMarker(temporality);
+  const marker = describeTemporality(temporality);
   const pointers = renderEvidence(signal.evidence);
   switch (signal.kind) {
     case "capability":

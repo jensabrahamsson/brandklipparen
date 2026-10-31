@@ -15,6 +15,7 @@
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
 import { checkCitations } from "../domain/investigation.ts";
+import type { FindingMeaning } from "../domain/modelMeanings.ts";
 import type {
   CheckedNarrative,
   EvidenceRef,
@@ -34,7 +35,9 @@ import { InvestigationModelInput as InvestigationModelInputCtor } from "../ports
 
 // Frozen facts the host already fetched for this analysis (P-32). The
 // runner deep-treats this value as read-only: tools receive it but never
-// write it, and the envelope carries no copy of it.
+// write it, and the envelope carries no copy of it. Meanings pair each
+// finding and signal id with its stated meaning (M-02e); they travel to
+// the model only, never back into scores, signals or evidence.
 export type FrozenInvestigationFacts = {
   readonly codeHash: CodeHashType;
   readonly scoreBand: string;
@@ -46,6 +49,7 @@ export type FrozenInvestigationFacts = {
   // synthetic corpus rather than chain reads. The report then marks the
   // input unverified; chain-sourced facts stay verified.
   readonly synthetic?: boolean | undefined;
+  readonly meanings?: readonly FindingMeaning[] | undefined;
 };
 
 // Hard limits from typed configuration (P-34). Every limit ends the run
@@ -104,12 +108,20 @@ export type AdvanceFailure = {
 // Detector wiring into the catalogue (P-32): each entry re-runs one
 // registered detector on its frozen projection and returns the finding
 // ids the registry boundary already validated. Docs excerpts travel as
-// quoted data under the caller's cap.
+// quoted data under the caller's cap. Finding titles travel beside the
+// tool (M-02e): a listed finding id means that detector FOUND the
+// pattern, so the description names what each returned id means instead
+// of leaving the model with a bare id. At most a capped number of
+// titles travels per tool with an explicit remainder count, so a tool
+// with many display records cannot blow the input budget.
+export const MAX_CATALOGUE_FINDINGS_PER_TOOL = 10;
+
 export function buildInvestigationCatalogue(input: {
   readonly detectors: readonly {
     readonly pluginId: string;
     readonly description: string;
     readonly findings: readonly string[];
+    readonly findingTitles?: Readonly<Record<string, string>> | undefined;
   }[];
   readonly evidenceIds: readonly string[];
   readonly summary: string;
@@ -120,7 +132,7 @@ export function buildInvestigationCatalogue(input: {
     const findings = detector.findings.slice();
     tools.push({
       toolId: `detector.${detector.pluginId}`,
-      description: detector.description,
+      description: describeDetectorTool(detector),
       argNames: [],
       run: () => findings.slice(),
     });
@@ -157,6 +169,28 @@ export function buildInvestigationCatalogue(input: {
     },
   });
   return { tools: Object.freeze(tools) };
+}
+
+function describeDetectorTool(detector: {
+  readonly description: string;
+  readonly findings: readonly string[];
+  readonly findingTitles?: Readonly<Record<string, string>> | undefined;
+}): string {
+  if (detector.findings.length === 0) {
+    return `${detector.description} No findings: this detector found none of its patterns.`;
+  }
+  const titles = detector.findingTitles ?? {};
+  const named = detector.findings.map((id) => {
+    const title = titles[id];
+    return title === undefined ? id : `${id}: ${title}`;
+  });
+  const shown = named.slice(0, MAX_CATALOGUE_FINDINGS_PER_TOOL);
+  const remainder = named.length - shown.length;
+  const suffix = remainder > 0 ? ` (+${remainder} more)` : "";
+  return (
+    `${detector.description} Findings already found by this detector: ${shown.join("; ")}${suffix}. ` +
+    `A listed finding id means this detector FOUND the pattern; absence of a finding means it did not.`
+  );
 }
 
 function findTool(catalogue: InvestigationCatalogue, toolId: string): InvestigationTool | null {
@@ -376,6 +410,7 @@ function buildModelInput(
     codeHash: facts.codeHash,
     scoreBand: facts.scoreBand,
     signalIds: facts.signalIds.slice(),
+    meanings: (facts.meanings ?? []).slice(),
     // The reserved final step offers no tools (M-2c): the catalogue
     // travels empty and the model must conclude.
     tools: concludeOnly

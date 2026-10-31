@@ -10,6 +10,7 @@
 // server-side, mirroring AssessmentModelPort (K-505, K-513).
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
+import type { FindingMeaning as FindingMeaningType } from "../domain/modelMeanings.ts";
 import type {
   BlockNumber as BlockNumberType,
   CodeHash as CodeHashType,
@@ -69,7 +70,11 @@ export type InvestigationBudgets = {
 // catalogue, trace so far and remaining budgets. Nothing else enters.
 // `concludeOnly` marks the reserved final step (M-2c): the runner offers
 // no tools there and the model must conclude, so the loop always ends
-// with a checked narrative instead of a spent step budget.
+// with a checked narrative instead of a spent step budget. Meanings pair
+// each finding and signal id with its stated meaning (M-02e): a listed
+// finding id means that detector FOUND the pattern. They are optional
+// display data for the prompt only; the trace evidence ids stay the
+// cited ids.
 export type InvestigationModelInput = {
   readonly codeHash: CodeHashType;
   readonly scoreBand: string;
@@ -78,6 +83,7 @@ export type InvestigationModelInput = {
   readonly trace: readonly InvestigationTraceEntry[];
   readonly budgets: InvestigationBudgets;
   readonly concludeOnly: boolean;
+  readonly meanings: readonly FindingMeaningType[];
 };
 
 export const InvestigationModelInput = {
@@ -89,6 +95,7 @@ export const InvestigationModelInput = {
     readonly trace: readonly InvestigationTraceEntry[];
     readonly budgets: InvestigationBudgets;
     readonly concludeOnly?: boolean | undefined;
+    readonly meanings?: readonly FindingMeaningType[] | undefined;
   }): Result<InvestigationModelInput, { kind: "invalid-investigation-input"; message: string }> {
     if (input.scoreBand.length === 0 || input.scoreBand.length > 64) {
       return err({ kind: "invalid-investigation-input", message: "score band must be a short label" });
@@ -112,6 +119,7 @@ export const InvestigationModelInput = {
         trace: Object.freeze(input.trace.slice()),
         budgets: Object.freeze({ ...input.budgets }),
         concludeOnly,
+        meanings: Object.freeze((input.meanings ?? []).slice()),
       }),
     );
   },
