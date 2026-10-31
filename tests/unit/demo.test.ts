@@ -27,11 +27,15 @@ import {
   DEMO_INVESTIGATE_OFF_LINE,
   DEMO_LP_FEED_OFF_LINE,
   DEMO_LP_FEED_READY_LINE,
+  DEMO_MARKET_OFF_LINE,
+  DEMO_MARKET_PROVIDER,
+  DEMO_MARKET_READY_LINE,
   DEMO_PERSONALIZE_META_PROVIDER,
   DEMO_REEXEC_MARKER,
   demoAssessmentStatus,
   demoInvestigateStatus,
   demoLpFeedStatus,
+  demoMarketStatus,
   discoverextdecompBinary,
   displayPathWithHome,
   ensureDemoApiKey,
@@ -45,6 +49,7 @@ import {
   withDemoAssessmentDefault,
   withDemoDefaults,
   withDemoInvestigateDefault,
+  withDemoMarketDefault,
   withDemoPersonalizeDefault,
 } from "../../scripts/demo.ts";
 
@@ -820,5 +825,41 @@ describe("demo extdecomp discovery order", () => {
         existsSync: existing([]),
       }),
     ).toBe(undefined);
+  });
+});
+
+describe("demo market provider default (dexscreener)", () => {
+  const PROVIDER = "BRANDKLIPPAREN_MARKET_PROVIDER";
+
+  test("an unset or empty provider defaults to dexscreener", () => {
+    expect(DEMO_MARKET_PROVIDER).toBe("dexscreener");
+    const { env: defaulted, defaulted: applied } = withDemoMarketDefault({});
+    expect(applied).toBe(true);
+    expect(defaulted[PROVIDER]).toBe("dexscreener");
+    const { env: emptyDefaulted } = withDemoMarketDefault({ [PROVIDER]: "" });
+    expect(emptyDefaulted[PROVIDER]).toBe("dexscreener");
+  });
+
+  test("an explicit provider value always wins", () => {
+    for (const explicit of ["off", "dexscreener"]) {
+      const { env: kept, defaulted: applied } = withDemoMarketDefault({ [PROVIDER]: explicit });
+      expect(applied).toBe(false);
+      expect(kept[PROVIDER]).toBe(explicit);
+    }
+  });
+
+  test("the market status line names the provider truthfully", () => {
+    expect(demoMarketStatus({ [PROVIDER]: "dexscreener" })).toBe(DEMO_MARKET_READY_LINE);
+    expect(DEMO_MARKET_READY_LINE).toBe("market provider: dexscreener");
+    expect(demoMarketStatus({})).toBe(DEMO_MARKET_OFF_LINE);
+    expect(demoMarketStatus({ [PROVIDER]: "off" })).toBe(DEMO_MARKET_OFF_LINE);
+    expect(demoMarketStatus({ [PROVIDER]: "" })).toBe(DEMO_MARKET_OFF_LINE);
+  });
+
+  test("a defaulted provider passes config validation", () => {
+    const { env } = withDemoDefaults({});
+    const { env: defaulted } = withDemoMarketDefault(env);
+    expect(defaulted[PROVIDER]).toBe("dexscreener");
+    expect(loadConfig(defaulted).ok).toBe(true);
   });
 });

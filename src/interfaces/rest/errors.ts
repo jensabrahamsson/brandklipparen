@@ -17,6 +17,7 @@ export type HttpErrorCode =
   | "assessment-not-configured"
   | "investigation-not-configured"
   | "onchain-not-configured"
+  | "market-not-configured"
   | "rate-limited"
   | "upstream-unavailable"
   | "service-unavailable"
@@ -101,6 +102,15 @@ export function investigationNotConfigured(requestId: string): HttpError {
     501,
     "investigation-not-configured",
     "Investigation is not configured: set the investigation provider key to enable it.",
+    requestId,
+  );
+}
+
+export function marketNotConfigured(requestId: string): HttpError {
+  return requestError(
+    501,
+    "market-not-configured",
+    "Market listing is not configured: set the market provider to dexscreener to enable it.",
     requestId,
   );
 }

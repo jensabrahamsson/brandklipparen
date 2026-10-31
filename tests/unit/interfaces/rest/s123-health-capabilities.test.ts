@@ -67,6 +67,7 @@ describe("health capabilities", () => {
       rug: { disabled: true },
       personalize: { disabled: true },
       onchain: { disabled: true },
+      market: { disabled: true },
     });
   });
 
@@ -89,6 +90,7 @@ describe("health capabilities", () => {
       rug: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
       personalize: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
       onchain: { available: true },
+      market: { disabled: true },
     });
   });
 
@@ -107,6 +109,7 @@ describe("health capabilities", () => {
       rug: { disabled: true },
       personalize: { disabled: true },
       onchain: { available: true },
+      market: { disabled: true },
     });
   });
 
@@ -126,6 +129,14 @@ describe("health capabilities", () => {
       rug: { disabled: true },
       personalize: { disabled: true },
       onchain: { disabled: true },
+      market: { disabled: true },
     });
+  });
+
+  test("dxb1_market_listing_reports_provider_when_bound", () => {
+    expect(healthCapabilities({ market: { provider: "dexscreener" } })).toMatchObject({
+      market: { provider: "dexscreener" },
+    });
+    expect(healthCapabilities({})).toMatchObject({ market: { disabled: true } });
   });
 });

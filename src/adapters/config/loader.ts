@@ -332,6 +332,7 @@ const V = {
   explainDailyCapPerKey: "BRANDKLIPPAREN_EXPLAIN_DAILY_CAP_PER_KEY",
   chatDailyCapPerKey: "BRANDKLIPPAREN_CHAT_DAILY_CAP_PER_KEY",
   rugDailyCapPerKey: "BRANDKLIPPAREN_RUG_DAILY_CAP_PER_KEY",
+  marketProvider: "BRANDKLIPPAREN_MARKET_PROVIDER",
 } as const;
 
 const parseEnvName = (raw: string): Result<EnvironmentName, ConfigError> =>
@@ -1003,6 +1004,21 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!rugDailyCapPerKey.ok) {
     return rugDailyCapPerKey;
   }
+  // Market listing provider (DX-B1): optional in every setup, so local
+  // and CI runs stay idle with the listing answering `not-configured`.
+  // Unset or "off" means disabled; "dexscreener" binds the public listing
+  // adapter, which needs no key. Anything else is a typed startup error
+  // naming the variable.
+  const marketProvider = optionalField(env, V.marketProvider, (raw) =>
+    parseEnum<"dexscreener" | "off">(
+      V.marketProvider,
+      ["dexscreener", "off"],
+      "dexscreener or off",
+    )(raw),
+  );
+  if (!marketProvider.ok) {
+    return marketProvider;
+  }
   // New-LP-pairs feed keys (S-087, S-088, K-039, K-505): optional in
   // every setup, so local and CI runs stay key-free with the feed
   // answering `not-configured`. The WETH quote arrives from operator
@@ -1257,6 +1273,9 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(feedRpcUrl.value === undefined ? {} : { feedRpcUrl: feedRpcUrl.value }),
     ...(feedWethAddress.value === undefined ? {} : { feedWethAddress: feedWethAddress.value }),
     ...(feedStatePath.value === undefined ? {} : { feedStatePath: feedStatePath.value }),
+    // "off" stays in the config like the investigate toggle: the
+    // composition must see it and stay disabled.
+    ...(marketProvider.value === undefined ? {} : { marketProvider: marketProvider.value }),
   };
 
   if (config.rpcUrls !== undefined) {

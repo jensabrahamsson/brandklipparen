@@ -289,6 +289,7 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `ETHERSCAN_API_KEY` | Free Etherscan API key for the LP pairs feed logs source, server-side only under K-505 | No | Operator polling with the feed enabled |
 | `BRANDKLIPPAREN_FEED_RPC_URL` | Optional JSON-RPC endpoint for the feed `eth_getLogs` fallback, server-side only under K-505 | No | Operator polling with the fallback enabled |
 | `BK_WETH_ADDRESS` | Canonical WETH address used as the WETH quote side for the feed | No | Operator polling with the feed enabled |
+| `BRANDKLIPPAREN_MARKET_PROVIDER` | Selected market listing provider: `dexscreener` or `off`; exactly one listing adapter is bound at startup. The demo defaults to `dexscreener` unless set explicitly; `off` or unset leaves the listing answering not-configured with zero sends | No | Demo with the market listing enabled |
 
 The selected provider's variables are required in the demo per the
 table; the other provider's key stays in the secret store for a

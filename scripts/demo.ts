@@ -528,6 +528,40 @@ export function demoLpFeedStatus(
   return DEMO_LP_FEED_OFF_LINE;
 }
 
+// Demo default for the market listing (DX-B1): when the provider is unset
+// or empty, the demo defaults it to dexscreener so the live demo serves
+// the listing with zero manual steps. An explicit value (including "off")
+// always wins. Pure: reads the provider name only, never key values.
+export const DEMO_MARKET_PROVIDER = "dexscreener";
+
+export function withDemoMarketDefault(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly env: Record<string, string | undefined>; readonly defaulted: boolean } {
+  const current = env["BRANDKLIPPAREN_MARKET_PROVIDER"] ?? "";
+  if (current !== "") {
+    return { env: { ...env }, defaulted: false };
+  }
+  return {
+    env: { ...env, BRANDKLIPPAREN_MARKET_PROVIDER: DEMO_MARKET_PROVIDER },
+    defaulted: true,
+  };
+}
+
+// Single market listing status line for the demo log: exactly one line
+// naming the selected provider, never values or response bodies.
+export const DEMO_MARKET_OFF_LINE = "market: off (set BRANDKLIPPAREN_MARKET_PROVIDER to dexscreener)";
+export const DEMO_MARKET_READY_LINE = "market provider: dexscreener";
+
+export function demoMarketStatus(
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const provider = env["BRANDKLIPPAREN_MARKET_PROVIDER"] ?? "";
+  if (provider === DEMO_MARKET_PROVIDER) {
+    return DEMO_MARKET_READY_LINE;
+  }
+  return DEMO_MARKET_OFF_LINE;
+}
+
 export type NodeCheck = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 // The demo needs Node 22.x. Anything else fails with the portable hint.
@@ -922,7 +956,11 @@ async function runDemo(): Promise<void> {
   if (personalized.defaulted) {
     process.stdout.write("personalize provider: defaulted to meta-model-api (key loaded)\n");
   }
-  const keyed = ensureDemoApiKey(personalized.env, () => `demo-local-${randomBytes(16).toString("hex")}`);
+  const marketed = withDemoMarketDefault(personalized.env);
+  if (marketed.defaulted) {
+    process.stdout.write("market provider: defaulted to dexscreener\n");
+  }
+  const keyed = ensureDemoApiKey(marketed.env, () => `demo-local-${randomBytes(16).toString("hex")}`);
   const demoEnv = keyed.env;
   if (keyed.generated) {
     process.stdout.write(`demo api key: generated per-run local key ${keyed.preview} (full key never printed).\n`);
@@ -935,6 +973,7 @@ async function runDemo(): Promise<void> {
   process.stdout.write(`${demoChatStatus(demoEnv)}\n`);
   process.stdout.write(`${demoRugStatus(demoEnv)}\n`);
   process.stdout.write(`${demoLpFeedStatus(demoEnv)}\n`);
+  process.stdout.write(`${demoMarketStatus(demoEnv)}\n`);
   const extdecomp = discoverextdecompBinary({
     extdecompBin: process.env["extdecomp_BIN"],
     pathEnv: process.env["PATH"],

@@ -67,12 +67,15 @@ import { createApiKeyStore } from "./apiKeys.ts";
 import type { ApiKeyStore } from "./apiKeys.ts";
 import type { SecretString } from "../../ports/config.ts";
 import type { LiveTokensReader } from "../../ports/liveTokens.ts";
+import { MARKET_CHAIN } from "../../ports/marketFeed.ts";
+import type { MarketNewReader } from "../../ports/marketFeed.ts";
 import type { RpcPort } from "../../ports/rpc.ts";
 import {
   assessmentNotConfigured,
   invalidApiKey,
   investigationNotConfigured,
   keyInUrlOrBody,
+  marketNotConfigured,
   missingApiKey,
   notFound,
   onchainNotConfigured,
@@ -205,6 +208,11 @@ export type RestServerOptions = {
   // snapshot behind GET /v1/live-tokens. Absent reader means the list is
   // unavailable on this server (the route answers 500).
   readonly liveTokens?: LiveTokensReader | undefined;
+  // Market listing reader (DX-B1): the application service snapshot
+  // behind GET /v1/market-new, holding the server-side listing cache.
+  // Absent reader means the listing is off on this server (the route
+  // answers market-not-configured with zero provider calls).
+  readonly marketNew?: MarketNewReader | undefined;
   // On-chain feature reads (session A): the chain port behind serving-mode
   // reads plus the operator-configured canonical WETH address (null when
   // unset, in which case WETH-quoted pools do not qualify). Absent means
@@ -433,6 +441,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
       rugService: options.rugService,
       personalizeService: options.personalizeService,
       onchain: options.onchain,
+      market: options.marketNew === undefined ? undefined : { provider: "dexscreener" },
     });
     return reply
       .code(200)
@@ -1120,6 +1129,56 @@ export function createRestServer(options: RestServerOptions): RestServer {
           apiVersion: API_VERSION,
         }),
       );
+  });
+
+  // Market listing of newly listed tokens (DX-B1): the cached listing
+  // snapshot behind the same API-key gate as the other list routes
+  // (K-024). The chain names the listing network; only ethereum is
+  // served, anything else fails validation before any provider call. An
+  // absent reader, or a snapshot reporting not-configured, answers
+  // market-not-configured with zero provider calls. A snapshot reporting
+  // unavailable answers 502 with a retryable message; the error contents
+  // stay on the server side.
+  app.get("/v1/market-new", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    const requestId = issueRequestId();
+    const gated = gateKeyOnly(request, request.query, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const rawChain = (request.query as Record<string, unknown>)["chain"];
+    if (rawChain !== MARKET_CHAIN) {
+      return sendError(
+        reply,
+        validationError("Invalid chain: expected ethereum.", requestId as string),
+      );
+    }
+    const reader = options.marketNew;
+    if (reader === undefined) {
+      return sendError(reply, marketNotConfigured(requestId as string));
+    }
+    let snapshot;
+    try {
+      snapshot = await reader.getMarket(MARKET_CHAIN);
+    } catch {
+      return sendError(
+        reply,
+        requestError(502, "upstream-unavailable", "Market listing is unavailable; retry with the same request ID.", requestId as string),
+      );
+    }
+    if (snapshot.status === "not-configured") {
+      return sendError(reply, marketNotConfigured(requestId as string));
+    }
+    if (snapshot.status === "unavailable") {
+      return sendError(
+        reply,
+        requestError(502, "upstream-unavailable", "Market listing is unavailable; retry with the same request ID.", requestId as string),
+      );
+    }
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(JSON.stringify({ items: snapshot.items, updatedAt: snapshot.updatedAt }));
   });
 
   app.get<{ Params: { id: string } }>(

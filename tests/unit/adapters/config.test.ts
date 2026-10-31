@@ -560,4 +560,25 @@ describe("demo provider without key or model id means assessment off (S-135)", (
       );
     }
   });
+
+  test("dxb1_market_provider_selection_is_optional_and_validated", () => {
+    // Unset stays absent, so local and CI runs keep the listing off.
+    const unset = loadConfig(baseCiEnv());
+    expect(unset.ok).toBe(true);
+    if (unset.ok) {
+      expect(unset.value.marketProvider).toBeUndefined();
+    }
+    for (const provider of ["dexscreener", "off"] as const) {
+      const loaded = loadConfig({ ...baseCiEnv(), BRANDKLIPPAREN_MARKET_PROVIDER: provider });
+      expect(loaded.ok).toBe(true);
+      if (loaded.ok) {
+        expect(loaded.value.marketProvider).toBe(provider);
+      }
+    }
+    const bad = loadConfig({ ...baseCiEnv(), BRANDKLIPPAREN_MARKET_PROVIDER: "other" });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) {
+      expect(bad.error.variable).toBe("BRANDKLIPPAREN_MARKET_PROVIDER");
+    }
+  });
 });

@@ -18,6 +18,9 @@ import { FEED_FACTORIES, QUOTE_TOKENS } from "../domain/lpFeed.ts";
 import type { QuoteSet } from "../domain/lpFeed.ts";
 import { createEtherscanLogsAdapter } from "../adapters/lpFeed/etherscanLogsAdapter.ts";
 import { createRpcLogsAdapter } from "../adapters/lpFeed/rpcLogsAdapter.ts";
+import { createMarketFeedAdapter } from "../adapters/market/dexscreenerAdapter.ts";
+import { createMarketService } from "../application/marketService.ts";
+import type { MarketNewReader } from "../ports/marketFeed.ts";
 import { loadLiveTokensFile, saveLiveTokensFile } from "../adapters/liveTokens/liveTokensFile.ts";
 import { systemLiveTokensTimers } from "../adapters/liveTokens/systemTimers.ts";
 import { createTokenMetadataReader } from "../adapters/liveTokens/tokenMetadata.ts";
@@ -121,6 +124,10 @@ export type BuiltApp = {
   // REST/demo runtime can start it; it runs nothing until start() is
   // called, so tests and CLI one-shots that never start it stay idle.
   readonly liveTokens: LiveTokensService;
+  // Market listing reader (DX-B1): the cached listing behind GET
+  // /v1/market-new. Undefined when the provider selection is off, so the
+  // route answers market-not-configured with zero provider calls.
+  readonly marketNew: MarketNewReader | undefined;
   // Required rate limiting shared by both driving adapters (K-504, M-08).
   readonly rateLimit: RateLimitConfig;
   // Ready server options: the drivers construct their servers from these
@@ -331,6 +338,17 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     });
   }
   const liveTokens = buildLiveTokensService(config, services, deps, templateVersion.value);
+  // Market listing (DX-B1): the demo selects the public listing adapter
+  // unless the operator set the provider explicitly; other setups stay
+  // off when unset. The service never starts an analysis: enrichment
+  // reads solely through bound lookups, and none is bound here, so items
+  // serve without an analysis field until a lookup is wired.
+  const marketProvider =
+    config.marketProvider ?? (config.env === "demo" ? ("dexscreener" as const) : undefined);
+  const marketNew: MarketNewReader | undefined =
+    marketProvider === undefined || marketProvider === "off"
+      ? undefined
+      : createMarketService({ feed: createMarketFeedAdapter(marketProvider), now: () => Date.now() });
   const rest: RestServerOptions = Object.freeze({
     services,
     apiKeys,
@@ -353,6 +371,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     onchain,
     rateLimit: rateLimit.value,
     liveTokens,
+    marketNew,
   });
   const mcp: McpServerOptions = Object.freeze({
     services,
@@ -379,6 +398,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
       chat: chat.value,
       rug: rug.value,
       liveTokens,
+      marketNew,
       rateLimit: rateLimit.value,
       rest,
       mcp,

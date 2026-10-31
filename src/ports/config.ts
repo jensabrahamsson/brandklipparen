@@ -189,6 +189,11 @@ export type AppConfig = {
   // An unset path leaves state in memory only, so local and CI runs stay
   // file-free; the poller writes through this path when it is set.
   readonly feedStatePath?: string | undefined;
+  // Market listing provider (DX-B1): unset or "off" leaves the listing
+  // answering not-configured with zero sends. "dexscreener" binds the
+  // public listing adapter, which needs no key. The demo selects
+  // dexscreener unless set explicitly; other setups stay off when unset.
+  readonly marketProvider?: "dexscreener" | "off";
 };
 
 // Kept for traceability: docs/architecture.md (A-05) names this value DriftConfig.
