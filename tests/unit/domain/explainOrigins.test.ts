@@ -14,6 +14,7 @@ import { CodeSnippet, Evidence } from "../../../src/domain/evidence.ts";
 import {
   TEMPLATE_VERSION_1_1_0,
   explanationToCanonical,
+  originEntryKey,
   renderExplanation,
 } from "../../../src/domain/explain.ts";
 import type {
@@ -519,5 +520,88 @@ describe("p1 honest claim sentences (1.1.0)", () => {
     expect(explanation.claims[0]?.temporality.kind).toBe("applies-now");
     expect(explanation.claims[0]?.text).toContain("The owner can create new tokens.");
     expect(explanation.claims[0]?.text).toContain("Holds now");
+  });
+
+  test("p2_shared_id_keeps_one_claim_per_origin_and_temporality", () => {
+    const code = fixtureCode();
+    const changer = mustOk(Address.parse(testChanger()));
+    const gated = mustOk(
+      Signal.createCapability({
+        codeHash: mustOk(CodeHash.of(code)),
+        risk: "rug-pull",
+        direction: "raises",
+        severity: "high",
+        temporality: { kind: "can-change", changer },
+        evidence: [
+          mustOk(
+            Evidence.create({
+              selector: mustOk(Selector.parse("0x40c10f19")),
+              offset: mustOk(PcOffset.of(11, code)),
+            }),
+          ),
+          mustOk(
+            Evidence.create({
+              selector: mustOk(Selector.parse("0xa9059cbb")),
+              offset: mustOk(PcOffset.of(30, code)),
+            }),
+          ),
+        ],
+      }),
+    );
+    const ownerSlot = mustOk(
+      Signal.createCapability({
+        codeHash: mustOk(CodeHash.of(code)),
+        risk: "rug-pull",
+        direction: "raises",
+        severity: "high",
+        temporality: {
+          kind: "applies-now",
+          measuredValue: {
+            value: mustOk(StorageWord.parse(`0x${"0".repeat(24)}${testChanger().slice(2).toLowerCase()}`)),
+            slot: mustOk(Slot.parse(`0x${"00".repeat(32)}`)),
+            block: mustOk(BlockNumber.of(18000000)),
+            at: mustOk(Timestamp.of(1700000000000)),
+          },
+          block: mustOk(BlockNumber.of(18000000)),
+          at: mustOk(Timestamp.of(1700000000000)),
+        },
+        evidence: [
+          mustOk(
+            Evidence.create({
+              selector: mustOk(Selector.parse("0x40c10f19")),
+              offset: mustOk(PcOffset.of(11, code)),
+            }),
+          ),
+        ],
+      }),
+    );
+    // One signal id covers both signals: the id names the code hash and
+    // the first evidence selector only.
+    expect(gated.id).toBe(ownerSlot.id);
+    const explanation = mustOk(
+      renderExplanation({
+        signals: [gated, ownerSlot],
+        templateVersion: TEMPLATE_VERSION_1_1_0,
+        observed: { kind: "can-change-unknown" },
+        origins: new Map<string, ExplanationOrigin>([
+          [originEntryKey(gated), { pluginId: "dev.brandklipparen.mint", key: "mint" }],
+          [originEntryKey(ownerSlot), { pluginId: "dev.brandklipparen.ownership", key: "owner-slot" }],
+        ]),
+      }),
+    );
+    expect(explanation.claims.length).toBe(2);
+    const mintClaim = explanation.claims.find((claim) =>
+      claim.text.startsWith("The owner can create new tokens."),
+    );
+    const slotClaim = explanation.claims.find((claim) =>
+      claim.text.startsWith("An owner account controls the functions below."),
+    );
+    if (mintClaim === undefined || slotClaim === undefined) {
+      throw new Error("expected one mint claim and one owner claim");
+    }
+    expect(mintClaim.text).toContain(`Can change: account ${changer as string} can activate this later.`);
+    expect(mintClaim.temporality).toEqual({ kind: "can-change", changer });
+    expect(slotClaim.text).toContain("Holds now");
+    expect(slotClaim.temporality.kind).toBe("applies-now");
   });
 });

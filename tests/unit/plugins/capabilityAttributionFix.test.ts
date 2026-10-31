@@ -19,7 +19,7 @@ import { parseModelArtifact } from "../../../src/domain/risk.ts";
 import { ArtifactChecksum } from "../../../src/domain/types.ts";
 import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 import { syntheticAddress } from "../../helpers/syntheticAddresses.ts";
-import { CALL, CALLDATALOAD, STOP, ownerGuard, sstoreConstSlot, tokenBytecode } from "../../helpers/ownerControlFixtures.ts";
+import { ADD, CALL, CALLDATALOAD, KECCAK, SLOAD, SSTORE, STOP, ownerGuard, push1, sstoreConstSlot, tokenBytecode } from "../../helpers/ownerControlFixtures.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -143,25 +143,52 @@ describe("capability changer comes from the ownership proof", () => {
     }
   });
 
-  test("guarded code names the live owner as changer, not the analysed address", async () => {
-    const target = syntheticAddress(22);
-    const owner = syntheticAddress(23);
+  test("guarded code names the live owner on the gated signal only, not the analysed address", async () => {
+    // P-2 rule: capability signals never name a changer; only a signal
+    // converted from an owner-gated detector (here `mint`) names the proven
+    // live owner. The analysed address is never a changer either way.
+    const target = syntheticAddress(32);
+    const owner = syntheticAddress(33);
+    const mintSelector = "0x40c10f19";
+    const transferSelector = "0xa9059cbb";
+    const ownerSelector = "0x8da5cb5b";
     const bytecode = tokenBytecode([
-      { selector: "0x40c10f19", body: [...ownerGuard(0, 200), ...sstoreConstSlot(9, [CALLDATALOAD]), STOP] },
-      { selector: "0xa9059cbb", body: [CALLDATALOAD, CALL, STOP] },
+      {
+        selector: mintSelector,
+        body: [
+          ...ownerGuard(0, 200),
+          CALLDATALOAD,
+          ...push1(1),
+          SLOAD,
+          ADD,
+          ...sstoreConstSlot(1, []),
+          CALLDATALOAD,
+          ...push1(2),
+          KECCAK,
+          SSTORE,
+          STOP,
+        ],
+      },
+      {
+        selector: transferSelector,
+        body: [CALLDATALOAD, ...push1(1), SLOAD, ADD, ...sstoreConstSlot(2, [CALLDATALOAD]), STOP],
+      },
+      { selector: ownerSelector, body: [STOP] },
     ]);
     const hex = `0x${Buffer.from(bytecode).toString("hex")}`;
     const block = mustOk(BlockNumber.of(24000000));
     const ownerWord = `0x${"0".repeat(24)}${owner.slice(2).toLowerCase()}`;
     const zeroSlot = `0x${"0".repeat(64)}`;
+    const wanted = mustOk(Address.parse(owner)) as string;
     const rpc = new FakeRpcAdapter(
       new Map([[target, hex]]),
       block,
       new Map([[target, new Map([[zeroSlot, ownerWord]])]]),
+      { calls: new Map([[ownerSelector, ownerWord]]) },
     );
     const artifact = mustOk(
       parseModelArtifact({
-        version: "0.1.0-prior.test",
+        version: "0.1.0-gated.test",
         severityWeights: { low: 0.2, medium: 0.5, high: 1.0 },
         causeWeights: { timeout: 0.4, "resource-limit": 0.4, "decompiler-error": 0.6, "obfuscated-structure": 0.6 },
         biases: { "rug-pull": 0.0, honeypot: 0.0, "bot-pump": 0.0 },
@@ -171,8 +198,9 @@ describe("capability changer comes from the ownership proof", () => {
           "bot-pump": { slope: 1.0, intercept: 0.0 },
         },
         scoreWeights: { "rug-pull": 1.0, honeypot: 1.0, "bot-pump": 1.0 },
-        pluginWeights: { "dev.brandklipparen.ownership": 0.9 },
+        pluginWeights: { "dev.brandklipparen.mint": 0.9, "dev.brandklipparen.ownership": 0.9 },
         pluginFeatureCatalogue: {
+          "dev.brandklipparen.mint": { risk: "rug-pull", direction: "raises", severity: "high" },
           "dev.brandklipparen.ownership": { risk: "rug-pull", direction: "raises", severity: "high" },
         },
       }),
@@ -187,25 +215,42 @@ describe("capability changer comes from the ownership proof", () => {
       },
       mustDefaultDetectorSet(),
     );
-    const analysed = await services.analyzeToken(analyzeInput(target, "0.1.0-prior.test"));
+    const analysed = await services.analyzeToken(analyzeInput(target, "0.1.0-gated.test"));
     expect(analysed.ok).toBe(true);
     if (!analysed.ok || analysed.value.kind !== "assessed") {
       throw new Error("expected an assessed envelope");
     }
     const capabilities = analysed.value.envelope.signals.filter((signal) => signal.kind === "capability");
     expect(capabilities.length).toBeGreaterThan(0);
-    let sawOwnerChanger = false;
-    for (const signal of capabilities) {
+    // Capability-origin signals (here the bot-pump storage-write) never
+    // name a changer: neither the analysed address nor the live owner.
+    const pumps = capabilities.filter((signal) => signal.kind === "capability" && signal.risk === "bot-pump");
+    expect(pumps.length).toBeGreaterThan(0);
+    for (const signal of pumps) {
       if (signal.kind !== "capability") {
         continue;
       }
-      if (signal.temporality.kind === "can-change") {
-        expect((signal.temporality.changer as string).toLowerCase()).not.toBe(target.toLowerCase());
-        if ((signal.temporality.changer as string).toLowerCase() === owner.toLowerCase()) {
-          sawOwnerChanger = true;
-        }
-      }
+      expect(signal.temporality).toEqual({ kind: "can-change-unknown" });
     }
-    expect(sawOwnerChanger).toBe(true);
+    // The owner-gated mint signal names the live owner in EIP-55 form,
+    // never the analysed address.
+    const gated = capabilities.filter(
+      (signal) => signal.kind === "capability" && signal.risk === "rug-pull" && signal.temporality.kind === "can-change",
+    );
+    expect(gated.length).toBeGreaterThan(0);
+    for (const signal of gated) {
+      if (signal.kind !== "capability" || signal.temporality.kind !== "can-change") {
+        continue;
+      }
+      expect(signal.temporality.changer as string).toBe(wanted);
+      expect((signal.temporality.changer as string).toLowerCase()).not.toBe(target.toLowerCase());
+    }
+    // No capability anywhere names the analysed address as changer.
+    for (const signal of capabilities) {
+      if (signal.kind !== "capability" || signal.temporality.kind !== "can-change") {
+        continue;
+      }
+      expect((signal.temporality.changer as string).toLowerCase()).not.toBe(target.toLowerCase());
+    }
   });
 });

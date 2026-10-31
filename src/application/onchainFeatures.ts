@@ -482,8 +482,11 @@ async function readOwner(
     if (slot.ok) {
       const stored = await rpc.getStorageAt(token, slot.value, ctxFor(input, at));
       if (stored.ok) {
-        ownerWord = (stored.value as string).toLowerCase();
-        slotProven = true;
+        const word = (stored.value as string).toLowerCase();
+        ownerWord = word;
+        // Only a zero-padded address word proves the slot: a supply, a
+        // packed word or unrelated storage never counts as proven.
+        slotProven = /^0x0{24}[0-9a-f]{40}$/.test(word);
       }
     }
   }

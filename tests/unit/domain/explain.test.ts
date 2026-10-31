@@ -14,6 +14,7 @@ import {
   SUPPORTED_TEMPLATE_VERSION,
   renderExplanation,
   templateCatalogueId,
+  temporalityKeyOf,
 } from "../../../src/domain/explain.ts";
 import type { Explanation as ExplanationType } from "../../../src/domain/explain.ts";
 import { explanationToCanonical } from "../../../src/domain/explain.ts";
@@ -493,12 +494,16 @@ describe("k301 template explanations from evidence", () => {
           }
           // Deterministic: repeated runs agree bit for bit.
           expect(renderText(second.value)).toBe(renderText(first.value));
-          // 1.1.0 merges claims sharing one signal id and one origin
-          // (the catalogue id when no origins map is passed): one claim per
-          // distinct (signal id, origin), every claim linked to an input
-          // signal, every signal id covered, input left unchanged.
+          // 1.1.0 merges claims sharing one signal id, one origin (the
+          // catalogue id when no origins map is passed) and one
+          // temporality: one claim per distinct (signal id, origin,
+          // temporality), every claim linked to an input signal, every
+          // signal id covered, input left unchanged.
           const expectedGroups = new Set(
-            signals.map((signal) => `${signal.id as string}|${templateCatalogueId(signal)}`),
+            signals.map((signal) => {
+              const temporality = signal.kind === "capability" ? signal.temporality : observed;
+              return `${signal.id as string}|${templateCatalogueId(signal)}|${temporalityKeyOf(temporality)}`;
+            }),
           );
           expect(first.value.claims.length).toBe(expectedGroups.size);
           const ids = new Set(signals.map((signal) => signal.id as string));

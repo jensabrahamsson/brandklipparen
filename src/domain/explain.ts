@@ -54,8 +54,8 @@ export type ExplainError = {
 // the old one; the version in the output keeps text reproducible. 1.0.0
 // renders one claim per signal with the original risk-verb sentences.
 // 1.1.0 renders one sentence per finding origin (capability key or
-// owner-control feature), merges claims that share a signal id and an
-// origin, and stays silent on storage-write. Both versions are
+// owner-control feature), merges claims that share a signal id, an
+// origin and a temporality, and stays silent on storage-write. Both versions are
 // display-only: neither touches score, probabilities or the signal list.
 export const SUPPORTED_TEMPLATE_VERSION: TemplateVersionType =
   "1.1.0" as TemplateVersionType;
@@ -282,16 +282,74 @@ export function renderExplanation(input: {
   );
 }
 
-// Group key for 1.1.0 merging (P-1): claims merge only when they resolve
-// to the same signal id and the same origin. Capability signals without
-// a recorded origin fall back to their risk frame, so distinct risks
-// sharing one id keep distinct claims.
-function groupKeyOf(signal: Signal, origins: ReadonlyMap<string, ExplanationOrigin> | undefined): string {
-  const origin = origins?.get(signal.id as string);
-  if (origin !== undefined) {
-    return `${signal.id as string}|origin:${origin.key}`;
+// Origin entry key for one signal (P-2 follow-up 2): the signal id plus
+// the signal's canonical evidence key. A signal id covers the code hash
+// and the first evidence selector, so signals with different evidence
+// can share one id; an id-keyed map keeps only the first origin and a
+// gated mint signal would take the ownership origin. Keying entries per
+// signal lets each origin keep its own claim and its own temporality
+// text. The application files entries under this key; maps keyed by bare
+// signal id still resolve through the id fallback in `originOf` below.
+// Exported so the application files the same key the template looks up;
+// the claim text stays the single source of meaning.
+export function originEntryKey(signal: Signal): string {
+  const parts = signal.evidence.map(
+    (entry) => `${entry.selector as string}:${entry.offset === undefined ? "none" : String(entry.offset as number)}`,
+  );
+  parts.sort();
+  return `${signal.id as string}|${parts.join(",")}`;
+}
+
+// Per-signal origin lookup: the entry filed for this signal's evidence,
+// else the entry filed for its bare signal id (callers without per-signal
+// entries keep their single origin for every signal sharing the id).
+function originOf(
+  signal: Signal,
+  origins: ReadonlyMap<string, ExplanationOrigin> | undefined,
+): ExplanationOrigin | undefined {
+  if (origins === undefined) {
+    return undefined;
   }
-  return `${signal.id as string}|${templateCatalogueId(signal)}`;
+  const direct = origins.get(originEntryKey(signal));
+  if (direct !== undefined) {
+    return direct;
+  }
+  return origins.get(signal.id as string);
+}
+
+// Temporality part of the 1.1.0 group key: signals that share an id and
+// an origin but carry different temporalities (a can-change gated mint
+// beside an applies-now owner slot) keep one claim each, so each origin
+// keeps its own temporality text. Exported so tests name the same
+// grouping the renderer applies.
+export function temporalityKeyOf(temporality: Temporality): string {
+  switch (temporality.kind) {
+    case "applies-now": {
+      const measured = temporality.measuredValue;
+      return `applies-now:${measured.value as string}|${measured.slot as string}|${measured.block as number}|${measured.at as number}`;
+    }
+    case "can-change":
+      return `can-change:${(temporality.changer as string).toLowerCase()}`;
+    case "can-change-unknown":
+      return "can-change-unknown";
+  }
+}
+
+// Group key for 1.1.0 merging (P-1, P-2 follow-up 2): claims merge only
+// when they resolve to the same signal id, the same origin and the same
+// temporality. Capability signals without a recorded origin fall back to
+// their risk frame, so distinct risks sharing one id keep distinct
+// claims; non-capability signals carry the caller-supplied observation
+// context, so they merge exactly as before.
+function groupKeyOf(
+  signal: Signal,
+  origins: ReadonlyMap<string, ExplanationOrigin> | undefined,
+  observed: Temporality,
+): string {
+  const origin = originOf(signal, origins);
+  const frame = origin !== undefined ? `origin:${origin.key}` : templateCatalogueId(signal);
+  const temporality = signal.kind === "capability" ? signal.temporality : observed;
+  return `${signal.id as string}|${frame}|${temporalityKeyOf(temporality)}`;
 }
 
 // Deduplicated merge of grouped evidence in canonical order (A-32).
@@ -381,10 +439,10 @@ function renderClaimText110(
   }
 }
 
-// One claim per (signal id, origin) group in stable id order (P-1). The
-// merged claim lists every evidence pointer once; its risk sentence and
-// temporality come from the first signal of the group in id order, and
-// the input signals are never mutated.
+// One claim per (signal id, origin, temporality) group in stable id order
+// (P-1, P-2 follow-up 2). The merged claim lists every evidence pointer
+// once; its risk sentence and temporality come from the first signal of
+// the group in id order, and the input signals are never mutated.
 function renderClaims110(
   ordered: readonly Signal[],
   observed: Temporality,
@@ -392,7 +450,7 @@ function renderClaims110(
 ): Claim[] {
   const groups = new Map<string, Signal[]>();
   for (const signal of ordered) {
-    const key = groupKeyOf(signal, origins);
+    const key = groupKeyOf(signal, origins, observed);
     const known = groups.get(key);
     if (known === undefined) {
       groups.set(key, [signal]);
@@ -407,10 +465,7 @@ function renderClaims110(
       continue;
     }
     if (representative.kind === "capability") {
-      const firstSentence = firstSentenceOf(
-        representative,
-        origins?.get(representative.id as string),
-      );
+      const firstSentence = firstSentenceOf(representative, originOf(representative, origins));
       const evidence = mergeEvidence(group);
       if (firstSentence === null || evidence === null) {
         continue;

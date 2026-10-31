@@ -19,7 +19,7 @@ import { resolveProxy } from "./resolveProxy.ts";
 import type { ResolveProxyError, ResolveProxyInput, ResolveProxySuccess } from "./resolveProxy.ts";
 import { standardCantTell } from "../domain/cantTell.ts";
 import type { CantTellItem } from "../domain/cantTell.ts";
-import { explanationToCanonical, renderExplanation } from "../domain/explain.ts";
+import { explanationToCanonical, originEntryKey, renderExplanation } from "../domain/explain.ts";
 import type { Explanation, ExplainError, ExplanationOrigin } from "../domain/explain.ts";
 import { score } from "../domain/risk.ts";
 import type { PluginFeatureMapping } from "../domain/risk.ts";
@@ -32,6 +32,7 @@ import type {
   Address as AddressType,
   ArtifactChecksum as ArtifactChecksumType,
   BlockNumber as BlockNumberType,
+  Bytecode as BytecodeType,
   CacheKey as CacheKeyType,
   CodeHash as CodeHashType,
   DomainError,
@@ -39,6 +40,8 @@ import type {
   ModelVersion as ModelVersionType,
   RequestId as RequestIdType,
   RiskScore as RiskScoreType,
+  Slot as SlotType,
+  StorageWord as StorageWordType,
   TemplateVersion as TemplateVersionType,
   Timestamp as TimestampType,
 } from "../domain/types.ts";
@@ -65,6 +68,7 @@ import type {
 } from "../plugins/detector.ts";
 import type { CloneHit, CloneMapping } from "../domain/clones.ts";
 import { CloneGroupId, Probability, SkeletonHash } from "../domain/types.ts";
+import { extractSelectors } from "../domain/selectors.ts";
 import { Evidence } from "../domain/evidence.ts";
 import type { CodeSnippet as CodeSnippetType } from "../domain/evidence.ts";
 import { HARD_TO_ANALYZE_CAUSES } from "../domain/signals.ts";
@@ -755,13 +759,16 @@ function originKeyOf(finding: PluginFinding): string | null {
   return null;
 }
 
-// Origins for the 1.1.0 explanation templates (P-1): one entry per
-// signal id naming the plugin and key behind the signal. Findings match
-// signals by evidence key, as `ownerSlotProof` already does: the same
-// selector-offset pairs on both sides name the same pattern. First match
-// wins, so signals sharing one id share one origin and merge into one
-// claim. Display-only: the map travels to the template renderer and never
-// touches score, probabilities or the signal list.
+// Origins for the 1.1.0 explanation templates (P-1, P-2 follow-up 2): one
+// entry per signal naming the plugin and key behind the signal, filed
+// under the signal's origin entry key. Findings match signals by evidence
+// key, as `ownerSlotProof` already does: the same selector-offset pairs
+// on both sides name the same pattern. Signals sharing one signal id
+// (one code hash plus one first selector) keep their own entries, so a
+// gated mint signal keeps the mint origin beside the owner-slot signal's
+// ownership origin instead of merging into one claim. Display-only: the
+// map travels to the template renderer and never touches score,
+// probabilities or the signal list.
 function explanationOriginsOf(
   results: readonly PluginResultEntry[],
   signals: readonly Signal[],
@@ -784,13 +791,9 @@ function explanationOriginsOf(
   }
   const origins = new Map<string, ExplanationOrigin>();
   for (const signal of signals) {
-    const id = signal.id as string;
-    if (origins.has(id)) {
-      continue;
-    }
     const found = byEvidence.get(evidenceKeyOf(signal.evidence));
     if (found !== undefined) {
-      origins.set(id, found);
+      origins.set(originEntryKey(signal), found);
     }
   }
   return origins;
@@ -805,6 +808,72 @@ function evidenceKeyOf(
     .join(",");
 }
 
+// Owner getters verified against the slot (P-2, RC-3): the dispatcher
+// selectors for `owner()` and `getOwner()`.
+const OWNER_SELECTOR = "0x8da5cb5b";
+const GET_OWNER_SELECTOR = "0x893d20e8";
+
+// Owner-gated finding origins (P-2, RC-3): only signals converted from
+// these owner-control features may name the proven owner as their
+// changer. Capability signals never carry a changer and stay
+// can-change-unknown, so no invented account appears in any claim.
+const OWNER_GATED_ORIGINS: readonly string[] = Object.freeze([
+  "blacklist",
+  "mint",
+  "pause",
+  "proxy-upgrade",
+  "sell-block",
+  "transfer-fee",
+  "transfer-hooks",
+  "transfer-limits",
+]);
+
+// A proven 32-byte address word carries twelve zero bytes above the
+// 20-byte address. Anything else (a supply, a packed word, unrelated
+// storage) is not an address.
+function isAddressWord(word: string): boolean {
+  return /^0x0{24}[0-9a-f]{40}$/.test(word.toLowerCase());
+}
+
+// Owner getters the bytecode dispatches, if any: `owner()`, `getOwner()`
+// or both. Presence comes from the dispatcher scan, so a getter that the
+// code never exposes is never called.
+function dispatchedOwnerGetters(bytecode: BytecodeType): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const entry of extractSelectors(bytecode)) {
+    const selector = (entry.selector as string).toLowerCase();
+    if (selector === OWNER_SELECTOR || selector === GET_OWNER_SELECTOR) {
+      out.add(selector);
+    }
+  }
+  return out;
+}
+
+// One owner getter answer at the pinned block through RpcPort: the
+// proven address, or null when the call fails or the answer is not a
+// zero-padded address word. A slot word counts as an owner only beside
+// an answering getter; agreement is decided by the caller.
+async function readOwnerGetter(
+  rpc: RpcPort,
+  target: AddressType,
+  selector: string,
+  ctx: CallContext,
+): Promise<AddressType | null> {
+  const data = CallData.parse(selector);
+  if (!data.ok) {
+    return null;
+  }
+  const called = await rpc.call(target, data.value, ctx);
+  if (!called.ok) {
+    return null;
+  }
+  let hex = "0x";
+  for (const byte of called.value) {
+    hex += byte.toString(16).padStart(2, "0");
+  }
+  return addressOfStoredWord(hex.toLowerCase());
+}
+
 async function attachOwnerState(
   rpc: RpcPort,
   input: AnalyzeTokenInput,
@@ -815,58 +884,124 @@ async function attachOwnerState(
   signals: readonly Signal[],
   pluginWeights: Readonly<Record<string, number>>,
   featureCatalogue: Readonly<Record<string, PluginFeatureMapping>>,
+  analysisBytecode: BytecodeType,
 ): Promise<{ signals: readonly Signal[]; enriched: boolean }> {
+  const ctx: CallContext = { requestId: input.requestId, deadline: input.deadline, block };
   const proof = ownerSlotProof(pluginResults);
-  if (proof === null) {
-    return { signals, enriched: false };
-  }
   const mapping = featureCatalogue[OWNERSHIP_PLUGIN_ID] ?? null;
-  if (mapping === null || !pluginAllowedForScoring(OWNERSHIP_PLUGIN_ID, pluginWeights)) {
+  const ownershipScored =
+    proof !== null && mapping !== null && pluginAllowedForScoring(OWNERSHIP_PLUGIN_ID, pluginWeights);
+  // Proven slot value: the stored word must be an address word. A zero
+  // word is ambiguous (existing): it may mean a renounced owner, an
+  // unwritten slot or a stubbed offline read, so the run keeps its
+  // changerless temporality. A nonzero word with nonzero upper bytes is
+  // not an address at all (P-2 item 1), so the run names no changer and
+  // carries no measured value for it.
+  let slotValue: StorageWordType | null = null;
+  let slot: SlotType | null = null;
+  let slotAddress: AddressType | null = null;
+  if (ownershipScored && proof !== null) {
+    const parsed = Slot.parse(`0x${proof.slot.toString(16).padStart(64, "0")}`);
+    if (parsed.ok) {
+      const stored = await rpc.getStorageAt(input.address, parsed.value, ctx);
+      if (stored.ok) {
+        if (/^0+$/.test((stored.value as string).slice(2))) {
+          return { signals, enriched: false };
+        }
+        const candidate = addressOfStoredWord(stored.value as string);
+        if (candidate === null) {
+          return { signals, enriched: false };
+        }
+        slotValue = stored.value;
+        slot = parsed.value;
+        slotAddress = candidate;
+      }
+    }
+  }
+  // Getter answers where the bytecode dispatches them (P-2 item 2): one
+  // eth_call per dispatched getter at the pinned block through RpcPort.
+  // The calls ride the counted rpc, so the request sink counts them.
+  const dispatched = dispatchedOwnerGetters(analysisBytecode);
+  const getterAddresses: AddressType[] = [];
+  for (const selector of [OWNER_SELECTOR, GET_OWNER_SELECTOR]) {
+    if (!dispatched.has(selector)) {
+      continue;
+    }
+    const answer = await readOwnerGetter(rpc, input.address, selector, ctx);
+    if (answer !== null) {
+      getterAddresses.push(answer);
+    }
+  }
+  const gettersRepeat = (base: AddressType): boolean =>
+    getterAddresses.every((answer) => (answer as string).toLowerCase() === (base as string).toLowerCase());
+  // Agreement: the slot is accepted only when a dispatched owner getter
+  // repeats it. A slot word alone — however address-shaped — never proves
+  // an owner (P-2 follow-up): with no dispatched getter, or a dispatched
+  // getter that does not answer, the run names no one and measures
+  // nothing. With no slot but an answering getter, the getter answer
+  // proves the owner (source `owner()`); without a slot there is still no
+  // measured value.
+  let proven: AddressType | null = null;
+  let slotAccepted = false;
+  if (slotAddress !== null && getterAddresses.length > 0) {
+    if (!gettersRepeat(slotAddress)) {
+      return { signals, enriched: false };
+    }
+    proven = slotAddress;
+    slotAccepted = true;
+  } else if (slotAddress !== null) {
+    // No getter proves the slot: the stored value may be a supply, a
+    // packed word or unrelated storage that happens to fit in 20 bytes,
+    // so the run keeps changerless temporality and no measured value.
+    return { signals, enriched: false };
+  } else if (getterAddresses.length > 0) {
+    const first = getterAddresses[0];
+    if (first === undefined || !gettersRepeat(first)) {
+      return { signals, enriched: false };
+    }
+    proven = first;
+    slotAccepted = false;
+  } else {
     return { signals, enriched: false };
   }
-  const parsed = Slot.parse(`0x${proof.slot.toString(16).padStart(64, "0")}`);
-  if (!parsed.ok) {
-    return { signals, enriched: false };
+  // Evidence keys behind owner-gated findings (P-2 item 3): only signals
+  // with one of these keys may name the proven owner as their changer.
+  const gatedEvidence = new Set<string>();
+  for (const entry of pluginResults) {
+    if (entry.outcome !== "ok") {
+      continue;
+    }
+    for (const finding of entry.findings) {
+      const key = originKeyOf(finding);
+      if (key !== null && OWNER_GATED_ORIGINS.includes(key)) {
+        gatedEvidence.add(evidenceKeyOf(finding.evidence));
+      }
+    }
   }
-  const stored = await rpc.getStorageAt(input.address, parsed.value, {
-    requestId: input.requestId,
-    deadline: input.deadline,
-    block,
-  });
-  if (!stored.ok) {
-    return { signals, enriched: false };
-  }
-  // A zero word is ambiguous: it may mean a renounced owner, an unwritten
-  // slot or a stubbed offline read. Missing data yields can't-tell, never
-  // a renounced claim, so the run keeps its changerless temporality.
-  if (/^0+$/.test((stored.value as string).slice(2))) {
-    return { signals, enriched: false };
-  }
-  // The proven owner address behind the changer: the last 20 bytes of the
-  // stored word. A zero or dead address means renounced (no controller),
-  // so no address is named and the changerless marker stands.
-  const ownerAddress = addressOfStoredWord(stored.value as string);
-  if (ownerAddress === null) {
-    return { signals, enriched: false };
-  }
-  const observed: Temporality = {
-    kind: "applies-now",
-    measuredValue: { value: stored.value, slot: parsed.value, block, at },
-    block,
-    at,
-  };
-  const changer: Temporality = { kind: "can-change", changer: ownerAddress };
+  const observed: Temporality | null =
+    slotAccepted && slotValue !== null && slot !== null
+      ? {
+          kind: "applies-now",
+          measuredValue: { value: slotValue, slot, block, at },
+          block,
+          at,
+        }
+      : null;
+  const changer: Temporality = { kind: "can-change", changer: proven };
   let enriched = false;
   const out = signals.map((signal) => {
     if (signal.kind !== "capability") {
       return signal;
     }
     const isOwnerSignal =
+      slotAccepted &&
+      proof !== null &&
+      mapping !== null &&
       signal.risk === mapping.risk &&
       signal.direction === mapping.direction &&
       signal.severity === mapping.severity &&
       evidenceKeyOf(signal.evidence) === proof.evidenceKey;
-    if (isOwnerSignal) {
+    if (isOwnerSignal && observed !== null) {
       const rebuilt = Signal.createCapability({
         codeHash,
         risk: signal.risk,
@@ -882,8 +1017,11 @@ async function attachOwnerState(
       enriched = true;
       return rebuilt.value;
     }
-    // Every other capability names the proven owner as its changer instead
-    // of the analysed address: only the proven controller can activate it.
+    // Only owner-gated signals name the proven owner (P-2 item 3):
+    // capability signals keep can-change-unknown.
+    if (!gatedEvidence.has(evidenceKeyOf(signal.evidence))) {
+      return signal;
+    }
     if (signal.temporality.kind === "can-change-unknown") {
       const renamed = Signal.createCapability({
         codeHash,
@@ -895,6 +1033,7 @@ async function attachOwnerState(
         ...(signal.sourcePlugin === undefined ? {} : { sourcePlugin: signal.sourcePlugin }),
       });
       if (renamed.ok) {
+        enriched = true;
         return renamed.value;
       }
     }
@@ -904,11 +1043,15 @@ async function attachOwnerState(
 }
 
 // Proven controller behind a stored owner word: the last 20 bytes parsed
-// as an address, or null when the word is zero, dead (renounced) or not an
-// address at all. A null here keeps the changerless marker, never a guess.
+// as an address, or null when the word is not a zero-padded address
+// word, or zero or dead (renounced). A null here keeps the changerless
+// marker, never a guess.
 function addressOfStoredWord(word: string): AddressType | null {
   const hex = word.toLowerCase();
   if (!/^0x[0-9a-f]{64}$/.test(hex)) {
+    return null;
+  }
+  if (!isAddressWord(hex)) {
     return null;
   }
   const parsed = Address.parse(`0x${hex.slice(-40)}`);
@@ -1109,6 +1252,7 @@ export async function analyzeToken(
     signals,
     loaded.value.artifact.pluginWeights,
     loaded.value.artifact.pluginFeatureCatalogue,
+    analysisBytecode,
   );
   signals = ownerState.signals;
   // Snippet enrichment for a successful decompilation (K-008): each
