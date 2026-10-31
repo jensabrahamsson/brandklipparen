@@ -45,7 +45,9 @@ function sessionStorageOf(): Storage | null {
 
 // Customize-view disclosure state (S-118): remembered per session only, so
 // a reload keeps the panel as the visitor left it without persisting
-// anything across sessions. Anything unreadable collapses the panel.
+// anything across sessions. An explicitly stored "1" or "0" always wins;
+// when nothing is stored the caller applies the default (open only for an
+// empty AI-on priorities draft). Anything unreadable collapses the panel.
 export function readStoredCustomize(storage: Storage | null = sessionStorageOf()): boolean {
   if (storage === null) {
     return false;
@@ -57,16 +59,23 @@ export function readStoredCustomize(storage: Storage | null = sessionStorageOf()
   }
 }
 
+export function hasStoredCustomize(storage: Storage | null = sessionStorageOf()): boolean {
+  if (storage === null) {
+    return false;
+  }
+  try {
+    return storage.getItem(CUSTOMIZE_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function writeStoredCustomize(open: boolean, storage: Storage | null = sessionStorageOf()): void {
   if (storage === null) {
     return;
   }
   try {
-    if (open) {
-      storage.setItem(CUSTOMIZE_KEY, "1");
-    } else {
-      storage.removeItem(CUSTOMIZE_KEY);
-    }
+    storage.setItem(CUSTOMIZE_KEY, open ? "1" : "0");
   } catch {
     // Local-only preference: the app works without persistence.
   }

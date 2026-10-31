@@ -314,6 +314,7 @@ test("k519_ai_personalize_toggle_off_by_default_and_labelled", async ({ page }) 
   await expect(page.getByTestId("ai-personalize-label")).toContainText("hosted-open-weights");
   await expect(page.getByTestId("ai-personalize-label")).toContainText("meta-models/muse-spark-open-1026");
   await expect(page.getByTestId("ai-personalize-preface")).toHaveCount(0);
+  await expect(page.locator(".priorities-note")).toContainText("Stored only on this device");
 });
 
 test("k519_ai_personalize_toggle_states_priorities_before_first_call", async ({ page }) => {
@@ -324,11 +325,17 @@ test("k519_ai_personalize_toggle_states_priorities_before_first_call", async ({ 
   await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
   await page.getByTestId("ai-personalize-toggle").check();
   await expect(page.getByTestId("ai-personalize-preface")).toContainText("Sends your priorities text, plugin references");
+  await expect(page.getByTestId("ai-personalize-preface")).toContainText("plugin doc excerpts");
   await expect(page.getByTestId("ai-personalize-preface")).toContainText("hosted-open-weights");
   await expect(page.getByTestId("ai-personalize-preface")).toContainText("once per Apply");
   await expect(page.getByTestId("ai-personalize-preface")).toContainText("The token address is not sent");
+  await expect(page.getByTestId("ai-personalize-preface")).toContainText("public code hash can identify the contract");
+  await expect(page.locator(".priorities-note")).toContainText("Sent to hosted-open-weights");
+  await expect(page.locator(".priorities-note")).toContainText("only when you press Apply AI order");
   expect(counter.posts).toBe(0);
   await page.getByTestId("ai-personalize-apply").click();
+  await expect(page.getByTestId("ai-applied-compact")).toContainText("AI order applied");
+  await openCustomize(page);
   await expect(page.getByTestId("ai-personalize-result")).toContainText("AI order applied");
   expect(counter.posts).toBe(1);
   expect(counter.lastBody).toContain("Can the owner stop me selling?");
@@ -336,5 +343,45 @@ test("k519_ai_personalize_toggle_states_priorities_before_first_call", async ({ 
   const sections = await page.locator("div.token-grid div[data-section]").evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute("data-section")),
   );
-  expect(sections[0]).toBe("signals");
+  expect(sections[0]).toBe("explanation");
+  expect(sections.indexOf("explanation")).toBeLessThan(sections.indexOf("plugin-findings"));
+  const headings = await page.locator("div.token-grid h2").evaluateAll((nodes) =>
+    nodes.map((node) => node.textContent ?? ""),
+  );
+  expect(headings.findIndex((text) => text.includes("Why this score"))).toBeLessThan(
+    headings.findIndex((text) => text.includes("Plugins")),
+  );
+});
+
+test("turning AI off mid-request shows no applied order and no jump", async ({ page }) => {
+  await page.route("**/health", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
+  });
+  await page.route("**/v1/analyze*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "x-deepening-status": "pending" },
+      body: JSON.stringify(ANALYZE_FIXTURE),
+    });
+  });
+  await page.route("**/v1/plugins", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PLUGINS_FIXTURE) });
+  });
+  await page.route("**/v1/personalize/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PERSONALIZE_STATUS) });
+  });
+  await page.route("**/v1/personalize", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(personalizeOk()) });
+  });
+  await page.goto(`/#/token/${ADDRESS}`);
+  await openCustomize(page);
+  await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
+  await page.getByTestId("ai-personalize-toggle").check();
+  await page.getByTestId("ai-personalize-apply").click();
+  await page.getByTestId("ai-personalize-toggle").uncheck();
+  await page.waitForTimeout(800);
+  await expect(page.getByTestId("ai-personalize-result")).not.toContainText("AI order applied");
+  await expect(page.getByTestId("ai-jump-results")).toHaveCount(0);
 });

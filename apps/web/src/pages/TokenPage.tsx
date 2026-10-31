@@ -6,7 +6,7 @@ import type { PluginListEntry } from "../components/PluginsPanel.tsx";
 import { toPluginResultViews } from "../lib/plugins.ts";
 import { isValidAddress } from "../lib/validate.ts";
 import { planLayout } from "../lib/layout.ts";
-import { readStoredCustomize, readStoredMode, writeStoredCustomize, writeStoredMode } from "../lib/uiMode.ts";
+import { hasStoredCustomize, readStoredCustomize, readStoredMode, writeStoredCustomize, writeStoredMode } from "../lib/uiMode.ts";
 import type { UiMode } from "../lib/uiMode.ts";
 import { fetchLiveTokens } from "../lib/liveTokens.ts";
 import type { LiveTokenEntry } from "../lib/liveTokens.ts";
@@ -137,6 +137,12 @@ export function TokenPage({
   });
   const healthPersonalize = useRef(false);
   const deepeningPolls = useRef(0);
+  const aiRequestId = useRef(0);
+  const aiAbort = useRef<AbortController | null>(null);
+  const aiOnRef = useRef(aiOn);
+  useEffect(() => {
+    aiOnRef.current = aiOn;
+  }, [aiOn]);
 
   useEffect(() => {
     let cancelled = false;
@@ -251,10 +257,18 @@ export function TokenPage({
     };
   }, [apiKey]);
 
+  const invalidateAiRequest = (): void => {
+    aiRequestId.current += 1;
+    aiAbort.current?.abort();
+    aiAbort.current = null;
+  };
+
   const toggleAi = (next: boolean): void => {
+    invalidateAiRequest();
     setAiOn(next);
     writeStoredAiPersonalize(next);
     setAiNotice(null);
+    setAiPending(false);
     if (!next) {
       setAiSpec(null);
     }
@@ -264,38 +278,60 @@ export function TokenPage({
     if (aiPending || !aiOn || priorities.trim().length === 0) {
       return;
     }
+    invalidateAiRequest();
+    const requestId = aiRequestId.current + 1;
+    aiRequestId.current = requestId;
+    const controller = new AbortController();
+    aiAbort.current = controller;
     setAiPending(true);
     const key = apiKey.length === 0 ? null : apiKey;
-    requestPersonalizeMapping(key, address.trim(), priorities.trim()).then((body) => {
-      setAiPending(false);
-      const pluginIds = (plugins ?? []).map((plugin) => plugin.id);
-      const assessedSignals = result?.kind === "assessed" ? result.signals : [];
-      const context: PersonalizeContext = {
-        sectionIds: [...PERSONALIZE_SECTIONS],
-        pluginIds,
-        flooredSectionIds: [...requiredFlooredSections(assessedSignals)],
-      };
-      const spec = parsePersonalizeEnvelope(body, context);
-      if (spec === null) {
-        setAiSpec(null);
-        setAiNotice({ text: "AI order unavailable right now: showing the standard order.", kind: "failed" });
-      } else {
-        setAiSpec(spec);
-        if (result?.kind === "assessed") {
-          const plan = planLayout({
-            score: result.score,
-            signalCount: result.signals.length,
-            severeSignalCount: result.signals.filter((signal) => signal.severity === "high").length,
-            pluginFindingCount: 0,
-            cantTellCount: result.cantTell.length,
-          });
-          const applied = applyAiSectionOrder(plan, spec, [...requiredFlooredSections(result.signals)]);
-          setAiNotice({ text: aiOrderNotice(plan, applied), kind: "applied" });
-        } else {
-          setAiNotice({ text: "AI order applied. Scores, evidence and text are unchanged.", kind: "applied" });
+    requestPersonalizeMapping(key, address.trim(), priorities.trim(), { signal: controller.signal }).then(
+      (body) => {
+        if (requestId !== aiRequestId.current || !aiOnRef.current) {
+          return;
         }
-      }
-    });
+        if (aiAbort.current === controller) {
+          aiAbort.current = null;
+        }
+        setAiPending(false);
+        const pluginIds = (plugins ?? []).map((plugin) => plugin.id);
+        const assessedSignals = result?.kind === "assessed" ? result.signals : [];
+        const context: PersonalizeContext = {
+          sectionIds: [...PERSONALIZE_SECTIONS],
+          pluginIds,
+          flooredSectionIds: [...requiredFlooredSections(assessedSignals)],
+        };
+        const spec = parsePersonalizeEnvelope(body, context);
+        if (spec === null) {
+          setAiSpec(null);
+          setAiNotice({ text: "AI order unavailable right now: showing the standard order.", kind: "failed" });
+        } else {
+          setAiSpec(spec);
+          if (result?.kind === "assessed") {
+            const plan = planLayout({
+              score: result.score,
+              signalCount: result.signals.length,
+              severeSignalCount: result.signals.filter((signal) => signal.severity === "high").length,
+              pluginFindingCount: 0,
+              cantTellCount: result.cantTell.length,
+            });
+            const applied = applyAiSectionOrder(plan, spec, [...requiredFlooredSections(result.signals)]);
+            setAiNotice({ text: aiOrderNotice(plan, applied), kind: "applied" });
+          } else {
+            setAiNotice({ text: "AI order applied. Scores, evidence and text are unchanged.", kind: "applied" });
+          }
+        }
+      },
+      () => {
+        if (requestId !== aiRequestId.current || !aiOnRef.current) {
+          return;
+        }
+        if (aiAbort.current === controller) {
+          aiAbort.current = null;
+        }
+        setAiPending(false);
+      },
+    );
   };
 
   const deepening = result?.kind === "assessed" ? result.deepening : undefined;
@@ -503,15 +539,19 @@ export function TokenPage({
           aiProvider={aiProvider}
           aiPending={aiPending}
           onApplyAiOrder={applyAiOrder}
-          aiNotice={aiNotice}
-          aiApplied={aiSpec !== null}
+          aiNotice={aiOn ? aiNotice : null}
+          aiApplied={aiOn && aiSpec !== null}
           onResetAiOrder={() => {
+            invalidateAiRequest();
             setStandardOrder(true);
             setAiSpec(null);
             setAiNotice(null);
+            setAiPending(false);
           }}
           priorities={priorities}
           onPrioritiesChange={(text) => {
+            invalidateAiRequest();
+            setAiPending(false);
             setPriorities(text);
             writeStoredPriorities(text);
             setStandardOrder(false);
@@ -520,6 +560,8 @@ export function TokenPage({
             }
           }}
           onPrioritiesClear={() => {
+            invalidateAiRequest();
+            setAiPending(false);
             clearStoredPriorities();
             setPriorities("");
             if (aiSpec !== null) {
@@ -937,9 +979,17 @@ function CustomizeView({
   // while the test already observed open=true. The observer below fires
   // at the microtask checkpoint of the flipping task, so React state and
   // session storage are synced before any reload navigation can start.
-  // `onToggle` stays as the redundant sync for the same state.
-  const [open, setOpen] = useState<boolean>(() => readStoredCustomize() || aiOn);
+  // `onToggle` stays as the redundant sync for the same state. An
+  // explicitly stored "1"/"0" always wins; with nothing stored the panel
+  // opens only when AI is on and the priorities draft is empty.
+  const [open, setOpen] = useState<boolean>(() => {
+    if (hasStoredCustomize()) {
+      return readStoredCustomize();
+    }
+    return aiOn && priorities.trim().length === 0;
+  });
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const chipRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     const element = detailsRef.current;
     if (element === null) {
@@ -976,30 +1026,56 @@ function CustomizeView({
       target.focus({ preventScroll: true });
     }, 0);
   }, []);
+  const prevAppliedKind = useRef<string | null>(null);
+  useEffect(() => {
+    const appliedNow = aiOn && aiApplied && aiNotice?.kind === "applied";
+    const wasApplied = prevAppliedKind.current === "applied";
+    prevAppliedKind.current = aiNotice?.kind ?? null;
+    if (appliedNow && !wasApplied) {
+      setOpen(false);
+      writeStoredCustomize(false);
+      window.setTimeout(() => {
+        chipRef.current?.focus();
+      }, 0);
+    }
+  }, [aiOn, aiApplied, aiNotice]);
   const providerName = personalizeProviderName(aiProvider);
   // Reading order (P1-7): the priorities field lives inside the AI
   // section directly above the Apply button, so the dependency reads in
   // order. The Apply button is never removed from the tab order: empty or
   // pending renders as aria-disabled with an explaining hint instead.
   const applyEmpty = priorities.trim().length === 0;
+  const chipLabel = `Edit AI priorities (AI order ${aiOn ? "on" : "off"}, ${aiProvider?.modelId ?? "unconfigured"})`;
   return (
     <>
       <div className="ai-bar">
         <button
+          ref={chipRef}
           type="button"
-          className="chip"
-          aria-pressed={aiOn}
+          className={aiOn ? "chip chip-on" : "chip"}
+          aria-controls="customize-panel"
+          aria-label={chipLabel}
           data-testid="ai-order-bar"
           onClick={openPanelForEdit}
         >
           AI order: {aiOn ? "on" : "off"} · {providerName} · Edit priorities
         </button>
+        {aiOn && aiApplied && !open ? (
+          <span className="quiet ai-compact" data-testid="ai-applied-compact">
+            AI order applied
+          </span>
+        ) : null}
       </div>
-      <details ref={detailsRef} className="customize" open={open ? true : undefined} onToggle={remember}>
+      <details
+        ref={detailsRef}
+        id="customize-panel"
+        className="customize"
+        open={open ? true : undefined}
+        onToggle={remember}
+      >
         <summary>Customize view</summary>
         <div className="customize-body">
-          <div className="customize-col">
-            <fieldset className="card customize-row">
+          <fieldset className="card customize-row">
               <legend>Detail</legend>
               <label className="customize-option">
                 <input type="radio" name="ui-mode" value="simple" checked={mode === "simple"} onChange={() => onModeChange("simple")} />{" "}
@@ -1009,8 +1085,9 @@ function CustomizeView({
                 <input type="radio" name="ui-mode" value="expert" checked={mode === "expert"} onChange={() => onModeChange("expert")} />{" "}
                 Expert
               </label>
-            </fieldset>
-            <section aria-label="AI personalize" className="card ai-panel">
+          </fieldset>
+          <FieldPicker visible={visibleSections} onToggle={onToggleSection} />
+          <section aria-label="AI personalize" className="card ai-panel">
               <h2 className="customize-h">
                 AI order <span className="cantword">experimental</span>
               </h2>
@@ -1027,16 +1104,22 @@ function CustomizeView({
               </label>
               {aiOn ? (
                 <p id="ai-personalize-status" className="quiet ai-preface" data-testid="ai-personalize-preface">
-                  Sends your priorities text, plugin references (ids, tags, max severity, short finding excerpts)
-                  and layout facts (code hash, score band, section list) to {providerName}, once per Apply. The
-                  token address is not sent to the provider.
+                  Sends your priorities text, plugin references (ids, tags, max severity, plugin doc excerpts) and
+                  layout facts (code hash, score band, section list) to {providerName}, once per Apply. The token
+                  address is not sent, but the public code hash can identify the contract.
                 </p>
               ) : (
                 <p id="ai-personalize-status" className="quiet ai-status" data-testid="ai-personalize-label">
                   {personalizeProviderLabel(aiProvider)}
                 </p>
               )}
-              <PrioritiesField value={priorities} onChange={onPrioritiesChange} onClear={onPrioritiesClear} />
+              <PrioritiesField
+                value={priorities}
+                onChange={onPrioritiesChange}
+                onClear={onPrioritiesClear}
+                aiOn={aiOn}
+                providerName={providerName}
+              />
               {aiOn ? (
                 <div className="ai-apply">
                   {applyEmpty ? (
@@ -1109,7 +1192,7 @@ function CustomizeView({
                   </button>
                 )}
               </p>
-              {aiApplied ? (
+              {aiOn && aiApplied ? (
                 <button
                   type="button"
                   className="button-ghost ai-jump"
@@ -1119,9 +1202,7 @@ function CustomizeView({
                   Jump to results
                 </button>
               ) : null}
-            </section>
-          </div>
-          <FieldPicker visible={visibleSections} onToggle={onToggleSection} />
+          </section>
         </div>
       </details>
     </>

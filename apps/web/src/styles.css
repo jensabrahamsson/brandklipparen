@@ -579,7 +579,8 @@ a {
   box-shadow: var(--elev-1);
 }
 
-.chip[aria-pressed="true"] {
+.chip[aria-pressed="true"],
+.chip.chip-on {
   background: var(--faint);
   color: var(--phosphor-hi);
   border-color: var(--dim);
@@ -904,8 +905,9 @@ a {
 
 /* P1-9: the applied AI order reads in phosphor, never quiet grey, so
    success and fallback never differ by colour alone (the check prefix
-   carries the meaning for non-colour users). */
-.ai-ok {
+   carries the meaning for non-colour users). `.quiet.ai-ok` beats the
+   later `.quiet` rule; phosphor on glass measures 15.7:1, well above AA. */
+.quiet.ai-ok {
   color: var(--phosphor);
 }
 
@@ -915,8 +917,10 @@ a {
 .button[aria-disabled="true"] {
   background: var(--surface-2);
   border: 1px solid var(--dim);
+  border-style: dashed;
   color: var(--dim);
   cursor: not-allowed;
+  box-shadow: var(--shadow-none);
 }
 
 .button-ghost {
@@ -1845,6 +1849,18 @@ pre.code {
   max-width: 100%;
 }
 
+/* P0-2: Detail and Choose sections sit side by side in the first row;
+   the AI order card spans the full width below so no 400 px gap remains.
+   Single column on narrow screens comes from auto-fit; spanning is a
+   no-op there. DOM order stays Detail, Choose, AI for logical reading. */
+.customize-body > .ai-panel {
+  grid-column: 1 / -1;
+}
+
+.customize-body > .ai-panel > * {
+  max-width: 72ch;
+}
+
 /* P2-16/P2-19: the customize panel groups read as cards with headings
    like .sec h2, not inline-styled rows. All spacing lives here so the
    markup carries no style props. */
@@ -2020,6 +2036,38 @@ pre.code {
   align-items: center;
 }
 
+/* N-7/P0-1: 44 px targets on all widths for every AI panel control
+   (scoped to the customize panel and the AI bar so meta rows keep
+   their inline flow).
+   Padding stays compact; the floor only grows short controls to 44 px.
+   Buttons and chips center their label with inline-flex. */
+.customize .button,
+.customize .button-ghost,
+.ai-bar .chip,
+.customize > summary {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.customize-option,
+.picker-option,
+.customize-check,
+.ai-retry,
+.ai-jump,
+.priorities-clear,
+button[data-testid^="ai-expand-"] {
+  min-height: 44px;
+}
+
+.customize-option,
+.picker-option,
+.customize-check {
+  display: flex;
+  align-items: center;
+}
+
 /* P0-3: the always-visible AI bar sits next to the tab list and opens the
    panel on the priorities field. Padding alone clears 24 px on desktop;
    the global touch-target rule keeps 44 px on phones. */
@@ -2029,19 +2077,26 @@ pre.code {
   margin: 0 0 12px;
 }
 
-/* P0-5: moved sections glow once in place (background and glow only). */
-.ai-moved {
+/* P0-5: moved sections glow once in place (background and glow only).
+   The wrapper keeps the fade; the visible card carries the arrival glow
+   so it paints on opaque glass instead of behind it. bk-arrive peaks
+   twice over 2.4 s (under 3 flashes per second), glow only, no transform. */
+.fade-sec.ai-moved > .card,
+.fade-sec.ai-moved > .cant-tell {
   animation: bk-arrive var(--arrive) var(--ease-out) 1;
 }
 
 /* P0-5: emphasized sections keep the phosphor Console language: a
-   phosphor edge and deeper elevation for high, a dashed edge for low. */
-div[data-emphasis="high"] > .card {
+   phosphor edge and deeper elevation for high, a dashed edge for low.
+   Can't-tell is not a .card, so both rules target it too. */
+div[data-emphasis="high"] > .card,
+div[data-emphasis="high"] > .cant-tell {
   border-color: var(--phosphor);
   box-shadow: var(--elev-3);
 }
 
-div[data-emphasis="low"] > .card {
+div[data-emphasis="low"] > .card,
+div[data-emphasis="low"] > .cant-tell {
   border-style: dashed;
 }
 
@@ -2516,6 +2571,42 @@ details[open] > *:not(summary) {
   .compact-strip {
     padding: 6px 12px;
     gap: 10px;
+  }
+}
+
+/* P1-11: single-row sticky strip on narrow phones (<= 480 px). No wrap,
+   secondary text truncates with ellipsis, score and the 44 px "?" stay
+   fixed. scroll-padding-top matches the real strip height (~58 px strip
+   plus gap) so focused controls are never hidden under it. */
+@media (max-width: 480px) {
+  html {
+    scroll-padding-top: 76px;
+  }
+
+  .compact-strip {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  .compact-strip > .numeric:first-child {
+    flex: none;
+  }
+
+  .compact-strip-probs {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .compact-strip .explain {
+    flex: none;
+  }
+
+  .compact-strip .explain-trigger {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 

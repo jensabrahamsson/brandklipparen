@@ -168,3 +168,18 @@ test("personalize mapping falls back to null on server error", async () => {
   const result = await requestPersonalizeMapping(null, "0xabc", "fees", { timeoutMs: 1000 });
   expect(result).toBeNull();
 });
+
+test("personalize mapping composes a caller abort with the timeout", async () => {
+  let seenInit: RequestInit | undefined;
+  stubFetch((init) => {
+    seenInit = init;
+    return hangingFetch()(init);
+  });
+  const controller = new AbortController();
+  const pending = requestPersonalizeMapping(null, "0xabc", "fees", { timeoutMs: 1000, signal: controller.signal });
+  controller.abort();
+  const result = await pending;
+  expect(result).toBeNull();
+  expect(seenInit?.signal).toBeInstanceOf(AbortSignal);
+  expect(seenInit?.signal?.aborted).toBe(true);
+});

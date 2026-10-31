@@ -8,6 +8,7 @@ import { describe, expect, test } from "vitest";
 import {
   CUSTOMIZE_KEY,
   MODE_KEY,
+  hasStoredCustomize,
   parseStoredMode,
   readStoredCustomize,
   readStoredMode,
@@ -82,14 +83,16 @@ describe("customize_open_storage_round_trip", () => {
     expect(readStoredCustomize(memoryStorage({ [CUSTOMIZE_KEY]: "1" }))).toBe(true);
   });
 
-  test("writing true stores the marker, writing false removes it", () => {
+  test("writing true stores the marker, writing false stores an explicit closed marker", () => {
     const storage = memoryStorage();
     writeStoredCustomize(true, storage);
     expect(storage.getItem(CUSTOMIZE_KEY)).toBe("1");
     expect(readStoredCustomize(storage)).toBe(true);
+    expect(hasStoredCustomize(storage)).toBe(true);
     writeStoredCustomize(false, storage);
-    expect(storage.getItem(CUSTOMIZE_KEY)).toBe(null);
+    expect(storage.getItem(CUSTOMIZE_KEY)).toBe("0");
     expect(readStoredCustomize(storage)).toBe(false);
+    expect(hasStoredCustomize(storage)).toBe(true);
   });
 
   test("null storage collapses without throwing", () => {

@@ -10,10 +10,14 @@ export function PrioritiesField({
   value,
   onChange,
   onClear,
+  aiOn,
+  providerName,
 }: {
   readonly value: string;
   readonly onChange: (text: string) => void;
   readonly onClear: () => void;
+  readonly aiOn: boolean;
+  readonly providerName: string;
 }): JSX.Element {
   return (
     <div className="priorities">
@@ -41,7 +45,9 @@ export function PrioritiesField({
           Clear
         </button>
         <span className="quiet priorities-note">
-          Stored only on this device. The deterministic order never sends it anywhere.
+          {aiOn
+            ? `Stored on this device. Sent to ${providerName} only when you press Apply AI order.`
+            : "Stored only on this device. The deterministic order never sends it anywhere."}
         </span>
       </div>
     </div>

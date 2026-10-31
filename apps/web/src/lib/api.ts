@@ -447,21 +447,35 @@ export async function fetchPersonalizeStatus(
 // text plus quoted plugin references for this request only. Null on any
 // failure: the deterministic baseline stands. The call times out after 15
 // seconds (overridable in tests): a slow model call falls back to the
-// deterministic order instead of hanging the page.
+// deterministic order instead of hanging the page. An optional caller
+// signal composes with the timeout via AbortSignal.any when available, so
+// toggling AI off or editing priorities can cancel the in-flight call.
 export const PERSONALIZE_TIMEOUT_MS = 15000;
 export async function requestPersonalizeMapping(
   apiKey: string | null,
   address: string,
   priorities: string,
-  options?: { readonly timeoutMs?: number },
+  options?: { readonly timeoutMs?: number; readonly signal?: AbortSignal },
 ): Promise<unknown> {
   const timeoutMs = options?.timeoutMs ?? PERSONALIZE_TIMEOUT_MS;
   try {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    let signal: AbortSignal = timeoutSignal;
+    if (options?.signal !== undefined) {
+      const combine = (AbortSignal as unknown as { any?: (signals: readonly AbortSignal[]) => AbortSignal }).any;
+      if (typeof combine === "function") {
+        signal = combine([timeoutSignal, options.signal]);
+      } else if (options.signal.aborted) {
+        return null;
+      } else {
+        signal = timeoutSignal;
+      }
+    }
     const response = await fetch("/v1/personalize", {
       method: "POST",
       headers: { ...apiHeaders(apiKey), "content-type": "application/json" },
       body: JSON.stringify({ address, priorities }),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal,
     });
     if (!response.ok) {
       return null;
