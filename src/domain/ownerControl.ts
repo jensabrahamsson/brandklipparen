@@ -1038,6 +1038,137 @@ function v2SimulateBlock(
   return { sim, dest: null };
 }
 
+// Candidate continuations for a dynamic (return) JUMP: real compiler
+// output calls an internal helper by pushing a return address and jumping
+// to the helper, and the helper ends in a JUMP to that pushed address.
+// The destination is therefore among the PUSH constants in the caller
+// blocks that statically jump to a helper entry able to reach the dynamic
+// jump. Collecting exactly those constants (and nothing else) keeps the
+// set small and caller-shaped: a continuation no caller ever pushed never
+// joins, and the caller block's own helper target never counts as its
+// return. Bounded by DYNAMIC_RETURN_MAX_TARGETS; past the cap, or with no
+// caller-shaped candidate at all, the caller must not guess.
+export const DYNAMIC_RETURN_MAX_TARGETS = 64;
+
+function dynamicReturnTargets(
+  cfg: { readonly blocks: readonly CfgBlock[] },
+  dynamicBlock: number,
+  nearestOnly = false,
+): readonly number[] {
+  const blocks = cfg.blocks;
+  const jumpDestByPc = new Map<number, number>();
+  for (const block of blocks) {
+    if (block.instructions[0]?.opcode === 0x5b) {
+      jumpDestByPc.set(block.range.startPc, block.index);
+    }
+  }
+  // Blocks that can reach the dynamic jump over proven edges (reverse
+  // walk): the helper body containing the return jump lives in this set.
+  const predecessors = new Map<number, number[]>();
+  for (const block of blocks) {
+    for (const edge of block.successors) {
+      const targets = edge.kind === "conditional" ? [edge.to, edge.fallThrough] : [edge.to];
+      for (const to of targets) {
+        const list = predecessors.get(to) ?? [];
+        list.push(block.index);
+        predecessors.set(to, list);
+      }
+    }
+  }
+  // Nearest helper entries on reverse paths from the dynamic jump: a
+  // JUMPDEST block some other block statically jumps to. The search does
+  // not expand past an entry (its predecessors are callers, not helper
+  // body), so the first entries found are the helper the jump returns
+  // from, not every helper that can reach it.
+  const isEntry = (index: number): boolean => {
+    const block = blocks[index];
+    if (block === undefined || block.instructions[0]?.opcode !== 0x5b) {
+      return false;
+    }
+    return blocks.some((caller) =>
+      caller.successors.some((edge) => edge.kind === "jump" && edge.to === index),
+    );
+  };
+  const entries: number[] = [];
+  const seen = new Set<number>([dynamicBlock]);
+  const queue = [dynamicBlock];
+  while (queue.length > 0) {
+    const current = queue.shift() ?? -1;
+    if (isEntry(current)) {
+      entries.push(current);
+      continue;
+    }
+    for (const pred of predecessors.get(current) ?? []) {
+      if (!seen.has(pred)) {
+        seen.add(pred);
+        queue.push(pred);
+      }
+    }
+  }
+  const targetsOf = (entry: number): Set<number> => {
+    const targets = new Set<number>();
+    for (const caller of blocks) {
+      const jumpsHere = caller.successors.some(
+        (edge) => edge.kind === "jump" && edge.to === entry,
+      );
+      if (!jumpsHere) {
+        continue;
+      }
+      for (const instruction of caller.instructions) {
+        if (instruction.opcode < 0x60 || instruction.opcode > 0x7f) {
+          continue;
+        }
+        let value = 0;
+        for (const byte of instruction.immediate) {
+          value = value * 256 + byte;
+        }
+        const target = jumpDestByPc.get(value);
+        if (target !== undefined && target !== entry) {
+          targets.add(target);
+        }
+      }
+    }
+    return targets;
+  };
+  if (!nearestOnly) {
+    // Expression-walk mode: every helper entry that can reach the jump
+    // may be the one returning here (a shared trampoline serves them
+    // all), so the union of their caller-pushed continuations joins.
+    const union = new Set<number>();
+    const seenAll = new Set<number>([dynamicBlock]);
+    const queueAll = [dynamicBlock];
+    const allEntries: number[] = [];
+    while (queueAll.length > 0) {
+      const current = queueAll.shift() ?? -1;
+      if (isEntry(current)) {
+        allEntries.push(current);
+      }
+      for (const pred of predecessors.get(current) ?? []) {
+        if (!seenAll.has(pred)) {
+          seenAll.add(pred);
+          queueAll.push(pred);
+        }
+      }
+    }
+    for (const entry of allEntries) {
+      for (const target of targetsOf(entry)) {
+        union.add(target);
+      }
+    }
+    if (union.size === 0 || union.size > DYNAMIC_RETURN_MAX_TARGETS) {
+      return Object.freeze([]);
+    }
+    return Object.freeze([...union].sort((left, right) => left - right));
+  }
+  for (const entry of entries) {
+    const targets = targetsOf(entry);
+    if (targets.size > 0 && targets.size <= DYNAMIC_RETURN_MAX_TARGETS) {
+      return Object.freeze([...targets].sort((left, right) => left - right));
+    }
+  }
+  return Object.freeze([]);
+}
+
 // A dynamic JUMP block: ends in JUMP with no proven jump edge, so v1
 // records it as unresolved (mirrors the helper in `./evmLift.ts` without
 // importing it).
@@ -1174,11 +1305,14 @@ export function interpretRegionExprs(bytecode: BytecodeType, selector: SelectorT
       // the v2 blocks): the caller's continuation receives the callee's
       // returned stack values, so CALLER from a `_msgSender` helper and
       // SLOAD(0) from an `owner()` helper both reach the guard compare.
-      // An unknown destination falls back to every reached member
-      // JUMPDEST only while the set stays small; past the cap the walk
-      // propagates nothing instead of merging every continuation into
-      // unknown (and burning the visit budget), mirroring the v2
-      // return-jump resolver bound.
+      // An unknown destination first tries the caller-pushed
+      // continuations of the helper containing the jump (the return
+      // addresses its callers actually pushed), and only then falls
+      // back to every reached member JUMPDEST while the set stays
+      // small; past both bounds the walk propagates nothing instead of
+      // merging every continuation into unknown (and burning the visit
+      // budget), mirroring the v2 return-jump resolver bound.
+      const callerReturns: number[] = [];
       let preciseReturn = -1;
       if (v2IsDynamicJump(block)) {
         const destValue = exprConstValue(simulated.dest ?? EXPR_UNKNOWN);
@@ -1204,8 +1338,20 @@ export function interpretRegionExprs(bytecode: BytecodeType, selector: SelectorT
         }
         if (preciseReturn >= 0) {
           targets.push(preciseReturn);
-        } else if (returnBlocks.length <= V2_MAX_RETURN_TARGETS) {
-          targets.push(...returnBlocks);
+        } else {
+          for (const candidate of dynamicReturnTargets(cfg, index)) {
+            const continuation = cfg.blocks[candidate];
+            if (
+              continuation !== undefined &&
+              continuation.instructions.some((instruction) => isMember(instruction.pc))
+            ) {
+              callerReturns.push(candidate);
+              targets.push(candidate);
+            }
+          }
+          if (callerReturns.length === 0 && returnBlocks.length <= V2_MAX_RETURN_TARGETS) {
+            targets.push(...returnBlocks);
+          }
         }
       }
       for (const target of targets) {
@@ -1213,7 +1359,7 @@ export function interpretRegionExprs(bytecode: BytecodeType, selector: SelectorT
         // CFG-level resolver never reached it yet (PUSH1 return addresses
         // never seed the resolver): the pushed address names the block.
         const admitted =
-          target === preciseReturn
+          target === preciseReturn || callerReturns.includes(target)
             ? target >= 0 && target < cfg.blocks.length
             : target >= 0 && target < cfg.blocks.length && isWalkable(target);
         if (!admitted) {
@@ -2083,8 +2229,10 @@ export function hasRevertingJumpiAfter(
 // ISZERO parity, the jump target for an odd one), every path within
 // REVERTING_SIDE_MAX_BLOCKS blocks must reach REVERT or INVALID without
 // crossing SSTORE or a CALL-family opcode, following proven CFG jumps.
-// A path that halts otherwise, leaves through a dynamic jump, loops, or
-// runs past the block cap never proves the side. Total and bounded: the
+// A dynamic (return) jump continues only at the continuations its
+// helper's callers actually pushed, and every one of them must reach
+// the revert. A path that halts otherwise, loops, or runs past the
+// block cap never proves the side. Total and bounded: the
 // block cap and the visited set hold on hostile input, and the walk
 // never throws. The fast path stays first, so every shape it already
 // proved keeps its proof bit for bit.
@@ -2167,10 +2315,17 @@ function revertingSideBounded(
     next.add(index);
     if (current.terminal === "jump") {
       const target = current.successors.find((candidate) => candidate.kind === "jump");
-      if (target === undefined) {
+      if (target !== undefined) {
+        return visit(target.to, depth + 1, next);
+      }
+      // Dynamic return jump: the helper was entered by a caller that
+      // pushed its continuation, so every caller-pushed continuation
+      // must reach the revert for the side to prove.
+      const returns = dynamicReturnTargets(cfg, index, true);
+      if (returns.length === 0) {
         return false;
       }
-      return visit(target.to, depth + 1, next);
+      return returns.every((to) => visit(to, depth + 1, next));
     }
     if (current.terminal === "jumpi") {
       const conditional = current.successors.find((candidate) => candidate.kind === "conditional");
@@ -2218,30 +2373,31 @@ export function hasRevertingSide(
   }
 }
 
-// Reverting gate after a compare: the first member JUMPI within the
-// legacy window past `afterPc` proves its failing fall-through side,
-// either right after it or down every bounded path. Used by the v2
-// transfer gates whose blocked side reverts through a shared helper.
+// Reverting gate after a compare: a member JUMPI within the legacy
+// window past `afterPc` proves its failing fall-through side, either
+// right after it or down every bounded path. Used by the v2 transfer
+// gates whose blocked side reverts through a shared helper. Compilers
+// sometimes split one gate over two jumps (a duplicated condition
+// tested twice, with the revert under the second jump), so every JUMPI
+// in the window gets its chance rather than only the first.
 export function hasRevertingGateAfter(
   bytecode: BytecodeType,
   code: readonly Instruction[],
   isMember: (pc: number) => boolean,
   afterPc: number,
 ): boolean {
-  let jumpiPc: number | null = null;
   for (const candidate of code) {
     if (!isMember(candidate.pc) || candidate.opcode !== 0x57) {
       continue;
     }
-    if (candidate.pc > afterPc && candidate.pc <= afterPc + 64) {
-      jumpiPc = candidate.pc;
-      break;
+    if (candidate.pc <= afterPc || candidate.pc > afterPc + 64) {
+      continue;
+    }
+    if (hasRevertingSide(bytecode, code, isMember, candidate.pc, "fall")) {
+      return true;
     }
   }
-  if (jumpiPc === null) {
-    return false;
-  }
-  return hasRevertingSide(bytecode, code, isMember, jumpiPc, "fall");
+  return false;
 }
 
 // Packed-bool gate proof (P-11 session 1 follow-up): the transfer path
@@ -2840,10 +2996,19 @@ export function packedBoolWriteExpr(slot: number, store: ExprStoreRecord | undef
       const andOrders: readonly (readonly [Expr, Expr])[] = [andPair, [andPair[1], andPair[0]]];
       for (const [curPart, notPart] of andOrders) {
         const mask = notArg(notPart);
-        if (mask === null) {
-          continue;
+        // A NOT over a constant mask folds to the complemented
+        // constant, so the AND may carry `~mask` directly instead of
+        // a NOT node: recover the mask from its complement.
+        let maskBit = mask === null ? null : exprMaskBit(mask);
+        if (maskBit === null && mask === null) {
+          const complemented = exprConstValue(notPart);
+          if (complemented !== null) {
+            const maskValue = ~complemented & MASK256;
+            if (maskValue !== 0n) {
+              maskBit = exprMaskBit(exprConstOf(maskValue));
+            }
+          }
         }
-        const maskBit = exprMaskBit(mask);
         if (maskBit === null || !exprContainsSloadOf(curPart, slot)) {
           continue;
         }

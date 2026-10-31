@@ -51,6 +51,19 @@ As a first-party detector, its findings convert to calibrated signals
 through the versioned model artifact, and the artifact sets their
 effective weight, which the plugin list exposes per plugin.
 
+When the scored proof above finds nothing, the detector re-runs a
+tightened proof on the v2 reachability view and reports at most one
+weight-0 `fact` finding with the namespaced id
+`dev.brandklipparen.transfer-limits:transfer-limits-extended` and the
+payload holding `fact`, `slot`, `limitKind` and `proof: "extended"`.
+It never converts to a signal and never enters the score; the UI labels
+it "not in score". The tightened proof needs all of: the writer carries
+a caller check against the proven owner slot (standard token entries
+never count); the writer store is a caller-chosen or large value (a
+packed boolean flag write never counts); and a transfer or transferFrom
+path loads the same slot beside a less-than or greater-than compare
+whose blocked side reverts.
+
 ## Limitations / false positives
 
 The kind is resolved structurally: a mapping read beside the compare

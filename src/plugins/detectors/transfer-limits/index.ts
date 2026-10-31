@@ -11,13 +11,30 @@
 // `unknown` otherwise. A compare with no privileged writer, or a
 // privileged write the transfer path never compares against, stays
 // silent. Pure and synchronous: this module imports solely the plugin API
-// and domain types and pure functions (P-03).
+// and domain types and pure functions (P-03). When the v1 proof finds
+// nothing, the same proof re-runs on the v2 reachability view and emits
+// a weight-0 `fact` finding with `proof: "extended"` that never converts
+// to a signal.
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { analyzeOwnerControl, constSlotLoadNearFlavor } from "../../../domain/ownerControl.ts";
-import type { RegionFacts } from "../../../domain/ownerControl.ts";
+import {
+  TRANSFER_FROM_SELECTOR,
+  TRANSFER_SELECTOR,
+  analyzeOwnerControl,
+  constSlotLoadNearFlavor,
+  hasRevertingGateAfter,
+  hasRevertingSide,
+  interpretRegionExprs,
+  interpretRegionSlots,
+  isStandardTokenWriter,
+  ownerCheckVia,
+  packedBoolWriteAt,
+  packedBoolWriteExpr,
+} from "../../../domain/ownerControl.ts";
+import type { RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
-import { extractSelectors } from "../../../domain/selectors.ts";
+import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
+import type { Selector as SelectorType } from "../../../domain/types.ts";
 import { PcOffset } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
 import type { DetectorInput, DetectorPlugin, PluginFinding } from "../../detector.ts";
@@ -39,9 +56,11 @@ const OUTPUT_SCHEMA = Object.freeze({
       title: Object.freeze({ type: "string", minLength: 1 }),
       payload: Object.freeze({
         type: "object",
-        required: Object.freeze(["feature", "slot", "limitKind"]),
+        required: Object.freeze(["slot", "limitKind"]),
         properties: Object.freeze({
           feature: Object.freeze({ const: "transfer-limits" }),
+          fact: Object.freeze({ const: "transfer-limits" }),
+          proof: Object.freeze({ const: "extended" }),
           slot: Object.freeze({ type: "integer", minimum: 0 }),
           limitKind: Object.freeze({ enum: Object.freeze(["max-tx", "max-wallet", "unknown"]) }),
         }),
@@ -152,7 +171,7 @@ function kindOf(region: RegionFacts): "max-tx" | "max-wallet" | "unknown" {
 // slots scan ascending and the lowest provable slot wins. Bytecode without
 // selectors yields no findings, since a finding without selector evidence
 // is unrepresentable.
-function detect(input: DetectorInput): readonly PluginFinding[] {
+function detectV1(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
     return Object.freeze([]);
@@ -240,6 +259,190 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
     }
   }
   return Object.freeze([]);
+}
+
+// Extended analysis (weight-0 fact): the limit proof over the v2
+// reachability view. The writer must carry a caller check against the
+// proven owner slot (never a standard token entry), write a limit slot
+// with a caller-chosen or large value, and a transfer path must load the
+// same slot beside an LT or GT compare whose blocked side reverts. Real
+// compiler output interleaves a helper call between the load and the
+// compare, so the extended compare window is wider than the scored
+// beside window. It runs only when the v1 proof found nothing, so a
+// scored finding always wins. The payload carries `fact` (never
+// `feature`) with `proof: "extended"`, so the finding never converts to
+// a signal and stays at weight 0.
+const EXTENDED_LIMIT_WINDOW_PC = 64;
+
+function detectExtended(input: DetectorInput): readonly PluginFinding[] {
+  const entries = extractSelectors(input.bytecode);
+  if (entries.length === 0) {
+    return Object.freeze([]);
+  }
+  const attribution = attributeFunctions(input.bytecode, { mode: "v2" });
+  const view = analyzeOwnerControl(input.bytecode, { reach: "v2" });
+  if (view.ownerSlot === null) {
+    return Object.freeze([]);
+  }
+  const ownerSlot = view.ownerSlot;
+  const code = disassemble(input.bytecode);
+  const memberOf = (selector: SelectorType): ((pc: number) => boolean) => {
+    return (pc: number): boolean => attribution.holdersOf(pc).includes(selector);
+  };
+  const sstoreIndexAt = (pc: number): number => code.findIndex((instruction) => instruction.pc === pc);
+  // A packed bool write to a slot (a flag packed beside other fields)
+  // is a toggle, never a limit amount, even though its stored word is
+  // computed: such slots never become limit candidates.
+  const isPackedBoolStore = (
+    slot: number,
+    pc: number,
+    slotOf: SlotLookup,
+    exprs: ReturnType<typeof interpretRegionExprs>,
+  ): boolean => {
+    if (packedBoolWriteExpr(slot, exprs.stores.get(pc)) !== null) {
+      return true;
+    }
+    const index = sstoreIndexAt(pc);
+    return index >= 0 && packedBoolWriteAt(code, index, slot, slotOf) !== null;
+  };
+  const candidates = new Set<number>();
+  for (const region of view.regions) {
+    if (isStandardTokenWriter(region.selector)) {
+      continue;
+    }
+    const slots = interpretRegionSlots(input.bytecode, region.selector);
+    const slotOf: SlotLookup = (pc) => slots.get(pc);
+    const exprs = interpretRegionExprs(input.bytecode, region.selector);
+    if (ownerCheckVia(code, memberOf(region.selector), ownerSlot, slotOf, exprs.jumpis, input.bytecode) === null) {
+      continue;
+    }
+    for (const store of region.stores) {
+      if (store.slot.kind !== "const") {
+        continue;
+      }
+      if (isPackedBoolStore(store.slot.value, store.pc, slotOf, exprs)) {
+        continue;
+      }
+      if ((!store.valueIsZero && store.valueConst === null) || (store.valueConst !== null && store.valueConst > 1)) {
+        candidates.add(store.slot.value);
+      }
+    }
+  }
+  const orderedSlots = [...candidates].sort((left, right) => left - right);
+  for (const slot of orderedSlots) {
+    for (const region of view.regions) {
+      if (isStandardTokenWriter(region.selector)) {
+        continue;
+      }
+      const writerMember = memberOf(region.selector);
+      const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
+      const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
+      const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
+      if (ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode) === null) {
+        continue;
+      }
+      const writePc = limitWriter(region, slot);
+      if (writePc === null || isPackedBoolStore(slot, writePc, writerSlotOf, writerExprs)) {
+        continue;
+      }
+      const transferSelectors = [TRANSFER_SELECTOR, TRANSFER_FROM_SELECTOR]
+        .filter((selector) => selector !== region.selector)
+        .sort();
+      for (const transferSelector of transferSelectors) {
+        const transfer = view.regions.find((candidate) => candidate.selector === transferSelector);
+        if (transfer === undefined) {
+          continue;
+        }
+        const gateMember = memberOf(transferSelector);
+        const memberProof = constSlotLoadNearFlavor(transfer, slot, ["lt", "gt"], EXTENDED_LIMIT_WINDOW_PC);
+        let proof: { readonly loadPc: number } | null =
+          memberProof !== null && hasRevertingGateAfter(input.bytecode, code, gateMember, memberProof.gatePc)
+            ? { loadPc: memberProof.loadPc }
+            : null;
+        if (proof === null) {
+          // Helper-interleaved compare: the load sits in the transfer
+          // region, but the LT/GT lands in the small continuation block
+          // after an internal helper returns, so it belongs to no
+          // region's opcode list. Scan the linear stream forward from
+          // the member load instead: a compare in the window whose
+          // following jump reverts on its fall side proves the gate.
+          for (const load of transfer.loads) {
+            if (load.slot.kind !== "const" || load.slot.value !== slot || proof !== null) {
+              continue;
+            }
+            for (const candidate of code) {
+              if (candidate.pc <= load.pc || candidate.pc > load.pc + 96) {
+                continue;
+              }
+              if (candidate.opcode !== 0x10 && candidate.opcode !== 0x11) {
+                continue;
+              }
+              for (const jump of code) {
+                if (jump.pc <= candidate.pc || jump.pc > candidate.pc + 64 || jump.opcode !== 0x57) {
+                  continue;
+                }
+                if (hasRevertingSide(input.bytecode, code, gateMember, jump.pc, "fall")) {
+                  proof = { loadPc: load.pc };
+                  break;
+                }
+              }
+              if (proof !== null) {
+                break;
+              }
+            }
+          }
+        }
+        if (proof === null) {
+          continue;
+        }
+        const holdersOfWrite = [...attribution.holdersOf(writePc)].sort();
+        const firstWriteHolder = holdersOfWrite[0] === undefined ? null : holdersOfWrite[0];
+        const holder =
+          attribution.holderOf(writePc) ??
+          (holdersOfWrite.includes(region.selector) ? region.selector : firstWriteHolder);
+        const holdersOfGate = [...attribution.holdersOf(proof.loadPc)].sort();
+        const firstGateHolder = holdersOfGate[0] === undefined ? null : holdersOfGate[0];
+        const gateHolder =
+          attribution.holderOf(proof.loadPc) ??
+          (holdersOfGate.includes(transferSelector) ? transferSelector : firstGateHolder);
+        if (holder === null || gateHolder === null) {
+          continue;
+        }
+        const evidence: EvidenceType[] = [];
+        const written = evidenceFor(input.bytecode, holder, writePc);
+        if (written !== null) {
+          evidence.push(written);
+        }
+        const read = evidenceFor(input.bytecode, gateHolder, proof.loadPc);
+        if (read !== null) {
+          evidence.push(read);
+        }
+        const nonEmpty = toNonEmpty(evidence);
+        if (nonEmpty === null) {
+          continue;
+        }
+        return Object.freeze([
+          Object.freeze({
+            id: `${PLUGIN_ID}:transfer-limits-extended`,
+            pluginId: MANIFEST.id,
+            title:
+              "The owner can cap how much a wallet may send or hold. Found by extended analysis; not counted in the score.",
+            evidence: nonEmpty,
+            payload: Object.freeze({ fact: "transfer-limits", slot, limitKind: kindOf(transfer), proof: "extended" }),
+          }),
+        ]);
+      }
+    }
+  }
+  return Object.freeze([]);
+}
+
+function detect(input: DetectorInput): readonly PluginFinding[] {
+  const v1 = detectV1(input);
+  if (v1.length > 0) {
+    return v1;
+  }
+  return detectExtended(input);
 }
 
 const MANIFEST = manifestOf();

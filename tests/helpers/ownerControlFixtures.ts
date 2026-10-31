@@ -691,6 +691,105 @@ export function oz4BlacklistTokenHex(writeBase = 5, gateBase = 5, guarded = true
   return asm.build();
 }
 
+// OZ-4-shaped token on a modern compiler layout (P-10f): every writer
+// calls a shared `_checkOwner` internal function, which itself calls
+// `owner()` and `_msgSender()` internal functions and, on mismatch,
+// builds its revert through a shared encoding helper that returns with
+// a dynamic JUMP to a REVERT block. The blacklist gate in the transfer
+// path is split over two conditional jumps (a duplicated ISZERO
+// condition, with the revert under the second jump), and the limit
+// compare sits in the continuation block after an internal helper call,
+// far past the scored beside window from its slot load. Hand-assembled
+// with synthetic selectors only; no real contract code.
+export const OZ4_REVERT_SET = "0x22334455";
+export const OZ4_REVERT_LIMIT_SET = "0x33445566";
+export const OZ4_REVERT_OWN_SET = "0x44556677";
+
+export function oz4RevertHelperTokenHex(writeBase = 4, gateBase = 4, guarded = true): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(OZ4_REVERT_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.op(0x80).push4(OZ4_REVERT_LIMIT_SET.slice(2)).op(0x14);
+  asm.pushLabel2("limitEntry").op(0x57);
+  asm.op(0x80).push4(OZ4_REVERT_OWN_SET.slice(2)).op(0x14);
+  asm.pushLabel2("ownEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  // Transfer: split blacklist gate, then the helper-interleaved limit.
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(gateBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54);
+  asm.push1(0xff).op(0x16, 0x15, 0x80, 0x15);
+  asm.pushLabel2("gateSecond").op(0x57);
+  asm.op(0x50);
+  asm.pushLabel2("gateOk").op(0x56);
+  asm.label("gateSecond").op(0x5b);
+  asm.pushLabel2("gateOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("gateOk").op(0x5b);
+  asm.push1(0x07).op(0x54);
+  asm.push1(0x24).op(0x35);
+  for (let pad = 0; pad < 4; pad += 1) {
+    asm.push1(0x00).op(0x50);
+  }
+  asm.pushLabel2("retGt").pushLabel2("funcAdd").op(0x56);
+  asm.label("retGt").op(0x5b);
+  asm.op(0x11, 0x15);
+  asm.pushLabel2("limOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("limOk").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x02).op(0x55, 0x00);
+  // Blacklist writer: guarded mapping store.
+  asm.label("setEntry").op(0x5b);
+  if (guarded) {
+    asm.pushLabel2("retCheck1").pushLabel2("funcCheck").op(0x56);
+    asm.label("retCheck1").op(0x5b);
+  }
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(writeBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55, 0x00);
+  // Limit writer: guarded slot-7 store of a caller-chosen value.
+  asm.label("limitEntry").op(0x5b);
+  if (guarded) {
+    asm.pushLabel2("retCheck2").pushLabel2("funcCheck").op(0x56);
+    asm.label("retCheck2").op(0x5b);
+  }
+  asm.op(0x35).push1(0x07).op(0x55, 0x00);
+  // Ownership writer: guarded slot-0 store of a caller-chosen value.
+  asm.label("ownEntry").op(0x5b);
+  if (guarded) {
+    asm.pushLabel2("retCheck3").pushLabel2("funcCheck").op(0x56);
+    asm.label("retCheck3").op(0x5b);
+  }
+  asm.op(0x35).push1(0x00).op(0x55, 0x00);
+  if (guarded) {
+    // Shared internal functions: _checkOwner, owner(), _msgSender(),
+    // and the revert encoding helper with its dynamic return.
+    asm.label("funcCheck").op(0x5b);
+    asm.pushLabel2("retOwner").pushLabel2("funcOwner").op(0x56);
+    asm.label("retOwner").op(0x5b);
+    asm.pushLabel2("retSender").pushLabel2("funcSender").op(0x56);
+    asm.label("retSender").op(0x5b);
+    asm.op(0x14);
+    asm.pushLabel2("checkOk").op(0x57);
+    asm.pushLabel2("retRevert").pushLabel2("funcEncode").op(0x56);
+    asm.label("retRevert").op(0x5b).push1(0x00).op(0x80, 0xfd);
+    asm.label("checkOk").op(0x5b, 0x56);
+    asm.label("funcOwner").op(0x5b);
+    asm.push1(0x00).op(0x54, 0x90, 0x56);
+    asm.label("funcSender").op(0x5b);
+    asm.op(0x33, 0x90, 0x56);
+    asm.label("funcEncode").op(0x5b);
+    asm.push1(0x01).push1(0x00).op(0x52);
+    asm.push1(0x00).op(0x90, 0x56);
+  }
+  asm.label("funcAdd").op(0x5b, 0x56);
+  asm.label("end").op(0x5b, 0xfe);
+  return asm.build();
+}
+
 export function oldSolcPauseBitMismatchToken(): BytecodeType {
   return tokenBytecode([
     { selector: OLD_SOLC_PAUSE_SET, body: oldSolcPauseBody() },
