@@ -193,6 +193,10 @@ plain-language explanation layer on top of the assessment. It is
 offered separately from the score and never affects the score or
 the evidence.
 
+## Calibration and limits
+
+The default risk artifact is 1.0.1. On the held-out test set it scores bad-AUC 0.556 (95 percent interval 0.49-0.62; rug-pull 0.50, honeypot 0.68) with holdout bad-AUC 0.59, so discrimination is near chance and every test and holdout score falls in 19-30 (Low under the applied 30/60 bands). Low from 1.0.1 must not be read as safe. On-chain signals ship at weight 0 under the default artifact and never change the score. See [docs/calibration/](docs/calibration/) for the full reports.
+
 ## Status
 
 Work in progress during the hackathon. Interfaces and behaviour may

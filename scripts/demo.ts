@@ -27,9 +27,9 @@ const PORTABLE_NODE_HINT = 'PATH="$HOME/.local/node22/bin:$PATH" npm run demo';
 
 // Local defaults, applied only where the variable is not already set in
 // the environment (the user's env wins). No API keys of any kind: keyed
-// features stay off and report not-configured, and the model-assisted
-// assessment/investigation feature stays off because its provider and key
-// variables are absent. The model default matches the documented default
+// features stay off and report not-configured unless their key file is
+// set, in which case the Meta provider is defaulted for assessment and
+// investigation. The model default matches the documented default
 // artifact in model/README.md (calibration 1.0.1).
 export const DEMO_DEFAULTS: Readonly<Record<string, string>> = Object.freeze({
   BRANDKLIPPAREN_ENV: "local",
@@ -231,20 +231,120 @@ export function ensureDemoApiKey(
   };
 }
 
-// Single assessment status line for the demo log: exactly one of the two
-// lines, never a value or file contents.
+// Single assessment status line for the demo log: exactly one line
+// naming the selected provider, never a value or file contents.
 export const DEMO_ASSESSMENT_OFF_LINE = "assessment: off";
-export const DEMO_ASSESSMENT_READY_LINE = "assessment provider: generic-compatible (key loaded)";
+export const DEMO_ASSESSMENT_META_READY_LINE = "assessment provider: meta-model-api (key loaded)";
+export const DEMO_ASSESSMENT_hosted_READY_LINE = "assessment provider: hosted-open-weights (key loaded)";
+export const DEMO_ASSESSMENT_generic_COMPATIBLE_READY_LINE =
+  "assessment provider: generic-compatible (key loaded)";
 
 export function demoAssessmentStatus(
   env: Readonly<Record<string, string | undefined>>,
 ): string {
   const provider = env["BRANDKLIPPAREN_ASSESSMENT_PROVIDER"] ?? "";
-  const key = env["BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY"] ?? "";
-  if (provider === "generic-compatible" && key !== "") {
-    return DEMO_ASSESSMENT_READY_LINE;
+  if (provider === "meta-model-api" && (env["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY"] ?? "") !== "") {
+    return DEMO_ASSESSMENT_META_READY_LINE;
+  }
+  if (
+    provider === "hosted-open-weights" &&
+    (env["BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY"] ?? "") !== ""
+  ) {
+    return DEMO_ASSESSMENT_hosted_READY_LINE;
+  }
+  if (
+    provider === "generic-compatible" &&
+    (env["BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY"] ?? "") !== ""
+  ) {
+    return DEMO_ASSESSMENT_generic_COMPATIBLE_READY_LINE;
   }
   return DEMO_ASSESSMENT_OFF_LINE;
+}
+
+// Demo default for the assessment provider: when the provider is unset
+// and a Meta key is configured (directly or via its pointer file), the
+// demo defaults the provider to meta-model-api. An explicit value
+// (including "off" and "generic-compatible") always wins. Pure: reads
+// names and presence only, never key values or file contents.
+export const DEMO_ASSESSMENT_META_PROVIDER = "meta-model-api";
+
+export function withDemoAssessmentDefault(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly env: Record<string, string | undefined>; readonly defaulted: boolean } {
+  const current = env["BRANDKLIPPAREN_ASSESSMENT_PROVIDER"] ?? "";
+  if (current !== "") {
+    return { env: { ...env }, defaulted: false };
+  }
+  const key = env["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY"] ?? "";
+  const keyFile = env["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE"] ?? "";
+  if (key === "" && keyFile === "") {
+    return { env: { ...env }, defaulted: false };
+  }
+  return {
+    env: { ...env, BRANDKLIPPAREN_ASSESSMENT_PROVIDER: DEMO_ASSESSMENT_META_PROVIDER },
+    defaulted: true,
+  };
+}
+
+// Single investigation status line for the demo log: exactly one line
+// naming the selected provider, never a value or file contents.
+export const DEMO_INVESTIGATE_OFF_LINE = "investigate: off";
+export const DEMO_INVESTIGATE_META_READY_LINE = "investigate provider: meta-model-api (key loaded)";
+export const DEMO_INVESTIGATE_hosted_READY_LINE =
+  "investigate provider: hosted-open-weights (key loaded)";
+
+export function demoInvestigateStatus(
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const provider = env["BRANDKLIPPAREN_INVESTIGATE_PROVIDER"] ?? "";
+  if (provider === "meta-model-api" && (env["BRANDKLIPPAREN_INVESTIGATE_META_API_KEY"] ?? "") !== "") {
+    return DEMO_INVESTIGATE_META_READY_LINE;
+  }
+  if (
+    provider === "hosted-open-weights" &&
+    (env["BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY"] ?? "") !== ""
+  ) {
+    return DEMO_INVESTIGATE_hosted_READY_LINE;
+  }
+  return DEMO_INVESTIGATE_OFF_LINE;
+}
+
+// Demo default for the investigation loop: when the investigate provider
+// is unset and the assessment Meta key file is set, the demo reuses that
+// same single Meta key for all three features (assessment, personalize,
+// investigation). Only pointer and connection names are copied, never
+// key values; the generic secret-file indirection resolves the pointer
+// later. Explicit investigate values always win, per field. Pure: reads
+// names and presence only, never key values or file contents.
+export const DEMO_INVESTIGATE_META_PROVIDER = "meta-model-api";
+
+export function withDemoInvestigateDefault(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly env: Record<string, string | undefined>; readonly defaulted: boolean } {
+  const current = env["BRANDKLIPPAREN_INVESTIGATE_PROVIDER"] ?? "";
+  if (current !== "") {
+    return { env: { ...env }, defaulted: false };
+  }
+  const assessmentKeyFile = env["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE"] ?? "";
+  if (assessmentKeyFile === "") {
+    return { env: { ...env }, defaulted: false };
+  }
+  const next: Record<string, string | undefined> = {
+    ...env,
+    BRANDKLIPPAREN_INVESTIGATE_PROVIDER: DEMO_INVESTIGATE_META_PROVIDER,
+  };
+  if ((next["BRANDKLIPPAREN_INVESTIGATE_META_API_KEY_FILE"] ?? "") === "") {
+    next["BRANDKLIPPAREN_INVESTIGATE_META_API_KEY_FILE"] = assessmentKeyFile;
+  }
+  const assessmentModelId = env["BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID"] ?? "";
+  if (assessmentModelId !== "" && (next["BRANDKLIPPAREN_INVESTIGATE_META_MODEL_ID"] ?? "") === "") {
+    next["BRANDKLIPPAREN_INVESTIGATE_META_MODEL_ID"] = assessmentModelId;
+  }
+  const assessmentBaseUrl = env["BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL"] ?? "";
+  if (assessmentBaseUrl !== "" && (next["BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL"] ?? "") === "") {
+    next["BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL"] = assessmentBaseUrl;
+  }
+  return { env: next, defaulted: true };
 }
 
 // Experimental AI personalize default for the demo (brief 42): when the
@@ -650,7 +750,18 @@ async function runDemo(): Promise<void> {
   if (applied.length > 0) {
     process.stdout.write(`demo defaults applied for: ${applied.join(", ")}\n`);
   }
-  const resolved = resolveSecretFileVars(defaultedEnv, root, (path) => readFileSync(path, "utf8"));
+  // Meta provider defaults run before secret-file indirection: the
+  // investigate default copies the assessment Meta key file pointer, so
+  // the single resolution pass below fills both keys.
+  const assessed = withDemoAssessmentDefault(defaultedEnv);
+  if (assessed.defaulted) {
+    process.stdout.write("assessment provider: defaulted to meta-model-api (key file set)\n");
+  }
+  const investigated = withDemoInvestigateDefault(assessed.env);
+  if (investigated.defaulted) {
+    process.stdout.write("investigate provider: defaulted to meta-model-api (key file set)\n");
+  }
+  const resolved = resolveSecretFileVars(investigated.env, root, (path) => readFileSync(path, "utf8"));
   for (const name of resolved.failed) {
     process.stdout.write(`warning: unreadable secret file for ${name}; leaving it unset.\n`);
   }
@@ -666,6 +777,7 @@ async function runDemo(): Promise<void> {
     process.stdout.write("demo api key: using configured BRANDKLIPPAREN_API_KEYS.\n");
   }
   process.stdout.write(`${demoAssessmentStatus(demoEnv)}\n`);
+  process.stdout.write(`${demoInvestigateStatus(demoEnv)}\n`);
   process.stdout.write(`${demoLpFeedStatus(demoEnv)}\n`);
   const extdecomp = discoverextdecompBinary({
     extdecompBin: process.env["extdecomp_BIN"],

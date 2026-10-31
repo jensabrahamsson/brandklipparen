@@ -449,9 +449,20 @@ export function TokenPage({
     });
   }, []);
 
+  // The Investigate tab renders only when /health reports the loop
+  // configured; keyboard order follows the visible tabs.
+  const investigateTabVisible = availability.investigation === "available";
+  useEffect(() => {
+    if (!investigateTabVisible) {
+      setTab((current) => (current === "investigate" ? "overview" : current));
+    }
+  }, [investigateTabVisible]);
+
   const onTabKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
-      const order: Tab[] = ["overview", "assessment", "investigate"];
+      const order: Tab[] = investigateTabVisible
+        ? ["overview", "assessment", "investigate"]
+        : ["overview", "assessment"];
       const current = order.indexOf(tab);
       let next: number | null = null;
       if (event.key === "ArrowRight") {
@@ -471,7 +482,7 @@ export function TokenPage({
       setTab(target);
       document.getElementById(`tab-${target}`)?.focus();
     },
-    [tab],
+    [tab, investigateTabVisible],
   );
 
   if (!isValidAddress(address)) {
@@ -850,18 +861,20 @@ function AssessedView({
         >
           Contract assessment
         </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-investigate"
-          aria-controls="panel-investigate"
-          aria-selected={tab === "investigate"}
-          tabIndex={tab === "investigate" ? 0 : -1}
-          className="tab"
-          onClick={() => onTab("investigate")}
-        >
-          Investigate
-        </button>
+        {availability.investigation === "available" ? (
+          <button
+            type="button"
+            role="tab"
+            id="tab-investigate"
+            aria-controls="panel-investigate"
+            aria-selected={tab === "investigate"}
+            tabIndex={tab === "investigate" ? 0 : -1}
+            className="tab"
+            onClick={() => onTab("investigate")}
+          >
+            Investigate
+          </button>
+        ) : null}
       </div>
       <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" hidden={tab !== "overview"}>
         {tab === "overview" ? (
@@ -912,18 +925,20 @@ function AssessedView({
           <AssessmentPanel state={assessment} score={result.score} provider={provider} onRequest={onRequestAssessment} />
         ) : null}
       </div>
-      <div role="tabpanel" id="panel-investigate" aria-labelledby="tab-investigate" hidden={tab !== "investigate"}>
-        {tab === "investigate" ? (
-          <InvestigationPanel
-            state={investigation}
-            score={result.score}
-            availability={availability.investigation}
-            signals={sorted}
-            onSignalLink={jumpToSignal}
-            onRequest={onRunInvestigation}
-          />
-        ) : null}
-      </div>
+      {availability.investigation === "available" ? (
+        <div role="tabpanel" id="panel-investigate" aria-labelledby="tab-investigate" hidden={tab !== "investigate"}>
+          {tab === "investigate" ? (
+            <InvestigationPanel
+              state={investigation}
+              score={result.score}
+              availability={availability.investigation}
+              signals={sorted}
+              onSignalLink={jumpToSignal}
+              onRequest={onRunInvestigation}
+            />
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

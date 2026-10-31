@@ -298,6 +298,10 @@ const V = {
   assessmentDailyCostCapGenericCompatible: "BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_generic_COMPATIBLE",
   personalizeProvider: "BRANDKLIPPAREN_PERSONALIZE_PROVIDER",
   personalizeDailyCapPerKey: "BRANDKLIPPAREN_PERSONALIZE_DAILY_CAP_PER_KEY",
+  investigateProvider: "BRANDKLIPPAREN_INVESTIGATE_PROVIDER",
+  investigateMetaBaseUrl: "BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL",
+  investigateMetaApiKey: "BRANDKLIPPAREN_INVESTIGATE_META_API_KEY",
+  investigateMetaModelId: "BRANDKLIPPAREN_INVESTIGATE_META_MODEL_ID",
   investigatehostedBaseUrl: "BRANDKLIPPAREN_INVESTIGATE_hosted_BASE_URL",
   investigatehostedApiKey: "BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY",
   investigatehostedModelId: "BRANDKLIPPAREN_INVESTIGATE_hosted_MODEL_ID",
@@ -336,6 +340,18 @@ const parsePersonalizeProvider = (raw: string): Result<PluginPersonalizeProvider
     V.personalizeProvider,
     ["off", "meta-model-api", "hosted-open-weights", "generic-compatible"],
     "off, meta-model-api, hosted-open-weights or generic-compatible",
+  )(raw);
+
+// Investigation loop provider (M-2): unset or "off" leaves the loop
+// disabled; a named provider selects the investigate adapter. Anything
+// else is a typed startup error naming the variable.
+const parseInvestigateProvider = (
+  raw: string,
+): Result<"meta-model-api" | "hosted-open-weights" | "off", ConfigError> =>
+  parseEnum<"meta-model-api" | "hosted-open-weights" | "off">(
+    V.investigateProvider,
+    ["meta-model-api", "hosted-open-weights", "off"],
+    "meta-model-api, hosted-open-weights or off",
   )(raw);
 
 // Every variable name from the schema, exported so the .env.example
@@ -762,6 +778,32 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   // Investigation loop settings (S-073, P-29, P-34): optional in every
   // setup, so local and CI runs stay key-free with the loop answering
   // `not-configured`. The demo sets the key alongside the assessment keys.
+  const investigateProvider = optionalField(env, V.investigateProvider, parseInvestigateProvider);
+  if (!investigateProvider.ok) {
+    return investigateProvider;
+  }
+  const investigateMetaBaseUrl = optionalField(env, V.investigateMetaBaseUrl, (raw) =>
+    parseHttpsUrl(V.investigateMetaBaseUrl, raw),
+  );
+  if (!investigateMetaBaseUrl.ok) {
+    return investigateMetaBaseUrl;
+  }
+  const investigateMetaApiKey = optionalField(env, V.investigateMetaApiKey, (raw) =>
+    parseSecret(V.investigateMetaApiKey, raw),
+  );
+  if (!investigateMetaApiKey.ok) {
+    return investigateMetaApiKey;
+  }
+  const investigateMetaModelId = optionalField(env, V.investigateMetaModelId, (raw) =>
+    mapDomain(
+      V.investigateMetaModelId,
+      "must be a 1-256 character model identifier",
+      ModelId.parse(raw),
+    ),
+  );
+  if (!investigateMetaModelId.ok) {
+    return investigateMetaModelId;
+  }
   const investigatehostedBaseUrl = optionalField(env, V.investigatehostedBaseUrl, (raw) =>
     parseHttpsUrl(V.investigatehostedBaseUrl, raw),
   );
@@ -1000,6 +1042,20 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(personalizeDailyCapPerKey.value === undefined
       ? {}
       : { personalizeDailyCapPerKey: personalizeDailyCapPerKey.value }),
+    // "off" stays in the config (unlike the personalize toggle): the
+    // shared vendor-neutral path below must see it and stay disabled.
+    ...(investigateProvider.value === undefined
+      ? {}
+      : { investigateProvider: investigateProvider.value }),
+    ...(investigateMetaBaseUrl.value === undefined
+      ? {}
+      : { investigateMetaBaseUrl: investigateMetaBaseUrl.value }),
+    ...(investigateMetaApiKey.value === undefined
+      ? {}
+      : { investigateMetaApiKey: investigateMetaApiKey.value }),
+    ...(investigateMetaModelId.value === undefined
+      ? {}
+      : { investigateMetaModelId: investigateMetaModelId.value }),
     ...(investigatehostedBaseUrl.value === undefined
       ? {}
       : { investigatehostedBaseUrl: investigatehostedBaseUrl.value }),

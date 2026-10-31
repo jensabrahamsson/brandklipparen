@@ -128,6 +128,19 @@ export type AppConfig = {
   readonly assessmentGenericCompatibleMaxTokens?: number;
   readonly budgetDailyCapAssessmentCallsGenericCompatible?: number;
   readonly assessmentDailyCostCapGenericCompatible?: number;
+  // Investigation loop provider selection: unset or "off" leaves the
+  // loop disabled with the deterministic analysis standing; a named
+  // provider binds its adapter when its connection triple is complete,
+  // otherwise the loop answers `not-configured` with zero provider calls
+  // instead of failing startup.
+  readonly investigateProvider?: "meta-model-api" | "hosted-open-weights" | "off";
+  // Meta Model API connection for the investigation loop: the key loads
+  // only via its pointer file in the demo, the model id defaults to
+  // muse-spark-1.3 in the adapter, and the base URL is validated as an
+  // https URL at startup like the assessment Meta base URL.
+  readonly investigateMetaBaseUrl?: string;
+  readonly investigateMetaApiKey?: SecretString;
+  readonly investigateMetaModelId?: ModelId;
   // Investigation loop on open weights (S-073, P-29, P-30, P-34): all
   // optional in every setup. An absent key leaves the loop answering
   // `not-configured` with zero provider calls instead of failing startup.

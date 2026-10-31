@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import type { InvestigationState, InvestigationStep, Signal } from "../types.ts";
 import type { Availability } from "../lib/capabilities.ts";
 import { evidenceSignalKey, splitNarrative } from "../lib/investigation.ts";
+import { providerDisplayName } from "../lib/providers.ts";
 import { Explain } from "./Explain.tsx";
 import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
 
@@ -200,7 +201,7 @@ export function InvestigationPanel({
           <p className="assessment-label">
             <span className="assessment-dot" aria-hidden="true" />
             <span>
-              Investigated with {state.provider} · model {state.modelId}
+              Investigated with {providerDisplayName(state.provider)} · model {state.modelId}
             </span>
           </p>
           <StepGraph steps={state.steps} signals={signals} onSignalLink={onSignalLink} />

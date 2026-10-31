@@ -14,15 +14,23 @@ import {
   buildNode22MissingMessage,
   checkNodeVersion,
   decideNode22Startup,
+  DEMO_ASSESSMENT_hosted_READY_LINE,
+  DEMO_ASSESSMENT_META_PROVIDER,
+  DEMO_ASSESSMENT_META_READY_LINE,
   DEMO_ASSESSMENT_OFF_LINE,
-  DEMO_ASSESSMENT_READY_LINE,
+  DEMO_ASSESSMENT_generic_COMPATIBLE_READY_LINE,
   DEMO_DEFAULTS,
   DEMO_DEFAULT_RPC_URL,
+  DEMO_INVESTIGATE_hosted_READY_LINE,
+  DEMO_INVESTIGATE_META_PROVIDER,
+  DEMO_INVESTIGATE_META_READY_LINE,
+  DEMO_INVESTIGATE_OFF_LINE,
   DEMO_LP_FEED_OFF_LINE,
   DEMO_LP_FEED_READY_LINE,
   DEMO_PERSONALIZE_META_PROVIDER,
   DEMO_REEXEC_MARKER,
   demoAssessmentStatus,
+  demoInvestigateStatus,
   demoLpFeedStatus,
   discoverextdecompBinary,
   displayPathWithHome,
@@ -34,7 +42,9 @@ import {
   parseEnvLocal,
   readEnvLocalFile,
   resolveSecretFileVars,
+  withDemoAssessmentDefault,
   withDemoDefaults,
+  withDemoInvestigateDefault,
   withDemoPersonalizeDefault,
 } from "../../scripts/demo.ts";
 
@@ -336,27 +346,189 @@ describe("demo per-run local API key", () => {
 });
 
 describe("demo assessment status line", () => {
-  test("reports the loaded provider line only with provider and key", () => {
+  test("reports the selected provider line truthfully with provider and key", () => {
+    expect(
+      demoAssessmentStatus({
+        BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "meta-model-api",
+        BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-key-for-tests-only",
+      }),
+    ).toBe(DEMO_ASSESSMENT_META_READY_LINE);
+    expect(DEMO_ASSESSMENT_META_READY_LINE).toBe("assessment provider: meta-model-api (key loaded)");
+    expect(
+      demoAssessmentStatus({
+        BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "hosted-open-weights",
+        BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY: "fake-key-for-tests-only",
+      }),
+    ).toBe(DEMO_ASSESSMENT_hosted_READY_LINE);
+    expect(DEMO_ASSESSMENT_hosted_READY_LINE).toBe(
+      "assessment provider: hosted-open-weights (key loaded)",
+    );
     expect(
       demoAssessmentStatus({
         BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
         BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-key-for-tests-only",
       }),
-    ).toBe(DEMO_ASSESSMENT_READY_LINE);
-    expect(DEMO_ASSESSMENT_READY_LINE).toBe("assessment provider: generic-compatible (key loaded)");
+    ).toBe(DEMO_ASSESSMENT_generic_COMPATIBLE_READY_LINE);
+    expect(DEMO_ASSESSMENT_generic_COMPATIBLE_READY_LINE).toBe(
+      "assessment provider: generic-compatible (key loaded)",
+    );
   });
 
-  test("reports off without a file, without a provider, or without a key", () => {
+  test("reports off without a provider, without a key, or on a key mismatch", () => {
     expect(demoAssessmentStatus({})).toBe(DEMO_ASSESSMENT_OFF_LINE);
     expect(DEMO_ASSESSMENT_OFF_LINE).toBe("assessment: off");
     expect(
-      demoAssessmentStatus({ BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible" }),
+      demoAssessmentStatus({ BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "meta-model-api" }),
     ).toBe(DEMO_ASSESSMENT_OFF_LINE);
     expect(
       demoAssessmentStatus({
+        BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-key-for-tests-only",
+      }),
+    ).toBe(DEMO_ASSESSMENT_OFF_LINE);
+    expect(
+      demoAssessmentStatus({
+        BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "meta-model-api",
         BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-key-for-tests-only",
       }),
     ).toBe(DEMO_ASSESSMENT_OFF_LINE);
+  });
+});
+
+describe("demo assessment provider default (meta-model-api)", () => {
+  const META_KEY = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY";
+  const META_KEY_FILE = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE";
+  const PROVIDER = "BRANDKLIPPAREN_ASSESSMENT_PROVIDER";
+  const FAKE_KEY = "fake-meta-key-for-tests-only";
+
+  test("an unset provider with a configured Meta key defaults to meta-model-api", () => {
+    expect(DEMO_ASSESSMENT_META_PROVIDER).toBe("meta-model-api");
+    for (const env of [{ [META_KEY]: FAKE_KEY }, { [META_KEY_FILE]: "secrets/meta-key.txt" }]) {
+      const { env: defaulted, defaulted: applied } = withDemoAssessmentDefault(env);
+      expect(applied).toBe(true);
+      expect(defaulted[PROVIDER]).toBe("meta-model-api");
+    }
+    const { env: emptyDefaulted } = withDemoAssessmentDefault({ [PROVIDER]: "", [META_KEY]: FAKE_KEY });
+    expect(emptyDefaulted[PROVIDER]).toBe("meta-model-api");
+  });
+
+  test("an explicit provider value always wins over the Meta key", () => {
+    for (const explicit of ["off", "generic-compatible", "meta-model-api", "hosted-open-weights"]) {
+      const { env: kept, defaulted: applied } = withDemoAssessmentDefault({
+        [PROVIDER]: explicit,
+        [META_KEY]: FAKE_KEY,
+        [META_KEY_FILE]: "secrets/meta-key.txt",
+      });
+      expect(applied).toBe(false);
+      expect(kept[PROVIDER]).toBe(explicit);
+    }
+  });
+
+  test("no Meta key means no assessment default", () => {
+    const { env: kept, defaulted: applied } = withDemoAssessmentDefault({});
+    expect(applied).toBe(false);
+    expect(kept[PROVIDER]).toBe(undefined);
+    const blank = withDemoAssessmentDefault({ [META_KEY]: "", [META_KEY_FILE]: "" });
+    expect(blank.defaulted).toBe(false);
+    expect(blank.env[PROVIDER]).toBe(undefined);
+  });
+
+  test("a defaulted provider passes config validation with the Meta triple", () => {
+    const { env } = withDemoDefaults({
+      BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: FAKE_KEY,
+      BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "fake-meta-model-1",
+      BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta.example.invalid",
+    });
+    const { env: defaulted } = withDemoAssessmentDefault(env);
+    expect(defaulted[PROVIDER]).toBe("meta-model-api");
+    expect(loadConfig(defaulted).ok).toBe(true);
+  });
+});
+
+describe("demo investigate status line", () => {
+  test("reports the selected provider line truthfully with provider and key", () => {
+    expect(
+      demoInvestigateStatus({
+        BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "meta-model-api",
+        BRANDKLIPPAREN_INVESTIGATE_META_API_KEY: "fake-key-for-tests-only",
+      }),
+    ).toBe(DEMO_INVESTIGATE_META_READY_LINE);
+    expect(DEMO_INVESTIGATE_META_READY_LINE).toBe("investigate provider: meta-model-api (key loaded)");
+    expect(
+      demoInvestigateStatus({
+        BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "hosted-open-weights",
+        BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY: "fake-key-for-tests-only",
+      }),
+    ).toBe(DEMO_INVESTIGATE_hosted_READY_LINE);
+  });
+
+  test("reports off without a provider, without a key, or on a key mismatch", () => {
+    expect(demoInvestigateStatus({})).toBe(DEMO_INVESTIGATE_OFF_LINE);
+    expect(DEMO_INVESTIGATE_OFF_LINE).toBe("investigate: off");
+    expect(
+      demoInvestigateStatus({ BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "meta-model-api" }),
+    ).toBe(DEMO_INVESTIGATE_OFF_LINE);
+    expect(
+      demoInvestigateStatus({
+        BRANDKLIPPAREN_INVESTIGATE_META_API_KEY: "fake-key-for-tests-only",
+      }),
+    ).toBe(DEMO_INVESTIGATE_OFF_LINE);
+    expect(
+      demoInvestigateStatus({
+        BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "meta-model-api",
+        BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY: "fake-key-for-tests-only",
+      }),
+    ).toBe(DEMO_INVESTIGATE_OFF_LINE);
+  });
+});
+
+describe("demo investigate provider default (meta-model-api)", () => {
+  const ASSESSMENT_KEY_FILE = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE";
+  const PROVIDER = "BRANDKLIPPAREN_INVESTIGATE_PROVIDER";
+  const META_KEY_FILE = "BRANDKLIPPAREN_INVESTIGATE_META_API_KEY_FILE";
+  const META_MODEL_ID = "BRANDKLIPPAREN_INVESTIGATE_META_MODEL_ID";
+  const META_BASE_URL = "BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL";
+
+  test("an unset provider with the assessment Meta key file defaults to meta-model-api", () => {
+    expect(DEMO_INVESTIGATE_META_PROVIDER).toBe("meta-model-api");
+    const { env: defaulted, defaulted: applied } = withDemoInvestigateDefault({
+      [ASSESSMENT_KEY_FILE]: "secrets/meta-key.txt",
+      BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "fake-meta-model-1",
+      BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta.example.invalid",
+    });
+    expect(applied).toBe(true);
+    expect(defaulted[PROVIDER]).toBe("meta-model-api");
+    expect(defaulted[META_KEY_FILE]).toBe("secrets/meta-key.txt");
+    expect(defaulted[META_MODEL_ID]).toBe("fake-meta-model-1");
+    expect(defaulted[META_BASE_URL]).toBe("https://meta.example.invalid");
+  });
+
+  test("an explicit investigate provider or pointer always wins", () => {
+    for (const explicit of ["off", "hosted-open-weights", "meta-model-api"]) {
+      const { env: kept, defaulted: applied } = withDemoInvestigateDefault({
+        [PROVIDER]: explicit,
+        [ASSESSMENT_KEY_FILE]: "secrets/meta-key.txt",
+      });
+      expect(applied).toBe(false);
+      expect(kept[PROVIDER]).toBe(explicit);
+      expect(kept[META_KEY_FILE]).toBe(undefined);
+    }
+    const { env: kept } = withDemoInvestigateDefault({
+      [ASSESSMENT_KEY_FILE]: "secrets/assessment-key.txt",
+      [META_KEY_FILE]: "secrets/investigate-key.txt",
+    });
+    expect(kept[PROVIDER]).toBe("meta-model-api");
+    expect(kept[META_KEY_FILE]).toBe("secrets/investigate-key.txt");
+  });
+
+  test("no assessment Meta key file means no investigate default", () => {
+    const { env: kept, defaulted: applied } = withDemoInvestigateDefault({});
+    expect(applied).toBe(false);
+    expect(kept[PROVIDER]).toBe(undefined);
+    const directKeyOnly = withDemoInvestigateDefault({
+      BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-meta-key-for-tests-only",
+    });
+    expect(directKeyOnly.defaulted).toBe(false);
+    expect(directKeyOnly.env[PROVIDER]).toBe(undefined);
   });
 });
 

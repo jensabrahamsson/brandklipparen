@@ -39,9 +39,11 @@ import type { DecompilerNamingService } from "../application/decompilerNaming.ts
 import type { DecompilerNamingPort } from "../ports/decompilerNaming.ts";
 import {
   hostedInvestigateAdapter,
+  NotConfiguredInvestigateAdapter,
   createhostedInvestigateAdapterFromConfig,
 } from "../adapters/investigation/hostedInvestigateAdapter.ts";
 import type { hostedInvestigateTransport } from "../adapters/investigation/hostedInvestigateAdapter.ts";
+import { createMetaModelApiInvestigateAdapterFromConfig } from "../adapters/investigation/metaModelApiInvestigateAdapter.ts";
 import type { InvestigationModelPort } from "../ports/investigationModel.ts";
 import { DEFAULT_INVESTIGATION_LIMITS } from "../application/investigateToken.ts";
 import { createMetaModelApiAdapterFromConfig } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
@@ -534,17 +536,24 @@ export function buildDecompilerNamingService(
 // selects the vendor-neutral provider with a complete endpoint triple
 // and no investigation field is configured at all, the investigation
 // loop reuses the assessment endpoint, key and model id. Any explicit
-// investigation field keeps the existing path below (including the
-// not-configured adapter on a partial triple); without either, the loop
-// stays not-configured. Returns null when sharing does not apply.
+// investigation selection or field keeps the existing path below
+// (including the not-configured adapter on a partial triple); without
+// either, the loop stays not-configured. Returns null when sharing does
+// not apply.
 function sharedInvestigateAdapterFromAssessment(
   config: AppConfig,
   transport: hostedInvestigateTransport | undefined,
 ): InvestigationModelPort | null {
+  if (config.investigateProvider !== undefined) {
+    return null;
+  }
   if (
     config.investigatehostedBaseUrl !== undefined ||
     config.investigatehostedApiKey !== undefined ||
-    config.investigatehostedModelId !== undefined
+    config.investigatehostedModelId !== undefined ||
+    config.investigateMetaBaseUrl !== undefined ||
+    config.investigateMetaApiKey !== undefined ||
+    config.investigateMetaModelId !== undefined
   ) {
     return null;
   }
@@ -574,6 +583,7 @@ function buildInvestigationService(
   adapter: InvestigationModelPort,
   config: AppConfig,
   detectors: DetectorSet,
+  configured: boolean,
 ): InvestigationService {
   return createInvestigationService({
     adapter,
@@ -590,39 +600,122 @@ function buildInvestigationService(
         ? PLACEHOLDER_INVESTIGATION_PROMPT_VERSION
         : (config.investigatePromptVersion as string),
     dailyCapPerKey: config.investigateDailyCapPerKey ?? PLACEHOLDER_INVESTIGATION_DAILY_CAP_PER_KEY,
+    configured,
   });
 }
 
+function hostedInvestigateLimitsOf(config: AppConfig): {
+  readonly investigateDeadlineMs: number | undefined;
+  readonly investigateMaxInputBytes: number | undefined;
+  readonly investigateMaxOutputBytes: number | undefined;
+} {
+  return {
+    investigateDeadlineMs: config.investigateDeadlineMs,
+    investigateMaxInputBytes: config.investigateMaxInputBytes,
+    investigateMaxOutputBytes: config.investigateMaxOutputBytes,
+  };
+}
+
 // Builds the investigation service from the validated configuration
-// (S-075, P-29): the hosted open-weights adapter when the key is set,
-// the shared vendor-neutral adapter when the assessment selects the
-// vendor-neutral provider without an explicit investigation triple,
-// otherwise the not-configured adapter whose every call answers
-// `not-configured` with zero sends. Missing values never fail startup:
-// the loop is opt-in and disabled by default. Transports stay injectable
-// so tests replay recorded fixtures and never touch the network.
+// (S-075, P-29): the selected provider adapter when its connection triple
+// is complete (Meta Model API or hosted open weights), the shared
+// vendor-neutral adapter when the assessment selects the vendor-neutral
+// provider without an explicit investigation selection, otherwise the
+// not-configured adapter whose every call answers `not-configured` with
+// zero sends. The service reports unconfigured through its `configured`
+// flag so health can disable the loop while the routes keep their typed
+// not-configured response. Missing values never fail startup: the loop
+// is opt-in and disabled by default. Transports stay injectable so tests
+// replay recorded fixtures and never touch the network.
 export function createInvestigationServiceFromConfig(
   config: AppConfig,
   detectors: DetectorSet,
   overrides: { readonly transport?: hostedInvestigateTransport | undefined } = {},
 ): Result<InvestigationService, ConfigError> {
+  const selected = config.investigateProvider;
+  if (selected === "off") {
+    const built = createhostedInvestigateAdapterFromConfig(
+      {
+        investigatehostedBaseUrl: undefined,
+        investigatehostedApiKey: undefined,
+        investigatehostedModelId: undefined,
+        ...hostedInvestigateLimitsOf(config),
+      },
+      overrides.transport,
+    );
+    if (!built.ok) {
+      return err(built.error);
+    }
+    return ok(buildInvestigationService(built.value, config, detectors, false));
+  }
+  if (selected === "meta-model-api") {
+    const built = createMetaModelApiInvestigateAdapterFromConfig(
+      {
+        investigateMetaBaseUrl: config.investigateMetaBaseUrl,
+        investigateMetaApiKey: config.investigateMetaApiKey,
+        investigateMetaModelId: config.investigateMetaModelId,
+        investigateDeadlineMs: config.investigateDeadlineMs,
+        investigateMaxInputBytes: config.investigateMaxInputBytes,
+        investigateMaxOutputBytes: config.investigateMaxOutputBytes,
+      },
+      overrides.transport,
+    );
+    if (!built.ok) {
+      return err(built.error);
+    }
+    return ok(
+      buildInvestigationService(
+        built.value,
+        config,
+        detectors,
+        !(built.value instanceof NotConfiguredInvestigateAdapter),
+      ),
+    );
+  }
+  if (selected === "hosted-open-weights") {
+    const built = createhostedInvestigateAdapterFromConfig(
+      {
+        investigatehostedBaseUrl: config.investigatehostedBaseUrl,
+        investigatehostedApiKey: config.investigatehostedApiKey,
+        investigatehostedModelId: config.investigatehostedModelId,
+        ...hostedInvestigateLimitsOf(config),
+      },
+      overrides.transport,
+    );
+    if (!built.ok) {
+      return err(built.error);
+    }
+    return ok(
+      buildInvestigationService(
+        built.value,
+        config,
+        detectors,
+        !(built.value instanceof NotConfiguredInvestigateAdapter),
+      ),
+    );
+  }
   const shared = sharedInvestigateAdapterFromAssessment(config, overrides.transport);
   if (shared !== null) {
-    return ok(buildInvestigationService(shared, config, detectors));
+    return ok(buildInvestigationService(shared, config, detectors, true));
   }
   const built = createhostedInvestigateAdapterFromConfig(
     {
       investigatehostedBaseUrl: config.investigatehostedBaseUrl,
       investigatehostedApiKey: config.investigatehostedApiKey,
       investigatehostedModelId: config.investigatehostedModelId,
-      investigateDeadlineMs: config.investigateDeadlineMs,
-      investigateMaxInputBytes: config.investigateMaxInputBytes,
-      investigateMaxOutputBytes: config.investigateMaxOutputBytes,
+      ...hostedInvestigateLimitsOf(config),
     },
     overrides.transport,
   );
   if (!built.ok) {
     return err(built.error);
   }
-  return ok(buildInvestigationService(built.value, config, detectors));
+  return ok(
+    buildInvestigationService(
+      built.value,
+      config,
+      detectors,
+      !(built.value instanceof NotConfiguredInvestigateAdapter),
+    ),
+  );
 }

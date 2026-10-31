@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import type { AssessmentState, ProviderInfo } from "../types.ts";
+import { providerDisplayName } from "../lib/providers.ts";
 import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
 
 // Contract assessment in its own tab: free-text assessment through the
@@ -41,7 +42,7 @@ export function AssessmentPanel({
         <p className="assessment-label">
           <span className="assessment-dot" aria-hidden="true" />
           <span>
-            Assessment provider {provider.provider} · model {provider.modelId}
+            Assessment provider {providerDisplayName(provider.provider)} · model {provider.modelId}
           </span>
         </p>
       ) : null}
@@ -90,7 +91,7 @@ export function AssessmentPanel({
           <p className="assessment-label">
             <span className="assessment-dot" aria-hidden="true" />
             <span>
-              Assessment provider {state.provider} · model {state.modelId}
+              Assessment provider {providerDisplayName(state.provider)} · model {state.modelId}
             </span>
           </p>
           <p style={{ whiteSpace: "pre-wrap" }}>{state.text}</p>

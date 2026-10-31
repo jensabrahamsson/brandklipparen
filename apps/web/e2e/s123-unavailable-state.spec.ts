@@ -130,16 +130,10 @@ test("s123_unavailable_state_blocks_all_ai_calls", async ({ page }) => {
     (element as HTMLButtonElement).click();
   });
 
-  // Investigate tab: the same designed state, no enabled dead-end button.
-  await page.getByRole("tab", { name: "Investigate" }).click();
-  const investigatePanel = page.locator('section[aria-label="Investigation"]');
-  await expect(investigatePanel.getByText("Investigation: Unavailable")).toBeVisible();
-  await expect(investigatePanel.getByText("AI investigation is not configured on this server.")).toBeVisible();
-  const investigateButton = investigatePanel.getByRole("button", { name: "Request investigation" });
-  await expect(investigateButton).toBeDisabled();
-  await investigateButton.evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
+  // Investigate tab: hidden when the loop is not configured, so no
+  // request control can invite a call that answers not-configured.
+  await expect(page.getByRole("tab", { name: "Investigate" })).toHaveCount(0);
+  await expect(page.locator('section[aria-label="Investigation"]')).toHaveCount(0);
 
   // AI personalize: a disabled checkbox with the reason as its description.
   await page.getByRole("tab", { name: "Overview" }).click();
@@ -155,8 +149,9 @@ test("s123_unavailable_state_blocks_all_ai_calls", async ({ page }) => {
 
   // The disabled buttons keep a visible 3:1 boundary and announce the
   // reason. Panels unmount on tab switch, so measure each tab in turn.
+  // The Investigate tab stays hidden while unconfigured.
   const boundaries: Array<{ ratio: number; reason: string | null }> = [];
-  for (const tab of ["Overview", "Contract assessment", "Investigate"] as const) {
+  for (const tab of ["Overview", "Contract assessment"] as const) {
     await page.getByRole("tab", { name: tab }).click();
     const found = await page.evaluate(() => {
       const parse = (value: string): readonly [number, number, number] => {
@@ -187,7 +182,7 @@ test("s123_unavailable_state_blocks_all_ai_calls", async ({ page }) => {
     expect(await page.locator(".unavailable-pill svg").count()).toBeGreaterThan(0);
     boundaries.push(...found);
   }
-  expect(boundaries.length).toBe(4);
+  expect(boundaries.length).toBe(3);
   for (const boundary of boundaries) {
     expect(boundary.ratio).toBeGreaterThanOrEqual(3);
     expect(boundary.reason).toMatch(/not configured on this server/);

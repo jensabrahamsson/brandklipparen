@@ -39,7 +39,7 @@ export function healthCapabilities(inputs: HealthCapabilityInputs): HealthCapabi
         ? { disabled: true }
         : { provider: assessment.provider, modelId: assessment.modelId },
     investigation:
-      investigation === undefined
+      investigation === undefined || investigation.configured === false
         ? { disabled: true }
         : { provider: investigation.provider(), modelId: investigation.modelId() },
     explain:

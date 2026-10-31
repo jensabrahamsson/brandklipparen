@@ -271,6 +271,193 @@ describe("investigation service selection", () => {
     expect(result.status).toBe("done");
   });
 
+  test("investigate_provider_meta_binds_configured_adapter", async () => {
+    let sends = 0;
+    const transport: hostedInvestigateTransport = async (): Promise<hostedInvestigateTransportResponse> => {
+      sends += 1;
+      return {
+        status: 200,
+        bodyText: envelopeFor(
+          {
+            provider: "meta-model-api",
+            modelId: "muse-spark-1.3",
+            decision: {
+              kind: "conclude",
+              narrativeDraft: "Recorded conclusion without citations.",
+              rationale: "Recorded rationale: conclude from the frozen evidence.",
+            },
+          },
+          "muse-spark-1.3",
+        ),
+      };
+    };
+    const config = mustConfig(
+      loadConfig({
+        ...baseCiEnv(),
+        BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "meta-model-api",
+        BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL: "https://meta.example.invalid/v1",
+        BRANDKLIPPAREN_INVESTIGATE_META_API_KEY: "fake-key-for-tests-only",
+        BRANDKLIPPAREN_INVESTIGATE_META_MODEL_ID: "muse-spark-1.3",
+      }),
+    );
+    const service = mustConfig(
+      createInvestigationServiceFromConfig(config, mustDetectors(buildDetectorSet()), { transport }),
+    );
+    expect(service.provider()).toBe("meta-model-api");
+    expect(service.modelId()).toBe("muse-spark-1.3");
+    expect(service.configured).toBe(true);
+    const envelope = await assessedEnvelope();
+    const result = await service.investigateEnvelope(
+      envelope,
+      {
+        requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174010")),
+        deadline: mustOk(Timestamp.of(1700000000000 + 30000)),
+        block: "latest",
+      },
+      { now: () => 1700000000000 },
+    );
+    expect(sends).toBeGreaterThan(0);
+    expect(result.status).toBe("done");
+  });
+
+  test("investigate_provider_meta_without_model_defaults_to_muse_spark", async () => {
+    const transport: hostedInvestigateTransport = async (): Promise<hostedInvestigateTransportResponse> => ({
+      status: 200,
+      bodyText: envelopeFor(
+        {
+          provider: "meta-model-api",
+          modelId: "muse-spark-1.3",
+          decision: {
+            kind: "conclude",
+            narrativeDraft: "Recorded conclusion without citations.",
+            rationale: "Recorded rationale: conclude from the frozen evidence.",
+          },
+        },
+        "muse-spark-1.3",
+      ),
+    });
+    const config = mustConfig(
+      loadConfig({
+        ...baseCiEnv(),
+        BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "meta-model-api",
+        BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL: "https://meta.example.invalid/v1",
+        BRANDKLIPPAREN_INVESTIGATE_META_API_KEY: "fake-key-for-tests-only",
+      }),
+    );
+    const service = mustConfig(
+      createInvestigationServiceFromConfig(config, mustDetectors(buildDetectorSet()), { transport }),
+    );
+    expect(service.provider()).toBe("meta-model-api");
+    expect(service.modelId()).toBe("muse-spark-1.3");
+    expect(service.configured).toBe(true);
+  });
+
+  test("investigate_provider_meta_without_triple_stays_not_configured", async () => {
+    let sends = 0;
+    const transport: hostedInvestigateTransport = async (): Promise<hostedInvestigateTransportResponse> => {
+      sends += 1;
+      return { status: 200, bodyText: "{}" };
+    };
+    const config = mustConfig(
+      loadConfig({ ...baseCiEnv(), BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "meta-model-api" }),
+    );
+    const service = mustConfig(
+      createInvestigationServiceFromConfig(config, mustDetectors(buildDetectorSet()), { transport }),
+    );
+    expect(service.provider()).toBe("meta-model-api");
+    expect(service.modelId()).toBe("muse-spark-1.3");
+    expect(service.configured).toBe(false);
+    const envelope = await assessedEnvelope();
+    const result = await service.investigateEnvelope(
+      envelope,
+      {
+        requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174011")),
+        deadline: mustOk(Timestamp.of(1700000000000 + 30000)),
+        block: "latest",
+      },
+      { now: () => 1700000000000 },
+    );
+    expect(sends).toBe(0);
+    expect(result.status).toBe("not-configured");
+  });
+
+  test("investigate_provider_off_disables_the_loop_with_zero_sends", async () => {
+    let sends = 0;
+    const transport: hostedInvestigateTransport = async (): Promise<hostedInvestigateTransportResponse> => {
+      sends += 1;
+      return { status: 200, bodyText: "{}" };
+    };
+    const config = mustConfig(
+      loadConfig({
+        ...baseCiEnv(),
+        BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "off",
+        BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL: "https://meta.example.invalid/v1",
+        BRANDKLIPPAREN_INVESTIGATE_META_API_KEY: "fake-key-for-tests-only",
+        BRANDKLIPPAREN_INVESTIGATE_META_MODEL_ID: "muse-spark-1.3",
+      }),
+    );
+    const service = mustConfig(
+      createInvestigationServiceFromConfig(config, mustDetectors(buildDetectorSet()), { transport }),
+    );
+    expect(service.configured).toBe(false);
+    const envelope = await assessedEnvelope();
+    const result = await service.investigateEnvelope(
+      envelope,
+      {
+        requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174012")),
+        deadline: mustOk(Timestamp.of(1700000000000 + 30000)),
+        block: "latest",
+      },
+      { now: () => 1700000000000 },
+    );
+    expect(sends).toBe(0);
+    expect(result.status).toBe("not-configured");
+  });
+
+  test("investigate_provider_explicit_meta_wins_over_shared_assessment_config", async () => {
+    const transport: hostedInvestigateTransport = async (): Promise<hostedInvestigateTransportResponse> => ({
+      status: 200,
+      bodyText: envelopeFor(
+        {
+          provider: "meta-model-api",
+          modelId: "muse-spark-1.3",
+          decision: {
+            kind: "conclude",
+            narrativeDraft: "Recorded conclusion without citations.",
+            rationale: "Recorded rationale: conclude from the frozen evidence.",
+          },
+        },
+        "muse-spark-1.3",
+      ),
+    });
+    const config = mustConfig(
+      loadConfig({
+        ...baseCiEnv(),
+        BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
+        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL: "https://compat.example.invalid/v1/chat",
+        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-key-for-tests-only",
+        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID: "fake-compat-model-1",
+        BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "meta-model-api",
+        BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL: "https://meta.example.invalid/v1",
+        BRANDKLIPPAREN_INVESTIGATE_META_API_KEY: "fake-key-for-tests-only",
+      }),
+    );
+    const service = mustConfig(
+      createInvestigationServiceFromConfig(config, mustDetectors(buildDetectorSet()), { transport }),
+    );
+    expect(service.provider()).toBe("meta-model-api");
+    expect(service.modelId()).toBe("muse-spark-1.3");
+    expect(service.configured).toBe(true);
+  });
+
+  test("investigate_provider_invalid_value_fails_startup", () => {
+    const loaded = loadConfig({ ...baseCiEnv(), BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "bogus-provider" });
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) {
+      expect(loaded.error.variable).toBe("BRANDKLIPPAREN_INVESTIGATE_PROVIDER");
+    }
+  });
+
   test("explicit_investigation_triple_wins_over_shared_assessment_config", async () => {
     const transport: hostedInvestigateTransport = async (): Promise<hostedInvestigateTransportResponse> => ({
       status: 200,

@@ -223,6 +223,10 @@ export type InvestigationServiceOptions = {
   readonly dailyCapPerKey?: number | undefined;
   readonly cache?: InvestigationCacheStore | undefined;
   readonly meter?: InvestigationCostMeter | undefined;
+  // False when the bound adapter is the not-configured adapter: the
+  // service still answers `not-configured` per request with zero sends,
+  // but health reports the loop disabled so the UI hides it up front.
+  readonly configured?: boolean | undefined;
 };
 
 export type InvestigationService = {
@@ -236,9 +240,11 @@ export type InvestigationService = {
   readonly catalogueOf: (envelope: AssessmentEnvelope) => InvestigationCatalogue;
   readonly provider: () => string;
   readonly modelId: () => string;
+  readonly configured: boolean;
 };
 
 export function createInvestigationService(options: InvestigationServiceOptions): InvestigationService {
+  const configured = options.configured ?? true;
   const cache = options.cache ?? createInMemoryInvestigationCache();
   const meter = options.meter ?? createInMemoryInvestigationCostMeter();
   const promptVersion = options.promptVersion ?? PLACEHOLDER_INVESTIGATION_PROMPT_VERSION;
@@ -286,6 +292,7 @@ export function createInvestigationService(options: InvestigationServiceOptions)
     catalogueOf: (envelope) => catalogueOfEnvelope(options.detectors, envelope, options.docs),
     provider: () => options.adapter.provider(),
     modelId: () => options.adapter.modelId() as string,
+    configured,
   });
 }
 

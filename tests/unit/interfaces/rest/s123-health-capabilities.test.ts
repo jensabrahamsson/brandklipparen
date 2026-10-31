@@ -16,6 +16,14 @@ function investigation(): InvestigationService {
   return { provider: () => "hosted-open-weights", modelId: () => "meta-models/muse-spark-open-1026" } as unknown as InvestigationService;
 }
 
+function unconfiguredInvestigation(): InvestigationService {
+  return {
+    provider: () => "meta-model-api",
+    modelId: () => "muse-spark-1.3",
+    configured: false,
+  } as unknown as InvestigationService;
+}
+
 function explain(enabled: boolean): ExplainService {
   return {
     enabled,
@@ -56,6 +64,22 @@ describe("health capabilities", () => {
       investigation: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
       explain: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
       personalize: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      onchain: { available: true },
+    });
+  });
+
+  test("s123_unconfigured_investigation_reports_disabled_with_meta_labelling", () => {
+    expect(
+      healthCapabilities({
+        assessmentService: assessment("meta-model-api", "muse-spark-1.3"),
+        investigationService: unconfiguredInvestigation(),
+        onchain: { rpc: {}, weth: null },
+      }),
+    ).toEqual({
+      assessment: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
+      investigation: { disabled: true },
+      explain: { disabled: true },
+      personalize: { disabled: true },
       onchain: { available: true },
     });
   });

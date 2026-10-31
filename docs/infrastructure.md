@@ -242,7 +242,7 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_hosted` | Daily cost cap for the hosted provider under I-14 and I-18 | No | Demo with the hosted provider selected |
 | `BRANDKLIPPAREN_ALARM_LEVELS_PERCENT` | Alarm levels in percent of the daily caps under I-14 | No | Demo |
 | `BRANDKLIPPAREN_LOG_LEVEL` | Log level: `debug`, `info`, `warn` or `error` under I-10 | No | All |
-| `BRANDKLIPPAREN_ASSESSMENT_PROVIDER` | Selected assessment provider under K-309: `meta-model-api`, `hosted-open-weights` or `generic-compatible` (local development only); exactly one adapter is bound at startup per A-34 | No | Demo |
+| `BRANDKLIPPAREN_ASSESSMENT_PROVIDER` | Selected assessment provider under K-309: `meta-model-api` (recommended), `hosted-open-weights` or `generic-compatible` (local development only); exactly one adapter is bound at startup per A-34. The demo defaults to `meta-model-api` when a Meta key is configured unless set explicitly | No | Demo |
 | `BRANDKLIPPAREN_ASSESSMENT_PROMPT_VERSION` | Prompt version for the Muse contract assessment; part of the cache key per K-305 and K-309 | No | Demo |
 | `BRANDKLIPPAREN_ASSESSMENT_META_API_KEY` | Key for the Meta Model API (Muse Spark), server-side only under I-13 | Yes | Demo with the Meta provider selected |
 | `BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID` | Model id for the Meta Model API provider, shown per assessment under K-305 | No | Demo with the Meta provider selected |
@@ -256,6 +256,10 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL` | Base URL for the vendor-neutral provider (temporary local endpoint), validated at startup under K-503 | No | Local development with the vendor-neutral provider selected |
 | `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_generic_COMPATIBLE` | Daily cap for vendor-neutral assessment calls under I-14 | No | Local development with the vendor-neutral provider selected |
 | `BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_generic_COMPATIBLE` | Daily cost cap for the vendor-neutral provider under I-14 | No | Local development with the vendor-neutral provider selected |
+| `BRANDKLIPPAREN_INVESTIGATE_PROVIDER` | Selected investigation provider: `meta-model-api`, `hosted-open-weights` or `off`; exactly one adapter is bound at startup. The demo defaults to `meta-model-api` when the assessment Meta key file is set unless set explicitly; `off` or a provider without its key leaves the loop answering not-configured | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL` | Allowlisted endpoint for the Meta Model API investigation loop, validated at startup under K-503; unset leaves the loop answering not-configured | No | Demo with the Meta investigation provider selected |
+| `BRANDKLIPPAREN_INVESTIGATE_META_API_KEY` | Key for the Meta Model API investigation loop, server-side only under K-505; loads only via its `*_FILE` pointer | Yes | Demo with the Meta investigation provider selected |
+| `BRANDKLIPPAREN_INVESTIGATE_META_MODEL_ID` | Model id for the Meta Model API investigation loop: `muse-spark-1.3` per K-036 | No | Demo with the Meta investigation provider selected |
 | `BRANDKLIPPAREN_INVESTIGATE_hosted_BASE_URL` | Allowlisted endpoint for the investigation deployment, validated at startup under K-503; unset leaves the loop answering not-configured | No | Demo with the investigation loop enabled |
 | `BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY` | Key for the investigation deployment (Muse Spark Open), server-side only under K-505 | Yes | Demo with the investigation loop enabled |
 | `BRANDKLIPPAREN_INVESTIGATE_hosted_MODEL_ID` | Model id for the investigation loop: `meta-models/muse-spark-open-1026` per K-036 | No | Demo with the investigation loop enabled |

@@ -19,10 +19,11 @@ import type {
 } from "../domain/types.ts";
 
 // Providers for the investigation loop (P-30): the open-weights loop by
-// default, or the vendor-neutral chat-completions shape sharing the
-// assessment endpoint configuration for a temporary local endpoint
-// during development. Exactly one is bound per run.
-export type InvestigationProvider = "hosted-open-weights" | "generic-compatible";
+// default, the Meta Model API loop, or the vendor-neutral
+// chat-completions shape sharing the assessment endpoint configuration
+// for a temporary local endpoint during development. Exactly one is bound
+// per run.
+export type InvestigationProvider = "hosted-open-weights" | "meta-model-api" | "generic-compatible";
 
 // Closed decision union (P-31): the model proposes the next step only.
 // The runner validates the decision against the current node, the

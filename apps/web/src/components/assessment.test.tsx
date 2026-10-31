@@ -46,8 +46,21 @@ describe("assessment panel separation", () => {
         onRequest={() => undefined}
       />,
     );
-    expect(html).toContain("meta-model-api");
+    expect(html).toContain("Meta Model API");
     expect(html).toContain("review-model-7");
+  });
+
+  test("design_review_ready_shows_meta_display_label", () => {
+    const html = renderToString(
+      <AssessmentPanel
+        state={{ status: "idle" }}
+        score={84}
+        provider={{ status: "ready", provider: "meta-model-api", modelId: "muse-spark-1.3" }}
+        onRequest={() => undefined}
+      />,
+    );
+    expect(html).toContain("Meta Model API");
+    expect(html).toContain("muse-spark-1.3");
   });
 
   test("design_review_not_configured_state_preserved", () => {
