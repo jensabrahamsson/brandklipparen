@@ -23,4 +23,13 @@ describe("explain trigger (S-113)", () => {
     expect(html).toContain("aria-describedby");
     expect(html.length).toBeGreaterThan(200);
   });
+
+  test("trigger_is_a_44px_box_with_a_20px_visual", () => {
+    // UI v2 §6.1 (D3): the button box is always 44x44 and transparent,
+    // and the 20 px inner span draws the circle, so the touch rule never
+    // enlarges the visual.
+    const html = renderToString(<Explain explainKey="score:combined" label="Combined score" />);
+    expect(html).toContain('class="explain-trigger"');
+    expect(html).toContain('<span class="q" aria-hidden="true">');
+  });
 });

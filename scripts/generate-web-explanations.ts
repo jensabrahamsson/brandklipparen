@@ -17,10 +17,7 @@ export type ExplanationMap = Readonly<Record<string, ExplanationEntry>>;
 const PLUGIN_DOC_GLOBS = ["src/plugins/detectors", "src/plugins/assessments"] as const;
 const EXPLAIN_SOURCE = "src/domain/explain.ts";
 const EVIDENCE_SOURCE = "src/domain/evidence.ts";
-const CANT_TELL_SOURCE = "src/domain/cantTell.ts";
 const INVESTIGATION_SOURCE = "src/domain/investigation.ts";
-const GAUGE_SOURCE = "apps/web/src/components/Gauge.tsx";
-const RISK_SOURCE = "apps/web/src/lib/risk.ts";
 const TARGET = join("apps", "web", "src", "lib", "explanations.generated.ts");
 
 const RISKS = ["rug-pull", "honeypot", "bot-pump"] as const;
@@ -116,25 +113,6 @@ function hardLeads(explain: string): Record<string, string> {
   return out;
 }
 
-function gaugeTitles(gauge: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const risk of RISKS) {
-    out[risk] = requireMatch(gauge, GAUGE_SOURCE, new RegExp(`["']?${risk}["']?:\\s*"([^"]+)"`));
-  }
-  return out;
-}
-
-function riskBands(riskSource: string): Array<{ word: string; min: number; max: number }> {
-  const bands: Array<{ word: string; min: number; max: number }> = [];
-  for (const match of riskSource.matchAll(/\{\s*word:\s*"(\w+)",\s*min:\s*(\d+),\s*max:\s*(\d+)\s*\}/g)) {
-    bands.push({ word: match[1] ?? "", min: Number(match[2]), max: Number(match[3]) });
-  }
-  if (bands.length !== 3) {
-    throw new Error("generate-web-explanations: risk bands are not the three known bands");
-  }
-  return bands;
-}
-
 function pluginDocs(repoRoot: string): string[] {
   const docs: string[] = [];
   for (const base of PLUGIN_DOC_GLOBS) {
@@ -154,25 +132,14 @@ function pluginDocs(repoRoot: string): string[] {
 export function generateExplanationsModule(repoRoot: string): string {
   const explain = readSource(repoRoot, EXPLAIN_SOURCE);
   const evidenceSource = readSource(repoRoot, EVIDENCE_SOURCE);
-  const cantTellSource = readSource(repoRoot, CANT_TELL_SOURCE);
   const investigationSource = readSource(repoRoot, INVESTIGATION_SOURCE);
-  const gaugeSource = readSource(repoRoot, GAUGE_SOURCE);
-  const riskSource = readSource(repoRoot, RISK_SOURCE);
 
   const effects = capabilityEffects(explain);
   const leads = hardLeads(explain);
-  const gaugeTitlesByRisk = gaugeTitles(gaugeSource);
-  const bands = riskBands(riskSource);
-  const bandWords = bands.map((band) => `${band.word} ${band.min}-${band.max}`).join(", ");
   const claimSentence = requireSentence(
     explain,
     EXPLAIN_SOURCE,
     "every claim links to the signal it renders and carries that signal's evidence pointers as quoted data",
-  );
-  const evidenceSentence = requireSentence(
-    evidenceSource,
-    EVIDENCE_SOURCE,
-    "Every evidence carries at least one selector in its type",
   );
   const offsetSentence = requireSentence(
     evidenceSource,
@@ -183,11 +150,6 @@ export function generateExplanationsModule(repoRoot: string): string {
     evidenceSource,
     EVIDENCE_SOURCE,
     "A decompiled snippet joins the entry after the deepening",
-  );
-  const cantTellSentence = requireSentence(
-    cantTellSource,
-    CANT_TELL_SOURCE,
-    "Each item names the data source that would settle the question",
   );
   const citationSentence = requireSentence(
     investigationSource,
@@ -232,8 +194,8 @@ export function generateExplanationsModule(repoRoot: string): string {
   }
 
   entries["evidence:selector"] = {
-    title: "Selector evidence",
-    body: `${evidenceSentence}. Each row names the function selector the pattern was seen beside.`,
+    title: "Where in the code",
+    body: "The function in the contract where we saw this. Copy it to check on a block explorer.",
   };
   entries["evidence:offset"] = {
     title: "Bytecode offset",
@@ -247,19 +209,29 @@ export function generateExplanationsModule(repoRoot: string): string {
     title: "Finding details",
     body: "The payload carries the finding fields the detector reported, such as the capability key or the matched group with its similarity share.",
   };
+  // UI v2 §6.2 help rewrites: sentence 1 says what the finding means
+  // for the holder, sentence 2 what to do about it, optional sentence 3
+  // the honest limit. Never the title repeated, never the widget
+  // described, no jargon, at most 3 sentences and 260 characters.
   entries["score:combined"] = {
-    title: "Combined score",
-    body: `Combined score 0-100 follows the bands ${bandWords}. The number and the word always travel together; color never carries the meaning alone.`,
+    title: "Risk score",
+    body: "How worried to be, from 0 to 100, based on what this contract lets its owner do. Under 30 is low, 30-59 elevated, 60 and up high. It is an estimate from the code, not a safety guarantee: read the findings below before you buy.",
   };
-  for (const risk of RISKS) {
-    entries[`score:gauge:${risk}`] = {
-      title: `${gaugeTitlesByRisk[risk] ?? risk} gauge`,
-      body: `${gaugeTitlesByRisk[risk] ?? risk} gauge: probability as a half-arc with the signal count and one plain-text reason. The arc fills the percent exactly; the reason names the strongest signal.`,
-    };
-  }
+  entries["score:gauge:rug-pull"] = {
+    title: "Rug pull",
+    body: "The chance that the people behind this token can take the money and leave, for example by creating new tokens or draining the pool. Each owner power below is one way to do it. With nothing found, this is the usual rate for new tokens.",
+  };
+  entries["score:gauge:honeypot"] = {
+    title: "Honeypot",
+    body: "The chance that you can buy this token but not sell it, for example because the owner can block wallets or freeze transfers. Check Pause, Blacklist and Sell block below, and try a small sell before a large buy.",
+  };
+  entries["score:gauge:bot-pump"] = {
+    title: "Bot pump",
+    body: "The chance that the launch favours bots or insiders: code that lets some wallets trade first, pay lower fees or skip limits, so early buyers can dump on late ones. Be careful in the first hours, and check Fee and Limits below.",
+  };
   entries["score:band"] = {
     title: "Risk band",
-    body: `Bands read ${bandWords}. Low stays calm, High asks for a second look before any transfer.`,
+    body: "Low means no strong owner power was found, which is not the same as safe. Elevated means some risky powers exist. High means the owner can hurt holders: look before any transfer.",
   };
   entries["score:strip"] = {
     title: "Result summary",
@@ -273,33 +245,26 @@ export function generateExplanationsModule(repoRoot: string): string {
     body: `${claimSentence.charAt(0).toUpperCase()}${claimSentence.slice(1)}. Temporality says whether the pattern holds now or can change later.`,
   };
   entries["cant-tell"] = {
-    title: "What bytecode cannot tell",
-    body: `${cantTellSentence}; liquidity locks, owner shares, wallet clusters, team and intent need off-chain data by construction. These answers never change the score.`,
+    title: "What code can't tell",
+    body: "Questions the code alone can't answer, such as who holds the supply or whether the pool is locked. Check these on a block explorer before you buy.",
   };
   entries["investigation:step"] = {
     title: "Investigation step",
-    body: "One deterministic check the opt-in loop ran over the frozen result. The rationale is model text shown as plain words; the evidence ids name what the step collected.",
+    body: "One check Muse chose to run on the frozen result. It can add context, never change the score.",
   };
   entries["investigation:narrative"] = {
     title: "Checked narrative",
     body: `${citationSentence}; every surviving sentence quotes its evidence. The narrative never moves the score, signals or evidence.`,
   };
 
-  const from = [
-    ...pluginDocs(repoRoot),
-    EXPLAIN_SOURCE,
-    EVIDENCE_SOURCE,
-    CANT_TELL_SOURCE,
-    INVESTIGATION_SOURCE,
-    GAUGE_SOURCE,
-    RISK_SOURCE,
-  ];
+  const from = [...pluginDocs(repoRoot), EXPLAIN_SOURCE, EVIDENCE_SOURCE, INVESTIGATION_SOURCE];
   const payload = JSON.stringify({ entries, from }, null, 2);
   const lines = [
     "// DO NOT EDIT: generated by scripts/generate-web-explanations.ts.",
     "// Run `npm run generate:explanations` after changing any source listed",
-    "// in GENERATED_FROM. Every text below is extracted from those sources,",
-    "// so rewording a source changes this file instead of letting it drift.",
+    "// in GENERATED_FROM. Plugin, template and evidence texts are extracted",
+    "// from those sources; the score, gauge, band, selector, cant-tell and",
+    "// investigation help entries are the UI v2 §6.2 rewrites.",
     "export const GENERATED_FROM = Object.freeze([",
     ...from.map((path) => `  ${JSON.stringify(path)},`),
     "]) as readonly string[];",

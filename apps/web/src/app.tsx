@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type JSX, type MouseEvent } from "react";
 import { parseHash, type Route } from "./lib/route.ts";
 import { initialApiKey } from "./lib/initialApiKey.ts";
+import { Pictogram } from "./components/Pictogram.tsx";
 import { StartPage } from "./pages/StartPage.tsx";
 import { TokenPage } from "./pages/TokenPage.tsx";
 
@@ -70,8 +71,10 @@ export function App(): JSX.Element {
         </a>
         <span className="bar-desc">rug-pull risk scanner</span>
         <span className="spacer" />
-        <span className="net">Ethereum mainnet</span>
-        <span className="quiet numeric topbar-tagline">bytecode only · deterministic</span>
+        <span className="net">
+          <Pictogram name="chain" size={20} />
+          <span className="net-text">Ethereum mainnet</span>
+        </span>
       </header>
       <main id="main" tabIndex={-1}>
         {route.name === "start" ? (

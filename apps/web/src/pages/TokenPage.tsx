@@ -790,7 +790,7 @@ function AssessedView({
             ) : null}
             {heroBreakdown && scoreEmphasis === "high" ? (
               <span className="live-new" data-testid="ai-emphasis-score">
-                AI PRIORITY
+                AI priority
               </span>
             ) : null}
             {heroBreakdown ? (
@@ -1471,7 +1471,7 @@ export function OverviewSections({
               >
                 {emphasisOf.get(sectionId) === "high" ? (
                   <span className="live-new" data-testid={`ai-emphasis-${sectionId}`}>
-                    AI PRIORITY
+                    AI priority
                   </span>
                 ) : null}
                 {blocks[sectionId]}

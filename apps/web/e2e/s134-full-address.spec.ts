@@ -207,7 +207,7 @@ test("s134_copy_buttons_are_44px_and_keyboard_copy_writes_exact_address", async 
   await firstCopy.focus();
   await page.keyboard.press("Enter");
   await expect.poll(() => copiedValues(page), { timeout: 5000 }).toEqual([C_TOKEN_A]);
-  await expect(page.getByText("Copied.").first()).toBeVisible();
+  await expect(page.getByText("Copied contract address.").first()).toBeVisible();
   // Copy never navigates away from the list.
   expect(new URL(page.url()).hash).toBe("");
   await expect(page.getByText("2 new tokens")).toBeVisible();

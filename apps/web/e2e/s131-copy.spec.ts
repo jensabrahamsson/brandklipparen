@@ -13,18 +13,24 @@ const C_RECENT_SYMBOL = "0x5ab1E0000000000000000000000000000000a001";
 const C_RECENT_SHORT = "0x5AB1E0000000000000000000000000000000b002";
 
 // Implementation tokens that must never reach the Simple-mode DOM.
-const BANNED_SUBSTRINGS = ["REST", "contract gap", ".env", "ETHERSCAN_API_KEY", "set its key"];
+// Widget words ("half-arc", "gauge:") stay out too: help text must say
+// what a risk means, never how it is drawn.
+const BANNED_SUBSTRINGS = ["REST", "contract gap", ".env", "ETHERSCAN_API_KEY", "set its key", "half-arc", "gauge:"];
 const BANNED_V1 = /(?<![A-Za-z0-9_.])v1(?![A-Za-z0-9_.])/;
 
 function bannedIn(html: string): string[] {
   const withoutScripts = html.replace(/<script[\s\S]*?<\/script>/g, "");
+  // Test hooks are not rendered copy: explanation keys ride in
+  // data-testid values (for example "explain-score:gauge:honeypot"),
+  // so strip those attributes before scanning for dev strings.
+  const withoutTestIds = withoutScripts.replace(/\sdata-testid="[^"]*"/g, "");
   const hits: string[] = [];
   for (const token of BANNED_SUBSTRINGS) {
-    if (withoutScripts.includes(token)) {
+    if (withoutTestIds.includes(token)) {
       hits.push(token);
     }
   }
-  if (BANNED_V1.test(withoutScripts)) {
+  if (BANNED_V1.test(withoutTestIds)) {
     hits.push("v1");
   }
   return hits;

@@ -81,7 +81,7 @@ test("tooltips_show_same_text_on_hover_and_keyboard_focus", async ({ page }) => 
   const hovered = page.locator('[role="tooltip"]');
   await expect(hovered).toBeVisible();
   const hoveredText = await hovered.textContent();
-  expect(hoveredText).toContain("Combined score");
+  expect(hoveredText).toContain("Risk score");
   await page.mouse.move(4, 400);
 
   await trigger.focus();
@@ -132,7 +132,7 @@ test.describe("mobile tap", () => {
     await trigger.tap();
     const tooltip = page.locator('[role="tooltip"]');
     await expect(tooltip).toBeVisible();
-    expect(await tooltip.textContent()).toContain("What bytecode cannot tell");
+    expect(await tooltip.textContent()).toContain("What code can't tell");
     await trigger.tap();
     await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
   });

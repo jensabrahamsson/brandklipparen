@@ -315,13 +315,15 @@ test("r1_r3_r4_touch_targets_wrap_and_separator", () => {
   expect(aiBar).toContain("flex-wrap: wrap");
   expect(code).toMatch(/\.ai-bar\s+\.ai-compact\s*\{[^}]*min-width:\s*0/);
   // R-3: tabs, copy buttons and ghost buttons carry a real 44 px desktop
-  // floor; the "?" trigger keeps its compact look with an invisible hit
-  // area that never moves layout.
-  for (const selector of ["\\.tab", "\\.copy-btn", "\\.button-ghost"]) {
+  // floor; the "?" trigger is a real 44 px box with a 20 px visual, so
+  // the touch rule never enlarges the glyph.
+  for (const selector of ["\\.tab", "\\.copy-btn", "\\.button-ghost", "\\.explain-trigger"]) {
     const rule = code.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`))?.[0] ?? "";
     expect(rule, `${selector} keeps the 44 px floor`).toMatch(/min-height:\s*44px/);
   }
-  expect(code).toMatch(/\.explain-trigger::after\s*\{[^}]*inset:\s*-13px/);
+  expect(code).toMatch(/\.explain-trigger\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/);
+  expect(code).toMatch(/\.explain-trigger\s+\.q\s*\{[^}]*width:\s*20px[^}]*height:\s*20px/);
+  expect(code).not.toMatch(/\.explain-trigger::after/);
   // R-4: the "·" separator renders at ~1.2 em, never a 14 px speck.
   const separator = code.match(/\.meta-item\s*\+\s*\.meta-item::before\s*\{[^}]*\}/)?.[0] ?? "";
   expect(separator).toContain('content: "·"');

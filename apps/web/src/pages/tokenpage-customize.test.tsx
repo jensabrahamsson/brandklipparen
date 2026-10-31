@@ -257,7 +257,7 @@ describe("moved sections carry the marker", () => {
   test("applied order marks moved sections without moving scores or evidence", () => {
     const html = renderOverview(aiSpecMoving());
     expect(html).toContain("ai-moved");
-    expect(html).toContain("AI PRIORITY");
+    expect(html).toContain("AI priority");
     expect(html).toContain('data-testid="ai-emphasis-signals"');
     const headings = headingTexts(html);
     const risk = headings.findIndex((text) => text.includes("Risk breakdown"));

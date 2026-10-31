@@ -1,10 +1,11 @@
-// Copy control gap (session 35): the screen-reader-only live region
-// reserves no layout space, so the next meta item follows the copy
-// button at a normal separator distance (at most 24 px) in the token
-// header at 1440x900. The live region stays present, is empty when
-// idle, and announces "Copied." after a keyboard copy while the
-// accessible button name stays stable. Every placement reserves no
-// dead space inside its wrap at desktop and phone widths.
+// Copy control gap (session 35, UI v2 §4): the screen-reader-only live
+// region reserves no layout space, so the next meta item follows the
+// copy button at a normal separator distance (at most 24 px) in the
+// token header at 1440x900. The live region stays present, is empty
+// when idle, and announces "Copied contract address." after a keyboard
+// copy while the accessible button name stays stable; the icon button
+// swaps to data-state="copied" with a "Copied" bubble. Every placement
+// reserves no dead space inside its wrap at desktop and phone widths.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -195,9 +196,10 @@ test("copy_gap_header_meta_follows_button_with_live_announcement", async ({ page
   await headerCopy.focus();
   await page.keyboard.press("Enter");
   await expect.poll(() => copiedValues(page), { timeout: 5000 }).toEqual([C_TOKEN_A]);
-  await expect(liveRegion).toHaveText("Copied.");
-  await expect(headerCopy).toHaveText("Copied");
+  await expect(liveRegion).toHaveText("Copied contract address.");
+  await expect(headerCopy).toHaveAttribute("data-state", "copied");
   await expect(headerCopy).toHaveAttribute("aria-label", "Copy contract address");
+  await expect(page.locator(".token-meta .copy-wrap [role='tooltip']").first()).toHaveText("Copied");
 
   // The confirmation moves nothing: same button width, same gap.
   const widthAfter = await headerCopy.evaluate((element) => element.getBoundingClientRect().width);

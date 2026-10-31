@@ -11,7 +11,7 @@ describe("gauge segments (phosphor console)", () => {
     const html = renderToString(
       <Gauge kind="honeypot" probability={0.91} signalCount={1} reason="plain reason" />,
     ).replace(/<!-- -->/g, "");
-    expect(html).toContain('aria-label="Honeypot gauge: 91 percent"');
+    expect(html).toContain('aria-label="Honeypot: 91 percent"');
     expect(html).toContain('aria-label="91 percent probability"');
     expect(html).toContain("plain reason");
     expect(html).toContain("1 signal");

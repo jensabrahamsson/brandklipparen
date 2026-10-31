@@ -68,7 +68,9 @@ export function Explain({
           }
         }}
       >
-        ?
+        <span className="q" aria-hidden="true">
+          ?
+        </span>
       </button>
       {open ? (
         <span role="tooltip" id={tooltipId} className="explain-tooltip">

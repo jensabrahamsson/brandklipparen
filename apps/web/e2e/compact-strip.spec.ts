@@ -86,7 +86,7 @@ test("result_summary_strip_follows_ring_visibility", async ({ page }) => {
   await page.goto(`/#/token/${ADDRESS}`);
   const strip = page.getByTestId("result-summary");
   const ring = page.locator('section[aria-label="Combined score"]');
-  const gauges = page.locator('section[aria-label*="gauge:"]');
+  const gauges = page.locator("section.gauge");
 
   // Overview at the top: the ring is in view, so the strip stays unmounted
   // (no layout space taken, nothing to overlap the gauges).

@@ -50,12 +50,14 @@ export function Gauge({
   }, [reduce]);
   const signalWord = signalCount === 1 ? "signal" : "signals";
   return (
-    <section className={`card gauge ${bandClass}`} aria-label={`${TITLES[kind]} gauge: ${percent} percent`}>
-      <h3 className="lab" style={{ margin: "0 0 4px" }}>
-        <span>{TITLES[kind]}</span>
+    <section className={`card gauge ${bandClass}`} aria-label={`${TITLES[kind]}: ${percent} percent`}>
+      <div className="gauge-top">
+        <h3 className="lab" style={{ margin: "0 0 4px" }}>
+          <span className="t">{TITLES[kind]}</span>
+          <span className="band">{band.word.toUpperCase()}</span>
+        </h3>
         <Explain explainKey={`score:gauge:${kind}`} label={`${TITLES[kind]} gauge`} />
-        <span>{band.word.toUpperCase()}</span>
-      </h3>
+      </div>
       <div className="pct numeric" role="img" aria-label={`${percent} percent probability`}>
         {shown}%
       </div>
