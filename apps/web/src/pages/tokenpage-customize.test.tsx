@@ -140,6 +140,7 @@ function renderOverview(aiSpec: AiPersonalizeSpec | null): string {
       result={result}
       heroBreakdown={false}
       plugins={[]}
+      address={syntheticAddress(7)}
       mode="simple"
       aiSpec={aiSpec}
       aiModelId={PROVIDER.modelId}

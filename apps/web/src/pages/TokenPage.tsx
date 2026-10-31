@@ -5,6 +5,10 @@ import { PluginsPanel } from "../components/PluginsPanel.tsx";
 import type { PluginListEntry } from "../components/PluginsPanel.tsx";
 import { toPluginResultViews } from "../lib/plugins.ts";
 import { isValidAddress } from "../lib/validate.ts";
+import type { TokenView } from "../lib/route.ts";
+import { PluginBoard, buildBoardModel } from "../components/plugins/PluginBoard.tsx";
+import { PluginDetailView } from "../components/plugins/PluginDetail.tsx";
+import { copyForPluginId, slugForPluginId } from "../lib/pluginCopy.ts";
 import { planLayout } from "../lib/layout.ts";
 import { hasStoredCustomize, readStoredCustomize, readStoredMode, writeStoredCustomize, writeStoredMode } from "../lib/uiMode.ts";
 import type { UiMode } from "../lib/uiMode.ts";
@@ -88,12 +92,16 @@ type AiPersonalizeNotice = {
 // snippets only: score and probabilities are asserted unchanged and the
 // deterministic result object is otherwise kept intact. When the poll cap
 // exhausts, the streaming promise hides instead of leaving a lying line.
+const LAST_TILE_KEY = "brandklipparen-last-plugin-tile";
+
 export function TokenPage({
   address,
+  view = { kind: "main" },
   apiKey,
   onHome,
 }: {
   readonly address: string;
+  readonly view?: TokenView | undefined;
   readonly apiKey: string;
   readonly onHome: () => void;
 }): JSX.Element {
@@ -268,6 +276,61 @@ export function TokenPage({
       cancelled = true;
     };
   }, [apiKey]);
+
+  // Plugin sub-level navigation (UI v2 §1.3): the analysis fetch stays
+  // keyed on `address` only, so moving between views never refetches.
+  // Entering the board scrolls to it and focuses its heading; returning
+  // from a detail restores focus to the tile that was opened. Detail
+  // entry (scroll, focus, title) lives in PluginDetailView itself.
+  const previousViewKind = useRef(view.kind);
+  useEffect(() => {
+    const previous = previousViewKind.current;
+    previousViewKind.current = view.kind;
+    if (view.kind === "plugins" && result?.kind === "assessed") {
+      const identity = resolveTokenIdentity(result, liveEntry);
+      document.title = `${identity.symbol ?? "Token"} · Brandklipparen`;
+      if (previous !== "plugins") {
+        window.setTimeout(() => {
+          const heading = document.getElementById("plugin-board");
+          heading?.scrollIntoView({ block: "start" });
+          heading?.focus({ preventScroll: true });
+        }, 0);
+      }
+      return;
+    }
+    if (view.kind === "main" && result?.kind === "assessed") {
+      const identity = resolveTokenIdentity(result, liveEntry);
+      document.title = `${identity.symbol ?? "Token"} · Brandklipparen`;
+    }
+    if (view.kind !== "plugin" && previous === "plugin") {
+      let slug: string | null = null;
+      try {
+        slug = sessionStorage.getItem(LAST_TILE_KEY);
+      } catch {
+        slug = null;
+      }
+      if (slug !== null && slug !== "") {
+        window.setTimeout(() => {
+          const tile = document.querySelector(
+            `[data-tile-slug="${CSS.escape(slug as string)}"]`,
+          ) as HTMLElement | null;
+          tile?.scrollIntoView({ block: "center" });
+          tile?.focus({ preventScroll: true });
+        }, 0);
+      }
+    }
+  }, [view, result, liveEntry]);
+
+  // Remember the opened tile for focus restore (refined on detail entry).
+  useEffect(() => {
+    if (view.kind === "plugin") {
+      try {
+        sessionStorage.setItem(LAST_TILE_KEY, view.slug);
+      } catch {
+        // Session storage is a convenience only; the app works without it.
+      }
+    }
+  }, [view]);
 
   const invalidateAiRequest = (): void => {
     aiRequestId.current += 1;
@@ -476,11 +539,14 @@ export function TokenPage({
     );
   }
 
+  const detailActive = result !== null && result.kind === "assessed" && view.kind === "plugin";
   return (
     <div className="page">
-      <button type="button" className="button-ghost" onClick={onHome} style={{ marginBottom: 8 }}>
-        ← Back to search
-      </button>
+      {detailActive ? null : (
+        <button type="button" className="button-ghost" onClick={onHome} style={{ marginBottom: 8 }}>
+          ← Back to search
+        </button>
+      )}
       {result !== null && result.kind === "assessed" ? null : (
         <p role="status" className="muted numeric" style={{ margin: "0 0 12px" }}>
           {result === null && loadError === null
@@ -516,6 +582,7 @@ export function TokenPage({
         <AssessedView
           result={result}
           plugins={plugins}
+          view={view}
           mode={mode}
           onModeChange={(next) => {
             setMode(next);
@@ -585,6 +652,7 @@ export function TokenPage({
 function AssessedView({
   result,
   plugins,
+  view,
   mode,
   onModeChange,
   aiSpec,
@@ -648,6 +716,7 @@ function AssessedView({
   readonly apiKey: string;
   readonly visibleSections: ReadonlySet<string>;
   readonly onToggleSection: (sectionId: string) => void;
+  readonly view: TokenView;
 }): JSX.Element {
   const sorted = sortByImpact(result.signals);
   // Template lines pair with signals by position and risk (S-116), never
@@ -707,6 +776,30 @@ function AssessedView({
   // can never arrive here: the validated spec rejects collapsing a floored
   // section, and "score" is always floored.
   const scoreEmphasis = aiSpec?.placements.find((placement) => placement.sectionId === "score")?.emphasis;
+  // Plugin detail view (UI v2 §1.3 level 2): a route, not a modal. The
+  // analysis above stays mounted on the same state; only the rendered
+  // level changes, so entering never refetches.
+  if (view.kind === "plugin") {
+    const detailViews = result.pluginResults === undefined ? [] : toPluginResultViews(result.pluginResults);
+    const board = buildBoardModel(plugins, detailViews);
+    const tile = board.bySlug.get(view.slug) ?? null;
+    const allIds = (plugins ?? []).map((entry) => entry.id);
+    const entry = plugins?.find((candidate) => slugForPluginId(candidate.id, allIds) === view.slug);
+    const position = board.allTiles.findIndex((candidate) => candidate.slug === view.slug);
+    const identity = resolveTokenIdentity(result, liveEntry);
+    return (
+      <PluginDetailView
+        address={address}
+        symbol={identity.symbol ?? "Token"}
+        slug={view.slug}
+        tile={tile}
+        entry={entry}
+        modelVersion={result.modelVersion}
+        prev={position > 0 ? (board.allTiles[position - 1] ?? null) : null}
+        next={position >= 0 ? (board.allTiles[position + 1] ?? null) : null}
+      />
+    );
+  }
   return (
     <div>
       <section
@@ -825,6 +918,7 @@ function AssessedView({
         result={result}
         heroBreakdown={heroBreakdown}
         plugins={plugins}
+        address={address}
         mode={mode}
         aiSpec={aiSpec}
         aiModelId={aiProvider?.modelId}
@@ -1140,6 +1234,7 @@ export function OverviewSections({
   result,
   heroBreakdown,
   plugins,
+  address,
   mode,
   aiSpec,
   aiModelId,
@@ -1157,6 +1252,7 @@ export function OverviewSections({
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
   readonly heroBreakdown: boolean;
   readonly plugins: readonly PluginListEntry[] | null;
+  readonly address: string;
   readonly mode: UiMode;
   readonly aiModelId?: string | undefined;
   readonly priorities: string;
@@ -1173,6 +1269,10 @@ export function OverviewSections({
 }): JSX.Element {
   const jumpToSignal = onSignalLink;
   const pluginViews = result.pluginResults === undefined ? [] : toPluginResultViews(result.pluginResults);
+  // Third-party ids (no board copy entry) keep rendering in the generic
+  // PluginsPanel fallback; first-party detectors render as board tiles.
+  const thirdPartyPlugins =
+    plugins === null ? null : plugins.filter((plugin) => copyForPluginId(plugin.id) === null);
   const plan = planLayout({
     score: result.score,
     signalCount: result.signals.length,
@@ -1294,18 +1394,28 @@ export function OverviewSections({
       </section>
     ),
     "plugin-findings": (
-      <section className="card" aria-label="Plugins section" style={{ marginBottom: 20 }}>
-        <PluginsPanel
+      <div style={{ marginBottom: 20 }}>
+        <PluginBoard
+          address={address}
           plugins={plugins}
           results={pluginViews}
-          order={pluginOrder}
           matchedTags={activeMatchedTags}
-          personalized={personalized}
-          source={aiActive ? "ai" : "deterministic"}
-          aiModelId={aiModelId}
-          onShowStandardOrder={onShowStandardOrder}
         />
-      </section>
+        {thirdPartyPlugins === null || thirdPartyPlugins.length === 0 ? null : (
+          <section className="card" aria-label="Plugins section" style={{ marginTop: 20 }}>
+            <PluginsPanel
+              plugins={thirdPartyPlugins}
+              results={pluginViews}
+              order={pluginOrder}
+              matchedTags={activeMatchedTags}
+              personalized={personalized}
+              source={aiActive ? "ai" : "deterministic"}
+              aiModelId={aiModelId}
+              onShowStandardOrder={onShowStandardOrder}
+            />
+          </section>
+        )}
+      </div>
     ),
     "cant-tell": <CantTellPanel entries={result.cantTell} />,
   };

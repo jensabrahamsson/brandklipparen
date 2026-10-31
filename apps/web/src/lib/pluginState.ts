@@ -1,0 +1,86 @@
+// Tile state for the plugin board (UI v2 §5.1). Pure: the first match
+// wins, exactly in the spec table order. Never scored, never evidence:
+// it only names what the analysis already reported.
+export type PluginState = "error" | "not-run" | "found-scored" | "extended" | "cant-tell" | "not-found";
+
+export type PluginResultLike = {
+  readonly outcome: string;
+  readonly findings: readonly { readonly payload?: unknown }[];
+};
+
+export type CantTellContext = {
+  // Whether the hard-to-analyze detector fired on this analysis.
+  readonly hardToAnalyzeFired: boolean;
+  // Whether the decompiler marks transfer/transferFrom partly read.
+  readonly partialTransfer: boolean;
+};
+
+function recordOf(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function isExtendedPayload(payload: unknown): boolean {
+  const record = recordOf(payload);
+  return record !== null && typeof record["fact"] === "string" && record["proof"] === "extended";
+}
+
+// A scored (in-score) positive: an owner-control `feature`, a capability
+// key, a clone-template hit, a decompiled function, or a hard-to-read
+// cause. Unknown payload shapes are not positives.
+function isScoredPayload(payload: unknown): boolean {
+  const record = recordOf(payload);
+  if (record === null) {
+    return false;
+  }
+  if (typeof record["feature"] === "string") {
+    return true;
+  }
+  if (typeof record["capability"] === "string") {
+    return true;
+  }
+  if (typeof record["group"] === "string" && typeof record["similarity"] === "number") {
+    return true;
+  }
+  if (typeof record["selector"] === "string" && "cause" in record) {
+    return true;
+  }
+  return typeof record["cause"] === "string";
+}
+
+export function pluginState(
+  result: PluginResultLike | undefined,
+  context: CantTellContext,
+): PluginState {
+  if (result === undefined) {
+    return "not-run";
+  }
+  if (result.outcome === "threw" || result.outcome === "invalid-output" || result.outcome === "timeout") {
+    return "error";
+  }
+  if (result.outcome === "input-unavailable") {
+    return "not-run";
+  }
+  const findings = result.findings;
+  if (findings.some((finding) => isScoredPayload(finding.payload))) {
+    return "found-scored";
+  }
+  if (findings.length > 0 && findings.every((finding) => isExtendedPayload(finding.payload))) {
+    return "extended";
+  }
+  if (findings.length === 0 && (context.hardToAnalyzeFired || context.partialTransfer)) {
+    return "cant-tell";
+  }
+  return "not-found";
+}
+
+export const PLUGIN_STATE_WORD: Record<PluginState, string> = Object.freeze({
+  error: "Error",
+  "not-run": "Not run",
+  "found-scored": "Found",
+  extended: "Found · Not in score",
+  "cant-tell": "Can't tell",
+  "not-found": "Not found",
+});

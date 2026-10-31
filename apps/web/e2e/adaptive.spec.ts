@@ -252,14 +252,14 @@ test("k035_priorities_persist_across_reload_and_clear_removes_them", async ({ pa
   await page.goto(`/#/token/${ADDRESS}`);
   await openCustomize(page);
   await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
-  await expect(page.getByTestId("personalized-notice")).toBeVisible();
+  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches your question");
   await page.reload();
   await openCustomize(page);
   await expect(page.getByTestId("priorities-field")).toHaveValue("Can the owner stop me selling?");
-  await expect(page.getByTestId("personalized-notice")).toBeVisible();
+  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches your question");
   await page.getByTestId("priorities-clear").click();
   await expect(page.getByTestId("priorities-field")).toHaveValue("");
-  await expect(page.getByTestId("personalized-notice")).toHaveCount(0);
+  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toHaveCount(0);
   const stored = await page.evaluate(() => localStorage.getItem("brandklipparen-user-priorities:v1"));
   expect(stored).toBe(null);
 });
@@ -269,20 +269,20 @@ test("k519_critical_finding_visible_with_unrelated_priorities", async ({ page })
   await page.goto(`/#/token/${ADDRESS}`);
   await openCustomize(page);
   await page.getByTestId("priorities-field").fill("What a nice day for a walk");
-  await expect(page.getByTestId("personalized-notice")).toHaveCount(0);
+  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toHaveCount(0);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
   await expect(page.locator('section[aria-label="Signals"]')).toContainText("Owner can block transfers");
-  await expect(page.locator('section[aria-label="Plugins"]')).toContainText("Capability detector");
-  await expect(page.locator('section[aria-label="Plugins"]')).toContainText("Clone-match detector");
+  await expect(page.getByTestId("plugin-tile-capability")).toBeVisible();
+  await expect(page.getByTestId("plugin-tile-clone-match")).toBeVisible();
 });
 
-test("deterministic match orders and labels the plugin cards", async ({ page }) => {
+test("deterministic match labels the plugin tiles", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
   await openCustomize(page);
   await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
-  await expect(page.getByTestId("personalized-notice")).toContainText("Ordered by what matters to you.");
-  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("honeypot");
+  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches your question");
+  await expect(page.getByTestId("matched-dev.brandklipparen.capability")).toContainText("Matches your question");
 });
 
 test("k519_invalid_or_missing_personalize_spec_falls_back_to_deterministic_baseline", async ({ page }) => {
@@ -349,7 +349,7 @@ test("k519_ai_personalize_toggle_states_priorities_before_first_call", async ({ 
     nodes.map((node) => node.textContent ?? ""),
   );
   expect(headings.findIndex((text) => text.includes("Why this score"))).toBeLessThan(
-    headings.findIndex((text) => text.includes("Plugins")),
+    headings.findIndex((text) => text.includes("What we checked")),
   );
 });
 

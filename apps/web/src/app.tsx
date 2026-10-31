@@ -80,7 +80,7 @@ export function App(): JSX.Element {
         {route.name === "start" ? (
           <StartPage apiKey={apiKey} onApiKeyChange={storeApiKey} onAnalyze={goToken} />
         ) : (
-          <TokenPage address={route.address} apiKey={apiKey} onHome={goHome} />
+          <TokenPage address={route.address} view={route.view} apiKey={apiKey} onHome={goHome} />
         )}
       </main>
     </div>

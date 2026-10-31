@@ -91,50 +91,121 @@ const ANALYZE_FIXTURE = {
     ],
   },
   cantTell: [{ question: "Who holds the liquidity?", dataSource: "liquidity locks" }],
-  pluginResults: ["Capability", "Clone-match", "Decompiler"].map((name, plugin) => ({
-    pluginId: `dev.test.${name.toLowerCase()}`,
-    pluginVersion: "1.0.0",
-    outcome: "ok",
-    findings: [
-      {
-        id: `dev.test.${name.toLowerCase()}:finding`,
-        title: `${name} finding in bytecode`,
-        payload: { note: "heavy" },
-        evidence: Array.from({ length: 10 }, (_, row) => ({
-          selector: "0x12345678",
-          offset: 1000 + plugin * 10 + row,
-        })),
-      },
-    ],
-  })),
+  pluginResults: [
+    ...["ownership", "pause", "blacklist", "mint", "transfer-fee", "transfer-limits", "sell-block", "transfer-hooks", "proxy-upgrade", "hard-to-analyze"].map(
+      (slug) => ({
+        pluginId: `dev.brandklipparen.${slug}`,
+        pluginVersion: "1.0.0",
+        outcome: "ok",
+        findings: [],
+      }),
+    ),
+    {
+      pluginId: "dev.brandklipparen.capability",
+      pluginVersion: "1.0.0",
+      outcome: "ok",
+      findings: [
+        {
+          id: "dev.brandklipparen.capability:call",
+          title: "Contract can forward calls",
+          payload: { capability: "call" },
+          evidence: Array.from({ length: 10 }, (_, row) => ({
+            selector: "0x12345678",
+            offset: 1000 + row,
+          })),
+        },
+      ],
+    },
+    {
+      pluginId: "dev.brandklipparen.clone-match",
+      pluginVersion: "1.0.0",
+      outcome: "ok",
+      findings: [
+        {
+          id: "dev.brandklipparen.clone-match:drain-template",
+          title: "Bytecode matches a known trap template",
+          payload: { similarity: 0.9, group: "drain-template", priorCount: 3 },
+          evidence: Array.from({ length: 10 }, (_, row) => ({
+            selector: "0x44337ea1",
+            offset: 2000 + row,
+          })),
+        },
+      ],
+    },
+    {
+      pluginId: "dev.brandklipparen.decompiler",
+      pluginVersion: "1.0.0",
+      outcome: "ok",
+      findings: [
+        {
+          id: "dev.brandklipparen.decompiler:0x70a08231",
+          title: "Decompiled function balanceOf (0x70a08231)",
+          payload: { selector: "0x70a08231", name: "balanceOf", cause: null, unresolvedJumps: 0 },
+          evidence: Array.from({ length: 10 }, (_, row) => ({
+            selector: "0x70a08231",
+            offset: 3000 + row,
+          })),
+        },
+      ],
+    },
+  ],
 };
 
-const QUIET_NAMES = [
-  "Mint",
-  "Pause",
-  "Fee",
-  "Limits",
-  "Ownership",
-  "Hooks",
-  "Sell-block",
-  "Proxy",
-  "Selfdestruct",
-  "Honeypot",
-];
+function registryEntry(
+  id: string,
+  displayName: string,
+  description: string,
+  max: "low" | "medium" | "high" | null = null,
+): Record<string, unknown> {
+  return {
+    id,
+    version: "1.0.0",
+    displayName,
+    description,
+    ...(max === null
+      ? {}
+      : { frontmatter: { tags: ["holder"], audience: ["holder"], severity: { min: "low", max } } }),
+  };
+}
+
 const PLUGINS_FIXTURE = {
   plugins: [
-    ...["Capability", "Clone-match", "Decompiler"].map((name) => ({
-      id: `dev.test.${name.toLowerCase()}`,
-      version: "1.0.0",
-      displayName: `${name} detector`,
-      description: "Reports heavy findings.",
-    })),
-    ...QUIET_NAMES.map((name) => ({
-      id: `dev.test.${name.toLowerCase()}`,
-      version: "1.0.0",
-      displayName: name,
-      description: "Reports nothing on this token.",
-    })),
+    registryEntry(
+      "dev.brandklipparen.capability",
+      "Capability detector",
+      "Reports structural bytecode capabilities.",
+      "high",
+    ),
+    registryEntry(
+      "dev.brandklipparen.clone-match",
+      "Clone-match detector",
+      "Matches known trap templates.",
+      "high",
+    ),
+    registryEntry(
+      "dev.brandklipparen.decompiler",
+      "Decompiler detector",
+      "Reads functions back from bytecode.",
+      "medium",
+    ),
+    ...[
+      "ownership",
+      "pause",
+      "blacklist",
+      "mint",
+      "transfer-fee",
+      "transfer-limits",
+      "sell-block",
+      "transfer-hooks",
+      "proxy-upgrade",
+      "hard-to-analyze",
+    ].map((slug) =>
+      registryEntry(
+        `dev.brandklipparen.${slug}`,
+        `${slug} detector`,
+        "Reports nothing on this token.",
+      ),
+    ),
   ],
 };
 
@@ -180,8 +251,10 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   await expect(explanation).toBeVisible();
 
   // Simple-mode height stays within budget on a wide viewport. The
-  // budget is re-baselined to the Phosphor Console verdict (display
-  // heading plus 400 px dial); it still caps runaway growth.
+  // board replaces the raw plugin dumps with 13 tiles, which still reads
+  // taller than the 3400 estimate (measured 4149 at 1440): restore the
+  // pre-W-4 4300 cap until W-8/W-9 remove the customize block, the AI
+  // order bar and the disabled buttons, then re-tighten to 3400.
   const height = await page.evaluate(() => document.documentElement.scrollHeight);
   expect(height).toBeLessThanOrEqual(4300);
 
@@ -212,11 +285,15 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(evidence).not.toHaveAttribute("open", "");
 
-  // Quiet plugins collapse to a single line; loud ones stay expanded.
-  const plugins = page.locator('section[aria-label="Plugins"]');
-  await expect(plugins.getByText(/10 detectors found nothing:/)).toBeVisible();
-  await expect(plugins.getByText(/Mint, Pause/)).toBeVisible();
-  await expect(plugins.getByText("Capability finding in bytecode")).toBeVisible();
+  // The board shows one tile per detector with a status word; quiet
+  // checks read as quiet tiles with a board summary, not a raw dump.
+  const board = page.getByTestId("plugin-board");
+  await expect(board.getByRole("heading", { name: "What we checked" })).toBeVisible();
+  await expect(board.getByTestId("plugin-board-summary")).toContainText("9 owner powers checked");
+  await expect(board.locator("a[data-tile-slug]")).toHaveCount(13);
+  await expect(board.getByText("Found · High", { exact: true })).toHaveCount(2);
+  await expect(board.getByText("Found · Medium", { exact: true })).toHaveCount(1);
+  await expect(board.getByText("Not found", { exact: true })).toHaveCount(10);
 
   // Expert mode still shows every structured offset.
   const customize = page.locator("details.customize");
