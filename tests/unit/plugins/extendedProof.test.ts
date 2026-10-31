@@ -9,17 +9,23 @@ import { Bytecode } from "../../../src/domain/types.ts";
 import { explainExtendedProof } from "../../../src/plugins/detectors/extendedProof.ts";
 import type { ExtendedProof } from "../../../src/plugins/detectors/extendedProof.ts";
 import {
+  ADD,
   AND,
   CALLDATALOAD,
   DIV,
   EXP,
+  GT,
   ISZERO,
   KECCAK,
+  LT,
   MSTORE,
+  MUL,
   PACKED_MAPPING_SET,
+  REVERT,
   SLOAD,
   SSTORE,
   STOP,
+  SUB,
   TRANSFER_SELECTOR,
   branchOk,
   maskedPackedPauseToken,
@@ -269,5 +275,301 @@ describe("extended-proof diagnostics (P-11 follow-up)", () => {
       throw new Error("expected one report per extended detector");
     }
     expect(firstFailed(blacklist)).toBe("reverting-jumpi");
+  });
+
+  test("fee fact reports every fee step ok in detector order", () => {
+    const bytecode = tokenBytecode([
+      {
+        selector: "0x0a9c6c1e",
+        body: [
+          ...ownerGuard(0, 200),
+          ...sstoreConstSlot(5, [...push1(0x04), CALLDATALOAD]),
+          ...sstoreConstSlot(6, [...push1(0x24), CALLDATALOAD]),
+          STOP,
+        ],
+      },
+      {
+        selector: TRANSFER_SELECTOR,
+        body: [
+          ...push1(0x04),
+          CALLDATALOAD,
+          ...push1(5),
+          0x80,
+          0x50,
+          SLOAD,
+          0x81,
+          MUL,
+          SUB,
+          ...sstoreConstSlot(2, [...push1(0x04), CALLDATALOAD]),
+          ...push1(0x04),
+          CALLDATALOAD,
+          ...push1(6),
+          0x80,
+          0x50,
+          SLOAD,
+          GT,
+          ...branchOk(),
+          ...sstoreConstSlot(8, [...push1(0x04), CALLDATALOAD]),
+          0x5b,
+          STOP,
+        ],
+      },
+    ]);
+    const [, , fee, limits, mint] = explainOf(`0x${Buffer.from(bytecode).toString("hex")}`);
+    if (fee === undefined || limits === undefined || mint === undefined) {
+      throw new Error("expected one report per extended detector");
+    }
+    expect(fee.detector).toBe("dev.brandklipparen.transfer-fee");
+    expect(fee.steps.map((entry) => entry.step)).toEqual([
+      "owner-slot",
+      "writer-regions",
+      "candidate-slots",
+      "transfer-use",
+      "subtraction",
+    ]);
+    for (const entry of fee.steps) {
+      expect(entry.ok).toBe(true);
+    }
+    expect(fee.steps[3]?.detail).toContain("cap slot 6");
+    // A fee clamp never proves a limit, and no supply slot exists.
+    expect(firstFailed(limits)).toBe("transfer-gate");
+    expect(firstFailed(mint)).toBe("supply-slot");
+  });
+
+  test("fee arithmetic with no privileged writer fails at the writer regions", () => {
+    // The guarded transfer proves the owner slot, but the setter has no
+    // caller check, so no writer region proves.
+    const bytecode = tokenBytecode([
+      {
+        selector: "0x0a9c6c1e",
+        body: [...sstoreConstSlot(5, [...push1(0x04), CALLDATALOAD]), STOP],
+      },
+      {
+        selector: TRANSFER_SELECTOR,
+        body: [
+          ...ownerGuard(0, 200),
+          ...push1(0x04),
+          CALLDATALOAD,
+          ...push1(5),
+          0x80,
+          0x50,
+          SLOAD,
+          0x81,
+          MUL,
+          SUB,
+          ...sstoreConstSlot(2, [...push1(0x04), CALLDATALOAD]),
+          STOP,
+        ],
+      },
+    ]);
+    const [, , fee] = explainOf(`0x${Buffer.from(bytecode).toString("hex")}`);
+    if (fee === undefined) {
+      throw new Error("expected one report per extended detector");
+    }
+    expect(firstFailed(fee)).toBe("writer-regions");
+  });
+
+  test("limits fact reports every limits step ok", () => {
+    const bytecode = tokenBytecode([
+      {
+        selector: "0x0a9c6c1e",
+        body: [
+          ...ownerGuard(0, 200),
+          ...sstoreConstSlot(6, [...push1(0x04), CALLDATALOAD]),
+          STOP,
+        ],
+      },
+      {
+        selector: TRANSFER_SELECTOR,
+        body: [
+          ...push1(0x04),
+          CALLDATALOAD,
+          ...push1(6),
+          0x80,
+          0x50,
+          SLOAD,
+          LT,
+          ISZERO,
+          ...branchOk(),
+          ...push1(0),
+          0x80,
+          REVERT,
+          0x5b,
+          ...sstoreConstSlot(2, [...push1(0x04), CALLDATALOAD]),
+          STOP,
+        ],
+      },
+    ]);
+    const [, , , limits, mint] = explainOf(`0x${Buffer.from(bytecode).toString("hex")}`);
+    if (limits === undefined || mint === undefined) {
+      throw new Error("expected one report per extended detector");
+    }
+    expect(limits.detector).toBe("dev.brandklipparen.transfer-limits");
+    expect(limits.steps.map((entry) => entry.step)).toEqual([
+      "owner-slot",
+      "writer-regions",
+      "candidate-slots",
+      "transfer-gate",
+      "same-slot",
+      "reverting-jumpi",
+    ]);
+    for (const entry of limits.steps) {
+      expect(entry.ok).toBe(true);
+    }
+    expect(firstFailed(mint)).toBe("supply-slot");
+  });
+
+  test("fee clamp beside an underflow revert fails limits at the transfer gate", () => {
+    const bytecode = tokenBytecode([
+      {
+        selector: "0x0a9c6c1e",
+        body: [
+          ...ownerGuard(0, 200),
+          ...sstoreConstSlot(5, [...push1(0x04), CALLDATALOAD]),
+          ...sstoreConstSlot(4, [...push1(0x24), CALLDATALOAD]),
+          STOP,
+        ],
+      },
+      {
+        selector: TRANSFER_SELECTOR,
+        body: [
+          ...push1(0x04),
+          CALLDATALOAD,
+          ...push1(5),
+          0x80,
+          0x50,
+          SLOAD,
+          MUL,
+          ...push1(4),
+          0x80,
+          0x50,
+          SLOAD,
+          GT,
+          ...branchOk(),
+          ...sstoreConstSlot(8, [...push1(0x04), CALLDATALOAD]),
+          0x5b,
+          ...push1(0x04),
+          CALLDATALOAD,
+          0x80,
+          SUB,
+          ISZERO,
+          ...branchOk(),
+          ...push1(0),
+          0x80,
+          REVERT,
+          0x5b,
+          ...sstoreConstSlot(2, [...push1(0x04), CALLDATALOAD]),
+          STOP,
+        ],
+      },
+    ]);
+    const [, , , limits] = explainOf(`0x${Buffer.from(bytecode).toString("hex")}`);
+    if (limits === undefined) {
+      throw new Error("expected one report per extended detector");
+    }
+    expect(firstFailed(limits)).toBe("transfer-gate");
+  });
+
+  test("mint fact reports every mint step ok in detector order", () => {
+    const bytecode = tokenBytecode([
+      {
+        selector: "0x55a85fc0",
+        body: [
+          ...ownerGuard(0, 200),
+          ...push1(1),
+          SLOAD,
+          ...Array.from({ length: 9 }, () => [0x80, 0x50]).flat(),
+          ...push1(0x04),
+          CALLDATALOAD,
+          ADD,
+          ...Array.from({ length: 9 }, () => [0x80, 0x50]).flat(),
+          ...sstoreConstSlot(1, []),
+          ...push1(0),
+          SLOAD,
+          ...push1(0x00),
+          MSTORE,
+          ...push1(2),
+          ...push1(0x20),
+          MSTORE,
+          ...push1(0x24),
+          CALLDATALOAD,
+          ...push1(0x40),
+          ...push1(0x00),
+          KECCAK,
+          SSTORE,
+          STOP,
+        ],
+      },
+      {
+        selector: TRANSFER_SELECTOR,
+        body: [...push1(0x04), CALLDATALOAD, ...push1(2), KECCAK, SSTORE, STOP],
+      },
+      {
+        selector: "0x18160ddd",
+        body: [...push1(1), SLOAD, STOP],
+      },
+    ]);
+    const [, , , , mint] = explainOf(`0x${Buffer.from(bytecode).toString("hex")}`);
+    if (mint === undefined) {
+      throw new Error("expected one report per extended detector");
+    }
+    expect(mint.detector).toBe("dev.brandklipparen.mint");
+    expect(mint.steps.map((entry) => entry.step)).toEqual([
+      "supply-slot",
+      "writer-regions",
+      "supply-write",
+      "balance-credit",
+      "increase-proof",
+    ]);
+    for (const entry of mint.steps) {
+      expect(entry.ok).toBe(true);
+    }
+    expect(mint.steps[3]?.detail).toContain("stored");
+  });
+
+  test("holder burn fails mint at the increase proof", () => {
+    const bytecode = tokenBytecode([
+      {
+        selector: "0x42966c68",
+        body: [
+          ...ownerGuard(0, 200),
+          ...push1(0x04),
+          CALLDATALOAD,
+          ...push1(1),
+          SLOAD,
+          SUB,
+          ...sstoreConstSlot(1, []),
+          ...push1(0x04),
+          CALLDATALOAD,
+          ...push1(0x00),
+          MSTORE,
+          ...push1(2),
+          ...push1(0x20),
+          MSTORE,
+          ...push1(0x24),
+          CALLDATALOAD,
+          ...push1(0x40),
+          ...push1(0x00),
+          KECCAK,
+          SSTORE,
+          STOP,
+        ],
+      },
+      {
+        selector: TRANSFER_SELECTOR,
+        body: [...push1(0x04), CALLDATALOAD, ...push1(2), KECCAK, SSTORE, STOP],
+      },
+      {
+        selector: "0x18160ddd",
+        body: [...push1(1), SLOAD, STOP],
+      },
+    ]);
+    const [, , , , mint] = explainOf(`0x${Buffer.from(bytecode).toString("hex")}`);
+    if (mint === undefined) {
+      throw new Error("expected one report per extended detector");
+    }
+    // The burn stores supply, credits a balance and carries a guard,
+    // but the SUB-driven value never proves an increase.
+    expect(firstFailed(mint)).toBe("increase-proof");
   });
 });

@@ -2786,6 +2786,671 @@ export function ownerCheckVia(
   return null;
 }
 
+// Total-supply entry point: the region proving the supply slot loads the
+// slot `totalSupply()` returns.
+export const TOTAL_SUPPLY_SELECTOR: SelectorType = mustSelector("0x18160ddd");
+
+// Supply slot of a view (P-12): the lowest constant slot the totalSupply()
+// region loads. Old compilers share helper blocks across entries, so the
+// region can carry unrelated loads beside the returned one; the supply
+// seat stays the lowest seat in real layouts while the interpreter and
+// the detector's writer pairing disambiguate the rest. Null when the
+// token exposes no totalSupply region or it loads no constant slot.
+export function supplySlotOf(view: OwnerControlView): number | null {
+  const total = view.regions.find((region) => region.selector === TOTAL_SUPPLY_SELECTOR);
+  if (total === undefined) {
+    return null;
+  }
+  let best: number | null = null;
+  for (const load of total.loads) {
+    if (load.slot.kind !== "const") {
+      continue;
+    }
+    if (best === null || load.slot.value < best) {
+      best = load.slot.value;
+    }
+  }
+  return best;
+}
+
+// Privileged-guard kinds for the extended mint fact (P-12): `owner` is
+// the existing caller check against the proven owner slot, `role-slot`
+// is a reverting msg.sender == <stored slot> minter check
+// against any constant slot, and `role-mapping` is a reverting auth
+// mapping check (wards[msg.sender] == 1 shape: the caller
+// hashed into a mapping whose loaded value gates the path). The mint
+// detector records which kind proved its writer.
+export type PrivilegedGuardKind = "owner" | "role-slot" | "role-mapping";
+
+export function privilegedGuardKind(
+  code: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  ownerSlot: number | null,
+  slotOf?: SlotLookup,
+  jumpis?: ReadonlyMap<number, Expr>,
+  bytecode?: BytecodeType,
+): PrivilegedGuardKind | null {
+  if (ownerSlot !== null && ownerCheckVia(code, isMember, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+    return "owner";
+  }
+  if (roleSlotCheckVia(code, isMember, slotOf, jumpis, bytecode) !== null) {
+    return "role-slot";
+  }
+  if (authMappingCheckVia(code, isMember, slotOf, jumpis, bytecode) !== null) {
+    return "role-mapping";
+  }
+  return null;
+}
+
+// Any constant slot on one side of an EQ with a caller side on the
+// other (each masked or not), mirroring `exprIsOwnerEq` without pinning
+// the slot.
+function exprIsRoleSlotEq(expr: Expr): boolean {
+  if (expr.kind !== "op" || expr.name !== "EQ" || expr.args.length !== 2) {
+    return false;
+  }
+  const left = expr.args[0] ?? EXPR_UNKNOWN;
+  const right = expr.args[1] ?? EXPR_UNKNOWN;
+  const storedSide = (candidate: Expr): boolean => {
+    if (candidate.kind === "sload" && exprConstValue(candidate.slot) !== null) {
+      return true;
+    }
+    if (candidate.kind === "op" && candidate.name === "AND" && candidate.args.length === 2) {
+      const first = candidate.args[0] ?? EXPR_UNKNOWN;
+      const second = candidate.args[1] ?? EXPR_UNKNOWN;
+      const maskedLoad =
+        (first.kind === "sload" &&
+          exprConstValue(first.slot) !== null &&
+          exprIsMask160(second)) ||
+        (second.kind === "sload" &&
+          exprConstValue(second.slot) !== null &&
+          exprIsMask160(first));
+      if (maskedLoad) {
+        return true;
+      }
+    }
+    return false;
+  };
+  return (
+    (storedSide(left) && exprIsCallerSide(right)) || (storedSide(right) && exprIsCallerSide(left))
+  );
+}
+
+// Role-slot caller check through expressions: a member JUMPI whose
+// condition (through ISZERO chains) is EQ of a constant-slot load and
+// the caller, with a revert on the failing side. Same parity rule as
+// the owner expression proof. Returns the proving jump pc or null.
+function roleSlotCheckExpr(
+  code: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  jumpis: ReadonlyMap<number, Expr>,
+  bytecode?: BytecodeType,
+): number | null {
+  for (const [pc, cond] of jumpis) {
+    if (!isMember(pc)) {
+      continue;
+    }
+    if (cond.kind === "unknown") {
+      continue;
+    }
+    const { inner, count } = exprStripIszero(cond);
+    if (!exprIsRoleSlotEq(inner)) {
+      continue;
+    }
+    const side = count % 2 === 1 ? "jump" : "fall";
+    if (bytecode !== undefined) {
+      if (hasRevertingSide(bytecode, code, isMember, pc, side)) {
+        return pc;
+      }
+      continue;
+    }
+    if (side === "fall" && hasRevertingJumpiAfter(code, isMember, pc - 1)) {
+      return pc;
+    }
+  }
+  return null;
+}
+
+// Role-slot caller check through the instruction window: CALLER and a
+// constant-slot SLOAD in either order (old compilers hoist the load
+// above the caller), then an EQ or ISZERO compare, then a JUMPI whose
+// failing side reverts. The revert proves through the shared
+// revert-encoding helpers real compilers route it through, not only
+// beside the jump. Mirrors the ownership window proof, which needs the
+// load directly behind the caller and stays untouched.
+function hasRoleSlotCallerCheck(
+  insns: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  slotOf?: SlotLookup,
+  bytecode?: BytecodeType,
+): boolean {
+  const isConstPush = (candidate: Instruction | undefined): boolean =>
+    candidate !== undefined &&
+    (candidate.opcode === 0x5f || (candidate.opcode >= 0x60 && candidate.opcode <= 0x7f));
+  const isConstLoad = (at: number): boolean => {
+    if (isConstPush(insns[at - 1])) {
+      return true;
+    }
+    const loadPc = insns[at]?.pc;
+    if (loadPc === undefined) {
+      return false;
+    }
+    const interpreted = slotOf?.(loadPc);
+    return interpreted !== undefined && interpreted.kind === "const";
+  };
+  const callers: number[] = [];
+  const loads: number[] = [];
+  const compares: number[] = [];
+  const jumps: number[] = [];
+  const reverts: number[] = [];
+  const dests: number[] = [];
+  for (let at = 0; at < insns.length; at += 1) {
+    const candidate = insns[at];
+    if (candidate === undefined || !isMember(candidate.pc)) {
+      continue;
+    }
+    if (candidate.opcode === 0x33) {
+      callers.push(at);
+    } else if (candidate.opcode === 0x54 && isConstLoad(at)) {
+      loads.push(at);
+    } else if (candidate.opcode === 0x14 || candidate.opcode === 0x15) {
+      compares.push(at);
+    } else if (candidate.opcode === 0x57) {
+      jumps.push(at);
+    } else if (candidate.opcode === 0xfd) {
+      reverts.push(at);
+    } else if (candidate.opcode === 0x5b) {
+      dests.push(at);
+    }
+  }
+  const after = (sorted: readonly number[], low: number, high: number): number[] =>
+    sorted.filter((at) => at > low && at <= high);
+  const iszeroParity = (from: number, to: number): number => {
+    let count = 0;
+    for (let at = from; at <= to; at += 1) {
+      if (insns[at]?.opcode === 0x15) {
+        count += 1;
+      }
+    }
+    return count;
+  };
+  const destIndexAt = new Map<number, number>();
+  for (let at = 0; at < insns.length; at += 1) {
+    const candidate = insns[at];
+    if (candidate !== undefined && candidate.opcode === 0x5b) {
+      destIndexAt.set(candidate.pc, at);
+    }
+  }
+  for (const caller of callers) {
+    for (const load of loads) {
+      if (Math.abs(load - caller) > 64) {
+        continue;
+      }
+      const compareBase = load > caller ? load : caller;
+      for (const cmp of after(compares, compareBase, compareBase + 32)) {
+        for (const jump of after(jumps, cmp, cmp + 64)) {
+          const jumpPc = insns[jump]?.pc;
+          if (jumpPc === undefined) {
+            continue;
+          }
+          // ISZERO parity between the compare and the jump names the
+          // failing side, mirroring the expression proof.
+          const side = iszeroParity(cmp, jump) % 2 === 1 ? "jump" : "fall";
+          if (bytecode !== undefined) {
+            if (hasRevertingSide(bytecode, insns, isMember, jumpPc, side)) {
+              return true;
+            }
+            if (sideEncodesRevertError(insns, destIndexAt, jump, side)) {
+              return true;
+            }
+            continue;
+          }
+          for (const revert of after(reverts, jump, jump + 32)) {
+            if (after(dests, revert, revert + 64).length > 0) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// Failing-side proof through a shared revert helper (P-12): real
+// compilers route `require` failures through an Error(string) encoding
+// helper instead of reverting beside the jump, which the bounded side
+// walk cannot follow past the helper's dynamic return. The 0x08c379a0
+// Error selector push on the failing side still proves it reverts:
+// only revert paths encode it. Bounded linear scan from the side start,
+// stopping where control leaves the linear path. New code for the
+// extended guard proofs; the scored paths never read it.
+function sideEncodesRevertError(
+  insns: readonly Instruction[],
+  destIndexAt: ReadonlyMap<number, number>,
+  jumpIndex: number,
+  side: "jump" | "fall",
+): boolean {
+  let start = -1;
+  if (side === "fall") {
+    start = jumpIndex + 1;
+  } else {
+    for (let back = jumpIndex - 1, steps = 0; back >= 0 && steps < 8; back -= 1, steps += 1) {
+      const push = insns[back];
+      if (push === undefined) {
+        break;
+      }
+      if (push.opcode >= 0x60 && push.opcode <= 0x63) {
+        let value = 0;
+        for (const byte of push.immediate) {
+          value = value * 256 + (byte ?? 0);
+        }
+        const dest = destIndexAt.get(value);
+        if (dest !== undefined) {
+          start = dest;
+          break;
+        }
+      }
+    }
+    if (start < 0) {
+      return false;
+    }
+  }
+  for (let at = start, steps = 0; at < insns.length && steps < 64; at += 1, steps += 1) {
+    const candidate = insns[at];
+    if (candidate === undefined) {
+      return false;
+    }
+    if (candidate.opcode === 0xfd || candidate.opcode === 0xfe) {
+      return true;
+    }
+    if (
+      candidate.opcode === 0x56 ||
+      candidate.opcode === 0x00 ||
+      candidate.opcode === 0xf3 ||
+      candidate.opcode === 0xff
+    ) {
+      return false;
+    }
+    if (
+      candidate.opcode >= 0x60 &&
+      candidate.opcode <= 0x7f &&
+      candidate.immediate.length >= 4 &&
+      (candidate.immediate[0] ?? -1) === 0x08 &&
+      (candidate.immediate[1] ?? -1) === 0xc3 &&
+      (candidate.immediate[2] ?? -1) === 0x79 &&
+      (candidate.immediate[3] ?? -1) === 0xa0
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function roleSlotCheckVia(
+  code: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  slotOf?: SlotLookup,
+  jumpis?: ReadonlyMap<number, Expr>,
+  bytecode?: BytecodeType,
+): "expr" | "window" | null {
+  if (jumpis !== undefined && roleSlotCheckExpr(code, isMember, jumpis, bytecode) !== null) {
+    return "expr";
+  }
+  if (hasRoleSlotCallerCheck(code, isMember, slotOf, bytecode)) {
+    return "window";
+  }
+  return null;
+}
+
+// Whether an expression tree holds the caller (directly or masked
+// through address arithmetic), used to prove the caller seeds a mapping
+// key.
+function exprContainsCaller(expr: Expr): boolean {
+  if (expr.kind === "caller") {
+    return true;
+  }
+  if (expr.kind === "calldata") {
+    return exprContainsCaller(expr.offset);
+  }
+  if (expr.kind === "sload") {
+    return exprContainsCaller(expr.slot);
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprContainsCaller(word));
+  }
+  if (expr.kind === "op") {
+    return expr.args.some((arg) => exprContainsCaller(arg));
+  }
+  return false;
+}
+
+// Whether an expression holds a caller-keyed mapping load: an SLOAD of
+// a keccak whose hashed words carry the caller.
+function exprContainsCallerKeyedMappingLoad(expr: Expr | undefined): boolean {
+  if (expr === undefined) {
+    return false;
+  }
+  if (
+    expr.kind === "sload" &&
+    expr.slot.kind === "keccak" &&
+    expr.slot.words.some((word) => exprContainsCaller(word))
+  ) {
+    return true;
+  }
+  if (expr.kind === "calldata") {
+    return exprContainsCallerKeyedMappingLoad(expr.offset);
+  }
+  if (expr.kind === "sload") {
+    return exprContainsCallerKeyedMappingLoad(expr.slot);
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprContainsCallerKeyedMappingLoad(word));
+  }
+  if (expr.kind === "op") {
+    return expr.args.some((arg) => exprContainsCallerKeyedMappingLoad(arg));
+  }
+  return false;
+}
+
+// Auth-mapping check through expressions: a member JUMPI whose
+// condition (through ISZERO chains) gates on a caller-keyed mapping
+// load (wards[msg.sender] == 1 shape), with a revert on the
+// failing side. Returns the proving jump pc or null.
+function authMappingCheckExpr(
+  code: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  jumpis: ReadonlyMap<number, Expr>,
+  bytecode?: BytecodeType,
+): number | null {
+  for (const [pc, cond] of jumpis) {
+    if (!isMember(pc)) {
+      continue;
+    }
+    if (cond.kind === "unknown") {
+      continue;
+    }
+    const { inner, count } = exprStripIszero(cond);
+    if (!exprContainsCallerKeyedMappingLoad(inner)) {
+      continue;
+    }
+    const side = count % 2 === 1 ? "jump" : "fall";
+    if (bytecode !== undefined) {
+      if (hasRevertingSide(bytecode, code, isMember, pc, side)) {
+        return pc;
+      }
+      continue;
+    }
+    if (side === "fall" && hasRevertingJumpiAfter(code, isMember, pc - 1)) {
+      return pc;
+    }
+  }
+  return null;
+}
+
+// Whether the SLOAD at `at` reads a mapping: the interpreter says so,
+// or a KECCAK256 sits in the short member window behind the access.
+function isMappingLoadAt(
+  insns: readonly Instruction[],
+  at: number,
+  isMember: (pc: number) => boolean,
+  slotOf?: SlotLookup,
+): boolean {
+  const loadPc = insns[at]?.pc;
+  if (loadPc !== undefined) {
+    const interpreted = slotOf?.(loadPc);
+    if (interpreted !== undefined && interpreted.kind === "mapping") {
+      return true;
+    }
+  }
+  let steps = 0;
+  for (let back = at - 1; back >= 0 && steps < 12; back -= 1, steps += 1) {
+    const candidate = insns[back];
+    if (candidate === undefined) {
+      break;
+    }
+    if (!isMember(candidate.pc)) {
+      continue;
+    }
+    if (candidate.opcode === 0x20) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Auth-mapping check through the instruction window: CALLER, then a
+// mapping SLOAD, then an EQ or ISZERO compare, then a JUMPI whose
+// failing side reverts. The revert proves through shared helpers as in
+// the role-slot proof. The hashed key pattern (MSTORE key at 0x00,
+// MSTORE base at 0x20, KECCAK256) marks the mapping access the same way
+// the legacy slot proof does.
+function hasAuthMappingCheck(
+  insns: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  slotOf?: SlotLookup,
+  bytecode?: BytecodeType,
+): boolean {
+  const callers: number[] = [];
+  const loads: number[] = [];
+  const compares: number[] = [];
+  const jumps: number[] = [];
+  const reverts: number[] = [];
+  const dests: number[] = [];
+  for (let at = 0; at < insns.length; at += 1) {
+    const candidate = insns[at];
+    if (candidate === undefined || !isMember(candidate.pc)) {
+      continue;
+    }
+    if (candidate.opcode === 0x33) {
+      callers.push(at);
+    } else if (candidate.opcode === 0x54 && isMappingLoadAt(insns, at, isMember, slotOf)) {
+      loads.push(at);
+    } else if (candidate.opcode === 0x14 || candidate.opcode === 0x15) {
+      compares.push(at);
+    } else if (candidate.opcode === 0x57) {
+      jumps.push(at);
+    } else if (candidate.opcode === 0xfd) {
+      reverts.push(at);
+    } else if (candidate.opcode === 0x5b) {
+      dests.push(at);
+    }
+  }
+  const after = (sorted: readonly number[], low: number, high: number): number[] =>
+    sorted.filter((at) => at > low && at <= high);
+  const iszeroParity = (from: number, to: number): number => {
+    let count = 0;
+    for (let at = from; at <= to; at += 1) {
+      if (insns[at]?.opcode === 0x15) {
+        count += 1;
+      }
+    }
+    return count;
+  };
+  const destIndexAt = new Map<number, number>();
+  for (let at = 0; at < insns.length; at += 1) {
+    const candidate = insns[at];
+    if (candidate !== undefined && candidate.opcode === 0x5b) {
+      destIndexAt.set(candidate.pc, at);
+    }
+  }
+  for (const caller of callers) {
+    for (const load of after(loads, caller, caller + 64)) {
+      for (const cmp of after(compares, load, load + 16)) {
+        for (const jump of after(jumps, cmp, cmp + 64)) {
+          const jumpPc = insns[jump]?.pc;
+          if (jumpPc === undefined) {
+            continue;
+          }
+          const side = iszeroParity(cmp, jump) % 2 === 1 ? "jump" : "fall";
+          if (bytecode !== undefined) {
+            if (hasRevertingSide(bytecode, insns, isMember, jumpPc, side)) {
+              return true;
+            }
+            if (sideEncodesRevertError(insns, destIndexAt, jump, side)) {
+              return true;
+            }
+            continue;
+          }
+          for (const revert of after(reverts, jump, jump + 32)) {
+            if (after(dests, revert, revert + 64).length > 0) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+export function authMappingCheckVia(
+  code: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  slotOf?: SlotLookup,
+  jumpis?: ReadonlyMap<number, Expr>,
+  bytecode?: BytecodeType,
+): "expr" | "window" | null {
+  if (jumpis !== undefined && authMappingCheckExpr(code, isMember, jumpis, bytecode) !== null) {
+    return "expr";
+  }
+  if (hasAuthMappingCheck(code, isMember, slotOf, bytecode)) {
+    return "window";
+  }
+  return null;
+}
+
+// Internal-call graph walk (P-12): the PCs reachable from an entry
+// through constant jumps and per-jump-scoped dynamic continuations. Old
+// compilers implement internal subroutines as `PUSH ret ... PUSH func
+// JUMP` with a dynamic return jump the reachability walk cannot follow
+// past shared helpers, so the stores past the return (the safe-math
+// result stored back to supply) belong to no region. From each dynamic
+// JUMP or JUMPI, every PUSH1-4 constant in the short backward scan that
+// names a JUMPDEST block start joins: return continuations and callee
+// entries alike, scoped to the jump that pushed them instead of joined
+// across the whole entry. Chained calls accumulate their constants
+// because the backward scan crosses calls; only control-halt opcodes
+// stop it. Bounded by `maxBlocks` visited blocks. New code for the
+// extended facts; the scored views never read it.
+const GRAPH_BACK_WINDOW = 48;
+const GRAPH_DYNAMIC_CAP = 8;
+
+function push14Value(instruction: Instruction): number | null {
+  if (instruction.opcode < 0x60 || instruction.opcode > 0x64) {
+    return null;
+  }
+  let value = 0;
+  for (const byte of instruction.immediate) {
+    value = value * 256 + (byte ?? 0);
+  }
+  return value;
+}
+
+const GRAPH_HALT_OPS: ReadonlySet<number> = new Set([0x00, 0xfd, 0xfe, 0xf3, 0xff]);
+
+// Backward scan stops: control-halt opcodes plus block starts. One
+// call's pushed addresses all sit after the nearest preceding JUMPDEST;
+// crossing into earlier blocks only collects unrelated history until
+// the per-jump cap gives up.
+const GRAPH_BACK_STOP_OPS: ReadonlySet<number> = new Set([0x00, 0x5b, 0xfd, 0xfe, 0xf3, 0xff]);
+
+// Seeds default to the entry alone; extended writers also seed every
+// member jump, so dynamic edges the entry walk cannot reproduce still
+// resolve from the blocks the reachability walk already proved.
+export function callGraphBodyPcs(
+  code: readonly Instruction[],
+  entryPc: number,
+  seeds: readonly number[] = [],
+  maxBlocks = 2000,
+): ReadonlySet<number> {
+  const pcs = new Set<number>();
+  const indexAt = new Map<number, number>();
+  const starts = new Set<number>();
+  for (let index = 0; index < code.length; index += 1) {
+    const instruction = code[index];
+    if (instruction === undefined) {
+      continue;
+    }
+    indexAt.set(instruction.pc, index);
+    if (instruction.opcode === 0x5b) {
+      starts.add(instruction.pc);
+    }
+  }
+  // Iterative worklist: the walk stays total on adversarial bytecode
+  // with no recursion depth to overflow.
+  const visited = new Set<number>();
+  const pending: number[] = [entryPc, ...seeds];
+  const visit = (startPc: number): void => {
+    const start = indexAt.get(startPc);
+    if (start === undefined || visited.has(startPc) || visited.size >= maxBlocks) {
+      return;
+    }
+    visited.add(startPc);
+    let at = start;
+    while (at < code.length && visited.size <= maxBlocks) {
+      const instruction = code[at];
+      if (instruction === undefined) {
+        return;
+      }
+      pcs.add(instruction.pc);
+      if (instruction.opcode === 0x56 || instruction.opcode === 0x57) {
+        const isJump = instruction.opcode === 0x56;
+        // Consecutive `PUSH dest, JUMP/JUMPI` is a proven constant edge.
+        // A JUMP with a stacked callee still keeps its return
+        // continuation pushed behind the callee, so the backward scan
+        // below runs regardless.
+        const push = code[at - 1];
+        const pushed = push === undefined ? null : push14Value(push);
+        if (pushed !== null && starts.has(pushed)) {
+          pending.push(pushed);
+        }
+        // Dynamic edge: every pushed block address in the short
+        // backward scan joins, scoped to this jump alone.
+        const candidates: number[] = [];
+        for (
+          let back = at - 1, steps = 0;
+          back >= 0 && steps < GRAPH_BACK_WINDOW;
+          back -= 1, steps += 1
+        ) {
+          const candidate = code[back];
+          if (candidate === undefined || GRAPH_BACK_STOP_OPS.has(candidate.opcode)) {
+            break;
+          }
+          const value = push14Value(candidate);
+          if (value !== null && starts.has(value) && !candidates.includes(value)) {
+            candidates.push(value);
+            if (candidates.length > GRAPH_DYNAMIC_CAP) {
+              break;
+            }
+          }
+        }
+        if (candidates.length > 0 && candidates.length <= GRAPH_DYNAMIC_CAP) {
+          for (const candidate of candidates) {
+            pending.push(candidate);
+          }
+        }
+        if (isJump) {
+          return;
+        }
+        at += 1;
+        continue;
+      }
+      if (GRAPH_HALT_OPS.has(instruction.opcode)) {
+        return;
+      }
+      at += 1;
+    }
+  };
+  while (pending.length > 0) {
+    const next = pending.pop();
+    if (next !== undefined) {
+      visit(next);
+    }
+  }
+  return pcs;
+}
+
 function exprLog2(value: bigint): number | null {
   if (value <= 0n) {
     return null;

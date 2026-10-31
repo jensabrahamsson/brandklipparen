@@ -22,6 +22,15 @@ function. One finding names the lowest provable slot and reports the
 max-fee bound when the setter bounds it with a constant compare, or an
 unknown bound when it does not.
 
+When the scored proof finds nothing, the extended analysis re-runs the
+search on the reachability v2 view and reports a weight-0 fact that
+never counts in the score. The extended proof resolves the rate slot
+through swaps and stack shuffles the scored beside window cannot see,
+or through a transfer condition that multiplies or divides the loaded
+slot far from its load, and it reports the rate slot with the cap slot
+when a second guarded slot clamps the fee. Fee arithmetic with no
+privileged writer, or a hardcoded constant rate, stays silent.
+
 ## Why it matters to you
 
 A fee on every transfer takes a cut of your sale, and a 100 percent fee
@@ -41,15 +50,19 @@ no privileged writer, stays silent rather than guessed.
 ## Evidence format
 
 A list with at most one finding with the namespaced id
-`dev.brandklipparen.transfer-fee:transfer-fee`, a short English title,
-selector evidence with the PC offset wherever derivable, and the payload
-holding `feature`, `slot` and `maxFeeBasisPoints`. The payload carries
-three fields, `feature`, `slot` and `maxFeeBasisPoints`, where a null
-bound means the cap could not be determined, and every finding carries
+`dev.brandklipparen.transfer-fee:transfer-fee` (scored) or
+`dev.brandklipparen.transfer-fee:transfer-fee-extended` (weight-0
+fact), a short English title, selector evidence with the PC offset
+wherever derivable, and a payload holding `slot`. The scored payload
+carries `feature`, `slot` and `maxFeeBasisPoints`, where a null bound
+means the cap could not be determined; the extended payload carries
+`fact`, `slot`, `capSlot` and `proof: "extended"`, where a null cap
+slot means no second guarded slot clamps the fee. Every finding carries
 at least one `evidence` entry with a `selector`.
-As a first-party detector, its findings convert to calibrated signals
-through the versioned model artifact, and the artifact sets their
-effective weight, which the plugin list exposes per plugin.
+As a first-party detector, its scored findings convert to calibrated
+signals through the versioned model artifact, and the artifact sets
+their effective weight, which the plugin list exposes per plugin.
+Extended facts never convert and stay at weight 0.
 
 ## Limitations / false positives
 

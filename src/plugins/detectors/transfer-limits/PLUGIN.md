@@ -62,7 +62,10 @@ a caller check against the proven owner slot (standard token entries
 never count); the writer store is a caller-chosen or large value (a
 packed boolean flag write never counts); and a transfer or transferFrom
 path loads the same slot beside a less-than or greater-than compare
-whose blocked side reverts.
+whose blocked side reverts. The compare must pit the transferred amount
+or a resulting balance against the slot value: a slot the transfer path
+prices with multiply or divide arithmetic, or a clamp over a computed
+fee beside an unrelated revert, never proves a limit.
 
 ## Limitations / false positives
 

@@ -12,14 +12,25 @@ Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 
 ## What it checks
 
-A privileged mint that grows supply and credits a caller-chosen balance.
-The proof needs a caller-guarded writer that stores to a constant slot
+A privileged mint that grows supply and credits a balance. The scored
+proof needs a caller-guarded writer that stores to a constant slot
 with addition beside the store (the supply increase) and a mapping store
 beside calldata in the same writer region (the balance credit keyed by
 an address the caller chose), plus a transfer path that loads the same
 slot beside addition arithmetic. The writer and the reader may share one
 merged function, with distinct functions preferred when both prove the
 same slot. One finding names the lowest provable slot.
+
+When the scored proof finds nothing, the extended analysis re-runs the
+search on the reachability v2 view and reports a weight-0 fact that
+never counts in the score. The extended proof drops the transfer-path
+read: the supply slot is the constant slot the `totalSupply()` region
+loads, and the guard may be an owner check, a minter role-slot check
+(`require(msg.sender == <slot>)`), or an auth-mapping check
+(`require(wards[msg.sender] == 1)`). The payload names the guard kind
+in `auth`, the credit recipient in `recipient` (`argument` for a
+caller-chosen address, `stored` for a stored account such as the
+owner), and whether a cap compare sits in the writer in `capped`.
 
 ## Why it matters to you
 
@@ -39,13 +50,17 @@ writer shape.
 ## Evidence format
 
 A list with at most one finding with the namespaced id
-`dev.brandklipparen.mint:mint`, a short English title, selector evidence
-with the PC offset wherever derivable, and the payload holding `feature`
-and `slot`. The payload carries two fields, `feature` and `slot`, and
-every finding carries at least one `evidence` entry with a `selector`.
-As a first-party detector, its findings convert to calibrated signals
-through the versioned model artifact, and the artifact sets their
-effective weight, which the plugin list exposes per plugin.
+`dev.brandklipparen.mint:mint` (scored) or
+`dev.brandklipparen.mint:mint-extended` (weight-0 fact), a short English
+title, selector evidence with the PC offset wherever derivable, and a
+payload holding `slot`. The scored payload carries `feature` and `slot`;
+the extended payload carries `fact`, `slot`, `auth`, `recipient`,
+`capped` and `proof: "extended"`. Every finding carries at least one
+`evidence` entry with a `selector`. As a first-party detector, its
+scored findings convert to calibrated signals through the versioned
+model artifact, and the artifact sets their effective weight, which the
+plugin list exposes per plugin. Extended facts never convert and stay
+at weight 0.
 
 ## Limitations / false positives
 

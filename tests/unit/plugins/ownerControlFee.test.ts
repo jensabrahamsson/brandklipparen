@@ -15,6 +15,7 @@ import { transferFeeDetectorPlugin } from "../../../src/plugins/detectors/transf
 import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
 import {
   CALLDATALOAD,
+  GT,
   ISZERO,
   LT,
   MUL,
@@ -131,6 +132,95 @@ describe("transfer-fee detector plugin", () => {
       bytecode: parsed.value,
       codeHash: mustOk(CodeHash.of(parsed.value)),
     });
+    expect(transferFeeDetectorPlugin.detect(input)).toEqual([]);
+  });
+});
+
+const DUP1 = 0x80;
+const DUP2 = 0x81;
+const POP = 0x50;
+
+// Honest-stack bodies: every CALLDATALOAD consumes a pushed offset. The
+// slot push sits apart from its load behind a stack-neutral dup, so the
+// scored adjacent-push window stays blind while the extended interpreter
+// still resolves the constant slot.
+function shuffledLoad(slot: number): number[] {
+  return [...push1(0x04), CALLDATALOAD, ...push1(slot), DUP1, POP, SLOAD];
+}
+
+describe("transfer-fee extended fact (P-11)", () => {
+  const RATE_SET = "0x0a9c6c1e";
+
+  function setterBody(): number[] {
+    return [
+      ...ownerGuard(0, 200),
+      ...push1(0x04),
+      CALLDATALOAD,
+      ...push1(250),
+      LT,
+      ISZERO,
+      ...branchOk(),
+      ...push1(0),
+      0x80,
+      REVERT,
+      0x5b,
+      ...sstoreConstSlot(5, [...push1(0x04), CALLDATALOAD]),
+      ...sstoreConstSlot(6, [...push1(0x24), CALLDATALOAD]),
+      STOP,
+    ];
+  }
+
+  function transferBody(): number[] {
+    return [
+      ...shuffledLoad(5),
+      DUP2,
+      MUL,
+      SUB,
+      ...sstoreConstSlot(2, [...push1(0x04), CALLDATALOAD]),
+      ...shuffledLoad(6),
+      GT,
+      ...branchOk(),
+      ...sstoreConstSlot(8, [...push1(0x04), CALLDATALOAD]),
+      0x5b,
+      STOP,
+    ];
+  }
+
+  function extendedInput(
+    parts: readonly { selector: string; body: readonly number[] }[],
+  ): DetectorInput {
+    const bytecode = tokenBytecode(parts);
+    return Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+  }
+
+  test("shuffled rate slot with a cap reports the rate and cap slots", () => {
+    const input = extendedInput([
+      { selector: RATE_SET, body: setterBody() },
+      { selector: TRANSFER, body: transferBody() },
+    ]);
+    const findings = transferFeeDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    const finding = findings[0];
+    if (finding === undefined) {
+      throw new Error("expected exactly one finding");
+    }
+    expect(finding.id).toBe("dev.brandklipparen.transfer-fee:transfer-fee-extended");
+    expect(finding.payload).toEqual({
+      fact: "transfer-fee",
+      slot: 5,
+      capSlot: 6,
+      proof: "extended",
+    });
+  });
+
+  test("fee arithmetic with no privileged writer stays silent", () => {
+    const input = extendedInput([
+      {
+        selector: RATE_SET,
+        body: [...sstoreConstSlot(5, [...push1(0x04), CALLDATALOAD]), STOP],
+      },
+      { selector: TRANSFER, body: transferBody() },
+    ]);
     expect(transferFeeDetectorPlugin.detect(input)).toEqual([]);
   });
 });

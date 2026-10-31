@@ -22,7 +22,6 @@ import {
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
   constSlotLoadNearFlavor,
-  hasRevertingGateAfter,
   hasRevertingSide,
   interpretRegionExprs,
   interpretRegionSlots,
@@ -31,9 +30,10 @@ import {
   packedBoolWriteAt,
   packedBoolWriteExpr,
 } from "../../../domain/ownerControl.ts";
-import type { RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
+import type { Expr, RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
 import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
+import type { Instruction } from "../../../domain/selectors.ts";
 import type { Selector as SelectorType } from "../../../domain/types.ts";
 import { PcOffset } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
@@ -274,6 +274,256 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
 // a signal and stays at weight 0.
 const EXTENDED_LIMIT_WINDOW_PC = 64;
 
+// Strip a leading ISZERO chain. Local copy: the domain helper stays
+// private and the scored path never changes.
+function stripIszero(expr: Expr): { readonly inner: Expr; readonly count: number } {
+  let inner: Expr = expr;
+  let count = 0;
+  while (inner.kind === "op" && inner.name === "ISZERO" && inner.args.length === 1) {
+    const next = inner.args[0];
+    if (next === undefined) {
+      break;
+    }
+    inner = next;
+    count += 1;
+  }
+  return { inner, count };
+}
+
+// Whether an expression subtree loads the given constant slot.
+function exprLoadsSlot(expr: Expr | undefined, slot: number): boolean {
+  if (expr === undefined) {
+    return false;
+  }
+  if (expr.kind === "sload" && expr.slot.kind === "const" && expr.slot.value === BigInt(slot)) {
+    return true;
+  }
+  if (expr.kind === "calldata") {
+    return exprLoadsSlot(expr.offset, slot);
+  }
+  if (expr.kind === "sload") {
+    return exprLoadsSlot(expr.slot, slot);
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprLoadsSlot(word, slot));
+  }
+  if (expr.kind === "op") {
+    return expr.args.some((arg) => exprLoadsSlot(arg, slot));
+  }
+  return false;
+}
+
+// Whether an expression subtree holds calldata or a stored load: the
+// transferred amount or a resulting balance.
+function exprLoadsAmountOrBalance(expr: Expr | undefined): boolean {
+  if (expr === undefined) {
+    return false;
+  }
+  if (expr.kind === "calldata" || expr.kind === "sload") {
+    return true;
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprLoadsAmountOrBalance(word));
+  }
+  if (expr.kind === "op") {
+    return expr.args.some((arg) => exprLoadsAmountOrBalance(arg));
+  }
+  return false;
+}
+
+// Whether an expression subtree multiplies or divides: fee arithmetic,
+// never a limit compare side.
+function exprHoldsMulDiv(expr: Expr | undefined): boolean {
+  if (expr === undefined) {
+    return false;
+  }
+  if (expr.kind === "op" && (expr.name === "MUL" || expr.name === "DIV")) {
+    return true;
+  }
+  if (expr.kind === "calldata") {
+    return exprHoldsMulDiv(expr.offset);
+  }
+  if (expr.kind === "sload") {
+    return exprHoldsMulDiv(expr.slot);
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprHoldsMulDiv(word));
+  }
+  if (expr.kind === "op") {
+    return expr.args.some((arg) => exprHoldsMulDiv(arg));
+  }
+  return false;
+}
+
+// Whether a transfer jump condition multiplies or divides the loaded
+// slot: the slot prices a fee, so it can never prove a limit.
+function condUsesSlotArithmetically(cond: Expr | undefined, slot: number): boolean {
+  if (cond === undefined || cond.kind === "unknown") {
+    return false;
+  }
+  if (
+    cond.kind === "op" &&
+    (cond.name === "MUL" || cond.name === "DIV") &&
+    cond.args.some((arg) => exprLoadsSlot(arg, slot))
+  ) {
+    return true;
+  }
+  if (cond.kind === "calldata") {
+    return condUsesSlotArithmetically(cond.offset, slot);
+  }
+  if (cond.kind === "sload") {
+    return condUsesSlotArithmetically(cond.slot, slot);
+  }
+  if (cond.kind === "keccak") {
+    return cond.words.some((word) => condUsesSlotArithmetically(word, slot));
+  }
+  if (cond.kind === "op") {
+    return cond.args.some((arg) => condUsesSlotArithmetically(arg, slot));
+  }
+  return false;
+}
+
+// Whether the transfer path prices the slot as a fee rate: any member
+// jump condition multiplying or dividing the loaded slot. A fee-cap
+// clamp over the computed fee then proves no limit for that slot.
+// Exported for the extended-proof diagnostics.
+export function transferUsesSlotArithmetically(
+  bytecode: DetectorInput["bytecode"],
+  transferSelector: SelectorType,
+  slot: number,
+): boolean {
+  const gateExprs = interpretRegionExprs(bytecode, transferSelector);
+  for (const [, cond] of gateExprs.jumpis) {
+    if (condUsesSlotArithmetically(cond, slot)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Whether a paired reverting jump proves a limit on the slot
+// (precision, P-11 follow-up): a limits fact needs a compare between
+// the transferred amount or a resulting balance and the guarded slot
+// value whose failing side reverts. An unresolved condition keeps the
+// legacy proof; a resolved one must test the slot, and a less-than or
+// greater-than must pit the amount or balance against the slot with no
+// MUL/DIV arithmetic on the other side. A slot only used in arithmetic
+// (fee equals amount times rate over 10000, clamped at a max) never
+// proves a limit.
+function gateProvesLimit(cond: Expr | undefined, slot: number): boolean {
+  if (cond === undefined || cond.kind === "unknown") {
+    return true;
+  }
+  if (!exprLoadsSlot(cond, slot)) {
+    return false;
+  }
+  const { inner } = stripIszero(cond);
+  if (inner.kind !== "op" || (inner.name !== "LT" && inner.name !== "GT")) {
+    return true;
+  }
+  const left = inner.args[0];
+  const right = inner.args[1];
+  const slotLeft = exprLoadsSlot(left, slot);
+  const slotRight = exprLoadsSlot(right, slot);
+  const other = slotLeft ? right : slotRight ? left : undefined;
+  if (other === undefined) {
+    return false;
+  }
+  return exprLoadsAmountOrBalance(other) && !exprHoldsMulDiv(other);
+}
+
+// First member JUMPI past the compare whose failing fall-through side
+// reverts and whose condition proves a limit on the slot. Every JUMPI
+// in the window gets its chance, mirroring the legacy gate search, so
+// split gates keep proving while fee-clamp and unrelated reverts drop
+// out through the condition proof.
+function revertingLimitGatePc(
+  bytecode: DetectorInput["bytecode"],
+  code: readonly Instruction[],
+  gateMember: (pc: number) => boolean,
+  jumpis: ReadonlyMap<number, Expr>,
+  afterPc: number,
+  slot: number,
+): number | null {
+  for (const candidate of code) {
+    if (!gateMember(candidate.pc) || candidate.opcode !== 0x57) {
+      continue;
+    }
+    if (candidate.pc <= afterPc || candidate.pc > afterPc + 64) {
+      continue;
+    }
+    if (
+      hasRevertingSide(bytecode, code, gateMember, candidate.pc, "fall") &&
+      gateProvesLimit(jumpis.get(candidate.pc), slot)
+    ) {
+      return candidate.pc;
+    }
+  }
+  return null;
+}
+
+// Transfer gate proof for one limit slot (P-11 follow-up): the beside
+// compare with a reverting jump, or the helper-interleaved linear scan
+// when the compare sits past an internal helper return. Exported for the
+// extended-proof diagnostics beside the detectors, which re-run the same
+// search to explain a missing fact.
+export function limitTransferGate(
+  bytecode: DetectorInput["bytecode"],
+  code: readonly Instruction[],
+  gateMember: (pc: number) => boolean,
+  jumpis: ReadonlyMap<number, Expr>,
+  transfer: RegionFacts,
+  slot: number,
+): { readonly loadPc: number } | null {
+  const memberProof = constSlotLoadNearFlavor(transfer, slot, ["lt", "gt"], EXTENDED_LIMIT_WINDOW_PC);
+  if (memberProof !== null) {
+    const jumpiPc = revertingLimitGatePc(
+      bytecode,
+      code,
+      gateMember,
+      jumpis,
+      memberProof.gatePc,
+      slot,
+    );
+    if (jumpiPc !== null) {
+      return { loadPc: memberProof.loadPc };
+    }
+  }
+  // Helper-interleaved compare: the load sits in the transfer region,
+  // but the LT/GT lands in the small continuation block after an
+  // internal helper returns, so it belongs to no region's opcode list.
+  // Scan the linear stream forward from the member load instead: a
+  // compare in the window whose following jump reverts on its fall side
+  // proves the gate. The paired jump must still test the slot
+  // (precision): a nearby unrelated revert, or a fee-clamp compare over
+  // MUL/DIV arithmetic, never proves a limit.
+  for (const load of transfer.loads) {
+    if (load.slot.kind !== "const" || load.slot.value !== slot) {
+      continue;
+    }
+    for (const candidate of code) {
+      if (candidate.pc <= load.pc || candidate.pc > load.pc + 96) {
+        continue;
+      }
+      if (candidate.opcode !== 0x10 && candidate.opcode !== 0x11) {
+        continue;
+      }
+      for (const jump of code) {
+        if (jump.pc <= candidate.pc || jump.pc > candidate.pc + 64 || jump.opcode !== 0x57) {
+          continue;
+        }
+        if (
+          hasRevertingSide(bytecode, code, gateMember, jump.pc, "fall") &&
+          gateProvesLimit(jumpis.get(jump.pc), slot)
+        ) {
+          return { loadPc: load.pc };
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function detectExtended(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -353,45 +603,19 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         if (transfer === undefined) {
           continue;
         }
-        const gateMember = memberOf(transferSelector);
-        const memberProof = constSlotLoadNearFlavor(transfer, slot, ["lt", "gt"], EXTENDED_LIMIT_WINDOW_PC);
-        let proof: { readonly loadPc: number } | null =
-          memberProof !== null && hasRevertingGateAfter(input.bytecode, code, gateMember, memberProof.gatePc)
-            ? { loadPc: memberProof.loadPc }
-            : null;
-        if (proof === null) {
-          // Helper-interleaved compare: the load sits in the transfer
-          // region, but the LT/GT lands in the small continuation block
-          // after an internal helper returns, so it belongs to no
-          // region's opcode list. Scan the linear stream forward from
-          // the member load instead: a compare in the window whose
-          // following jump reverts on its fall side proves the gate.
-          for (const load of transfer.loads) {
-            if (load.slot.kind !== "const" || load.slot.value !== slot || proof !== null) {
-              continue;
-            }
-            for (const candidate of code) {
-              if (candidate.pc <= load.pc || candidate.pc > load.pc + 96) {
-                continue;
-              }
-              if (candidate.opcode !== 0x10 && candidate.opcode !== 0x11) {
-                continue;
-              }
-              for (const jump of code) {
-                if (jump.pc <= candidate.pc || jump.pc > candidate.pc + 64 || jump.opcode !== 0x57) {
-                  continue;
-                }
-                if (hasRevertingSide(input.bytecode, code, gateMember, jump.pc, "fall")) {
-                  proof = { loadPc: load.pc };
-                  break;
-                }
-              }
-              if (proof !== null) {
-                break;
-              }
-            }
-          }
+        if (transferUsesSlotArithmetically(input.bytecode, transferSelector, slot)) {
+          continue;
         }
+        const gateMember = memberOf(transferSelector);
+        const gateExprs = interpretRegionExprs(input.bytecode, transferSelector);
+        const proof = limitTransferGate(
+          input.bytecode,
+          code,
+          gateMember,
+          gateExprs.jumpis,
+          transfer,
+          slot,
+        );
         if (proof === null) {
           continue;
         }

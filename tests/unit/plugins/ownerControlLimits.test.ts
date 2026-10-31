@@ -18,9 +18,11 @@ import {
   ISZERO,
   KECCAK,
   LT,
+  MUL,
   REVERT,
   SLOAD,
   STOP,
+  SUB,
   ownerGuard,
   push1,
   sstoreConstSlot,
@@ -144,5 +146,108 @@ describe("transfer-limits detector plugin", () => {
       codeHash: mustOk(CodeHash.of(parsed.value)),
     });
     expect(transferLimitsDetectorPlugin.detect(input)).toEqual([]);
+  });
+});
+
+const DUP1 = 0x80;
+const POP = 0x50;
+
+// Honest-stack bodies: every CALLDATALOAD consumes a pushed offset. The
+// slot push sits apart from its load behind a stack-neutral dup, so the
+// scored adjacent-push window stays blind while the extended interpreter
+// still resolves the constant slot.
+function shuffledLoad(slot: number): number[] {
+  return [...push1(0x04), CALLDATALOAD, ...push1(slot), DUP1, POP, SLOAD];
+}
+
+describe("transfer-limits extended precision (P-11)", () => {
+  function extendedInput(
+    parts: readonly { selector: string; body: readonly number[] }[],
+  ): DetectorInput {
+    const bytecode = tokenBytecode(parts);
+    return Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+  }
+
+  test("shuffled max-tx compare with a reverting gate reports an extended fact", () => {
+    const input = extendedInput([
+      {
+        selector: SET_LIMIT,
+        body: [...ownerGuard(0, 200), ...sstoreConstSlot(6, [...push1(0x04), CALLDATALOAD]), STOP],
+      },
+      {
+        selector: TRANSFER,
+        body: [
+          ...shuffledLoad(6),
+          LT,
+          ISZERO,
+          ...branchOk(),
+          ...push1(0),
+          0x80,
+          REVERT,
+          0x5b,
+          ...sstoreConstSlot(2, [...push1(0x04), CALLDATALOAD]),
+          STOP,
+        ],
+      },
+    ]);
+    const findings = transferLimitsDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.transfer-limits:transfer-limits-extended");
+    expect(findings[0]?.payload).toEqual({
+      fact: "transfer-limits",
+      slot: 6,
+      limitKind: "max-tx",
+      proof: "extended",
+    });
+  });
+
+  test("a fee clamp beside an underflow revert is arithmetic, not a limit", () => {
+    // The guarded setter owns a rate and a cap; the transfer multiplies by
+    // the rate, clamps the computed fee without reverting, then checks the
+    // books for underflow with a revert. The cap compare gates a computed
+    // fee, never the transferred amount, so the fee fact fires while no
+    // limits fact fires, even though a reverting jump sits nearby.
+    const input = extendedInput([
+      {
+        selector: SET_LIMIT,
+        body: [
+          ...ownerGuard(0, 200),
+          ...sstoreConstSlot(5, [...push1(0x04), CALLDATALOAD]),
+          ...sstoreConstSlot(4, [...push1(0x24), CALLDATALOAD]),
+          STOP,
+        ],
+      },
+      {
+        selector: TRANSFER,
+        body: [
+          ...shuffledLoad(5),
+          MUL,
+          ...push1(4),
+          DUP1,
+          POP,
+          SLOAD,
+          GT,
+          ...branchOk(),
+          ...sstoreConstSlot(8, [...push1(0x04), CALLDATALOAD]),
+          0x5b,
+          ...push1(0x04),
+          CALLDATALOAD,
+          DUP1,
+          SUB,
+          ISZERO,
+          ...branchOk(),
+          ...push1(0),
+          0x80,
+          REVERT,
+          0x5b,
+          ...sstoreConstSlot(2, [...push1(0x04), CALLDATALOAD]),
+          STOP,
+        ],
+      },
+    ]);
+    const findings = transferLimitsDetectorPlugin.detect(input);
+    expect(findings.filter((finding) => finding.pluginId === "dev.brandklipparen.transfer-limits")).toEqual(
+      [],
+    );
   });
 });

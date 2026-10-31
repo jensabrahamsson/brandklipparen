@@ -16,10 +16,21 @@
 // (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { analyzeOwnerControl, constSlotLoadNearFlavor } from "../../../domain/ownerControl.ts";
-import type { RegionFacts } from "../../../domain/ownerControl.ts";
+import {
+  TRANSFER_FROM_SELECTOR,
+  TRANSFER_SELECTOR,
+  analyzeOwnerControl,
+  constSlotLoadNearFlavor,
+  interpretRegionExprs,
+  interpretRegionSlots,
+  isStandardTokenWriter,
+  ownerCheckVia,
+} from "../../../domain/ownerControl.ts";
+import type { Expr, RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
+import type { FunctionAttribution } from "../../../domain/evmFlow.ts";
 import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
+import type { Selector as SelectorType } from "../../../domain/types.ts";
 import { PcOffset } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
 import type { DetectorInput, DetectorPlugin, PluginFinding } from "../../detector.ts";
@@ -46,11 +57,14 @@ const OUTPUT_SCHEMA = Object.freeze({
       title: Object.freeze({ type: "string", minLength: 1 }),
       payload: Object.freeze({
         type: "object",
-        required: Object.freeze(["feature", "slot", "maxFeeBasisPoints"]),
+        required: Object.freeze(["slot"]),
         properties: Object.freeze({
           feature: Object.freeze({ const: "transfer-fee" }),
+          fact: Object.freeze({ const: "transfer-fee" }),
+          proof: Object.freeze({ const: "extended" }),
           slot: Object.freeze({ type: "integer", minimum: 0 }),
           maxFeeBasisPoints: Object.freeze({ type: Object.freeze(["integer", "null"]), minimum: 0 }),
+          capSlot: Object.freeze({ type: Object.freeze(["integer", "null"]), minimum: 0 }),
         }),
         additionalProperties: false,
       }),
@@ -171,7 +185,7 @@ function feeWriter(region: RegionFacts, slot: number): number | null {
   return store.pc;
 }
 
-function detect(input: DetectorInput): readonly PluginFinding[] {
+function detectV1(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
     return Object.freeze([]);
@@ -273,6 +287,223 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
     }
   }
   return Object.freeze([]);
+}
+
+// Extended-analysis helpers (P-11 follow-up, weight-0 facts only; the
+// scored path above never reads them).
+
+// Wider beside window for the extended rate proof: real compiler output
+// separates the rate load from its use further than the scored window.
+const EXTENDED_FEE_WINDOW_PC = 64;
+
+// Whether an expression subtree loads the given constant slot.
+function exprLoadsSlot(expr: Expr | undefined, slot: number): boolean {
+  if (expr === undefined) {
+    return false;
+  }
+  if (expr.kind === "sload" && expr.slot.kind === "const" && expr.slot.value === BigInt(slot)) {
+    return true;
+  }
+  if (expr.kind === "calldata") {
+    return exprLoadsSlot(expr.offset, slot);
+  }
+  if (expr.kind === "sload") {
+    return exprLoadsSlot(expr.slot, slot);
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprLoadsSlot(word, slot));
+  }
+  if (expr.kind === "op") {
+    return expr.args.some((arg) => exprLoadsSlot(arg, slot));
+  }
+  return false;
+}
+
+// Whether a transfer jump condition multiplies or divides the loaded
+// rate slot: a MUL or DIV node whose subtree loads the slot. The slot
+// load and its use can sit hundreds of PCs apart in real compiler
+// output, past any beside window, while the condition still names both.
+// Exported for the extended-proof diagnostics.
+export function condUsesSlotArithmetically(cond: Expr | undefined, slot: number): boolean {
+  if (cond === undefined || cond.kind === "unknown") {
+    return false;
+  }
+  if (
+    cond.kind === "op" &&
+    (cond.name === "MUL" || cond.name === "DIV") &&
+    cond.args.some((arg) => exprLoadsSlot(arg, slot))
+  ) {
+    return true;
+  }
+  if (cond.kind === "calldata") {
+    return condUsesSlotArithmetically(cond.offset, slot);
+  }
+  if (cond.kind === "sload") {
+    return condUsesSlotArithmetically(cond.slot, slot);
+  }
+  if (cond.kind === "keccak") {
+    return cond.words.some((word) => condUsesSlotArithmetically(word, slot));
+  }
+  if (cond.kind === "op") {
+    return cond.args.some((arg) => condUsesSlotArithmetically(arg, slot));
+  }
+  return false;
+}
+
+function holderFor(
+  attribution: FunctionAttribution,
+  region: RegionFacts,
+  pc: number,
+): SelectorType {
+  const single = attribution.holderOf(pc);
+  if (single !== null) {
+    return single;
+  }
+  const holders = [...attribution.holdersOf(pc)].sort();
+  if (holders.includes(region.selector)) {
+    return region.selector;
+  }
+  const first = holders[0];
+  return first === undefined ? region.selector : first;
+}
+
+// Extended fee analysis (P-11 follow-up, weight-0 fact): a guarded writer
+// sets rate slot(s) that the transfer path uses as a rate in MUL/DIV with
+// the transferred amount, and the result is subtracted from the amount.
+// The rate proof runs beside the load (wider window than the scored
+// proof) or through a transfer jump condition that multiplies or divides
+// the loaded slot. A second guarded slot the transfer path clamps with
+// LT/GT reports as the cap slot. It runs only when the v1 proof found
+// nothing, so a scored finding always wins. The payload carries `fact`
+// (never `feature`) with `proof: "extended"`, so the finding never
+// converts to a signal and stays at weight 0. Fee arithmetic with no
+// privileged writer, or a hardcoded constant rate, stays silent.
+function detectExtended(input: DetectorInput): readonly PluginFinding[] {
+  const entries = extractSelectors(input.bytecode);
+  if (entries.length === 0) {
+    return Object.freeze([]);
+  }
+  const attribution = attributeFunctions(input.bytecode, { mode: "v2" });
+  const view = analyzeOwnerControl(input.bytecode, { reach: "v2" });
+  if (view.ownerSlot === null) {
+    return Object.freeze([]);
+  }
+  const ownerSlot = view.ownerSlot;
+  const code = disassemble(input.bytecode);
+  const memberOf = (selector: SelectorType): ((pc: number) => boolean) => {
+    return (pc: number): boolean => attribution.holdersOf(pc).includes(selector);
+  };
+  const candidates = new Set<number>();
+  for (const region of view.regions) {
+    if (isStandardTokenWriter(region.selector)) {
+      continue;
+    }
+    const slots = interpretRegionSlots(input.bytecode, region.selector);
+    const slotOf: SlotLookup = (pc) => slots.get(pc);
+    const exprs = interpretRegionExprs(input.bytecode, region.selector);
+    if (
+      ownerCheckVia(code, memberOf(region.selector), ownerSlot, slotOf, exprs.jumpis, input.bytecode) ===
+      null
+    ) {
+      continue;
+    }
+    for (const store of region.stores) {
+      // The owner seat holds an address, never a fee rate.
+      if (store.slot.kind === "const" && store.slot.value === ownerSlot) {
+        continue;
+      }
+      if (store.slot.kind === "const" && !store.valueIsZero && store.valueConst === null) {
+        candidates.add(store.slot.value);
+      }
+    }
+  }
+  const orderedSlots = [...candidates].sort((left, right) => left - right);
+  for (const slot of orderedSlots) {
+    for (const region of view.regions) {
+      if (isStandardTokenWriter(region.selector)) {
+        continue;
+      }
+      const writerMember = memberOf(region.selector);
+      const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
+      const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
+      const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
+      if (
+        ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode) ===
+        null
+      ) {
+        continue;
+      }
+      const writePc = feeWriter(region, slot);
+      if (writePc === null) {
+        continue;
+      }
+      const transferSelectors = [TRANSFER_SELECTOR, TRANSFER_FROM_SELECTOR]
+        .filter((selector) => selector !== region.selector)
+        .sort();
+      for (const transferSelector of transferSelectors) {
+        const transfer = view.regions.find((candidate) => candidate.selector === transferSelector);
+        if (transfer === undefined || !transfer.hasSub) {
+          continue;
+        }
+        const gateMember = memberOf(transferSelector);
+        const windowProof = constSlotLoadNearFlavor(transfer, slot, ["mul", "div"], EXTENDED_FEE_WINDOW_PC);
+        let usePc: number | null = windowProof === null ? null : windowProof.loadPc;
+        if (usePc === null) {
+          const gateExprs = interpretRegionExprs(input.bytecode, transferSelector);
+          for (const [pc, cond] of gateExprs.jumpis) {
+            if (gateMember(pc) && condUsesSlotArithmetically(cond, slot)) {
+              usePc = pc;
+              break;
+            }
+          }
+        }
+        if (usePc === null) {
+          continue;
+        }
+        let capSlot: number | null = null;
+        for (const store of region.stores) {
+          if (store.slot.kind !== "const" || store.slot.value === slot || store.slot.value === ownerSlot) {
+            continue;
+          }
+          if (constSlotLoadNearFlavor(transfer, store.slot.value, ["lt", "gt"], EXTENDED_FEE_WINDOW_PC) !== null) {
+            capSlot = capSlot === null ? store.slot.value : Math.min(capSlot, store.slot.value);
+          }
+        }
+        const evidence: EvidenceType[] = [];
+        const written = evidenceFor(input.bytecode, holderFor(attribution, region, writePc), writePc);
+        if (written !== null) {
+          evidence.push(written);
+        }
+        const seen = evidenceFor(input.bytecode, holderFor(attribution, transfer, usePc), usePc);
+        if (seen !== null) {
+          evidence.push(seen);
+        }
+        const nonEmpty = toNonEmpty(evidence);
+        if (nonEmpty === null) {
+          continue;
+        }
+        return Object.freeze([
+          Object.freeze({
+            id: `${PLUGIN_ID}:transfer-fee-extended`,
+            pluginId: MANIFEST.id,
+            title:
+              "The owner can change the fee taken on each transfer. Found by extended analysis; not counted in the score.",
+            evidence: nonEmpty,
+            payload: Object.freeze({ fact: "transfer-fee", slot, capSlot, proof: "extended" }),
+          }),
+        ]);
+      }
+    }
+  }
+  return Object.freeze([]);
+}
+
+function detect(input: DetectorInput): readonly PluginFinding[] {
+  const v1 = detectV1(input);
+  if (v1.length > 0) {
+    return v1;
+  }
+  return detectExtended(input);
 }
 
 const MANIFEST = manifestOf();
