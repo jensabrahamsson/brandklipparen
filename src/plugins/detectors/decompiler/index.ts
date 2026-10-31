@@ -9,7 +9,7 @@
 // imports solely the plugin API and domain types and pure functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { decompileContract } from "../../../domain/evmSsa.ts";
+import { decompilePreferV2 } from "../../../domain/decompileV2.ts";
 import { PcOffset, Selector } from "../../../domain/types.ts";
 import { PLUGIN_API_VERSION, PluginManifest } from "../../api.ts";
 import type { DetectorInput, DetectorPlugin, PluginFinding } from "../../detector.ts";
@@ -109,7 +109,7 @@ function manifestOf(): DetectorPlugin["manifest"] {
 // unrepresentable. The payload carries no `capability` key, so the host
 // conversion leaves these findings as weight-0 display records.
 function detect(input: DetectorInput): readonly PluginFinding[] {
-  const decompiled = decompileContract(input.bytecode);
+  const decompiled = decompilePreferV2(input.bytecode);
   const unresolvedJumps = decompiled.unresolvedJumps.length;
   const out: PluginFinding[] = [];
   for (const fn of decompiled.functions) {

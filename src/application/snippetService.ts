@@ -8,7 +8,7 @@
 // pipeline's own emission text, so emitter changes stay in sync by
 // construction. Scores and evidence are untouched: this helper reads
 // bytecode and returns display text only.
-import { decompileContract } from "../domain/evmSsa.ts";
+import { decompilePreferV2 } from "../domain/decompileV2.ts";
 import type { DecompiledContract } from "../domain/evmSsa.ts";
 import { extractSelectors } from "../domain/selectors.ts";
 import type { Bytecode as BytecodeType } from "../domain/types.ts";
@@ -32,7 +32,7 @@ export type SnippetDecompile = (bytecode: BytecodeType) => DecompiledContract;
 export function snippetForSelector(
   bytecode: BytecodeType,
   selector: string,
-  decompile: SnippetDecompile = decompileContract,
+  decompile: SnippetDecompile = decompilePreferV2,
 ): { ok: true; value: Snippet } | { ok: false; error: SnippetError } {
   if (!/^0x[0-9a-fA-F]{8}$/.test(selector)) {
     return { ok: false, error: "invalid-selector" };

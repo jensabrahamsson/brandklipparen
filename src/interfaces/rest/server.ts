@@ -34,7 +34,7 @@ import { envelopeMeanings } from "../../application/modelMeanings.ts";
 import { ExplainInput } from "../../ports/explainModel.ts";
 import { snippetForSelector } from "../../application/snippetService.ts";
 import type { SnippetDecompile } from "../../application/snippetService.ts";
-import { decompileContract } from "../../domain/evmSsa.ts";
+import { decompilePreferV2 } from "../../domain/decompileV2.ts";
 import { CHAT_PROMPT_VERSION, serializeChatOutcome } from "../../application/chatService.ts";
 import type { ChatService } from "../../application/chatService.ts";
 import { ChatInput } from "../../ports/chatModel.ts";
@@ -1601,7 +1601,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
     const snippet = snippetForSelector(
       fetched.value.bytecode,
       rawSelector,
-      options.snippetDecompile ?? decompileContract,
+      options.snippetDecompile ?? decompilePreferV2,
     );
     if (!snippet.ok) {
       return sendError(
