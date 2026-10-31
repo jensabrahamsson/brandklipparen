@@ -40,8 +40,17 @@ import type { AssessmentTransportOverrides } from "./root.ts";
 import { PERSONALIZE_PROMPT_VERSION, createPersonalizeServiceFromConfig } from "./root.ts";
 import type { PersonalizeTransportOverrides } from "./root.ts";
 import { createInvestigationServiceFromConfig } from "./root.ts";
+import {
+  createChatServiceFromConfig,
+  createExplainServiceFromConfig,
+  createRugServiceFromConfig,
+} from "./root.ts";
+import type { OverlayTransportOverrides } from "./root.ts";
 import type { AssessmentService } from "../application/assessmentService.ts";
 import type { InvestigationService } from "../application/investigationService.ts";
+import type { ChatService } from "../application/chatService.ts";
+import type { ExplainService } from "../application/explainService.ts";
+import type { RugService } from "../application/rugService.ts";
 import { FIRST_PARTY_DETECTOR_IDS } from "../plugins/detector.ts";
 import type { DetectorExecution } from "../plugins/detector.ts";
 import type { PluginRegistryError } from "../plugins/registry.ts";
@@ -94,6 +103,10 @@ export type BuildAppDeps = {
   // Recorded transport for the experimental AI personalize adapter; tests
   // replay fixtures through it and never touch the network.
   readonly personalizeTransports?: PersonalizeTransportOverrides | undefined;
+  // Recorded transports for the opt-in explain, chat and rug overlay
+  // adapters; tests replay fixtures through these and never touch the
+  // network.
+  readonly overlayTransports?: OverlayTransportOverrides | undefined;
 };
 
 export type BuiltApp = {
@@ -101,6 +114,9 @@ export type BuiltApp = {
   readonly detectors: DetectorSet;
   readonly assessment: AssessmentService;
   readonly investigation: InvestigationService;
+  readonly explain: ExplainService | undefined;
+  readonly chat: ChatService | undefined;
+  readonly rug: RugService | undefined;
   // Live new-tokens service (E-11 follow-up): constructed here so the
   // REST/demo runtime can start it; it runs nothing until start() is
   // called, so tests and CLI one-shots that never start it stay idle.
@@ -265,6 +281,21 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
   if (!personalize.ok) {
     return err(personalize.error);
   }
+  // Opt-in explain, chat and rug overlays: each service when its provider
+  // is configured, otherwise undefined so the routes answer not-configured
+  // with zero provider calls and the deterministic explanation stands.
+  const explain = createExplainServiceFromConfig(config, deps.overlayTransports);
+  if (!explain.ok) {
+    return err(explain.error);
+  }
+  const chat = createChatServiceFromConfig(config, deps.overlayTransports);
+  if (!chat.ok) {
+    return err(chat.error);
+  }
+  const rug = createRugServiceFromConfig(config, deps.overlayTransports);
+  if (!rug.ok) {
+    return err(rug.error);
+  }
   const personalizePromptVersion =
     personalize.value === undefined ? undefined : PromptVersion.parse(PERSONALIZE_PROMPT_VERSION);
   if (personalizePromptVersion !== undefined && !personalizePromptVersion.ok) {
@@ -308,6 +339,9 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     pluginWeights,
     assessmentService: assessment.value,
     investigationService: investigation.value,
+    explainService: explain.value,
+    chatService: chat.value,
+    rugService: rug.value,
     personalizeService: personalize.value,
     personalizePromptVersion:
       personalizePromptVersion === undefined ? undefined : personalizePromptVersion.value,
@@ -336,6 +370,9 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
       detectors: wired,
       assessment: assessment.value,
       investigation: investigation.value,
+      explain: explain.value,
+      chat: chat.value,
+      rug: rug.value,
       liveTokens,
       rateLimit: rateLimit.value,
       rest,

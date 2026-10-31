@@ -20,7 +20,22 @@ export const MAX_EXPLAIN_CITATIONS_PER_SENTENCE = 8;
 // Versioned identifier of the explain prompt and evidence format. The
 // overlay cache key (a later story) carries code hash, this version,
 // provider and model id.
-export const EXPLAIN_PROMPT_VERSION = "explain-1";
+export const EXPLAIN_PROMPT_VERSION = "explain-2";
+
+// Meta-statements about grounding or evidence carry no holder impact:
+// drop any sentence talking about being grounded, frozen evidence or
+// evidence signals/ids/lists instead of what the owner can do.
+export function isMetaStatement(text: string): boolean {
+  const lowered = text.toLowerCase();
+  return (
+    lowered.includes("grounded") ||
+    lowered.includes("frozen evidence") ||
+    lowered.includes("evidence signals") ||
+    lowered.includes("evidence ids") ||
+    lowered.includes("evidence id") ||
+    lowered.includes("evidence list")
+  );
+}
 
 export type CheckedExplanation = {
   readonly narrative: readonly string[];
@@ -28,8 +43,9 @@ export type CheckedExplanation = {
 };
 
 // Pure citation check over collected evidence ids: keep a sentence only
-// when every citation names a collected id and at least one citation is
-// present. Uncited factual sentences drop like uncollected citations do.
+// when it is not a meta-statement, every citation names a collected id
+// and at least one citation is present. Uncited factual sentences drop
+// like uncollected citations and meta-statements do.
 export function checkExplainCitations(
   sentences: readonly ExplainSentence[],
   collectedIds: ReadonlySet<string>,
@@ -37,6 +53,10 @@ export function checkExplainCitations(
   const narrative: string[] = [];
   let droppedClaims = 0;
   for (const sentence of sentences) {
+    if (isMetaStatement(sentence.text)) {
+      droppedClaims += 1;
+      continue;
+    }
     if (sentence.citations.length === 0) {
       droppedClaims += 1;
       continue;

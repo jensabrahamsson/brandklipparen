@@ -20,7 +20,22 @@ export const MAX_CHAT_CITATIONS_PER_ANSWER = 8;
 // Versioned identifier of the chat prompt and evidence format. The overlay
 // cache key (a later story) carries code hash, this version, provider and
 // model id.
-export const CHAT_PROMPT_VERSION = "chat-1";
+export const CHAT_PROMPT_VERSION = "chat-2";
+
+// Meta-statements about grounding or evidence carry no holder impact:
+// drop any answer talking about being grounded, frozen evidence or
+// evidence signals/ids/lists instead of what the owner can do.
+export function isChatMetaStatement(text: string): boolean {
+  const lowered = text.toLowerCase();
+  return (
+    lowered.includes("grounded") ||
+    lowered.includes("frozen evidence") ||
+    lowered.includes("evidence signals") ||
+    lowered.includes("evidence ids") ||
+    lowered.includes("evidence id") ||
+    lowered.includes("evidence list")
+  );
+}
 
 export type CheckedChat = {
   readonly answers: readonly string[];
@@ -28,8 +43,9 @@ export type CheckedChat = {
 };
 
 // Pure citation check over collected evidence ids: keep an answer only
-// when every citation names a collected id and at least one citation is
-// present. Uncited factual answers drop like uncollected citations do.
+// when it is not a meta-statement, every citation names a collected id
+// and at least one citation is present. Uncited factual answers drop like
+// uncollected citations and meta-statements do.
 export function checkChatCitations(
   answers: readonly ChatAnswer[],
   collectedIds: ReadonlySet<string>,
@@ -37,6 +53,10 @@ export function checkChatCitations(
   const kept: string[] = [];
   let droppedClaims = 0;
   for (const answer of answers) {
+    if (isChatMetaStatement(answer.text)) {
+      droppedClaims += 1;
+      continue;
+    }
     if (answer.citations.length === 0) {
       droppedClaims += 1;
       continue;

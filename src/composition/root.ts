@@ -48,6 +48,22 @@ import {
   META_INVESTIGATE_LOOP_MAX_TOKENS,
   createMetaModelApiInvestigateAdapterFromConfig,
 } from "../adapters/investigation/metaModelApiInvestigateAdapter.ts";
+import {
+  OVERLAY_META_MODEL_ID,
+  createMetaModelApiChatAdapterFromConfig,
+  createMetaModelApiExplainAdapterFromConfig,
+  createMetaModelApiRugAdapterFromConfig,
+} from "../adapters/overlays/metaModelApiOverlays.ts";
+import type { OverlayTransport } from "../adapters/overlays/metaModelApiOverlays.ts";
+import { createChatService } from "../application/chatService.ts";
+import type { ChatService } from "../application/chatService.ts";
+import { createExplainService } from "../application/explainService.ts";
+import type { ExplainService } from "../application/explainService.ts";
+import { createRugService } from "../application/rugService.ts";
+import type { RugService } from "../application/rugService.ts";
+import type { ChatModelPort } from "../ports/chatModel.ts";
+import type { ExplainModelPort } from "../ports/explainModel.ts";
+import type { RugModelPort } from "../ports/rugModel.ts";
 import type { InvestigationModelPort } from "../ports/investigationModel.ts";
 import { DEFAULT_INVESTIGATION_LIMITS } from "../application/investigateToken.ts";
 import { createMetaModelApiAdapterFromConfig } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
@@ -75,7 +91,7 @@ import type { AppConfig, ConfigError } from "../ports/config.ts";
 import type { MetaModelApiAdapter } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
 import type { hostedOpenWeightsAdapter } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 import type { GenericCompatibleAdapter } from "../adapters/assessment/GenericCompatible/GenericCompatibleAdapter.ts";
-import type { ModelId } from "../domain/types.ts";
+import { ModelId } from "../domain/types.ts";
 import type { AssessmentProvider } from "../ports/assessmentModel.ts";
 
 // Builds the detector set the shared application service runs (S-043,
@@ -732,6 +748,233 @@ export function createInvestigationServiceFromConfig(
       config,
       detectors,
       !(built.value instanceof NotConfiguredInvestigateAdapter),
+    ),
+  );
+}
+
+// Overlay provider selection (explain, chat, rug): unset or "off" leaves
+// the feature disabled with zero provider calls, and the deterministic
+// explanation stands. A selected provider without its key or endpoint is
+// not configured: the binding stays disabled with zero provider calls
+// instead of failing startup. Present-but-malformed values never reach
+// this point: the config loader turns them away as typed startup errors.
+export type OverlayProvider = "meta-model-api";
+
+export type OverlayBinding =
+  | { readonly kind: "disabled" }
+  | { readonly kind: "enabled"; readonly provider: OverlayProvider; readonly modelId: ModelId };
+
+export function selectExplainBinding(config: AppConfig): Result<OverlayBinding, ConfigError> {
+  const provider = config.explainProvider;
+  if (provider === undefined || provider === "off") {
+    return ok({ kind: "disabled" });
+  }
+  if (config.explainMetaApiKey === undefined || config.explainMetaBaseUrl === undefined) {
+    return ok({ kind: "disabled" });
+  }
+  const modelId = config.explainMetaModelId;
+  if (modelId !== undefined && isPlaceholderModelId(modelId as string)) {
+    return ok({ kind: "disabled" });
+  }
+  return ok({
+    kind: "enabled",
+    provider: "meta-model-api",
+    modelId: (modelId ?? defaultOverlayModelId()) as ModelId,
+  });
+}
+
+export function selectChatBinding(config: AppConfig): Result<OverlayBinding, ConfigError> {
+  const provider = config.chatProvider;
+  if (provider === undefined || provider === "off") {
+    return ok({ kind: "disabled" });
+  }
+  if (config.chatMetaApiKey === undefined || config.chatMetaBaseUrl === undefined) {
+    return ok({ kind: "disabled" });
+  }
+  const modelId = config.chatMetaModelId;
+  if (modelId !== undefined && isPlaceholderModelId(modelId as string)) {
+    return ok({ kind: "disabled" });
+  }
+  return ok({
+    kind: "enabled",
+    provider: "meta-model-api",
+    modelId: (modelId ?? defaultOverlayModelId()) as ModelId,
+  });
+}
+
+export function selectRugBinding(config: AppConfig): Result<OverlayBinding, ConfigError> {
+  const provider = config.rugProvider;
+  if (provider === undefined || provider === "off") {
+    return ok({ kind: "disabled" });
+  }
+  if (config.rugMetaApiKey === undefined || config.rugMetaBaseUrl === undefined) {
+    return ok({ kind: "disabled" });
+  }
+  const modelId = config.rugMetaModelId;
+  if (modelId !== undefined && isPlaceholderModelId(modelId as string)) {
+    return ok({ kind: "disabled" });
+  }
+  return ok({
+    kind: "enabled",
+    provider: "meta-model-api",
+    modelId: (modelId ?? defaultOverlayModelId()) as ModelId,
+  });
+}
+
+// Provider and model id for the health response: the service reports its
+// bound adapter, so the UI names the configured provider and model id
+// honestly instead of a hard-coded label.
+export function overlayHealthStatus(
+  service: ExplainService | ChatService | RugService | undefined,
+): { provider: string; modelId: string } | { disabled: true } {
+  if (service === undefined || !service.enabled || service.provider === null || service.modelId === null) {
+    return { disabled: true };
+  }
+  return { provider: service.provider, modelId: service.modelId };
+}
+
+// Placeholder operational default for the per-key overlay daily caps:
+// read when the validated configuration carries no value (local and CI
+// runs). One overlay call is one small sentence list per uncached input,
+// so the default stays small; the demo configuration always sets the
+// versioned per-key cap when the feature is on.
+const DEFAULT_OVERLAY_DAILY_CAP_PER_KEY = 5;
+
+function defaultOverlayModelId(): ModelId {
+  const parsed = ModelId.parse(OVERLAY_META_MODEL_ID);
+  if (!parsed.ok) {
+    throw new Error("the pinned overlay Meta model id must parse");
+  }
+  return parsed.value;
+}
+
+export type OverlayTransportOverrides = {
+  readonly explainTransport?: OverlayTransport | undefined;
+  readonly chatTransport?: OverlayTransport | undefined;
+  readonly rugTransport?: OverlayTransport | undefined;
+};
+
+// Builds the explain service from the validated configuration: the
+// meta-model-api adapter when the provider is configured with its
+// connection pair, otherwise undefined so the routes answer not-configured
+// with zero provider calls. Missing values never fail startup: the feature
+// is opt-in and off by default. Transports stay injectable so tests replay
+// recorded fixtures and never touch the network.
+export function createExplainServiceFromConfig(
+  config: AppConfig,
+  overrides: OverlayTransportOverrides = {},
+): Result<ExplainService | undefined, ConfigError> {
+  const binding = selectExplainBinding(config);
+  if (!binding.ok) {
+    return err(binding.error);
+  }
+  if (binding.value.kind === "disabled") {
+    return ok(undefined);
+  }
+  const built = createMetaModelApiExplainAdapterFromConfig(
+    {
+      explainMetaBaseUrl: config.explainMetaBaseUrl,
+      explainMetaApiKey: config.explainMetaApiKey,
+      explainMetaModelId: config.explainMetaModelId,
+    },
+    overrides.explainTransport,
+  );
+  if (!built.ok) {
+    return err(built.error);
+  }
+  const port: ExplainModelPort | null = built.value;
+  if (port === null) {
+    return ok(undefined);
+  }
+  return ok(
+    createExplainService(
+      port,
+      new OverlayBudget({
+        dailyCapPerKey: config.explainDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
+        today: () => new Date().toISOString().slice(0, 10),
+      }),
+    ),
+  );
+}
+
+// Builds the chat service from the validated configuration: the
+// meta-model-api adapter when the provider is configured with its
+// connection pair, otherwise undefined so the routes answer not-configured
+// with zero provider calls.
+export function createChatServiceFromConfig(
+  config: AppConfig,
+  overrides: OverlayTransportOverrides = {},
+): Result<ChatService | undefined, ConfigError> {
+  const binding = selectChatBinding(config);
+  if (!binding.ok) {
+    return err(binding.error);
+  }
+  if (binding.value.kind === "disabled") {
+    return ok(undefined);
+  }
+  const built = createMetaModelApiChatAdapterFromConfig(
+    {
+      chatMetaBaseUrl: config.chatMetaBaseUrl,
+      chatMetaApiKey: config.chatMetaApiKey,
+      chatMetaModelId: config.chatMetaModelId,
+    },
+    overrides.chatTransport,
+  );
+  if (!built.ok) {
+    return err(built.error);
+  }
+  const port: ChatModelPort | null = built.value;
+  if (port === null) {
+    return ok(undefined);
+  }
+  return ok(
+    createChatService(
+      port,
+      new OverlayBudget({
+        dailyCapPerKey: config.chatDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
+        today: () => new Date().toISOString().slice(0, 10),
+      }),
+    ),
+  );
+}
+
+// Builds the rug narrative service from the validated configuration: the
+// meta-model-api adapter when the provider is configured with its
+// connection pair, otherwise undefined so the routes answer not-configured
+// with zero provider calls.
+export function createRugServiceFromConfig(
+  config: AppConfig,
+  overrides: OverlayTransportOverrides = {},
+): Result<RugService | undefined, ConfigError> {
+  const binding = selectRugBinding(config);
+  if (!binding.ok) {
+    return err(binding.error);
+  }
+  if (binding.value.kind === "disabled") {
+    return ok(undefined);
+  }
+  const built = createMetaModelApiRugAdapterFromConfig(
+    {
+      rugMetaBaseUrl: config.rugMetaBaseUrl,
+      rugMetaApiKey: config.rugMetaApiKey,
+      rugMetaModelId: config.rugMetaModelId,
+    },
+    overrides.rugTransport,
+  );
+  if (!built.ok) {
+    return err(built.error);
+  }
+  const port: RugModelPort | null = built.value;
+  if (port === null) {
+    return ok(undefined);
+  }
+  return ok(
+    createRugService(
+      port,
+      new OverlayBudget({
+        dailyCapPerKey: config.rugDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
+        today: () => new Date().toISOString().slice(0, 10),
+      }),
     ),
   );
 }

@@ -21,7 +21,22 @@ export const MAX_RUG_CITATIONS_PER_SENTENCE = 8;
 // Versioned identifier of the rug prompt and evidence format. The overlay
 // cache key (a later story) carries code hash, this version, provider and
 // model id.
-export const RUG_PROMPT_VERSION = "rug-1";
+export const RUG_PROMPT_VERSION = "rug-2";
+
+// Meta-statements about grounding or evidence carry no holder impact:
+// drop any sentence talking about being grounded, frozen evidence or
+// evidence signals/ids/lists instead of what the owner can do.
+export function isRugMetaStatement(text: string): boolean {
+  const lowered = text.toLowerCase();
+  return (
+    lowered.includes("grounded") ||
+    lowered.includes("frozen evidence") ||
+    lowered.includes("evidence signals") ||
+    lowered.includes("evidence ids") ||
+    lowered.includes("evidence id") ||
+    lowered.includes("evidence list")
+  );
+}
 
 export type CheckedRug = {
   readonly narrative: readonly string[];
@@ -29,8 +44,9 @@ export type CheckedRug = {
 };
 
 // Pure citation check over collected evidence ids: keep a sentence only
-// when every citation names a collected id and at least one citation is
-// present. Uncited factual sentences drop like uncollected citations do.
+// when it is not a meta-statement, every citation names a collected id
+// and at least one citation is present. Uncited factual sentences drop
+// like uncollected citations and meta-statements do.
 export function checkRugCitations(
   sentences: readonly RugSentence[],
   collectedIds: ReadonlySet<string>,
@@ -38,6 +54,10 @@ export function checkRugCitations(
   const narrative: string[] = [];
   let droppedClaims = 0;
   for (const sentence of sentences) {
+    if (isRugMetaStatement(sentence.text)) {
+      droppedClaims += 1;
+      continue;
+    }
     if (sentence.citations.length === 0) {
       droppedClaims += 1;
       continue;

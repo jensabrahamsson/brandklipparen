@@ -317,6 +317,21 @@ const V = {
   feedStatePath: "BRANDKLIPPAREN_FEED_STATE_PATH",
   investigateMaxTokens: "BRANDKLIPPAREN_INVESTIGATE_MAX_TOKENS",
   investigateToolTimeoutMs: "BRANDKLIPPAREN_INVESTIGATE_TOOL_TIMEOUT_MS",
+  explainProvider: "BRANDKLIPPAREN_EXPLAIN_PROVIDER",
+  explainMetaBaseUrl: "BRANDKLIPPAREN_EXPLAIN_META_BASE_URL",
+  explainMetaApiKey: "BRANDKLIPPAREN_EXPLAIN_META_API_KEY",
+  explainMetaModelId: "BRANDKLIPPAREN_EXPLAIN_META_MODEL_ID",
+  chatProvider: "BRANDKLIPPAREN_CHAT_PROVIDER",
+  chatMetaBaseUrl: "BRANDKLIPPAREN_CHAT_META_BASE_URL",
+  chatMetaApiKey: "BRANDKLIPPAREN_CHAT_META_API_KEY",
+  chatMetaModelId: "BRANDKLIPPAREN_CHAT_META_MODEL_ID",
+  rugProvider: "BRANDKLIPPAREN_RUG_PROVIDER",
+  rugMetaBaseUrl: "BRANDKLIPPAREN_RUG_META_BASE_URL",
+  rugMetaApiKey: "BRANDKLIPPAREN_RUG_META_API_KEY",
+  rugMetaModelId: "BRANDKLIPPAREN_RUG_META_MODEL_ID",
+  explainDailyCapPerKey: "BRANDKLIPPAREN_EXPLAIN_DAILY_CAP_PER_KEY",
+  chatDailyCapPerKey: "BRANDKLIPPAREN_CHAT_DAILY_CAP_PER_KEY",
+  rugDailyCapPerKey: "BRANDKLIPPAREN_RUG_DAILY_CAP_PER_KEY",
 } as const;
 
 const parseEnvName = (raw: string): Result<EnvironmentName, ConfigError> =>
@@ -353,6 +368,15 @@ const parseInvestigateProvider = (
     ["meta-model-api", "hosted-open-weights", "off"],
     "meta-model-api, hosted-open-weights or off",
   )(raw);
+
+// Opt-in overlay provider (explain, chat, rug): unset or "off" leaves the
+// feature disabled; "meta-model-api" binds the Meta overlay adapter.
+// Anything else is a typed startup error naming the variable.
+const parseOverlayProvider = (
+  name: string,
+  raw: string,
+): Result<"meta-model-api" | "off", ConfigError> =>
+  parseEnum<"meta-model-api" | "off">(name, ["meta-model-api", "off"], "meta-model-api or off")(raw);
 
 // Every variable name from the schema, exported so the .env.example
 // check and future tooling stay aligned with the loader.
@@ -874,6 +898,111 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!investigateDailyCapPerKey.ok) {
     return investigateDailyCapPerKey;
   }
+  // Opt-in overlay providers (explain, chat, rug): optional in every
+  // setup, so local and CI runs stay key-free with each overlay answering
+  // `not-configured`. The demo sets the provider alongside the Meta key.
+  const explainProvider = optionalField(env, V.explainProvider, (raw) =>
+    parseOverlayProvider(V.explainProvider, raw),
+  );
+  if (!explainProvider.ok) {
+    return explainProvider;
+  }
+  const explainMetaBaseUrl = optionalField(env, V.explainMetaBaseUrl, (raw) =>
+    parseHttpsUrl(V.explainMetaBaseUrl, raw),
+  );
+  if (!explainMetaBaseUrl.ok) {
+    return explainMetaBaseUrl;
+  }
+  const explainMetaApiKey = optionalField(env, V.explainMetaApiKey, (raw) =>
+    parseSecret(V.explainMetaApiKey, raw),
+  );
+  if (!explainMetaApiKey.ok) {
+    return explainMetaApiKey;
+  }
+  const explainMetaModelId = optionalField(env, V.explainMetaModelId, (raw) =>
+    mapDomain(
+      V.explainMetaModelId,
+      "must be a 1-256 character model identifier",
+      ModelId.parse(raw),
+    ),
+  );
+  if (!explainMetaModelId.ok) {
+    return explainMetaModelId;
+  }
+  const chatProvider = optionalField(env, V.chatProvider, (raw) =>
+    parseOverlayProvider(V.chatProvider, raw),
+  );
+  if (!chatProvider.ok) {
+    return chatProvider;
+  }
+  const chatMetaBaseUrl = optionalField(env, V.chatMetaBaseUrl, (raw) =>
+    parseHttpsUrl(V.chatMetaBaseUrl, raw),
+  );
+  if (!chatMetaBaseUrl.ok) {
+    return chatMetaBaseUrl;
+  }
+  const chatMetaApiKey = optionalField(env, V.chatMetaApiKey, (raw) =>
+    parseSecret(V.chatMetaApiKey, raw),
+  );
+  if (!chatMetaApiKey.ok) {
+    return chatMetaApiKey;
+  }
+  const chatMetaModelId = optionalField(env, V.chatMetaModelId, (raw) =>
+    mapDomain(
+      V.chatMetaModelId,
+      "must be a 1-256 character model identifier",
+      ModelId.parse(raw),
+    ),
+  );
+  if (!chatMetaModelId.ok) {
+    return chatMetaModelId;
+  }
+  const rugProvider = optionalField(env, V.rugProvider, (raw) =>
+    parseOverlayProvider(V.rugProvider, raw),
+  );
+  if (!rugProvider.ok) {
+    return rugProvider;
+  }
+  const rugMetaBaseUrl = optionalField(env, V.rugMetaBaseUrl, (raw) =>
+    parseHttpsUrl(V.rugMetaBaseUrl, raw),
+  );
+  if (!rugMetaBaseUrl.ok) {
+    return rugMetaBaseUrl;
+  }
+  const rugMetaApiKey = optionalField(env, V.rugMetaApiKey, (raw) =>
+    parseSecret(V.rugMetaApiKey, raw),
+  );
+  if (!rugMetaApiKey.ok) {
+    return rugMetaApiKey;
+  }
+  const rugMetaModelId = optionalField(env, V.rugMetaModelId, (raw) =>
+    mapDomain(
+      V.rugMetaModelId,
+      "must be a 1-256 character model identifier",
+      ModelId.parse(raw),
+    ),
+  );
+  if (!rugMetaModelId.ok) {
+    return rugMetaModelId;
+  }
+  const explainDailyCapPerKey = optionalField(env, V.explainDailyCapPerKey, (raw) =>
+    parseInteger(V.explainDailyCapPerKey, raw, 1, 1000000000),
+  );
+  if (!explainDailyCapPerKey.ok) {
+    return explainDailyCapPerKey;
+  }
+  const chatDailyCapPerKey = optionalField(env, V.chatDailyCapPerKey, (raw) =>
+    parseInteger(V.chatDailyCapPerKey, raw, 1, 1000000000),
+  );
+  if (!chatDailyCapPerKey.ok) {
+    return chatDailyCapPerKey;
+  }
+  const rugDailyCapPerKey = optionalField(env, V.rugDailyCapPerKey, (raw) =>
+    parseInteger(V.rugDailyCapPerKey, raw, 1, 1000000000),
+  );
+  if (!rugDailyCapPerKey.ok) {
+    return rugDailyCapPerKey;
+  }
   // New-LP-pairs feed keys (S-087, S-088, K-039, K-505): optional in
   // every setup, so local and CI runs stay key-free with the feed
   // answering `not-configured`. The WETH quote arrives from operator
@@ -1087,6 +1216,41 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(investigateDailyCapPerKey.value === undefined
       ? {}
       : { investigateDailyCapPerKey: investigateDailyCapPerKey.value }),
+    // "off" stays out of the config like the personalize toggle: an
+    // unset or "off" provider leaves each overlay disabled.
+    ...(explainProvider.value === undefined || explainProvider.value === "off"
+      ? {}
+      : { explainProvider: explainProvider.value }),
+    ...(explainMetaBaseUrl.value === undefined
+      ? {}
+      : { explainMetaBaseUrl: explainMetaBaseUrl.value }),
+    ...(explainMetaApiKey.value === undefined
+      ? {}
+      : { explainMetaApiKey: explainMetaApiKey.value }),
+    ...(explainMetaModelId.value === undefined
+      ? {}
+      : { explainMetaModelId: explainMetaModelId.value }),
+    ...(chatProvider.value === undefined || chatProvider.value === "off"
+      ? {}
+      : { chatProvider: chatProvider.value }),
+    ...(chatMetaBaseUrl.value === undefined ? {} : { chatMetaBaseUrl: chatMetaBaseUrl.value }),
+    ...(chatMetaApiKey.value === undefined ? {} : { chatMetaApiKey: chatMetaApiKey.value }),
+    ...(chatMetaModelId.value === undefined ? {} : { chatMetaModelId: chatMetaModelId.value }),
+    ...(rugProvider.value === undefined || rugProvider.value === "off"
+      ? {}
+      : { rugProvider: rugProvider.value }),
+    ...(rugMetaBaseUrl.value === undefined ? {} : { rugMetaBaseUrl: rugMetaBaseUrl.value }),
+    ...(rugMetaApiKey.value === undefined ? {} : { rugMetaApiKey: rugMetaApiKey.value }),
+    ...(rugMetaModelId.value === undefined ? {} : { rugMetaModelId: rugMetaModelId.value }),
+    ...(explainDailyCapPerKey.value === undefined
+      ? {}
+      : { explainDailyCapPerKey: explainDailyCapPerKey.value }),
+    ...(chatDailyCapPerKey.value === undefined
+      ? {}
+      : { chatDailyCapPerKey: chatDailyCapPerKey.value }),
+    ...(rugDailyCapPerKey.value === undefined
+      ? {}
+      : { rugDailyCapPerKey: rugDailyCapPerKey.value }),
     ...(feedEtherscanApiKey.value === undefined
       ? {}
       : { feedEtherscanApiKey: feedEtherscanApiKey.value }),

@@ -347,6 +347,145 @@ export function withDemoInvestigateDefault(
   return { env: next, defaulted: true };
 }
 
+// Demo default for one opt-in overlay (explain, chat, rug): when the
+// overlay provider is unset and the assessment Meta key file is set, the
+// demo reuses that same single Meta key for the overlay. Only pointer and
+// connection names are copied, never key values; the generic secret-file
+// indirection resolves the pointer later. Explicit overlay values always
+// win, per field. Pure: reads names and presence only, never key values
+// or file contents.
+export const DEMO_EXPLAIN_META_PROVIDER = "meta-model-api";
+export const DEMO_CHAT_META_PROVIDER = "meta-model-api";
+export const DEMO_RUG_META_PROVIDER = "meta-model-api";
+
+function withDemoOverlayDefault(
+  env: Readonly<Record<string, string | undefined>>,
+  providerName: string,
+  keyFileName: string,
+  modelIdName: string,
+  baseUrlName: string,
+): { readonly env: Record<string, string | undefined>; readonly defaulted: boolean } {
+  const current = env[providerName] ?? "";
+  if (current !== "") {
+    return { env: { ...env }, defaulted: false };
+  }
+  const assessmentKeyFile = env["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE"] ?? "";
+  if (assessmentKeyFile === "") {
+    return { env: { ...env }, defaulted: false };
+  }
+  const next: Record<string, string | undefined> = {
+    ...env,
+    [providerName]: "meta-model-api",
+  };
+  if ((next[keyFileName] ?? "") === "") {
+    next[keyFileName] = assessmentKeyFile;
+  }
+  const assessmentModelId = env["BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID"] ?? "";
+  if (assessmentModelId !== "" && (next[modelIdName] ?? "") === "") {
+    next[modelIdName] = assessmentModelId;
+  }
+  const assessmentBaseUrl = env["BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL"] ?? "";
+  if (assessmentBaseUrl !== "" && (next[baseUrlName] ?? "") === "") {
+    next[baseUrlName] = assessmentBaseUrl;
+  }
+  return { env: next, defaulted: true };
+}
+
+export function withDemoExplainDefault(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly env: Record<string, string | undefined>; readonly defaulted: boolean } {
+  return withDemoOverlayDefault(
+    env,
+    "BRANDKLIPPAREN_EXPLAIN_PROVIDER",
+    "BRANDKLIPPAREN_EXPLAIN_META_API_KEY_FILE",
+    "BRANDKLIPPAREN_EXPLAIN_META_MODEL_ID",
+    "BRANDKLIPPAREN_EXPLAIN_META_BASE_URL",
+  );
+}
+
+export function withDemoChatDefault(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly env: Record<string, string | undefined>; readonly defaulted: boolean } {
+  return withDemoOverlayDefault(
+    env,
+    "BRANDKLIPPAREN_CHAT_PROVIDER",
+    "BRANDKLIPPAREN_CHAT_META_API_KEY_FILE",
+    "BRANDKLIPPAREN_CHAT_META_MODEL_ID",
+    "BRANDKLIPPAREN_CHAT_META_BASE_URL",
+  );
+}
+
+export function withDemoRugDefault(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly env: Record<string, string | undefined>; readonly defaulted: boolean } {
+  return withDemoOverlayDefault(
+    env,
+    "BRANDKLIPPAREN_RUG_PROVIDER",
+    "BRANDKLIPPAREN_RUG_META_API_KEY_FILE",
+    "BRANDKLIPPAREN_RUG_META_MODEL_ID",
+    "BRANDKLIPPAREN_RUG_META_BASE_URL",
+  );
+}
+
+// Single overlay status lines for the demo log: exactly one line per
+// feature naming the selected provider, never a value or file contents.
+export const DEMO_EXPLAIN_OFF_LINE = "explain: off";
+export const DEMO_EXPLAIN_META_READY_LINE = "explain provider: meta-model-api (key loaded)";
+export const DEMO_CHAT_OFF_LINE = "chat: off";
+export const DEMO_CHAT_META_READY_LINE = "chat provider: meta-model-api (key loaded)";
+export const DEMO_RUG_OFF_LINE = "rug: off";
+export const DEMO_RUG_META_READY_LINE = "rug provider: meta-model-api (key loaded)";
+
+function demoOverlayStatus(
+  env: Readonly<Record<string, string | undefined>>,
+  providerName: string,
+  keyName: string,
+  readyLine: string,
+  offLine: string,
+): string {
+  const provider = env[providerName] ?? "";
+  if (provider === "meta-model-api" && (env[keyName] ?? "") !== "") {
+    return readyLine;
+  }
+  return offLine;
+}
+
+export function demoExplainStatus(
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  return demoOverlayStatus(
+    env,
+    "BRANDKLIPPAREN_EXPLAIN_PROVIDER",
+    "BRANDKLIPPAREN_EXPLAIN_META_API_KEY",
+    DEMO_EXPLAIN_META_READY_LINE,
+    DEMO_EXPLAIN_OFF_LINE,
+  );
+}
+
+export function demoChatStatus(
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  return demoOverlayStatus(
+    env,
+    "BRANDKLIPPAREN_CHAT_PROVIDER",
+    "BRANDKLIPPAREN_CHAT_META_API_KEY",
+    DEMO_CHAT_META_READY_LINE,
+    DEMO_CHAT_OFF_LINE,
+  );
+}
+
+export function demoRugStatus(
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  return demoOverlayStatus(
+    env,
+    "BRANDKLIPPAREN_RUG_PROVIDER",
+    "BRANDKLIPPAREN_RUG_META_API_KEY",
+    DEMO_RUG_META_READY_LINE,
+    DEMO_RUG_OFF_LINE,
+  );
+}
+
 // Experimental AI personalize default for the demo (brief 42): when the
 // personalize provider is unset and a Meta key is configured (directly
 // or via its pointer file), the demo defaults the mapping provider to
@@ -761,7 +900,21 @@ async function runDemo(): Promise<void> {
   if (investigated.defaulted) {
     process.stdout.write("investigate provider: defaulted to meta-model-api (key file set)\n");
   }
-  const resolved = resolveSecretFileVars(investigated.env, root, (path) => readFileSync(path, "utf8"));
+  // Opt-in overlays default to the same single Meta key file, per field;
+  // explicit overlay values always win.
+  const explained = withDemoExplainDefault(investigated.env);
+  if (explained.defaulted) {
+    process.stdout.write("explain provider: defaulted to meta-model-api (key file set)\n");
+  }
+  const chatted = withDemoChatDefault(explained.env);
+  if (chatted.defaulted) {
+    process.stdout.write("chat provider: defaulted to meta-model-api (key file set)\n");
+  }
+  const rugged = withDemoRugDefault(chatted.env);
+  if (rugged.defaulted) {
+    process.stdout.write("rug provider: defaulted to meta-model-api (key file set)\n");
+  }
+  const resolved = resolveSecretFileVars(rugged.env, root, (path) => readFileSync(path, "utf8"));
   for (const name of resolved.failed) {
     process.stdout.write(`warning: unreadable secret file for ${name}; leaving it unset.\n`);
   }
@@ -778,6 +931,9 @@ async function runDemo(): Promise<void> {
   }
   process.stdout.write(`${demoAssessmentStatus(demoEnv)}\n`);
   process.stdout.write(`${demoInvestigateStatus(demoEnv)}\n`);
+  process.stdout.write(`${demoExplainStatus(demoEnv)}\n`);
+  process.stdout.write(`${demoChatStatus(demoEnv)}\n`);
+  process.stdout.write(`${demoRugStatus(demoEnv)}\n`);
   process.stdout.write(`${demoLpFeedStatus(demoEnv)}\n`);
   const extdecomp = discoverextdecompBinary({
     extdecompBin: process.env["extdecomp_BIN"],

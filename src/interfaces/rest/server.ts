@@ -30,6 +30,7 @@ import { requiredFlooredSections, serializePersonalizeOutcome } from "../../appl
 import type { PersonalizeService } from "../../application/personalizeService.ts";
 import { EXPLAIN_PROMPT_VERSION, serializeExplainOutcome } from "../../application/explainService.ts";
 import type { ExplainService } from "../../application/explainService.ts";
+import { envelopeMeanings } from "../../application/modelMeanings.ts";
 import { ExplainInput } from "../../ports/explainModel.ts";
 import { snippetForSelector } from "../../application/snippetService.ts";
 import type { SnippetDecompile } from "../../application/snippetService.ts";
@@ -428,6 +429,8 @@ export function createRestServer(options: RestServerOptions): RestServer {
       assessmentService: options.assessmentService,
       investigationService: options.investigationService,
       explainService: options.explainService,
+      chatService: options.chatService,
+      rugService: options.rugService,
       personalizeService: options.personalizeService,
       onchain: options.onchain,
     });
@@ -1514,6 +1517,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
       codeHash: envelope.codeHash as string,
       evidenceIds: envelope.signals.map((signal) => `signal:${signal.id as string}`),
       promptVersion: EXPLAIN_PROMPT_VERSION,
+      meanings: envelopeMeanings(envelope),
     });
     if (input === null) {
       return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
@@ -1711,6 +1715,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
       evidenceIds: envelope.signals.map((signal) => `signal:${signal.id as string}`),
       question: rawQuestion,
       promptVersion: CHAT_PROMPT_VERSION,
+      meanings: envelopeMeanings(envelope),
     });
     if (input === null) {
       return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
@@ -1818,6 +1823,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
       evidenceIds: envelope.signals.map((signal) => `signal:${signal.id as string}`),
       topRisk,
       promptVersion: RUG_PROMPT_VERSION,
+      meanings: envelopeMeanings(envelope),
     });
     if (input === null) {
       return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(

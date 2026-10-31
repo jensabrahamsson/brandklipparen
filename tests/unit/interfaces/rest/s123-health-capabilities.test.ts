@@ -4,9 +4,11 @@
 import { describe, expect, test } from "vitest";
 import { healthCapabilities } from "../../../../src/interfaces/rest/healthCapabilities.ts";
 import type { AssessmentService } from "../../../../src/application/assessmentService.ts";
+import type { ChatService } from "../../../../src/application/chatService.ts";
 import type { ExplainService } from "../../../../src/application/explainService.ts";
 import type { InvestigationService } from "../../../../src/application/investigationService.ts";
 import type { PersonalizeService } from "../../../../src/application/personalizeService.ts";
+import type { RugService } from "../../../../src/application/rugService.ts";
 
 function assessment(provider: string | null, modelId: string | null): AssessmentService {
   return { provider, modelId } as unknown as AssessmentService;
@@ -32,6 +34,22 @@ function explain(enabled: boolean): ExplainService {
   } as unknown as ExplainService;
 }
 
+function chat(enabled: boolean): ChatService {
+  return {
+    enabled,
+    provider: "meta-model-api",
+    modelId: "muse-spark-1.3",
+  } as unknown as ChatService;
+}
+
+function rug(enabled: boolean): RugService {
+  return {
+    enabled,
+    provider: "meta-model-api",
+    modelId: "muse-spark-1.3",
+  } as unknown as RugService;
+}
+
 function personalize(): PersonalizeService {
   return {
     provider: "hosted-open-weights",
@@ -45,6 +63,8 @@ describe("health capabilities", () => {
       assessment: { disabled: true },
       investigation: { disabled: true },
       explain: { disabled: true },
+      chat: { disabled: true },
+      rug: { disabled: true },
       personalize: { disabled: true },
       onchain: { disabled: true },
     });
@@ -56,6 +76,8 @@ describe("health capabilities", () => {
         assessmentService: assessment("hosted-open-weights", "assessment-model-1"),
         investigationService: investigation(),
         explainService: explain(true),
+        chatService: chat(true),
+        rugService: rug(true),
         personalizeService: personalize(),
         onchain: { rpc: {}, weth: null },
       }),
@@ -63,6 +85,8 @@ describe("health capabilities", () => {
       assessment: { provider: "hosted-open-weights", modelId: "assessment-model-1" },
       investigation: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
       explain: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
+      rug: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
       personalize: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
       onchain: { available: true },
     });
@@ -79,6 +103,8 @@ describe("health capabilities", () => {
       assessment: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
       investigation: { disabled: true },
       explain: { disabled: true },
+      chat: { disabled: true },
+      rug: { disabled: true },
       personalize: { disabled: true },
       onchain: { available: true },
     });
@@ -90,11 +116,14 @@ describe("health capabilities", () => {
         assessmentService: assessment(null, null),
         investigationService: investigation(),
         explainService: explain(false),
+        chatService: chat(false),
       }),
     ).toEqual({
       assessment: { disabled: true },
       investigation: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
       explain: { disabled: true },
+      chat: { disabled: true },
+      rug: { disabled: true },
       personalize: { disabled: true },
       onchain: { disabled: true },
     });
