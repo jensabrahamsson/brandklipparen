@@ -25,10 +25,15 @@ export function Pictogram({
       strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
+      vectorEffect={size >= 32 ? "non-scaling-stroke" : undefined}
     >
       {glyph.nodes.map((node, index) => {
         if (node[0] === "path") {
-          return <path key={index} d={node[1].d} />;
+          return node[1].fill === true ? (
+            <path key={index} d={node[1].d} fill="currentColor" stroke="none" />
+          ) : (
+            <path key={index} d={node[1].d} />
+          );
         }
         if (node[0] === "circle") {
           const attrs = node[1];
