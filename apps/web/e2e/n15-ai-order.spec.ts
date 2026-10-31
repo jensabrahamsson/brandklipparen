@@ -64,7 +64,7 @@ const PERSONALIZE_STATUS = {
   personalize: { provider: "Meta", modelId: "meta-models/muse-spark-open-1026" },
 };
 
-function validSpecBody(): Record<string, unknown> {
+function validSpecBody(collapsedId: string | null = null): Record<string, unknown> {
   return {
     specVersion: 1,
     pluginRanking: [],
@@ -72,11 +72,12 @@ function validSpecBody(): Record<string, unknown> {
       { sectionId: "signals", emphasis: "high" },
       { sectionId: "score", emphasis: "normal" },
       { sectionId: "explanation", emphasis: "normal" },
+      ...(collapsedId === null ? [] : [{ sectionId: collapsedId, emphasis: "normal", collapsed: true }]),
     ],
   };
 }
 
-function personalizeOk(): Record<string, unknown> {
+function personalizeOk(collapsedId: string | null = null): Record<string, unknown> {
   return {
     status: "ok",
     apiVersion: "v1",
@@ -86,12 +87,12 @@ function personalizeOk(): Record<string, unknown> {
       modelId: "meta-models/muse-spark-open-1026",
       promptVersion: "1.0.0",
       cache: "miss",
-      spec: validSpecBody(),
+      spec: validSpecBody(collapsedId),
     },
   };
 }
 
-async function mockRest(page: Page): Promise<void> {
+async function mockRest(page: Page, personalizeBody: Record<string, unknown> = personalizeOk()): Promise<void> {
   await page.route("**/health", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
   });
@@ -110,7 +111,7 @@ async function mockRest(page: Page): Promise<void> {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PERSONALIZE_STATUS) });
   });
   await page.route("**/v1/personalize", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(personalizeOk()) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(personalizeBody) });
   });
 }
 
@@ -162,4 +163,37 @@ test("n15_ai_order_keeps_explanation_under_score_announces_and_resets", async ({
 
   const restored = await sectionOrder(page);
   expect(restored).toEqual(standard);
+});
+
+test("n15_ai_expand_scrolls_revealed_section_into_view_before_focus", async ({ page }) => {
+  // R-2: expanding a collapsed AI section scrolls the revealed card into
+  // view first (mirroring Jump to results), then focuses it without
+  // scrolling, so on small screens the card never stays off-screen. The
+  // scroll is the default instant jump: static under reduced motion.
+  // The spec collapses Can't-tell: score, explanation and signals are
+  // floored here (the fixture raises risk), so the validator rejects a
+  // spec collapsing them and the apply would fall back to unavailable.
+  await mockRest(page, personalizeOk("cant-tell"));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/#/token/${ADDRESS}`);
+  await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
+
+  await openCustomize(page);
+  await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
+  await page.getByTestId("ai-personalize-toggle").check();
+  await page.getByTestId("ai-personalize-apply").click();
+
+  const show = page.getByTestId("ai-expand-cant-tell");
+  await expect(show).toContainText("Show Can't-tell");
+  // Park the trigger at the viewport bottom edge: without the scroll-first
+  // fix the revealed card would stay down there, off-screen.
+  await show.evaluate((element) => element.scrollIntoView({ block: "end" }));
+  await show.click();
+
+  const section = page.locator('div[data-section="cant-tell"]');
+  await expect
+    .poll(async () => (await section.boundingBox())?.y ?? 9999)
+    .toBeLessThan(200);
+  await expect(section).toBeInViewport();
+  await expect(section).toBeFocused();
 });

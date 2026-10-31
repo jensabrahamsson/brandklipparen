@@ -202,11 +202,16 @@ a {
   z-index: 1;
   font-size: 12px;
   padding: 6px 10px;
-  /* Reserve the longest confirmation label ("Copy failed", 11 chars)
-     inside the button so Copy -> Copied never shifts layout. The
-     padding and border ride inside this width (border-box), so the
-     idle button takes no visible space beyond itself. */
-  min-width: calc(11ch + 22px);
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Fixed width reserving the longest confirmation label ("Copy failed",
+     11 chars) so Copy -> Copied never shifts layout or the gap after the
+     button. A min-width floor would still resize between labels; the
+     fixed width keeps the confirmation to colour only (no movement).
+     Padding and border ride inside this width (border-box). */
+  width: calc(11ch + 22px);
 }
 
 .copy-btn.is-copied {
@@ -945,12 +950,53 @@ a {
   font-size: 14px;
   cursor: pointer;
   font-family: var(--font-mono);
+  min-height: 44px;
+  min-width: 44px;
 }
 
 .button-ghost:disabled {
   opacity: 0.5;
   border-style: dashed;
   cursor: not-allowed;
+}
+
+/* S-120: ghost buttons that read as inline text (signal title toggles,
+   mid-sentence signal links) keep the compact look on wider screens and
+   gain the 44 px touch target through an invisible hit area (absolute,
+   so layout and line rhythm never move) instead of a real min-height:
+   three claims no longer each add a 44 px row to the page. On narrow
+   screens (<= 640 px) they keep the real 44 px box from the touch-target
+   rule, which s119 measures. Standalone action buttons (Back, Copy
+   evidence, Apply, expand) keep the real 44 px box. No transform, static
+   under prefers-reduced-motion. */
+@media (min-width: 641px) {
+  .signal-toggle,
+  .signal-link {
+    min-height: 0;
+    min-width: 0;
+    position: relative;
+  }
+
+  .signal-toggle::after,
+  .signal-link::after {
+    content: "";
+    position: absolute;
+  }
+
+  .signal-toggle::after {
+    inset: -12px -12px;
+  }
+
+  .signal-link::after {
+    inset: -13px -12px;
+  }
+}
+
+@media (max-width: 640px) {
+  .signal-toggle,
+  .signal-link {
+    min-height: 44px;
+  }
 }
 
 .btn {
@@ -1120,14 +1166,26 @@ a {
   display: block;
   position: absolute;
   inset-inline-start: -1.2em;
-  top: 0;
-  margin: 0;
+  /* Centered on the item's vertical middle (not top: 0): tall items
+     such as the 44 px copy-button row are probed at mid-height, so the
+     dot box must cover the middle. Still absolute, still no transform. */
+  top: 50%;
+  margin: -0.5em 0 0;
 }
 
 .token-meta > .meta-item + .meta-item::before,
 .live-pair > .meta-item + .meta-item::before,
 .live-pair-full > .meta-item + .meta-item::before {
   inset-inline-start: -1.15em;
+}
+
+/* R-4: the token-meta dot renders larger than body text so it never
+   reads as a near-invisible speck next to 14 px dim text. Font size
+   (and its matching line box) only: the HEAD absolute display and
+   position model above is unchanged. */
+.token-meta > .meta-item + .meta-item::before {
+  font-size: 1.2em;
+  line-height: 1;
 }
 
 .meta-addr {
@@ -1763,6 +1821,7 @@ a:focus-visible {
   border-bottom: 2px solid transparent;
   white-space: nowrap;
   flex-shrink: 0;
+  min-height: 44px;
 }
 
 .tab[aria-selected="true"] {
@@ -2124,8 +2183,19 @@ button[data-testid^="ai-expand-"] {
    the global touch-target rule keeps 44 px on phones. */
 .ai-bar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
   margin: 0 0 12px;
+}
+
+/* R-1: the applied notice wraps inside the bar instead of sitting
+   outside the pill and clipping at the card edge. */
+.ai-bar .ai-compact {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 /* P0-5: moved sections glow once in place (background and glow only).
@@ -2266,6 +2336,25 @@ div[data-section]:focus-visible {
 .explain-trigger:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
+}
+
+/* R-3: 44x44 targets on all widths. The 18 px "?" keeps its compact
+   look and gains an invisible 44 px hit area (absolute, so layout and
+   the tooltip anchor never move). The verdict-headline trigger already
+   carries a real 44 px box, so it opts out here. No transform, static
+   under prefers-reduced-motion. */
+.explain-trigger {
+  position: relative;
+}
+
+.explain-trigger::after {
+  content: "";
+  position: absolute;
+  inset: -13px;
+}
+
+.risk-meaning .explain-trigger::after {
+  content: none;
 }
 
 .explain-tooltip {

@@ -96,7 +96,7 @@ export function SignalList({
             </span>
             <button
               type="button"
-              className="button-ghost"
+              className="button-ghost signal-toggle"
               aria-expanded={expanded}
               onClick={() => onToggle(key)}
               style={{ border: "none", padding: 0, color: "var(--text)", fontSize: 16, fontWeight: 600 }}

@@ -124,7 +124,7 @@ export function ExplanationList({
                             {linkIndex > 0 ? ", " : null}
                             <button
                               type="button"
-                              className="button-ghost"
+                              className="button-ghost signal-link"
                               style={{ border: "none", padding: 0, fontSize: 12 }}
                               onClick={() => onSignalLink(key)}
                             >

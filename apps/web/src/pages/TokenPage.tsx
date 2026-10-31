@@ -714,6 +714,12 @@ function AssessedView({
   const ringRef = useRef<HTMLElement | null>(null);
   const ringGone = useRingOutOfView(ringRef, tab);
   const stripVisible = tab === "assessment" || tab === "investigate" || ringGone;
+  // R-5: the full string rides along as the accessible title, so sighted
+  // readers on <= 480 px (where the row truncates with ellipsis) still get
+  // every value on hover or long-press, matching the code-hash span below.
+  const stripProbs = RISKS.map(
+    (risk) => `${RISK_SHORT[risk]} ${Math.round(result.probabilities[risk] * 100)}%`,
+  ).join(" · ");
   // S-133: the verdict hero owns the risk breakdown only on wide screens,
   // where the gauges sit beside the dial and fill the column. Narrow
   // screens keep the previous stacked layout untouched, so the dial stays
@@ -811,8 +817,8 @@ function AssessedView({
             <strong>{result.score}</strong> {riskWord(result.score)}
           </span>
           <Explain explainKey="score:strip" label="Result summary" />
-          <span className="numeric compact-strip-probs">
-            {RISKS.map((risk) => `${RISK_SHORT[risk]} ${Math.round(result.probabilities[risk] * 100)}%`).join(" · ")}
+          <span className="numeric compact-strip-probs" title={stripProbs}>
+            {stripProbs}
           </span>
           <span className="mono numeric compact-strip-hash" title={result.codeHash}>
             {truncateHash(result.codeHash)}
@@ -1420,7 +1426,16 @@ export function OverviewSections({
                         const target = document.querySelector(
                           `div[data-section="${sectionId}"]`,
                         ) as HTMLElement | null;
-                        target?.focus({ preventScroll: true });
+                        if (target === null) {
+                          return;
+                        }
+                        // Mirror jumpToResults: scroll first so the revealed
+                        // card lands in view on small screens, then focus
+                        // without scrolling. The default instant ("auto")
+                        // jump stays static under prefers-reduced-motion:
+                        // never smooth here.
+                        target.scrollIntoView({ block: "start" });
+                        target.focus({ preventScroll: true });
                       }, 0);
                     }}
                   >

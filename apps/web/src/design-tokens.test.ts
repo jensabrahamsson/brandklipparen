@@ -308,3 +308,26 @@ test("s126_disabled_and_invalid_control_styles", () => {
   expect(code).toMatch(/\.button-ghost:disabled\s*\{[^}]*opacity:\s*0\.5[^}]*dashed/);
   expect(code).toMatch(/\.input\[aria-invalid="true"\]\s*\{[^}]*border-color:\s*var\(--high\)/);
 });
+
+test("r1_r3_r4_touch_targets_wrap_and_separator", () => {
+  // R-1: the AI bar wraps so the applied notice stays inside the bar.
+  const aiBar = code.match(/\.ai-bar\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(aiBar).toContain("flex-wrap: wrap");
+  expect(code).toMatch(/\.ai-bar\s+\.ai-compact\s*\{[^}]*min-width:\s*0/);
+  // R-3: tabs, copy buttons and ghost buttons carry a real 44 px desktop
+  // floor; the "?" trigger keeps its compact look with an invisible hit
+  // area that never moves layout.
+  for (const selector of ["\\.tab", "\\.copy-btn", "\\.button-ghost"]) {
+    const rule = code.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`))?.[0] ?? "";
+    expect(rule, `${selector} keeps the 44 px floor`).toMatch(/min-height:\s*44px/);
+  }
+  expect(code).toMatch(/\.explain-trigger::after\s*\{[^}]*inset:\s*-13px/);
+  // R-4: the "·" separator renders at ~1.2 em, never a 14 px speck.
+  const separator = code.match(/\.meta-item\s*\+\s*\.meta-item::before\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(separator).toContain('content: "·"');
+  expect(separator).toMatch(/position:\s*absolute/);
+  expect(separator).toMatch(/top:\s*50%/);
+  expect(separator).not.toMatch(/transform/);
+  const tokenSeparator = code.match(/\.token-meta\s*>\s*\.meta-item\s*\+\s*\.meta-item::before\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(tokenSeparator).toMatch(/font-size:\s*1\.2em/);
+});

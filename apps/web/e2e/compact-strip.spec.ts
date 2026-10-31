@@ -132,3 +132,25 @@ test("result_summary_strip_follows_ring_visibility", async ({ page }) => {
   await expect(ring).toBeInViewport();
   await expect(strip).toHaveCount(0);
 });
+
+test("result_summary_probs_carry_full_text_as_title_on_narrow_phones", async ({ page }) => {
+  // R-5: on <= 480 px the row truncates with ellipsis while the hero meta
+  // is scrolled away, so the full string rides as the title (as the hash
+  // span already does) for hover and long-press readers.
+  await mockRest(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/#/token/${ADDRESS}`);
+  // Mirror the sibling: wait for the assessed view before the one-shot
+  // scroll, or it can run before Signals mounts and the strip never
+  // appears on narrow phones.
+  await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
+  await page.evaluate(() => {
+    document.querySelector('section[aria-label="Signals"]')?.scrollIntoView(true);
+  });
+  await expect(page.getByTestId("result-summary")).toBeVisible();
+  const probs = page.locator(".compact-strip-probs");
+  await expect(probs).toBeVisible();
+  const full = "Rug 62% · Honey 91% · Bot 34%";
+  await expect(probs).toHaveText(full);
+  await expect(probs).toHaveAttribute("title", full);
+});
