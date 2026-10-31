@@ -369,6 +369,12 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
     // Candidates: PUSH2/PUSH3 constants in reached blocks that name a
     // JUMPDEST block start.
     const candidates = new Set<number>();
+    const callPushValue = (opcode: number, immediate: readonly number[]): number | null => {
+      if (opcode < 0x60 || opcode > 0x63) {
+        return null;
+      }
+      return pushConstantValue(immediate);
+    };
     for (const index of [...reached]) {
       const block = cfg.blocks[index];
       if (block === undefined) {
@@ -380,6 +386,36 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
           if (target !== undefined) {
             candidates.add(target);
           }
+        }
+      }
+      // Call-position returns (P-10e): a `PUSH ret, PUSH func, JUMP`
+      // internal call provably continues at `ret`, even when `ret` is a
+      // PUSH1 the width scan above never seeds (small continuations in
+      // real compiler output). Only a proven callee (a JUMPDEST target)
+      // seeds its return, so stray constants never pollute the set; the
+      // per-jump cap below still bounds hostile shapes.
+      const instructions = block.instructions;
+      for (let at = 0; at + 2 < instructions.length; at += 1) {
+        const first = instructions[at];
+        const second = instructions[at + 1];
+        const third = instructions[at + 2];
+        if (third === undefined || third.opcode !== 0x56) {
+          continue;
+        }
+        if (first === undefined || second === undefined) {
+          continue;
+        }
+        const retValue = callPushValue(first.opcode, first.immediate);
+        const funcValue = callPushValue(second.opcode, second.immediate);
+        if (retValue === null || funcValue === null) {
+          continue;
+        }
+        if (!jumpTargets.has(funcValue)) {
+          continue;
+        }
+        const continuation = jumpTargets.get(retValue);
+        if (continuation !== undefined) {
+          candidates.add(continuation);
         }
       }
     }

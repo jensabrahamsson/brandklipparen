@@ -16,7 +16,8 @@ import {
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
   exprMappingBase,
-  hasRevertingJumpiAfter,
+  hasRevertingGateAfter,
+  hasRevertingSide,
   interpretRegionExprs,
   interpretRegionSlots,
   isStandardTokenWriter,
@@ -150,7 +151,7 @@ function openExtended(bytecode: BytecodeType): ExtendedOpening {
     const slotOf: SlotLookup = (pc) => slots.get(pc);
     const exprs = interpretRegionExprs(bytecode, region.selector);
     const member = (pc: number): boolean => attribution.holdersOf(pc).includes(region.selector);
-    const via = ownerCheckVia(code, member, ownerSlot, slotOf, exprs.jumpis);
+    const via = ownerCheckVia(code, member, ownerSlot, slotOf, exprs.jumpis, bytecode);
     if (via === null) {
       continue;
     }
@@ -380,7 +381,13 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
               ? `gate bit ${gate.shift} matches writer bit ${packedWrite.shift} via ${gate.via}`
               : `gate bit ${gate.shift} differs from writer bit ${packedWrite.shift}`,
           );
-          const revertOk = pairOk && hasRevertingJumpiAfter(code, gateMember, gate.cmpPc);
+          // The expr gate names its JUMPI directly; the window gate
+          // names its compare, so the legacy search finds the JUMPI.
+          const revertOk =
+            pairOk &&
+            (gate.via === "expr"
+              ? hasRevertingSide(bytecode, code, gateMember, gate.loadPc, "fall")
+              : hasRevertingGateAfter(bytecode, code, gateMember, gate.cmpPc));
           consider([
             writeStep,
             gateStep,
@@ -389,7 +396,7 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
               REVERTING_JUMPI,
               revertOk,
               revertOk
-                ? "blocked side reverts after the compare"
+                ? `blocked side reverts after the compare via ${gate.via}`
                 : pairOk
                   ? "no reverting jump after the compare"
                   : "not evaluated: slot and bit differ",
@@ -406,7 +413,7 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
             ]);
             continue;
           }
-          const revertOk = hasRevertingJumpiAfter(code, gateMember, gate.cmpPc);
+          const revertOk = hasRevertingGateAfter(bytecode, code, gateMember, gate.cmpPc);
           consider([
             writeStep,
             step(TRANSFER_GATE, true, `beside-window gate on transfer ${transferName} reads slot ${slot}`),
@@ -414,7 +421,9 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
             step(
               REVERTING_JUMPI,
               revertOk,
-              revertOk ? "blocked side reverts after the compare" : "no reverting jump after the compare",
+              revertOk
+                ? "blocked side reverts after the compare via window"
+                : "no reverting jump after the compare",
             ),
           ]);
         }
@@ -540,23 +549,23 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
       const preciseBase =
         precise === null ? null : mappingBaseNearAccess(code, gateMember, precise.loadPc, gateSlotOf);
       const preciseRevert =
-        precise !== null && hasRevertingJumpiAfter(code, gateMember, precise.cmpPc);
+        precise !== null && hasRevertingGateAfter(bytecode, code, gateMember, precise.cmpPc);
       const preciseProves =
         precise !== null && preciseBase !== null && preciseBase === write.base && preciseRevert;
       const exprGate = preciseProves ? null : packedMappingGateExpr(gateExprs.jumpis, gateMember);
       const exprRevert =
-        exprGate !== null && hasRevertingJumpiAfter(code, gateMember, exprGate.jumpiPc - 1);
+        exprGate !== null && hasRevertingSide(bytecode, code, gateMember, exprGate.jumpiPc, "fall");
       const exprProves = exprGate !== null && exprGate.base === write.base && exprRevert;
       const packed = preciseProves || exprProves ? null : packedMappingGateShift(code, gateMember, gateSlotOf);
       const packedRevert =
-        packed !== null && hasRevertingJumpiAfter(code, gateMember, packed.cmpPc);
+        packed !== null && hasRevertingGateAfter(bytecode, code, gateMember, packed.cmpPc);
       const packedProves = packed !== null && packed.base === write.base && packedRevert;
       if (preciseProves && precise !== null && preciseBase !== null) {
         consider([
           writeStep,
           step(TRANSFER_GATE, true, `beside-window mapping gate on transfer ${transferName} reads base ${preciseBase} via window`),
           step(SAME_BASE, true, `gate base ${preciseBase} matches writer base ${write.base} via window`),
-          step(REVERTING_JUMPI, true, "blocked side reverts after the compare"),
+          step(REVERTING_JUMPI, true, "blocked side reverts after the compare via window"),
         ]);
       } else if (exprProves && exprGate !== null) {
         consider([
@@ -567,7 +576,7 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
             `packed shift-and-mask gate on transfer ${transferName} reads base ${exprGate.base} (shift ${exprGate.shift} via expr)`,
           ),
           step(SAME_BASE, true, `gate base ${exprGate.base} matches writer base ${write.base} via expr`),
-          step(REVERTING_JUMPI, true, "blocked side reverts after the compare"),
+          step(REVERTING_JUMPI, true, "blocked side reverts after the compare via expr"),
         ]);
       } else if (packedProves && packed !== null) {
         consider([
@@ -578,7 +587,7 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
             `packed shift-and-mask gate on transfer ${transferName} reads base ${packed.base} (shift ${packed.shift} via window)`,
           ),
           step(SAME_BASE, true, `gate base ${packed.base} matches writer base ${write.base} via window`),
-          step(REVERTING_JUMPI, true, "blocked side reverts after the compare"),
+          step(REVERTING_JUMPI, true, "blocked side reverts after the compare via window"),
         ]);
       } else if (precise !== null) {
         const pairOk = preciseBase !== null && preciseBase === write.base;

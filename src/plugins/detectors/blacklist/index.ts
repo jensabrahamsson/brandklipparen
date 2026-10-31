@@ -23,7 +23,8 @@ import {
   analyzeOwnerControl,
   exprMappingBase,
   flavorBetween,
-  hasRevertingJumpiAfter,
+  hasRevertingGateAfter,
+  hasRevertingSide,
   interpretRegionExprs,
   interpretRegionSlots,
   isStandardTokenWriter,
@@ -296,7 +297,10 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
     const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
     const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
-    if (ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis) === null) {
+    if (
+      ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode) ===
+      null
+    ) {
       continue;
     }
     for (const write of region.stores) {
@@ -329,7 +333,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           if (
             gateBase !== null &&
             gateBase === writeBase &&
-            hasRevertingJumpiAfter(code, gateMember, gate.cmpPc)
+            hasRevertingGateAfter(input.bytecode, code, gateMember, gate.cmpPc)
           ) {
             gateEvidencePc = gate.loadPc;
           }
@@ -346,7 +350,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           if (
             exprGate !== null &&
             exprGate.base === writeBase &&
-            hasRevertingJumpiAfter(code, gateMember, exprGate.jumpiPc - 1)
+            hasRevertingSide(input.bytecode, code, gateMember, exprGate.jumpiPc, "fall")
           ) {
             gateEvidencePc = exprGate.jumpiPc;
           }
@@ -357,7 +361,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           if (
             packedGate !== null &&
             packedGate.base === writeBase &&
-            hasRevertingJumpiAfter(code, gateMember, packedGate.cmpPc)
+            hasRevertingGateAfter(input.bytecode, code, gateMember, packedGate.cmpPc)
           ) {
             gateEvidencePc = packedGate.loadPc;
           }

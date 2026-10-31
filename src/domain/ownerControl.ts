@@ -14,7 +14,7 @@
 // unknown. Where the proof is incomplete the detectors emit no positive
 // finding rather than a guessed one.
 import { attributeFunctions, findFunctionEntries } from "./evmFlow.ts";
-import { buildCfg, lift, resolveEntryReachV2 } from "./evmLift.ts";
+import { V2_MAX_RETURN_TARGETS, buildCfg, lift, resolveEntryReachV2 } from "./evmLift.ts";
 import type { CfgBlock } from "./evmLift.ts";
 import { nameForSelector } from "./evmNames.ts";
 import { disassemble, extractSelectors } from "./selectors.ts";
@@ -435,7 +435,81 @@ const FOLDABLE_OPS: ReadonlySet<string> = new Set([
   "SHR",
 ]);
 
+// Normalisation for real-compiler shapes (P-10e), applied before
+// constant folding. Old solc 0.4.x leaves the dividend on top through a
+// SWAP1, so DIV appears with the folded EXP result (1) in either seat:
+// DIV(x, 1) folds to x in both orders. The OZ-4 address mask built as
+// PUSH1 1, PUSH1 1, PUSH1 0xa0, SHL, SUB folds to 2^160 - 1 in either SUB
+// order, so the mask compares equal to a pushed PUSH20 mask no matter
+// how it was built. Nested ANDs with the same mask flatten
+// (AND(AND(x, M), M) is AND(x, M)) so a twice-masked caller or slot load
+// still matches. The DIV-by-1 leniency is v2/extended-only and never
+// scores, so the 1/x corner stays out of every scored proof.
+function exprNormalizeOp(name: string, args: readonly Expr[]): Expr | null {
+  if (name === "AND" && args.length === 2) {
+    const left = args[0] ?? EXPR_UNKNOWN;
+    const right = args[1] ?? EXPR_UNKNOWN;
+    if (exprEqual(left, right)) {
+      return left;
+    }
+    const leaves: Expr[] = [];
+    const collect = (expr: Expr): void => {
+      if (expr.kind === "op" && expr.name === "AND" && expr.args.length === 2) {
+        collect(expr.args[0] ?? EXPR_UNKNOWN);
+        collect(expr.args[1] ?? EXPR_UNKNOWN);
+        return;
+      }
+      leaves.push(expr);
+    };
+    collect(left);
+    collect(right);
+    const unique: Expr[] = [];
+    for (const leaf of leaves) {
+      if (!unique.some((known) => exprEqual(known, leaf))) {
+        unique.push(leaf);
+      }
+    }
+    if (unique.length === leaves.length) {
+      return null;
+    }
+    const first = unique[0];
+    if (first === undefined || unique.length === 1) {
+      return first ?? EXPR_UNKNOWN;
+    }
+    let rebuilt: Expr = first;
+    for (const leaf of unique.slice(1)) {
+      rebuilt = Object.freeze({ kind: "op", name: "AND", args: Object.freeze([rebuilt, leaf]) }) as Expr;
+    }
+    return rebuilt;
+  }
+  if (name === "DIV" && args.length === 2) {
+    const dividend = args[0] ?? EXPR_UNKNOWN;
+    const divisor = args[1] ?? EXPR_UNKNOWN;
+    if (exprConstValue(divisor) === 1n) {
+      return dividend;
+    }
+    if (exprConstValue(dividend) === 1n) {
+      return divisor;
+    }
+    return null;
+  }
+  if (name === "SUB" && args.length === 2) {
+    const left = exprConstValue(args[0] ?? EXPR_UNKNOWN);
+    const right = exprConstValue(args[1] ?? EXPR_UNKNOWN);
+    const two160 = 1n << 160n;
+    if ((left === 1n && right === two160) || (left === two160 && right === 1n)) {
+      return exprConstOf(MASK160);
+    }
+    return null;
+  }
+  return null;
+}
+
 function exprMakeOp(name: string, args: readonly Expr[]): Expr {
+  const normalized = exprNormalizeOp(name, args);
+  if (normalized !== null) {
+    return normalized;
+  }
   const frozenArgs = Object.freeze(args.slice());
   let depth = 1;
   let nodes = 1;
@@ -1097,27 +1171,52 @@ export function interpretRegionExprs(bytecode: BytecodeType, selector: SelectorT
       }
       // A resolved dynamic return continues at its pushed return
       // address when the stack proves it (internal call/return through
-      // the v2 blocks); an unknown destination falls back to every
-      // reached member JUMPDEST, mirroring the v2 return-jump resolver.
+      // the v2 blocks): the caller's continuation receives the callee's
+      // returned stack values, so CALLER from a `_msgSender` helper and
+      // SLOAD(0) from an `owner()` helper both reach the guard compare.
+      // An unknown destination falls back to every reached member
+      // JUMPDEST only while the set stays small; past the cap the walk
+      // propagates nothing instead of merging every continuation into
+      // unknown (and burning the visit budget), mirroring the v2
+      // return-jump resolver bound.
+      let preciseReturn = -1;
       if (v2IsDynamicJump(block)) {
         const destValue = exprConstValue(simulated.dest ?? EXPR_UNKNOWN);
-        let precise = -1;
         if (destValue !== null) {
-          for (const candidate of returnBlocks) {
-            if (cfg.blocks[candidate]?.range.startPc === Number(destValue)) {
-              precise = candidate;
+          for (const candidate of cfg.blocks) {
+            if (
+              candidate.range.startPc === Number(destValue) &&
+              candidate.instructions[0]?.opcode === 0x5b
+            ) {
+              preciseReturn = candidate.index;
               break;
             }
           }
+          if (preciseReturn >= 0) {
+            const continuation = cfg.blocks[preciseReturn];
+            const member =
+              continuation !== undefined &&
+              continuation.instructions.some((instruction) => isMember(instruction.pc));
+            if (!member) {
+              preciseReturn = -1;
+            }
+          }
         }
-        if (precise >= 0) {
-          targets.push(precise);
-        } else {
+        if (preciseReturn >= 0) {
+          targets.push(preciseReturn);
+        } else if (returnBlocks.length <= V2_MAX_RETURN_TARGETS) {
           targets.push(...returnBlocks);
         }
       }
       for (const target of targets) {
-        if (target < 0 || target >= cfg.blocks.length || !isWalkable(target)) {
+        // A precise internal return joins its continuation even when the
+        // CFG-level resolver never reached it yet (PUSH1 return addresses
+        // never seed the resolver): the pushed address names the block.
+        const admitted =
+          target === preciseReturn
+            ? target >= 0 && target < cfg.blocks.length
+            : target >= 0 && target < cfg.blocks.length && isWalkable(target);
+        if (!admitted) {
           continue;
         }
         const merged = v2MergeState(entries.get(target), exit);
@@ -1975,6 +2074,176 @@ export function hasRevertingJumpiAfter(
   return false;
 }
 
+// Reverting-side proof (P-10e): the bounded path check behind the
+// owner check and the transfer gates. The legacy fast path above proves
+// a REVERT right after the JUMPI with no JUMPDEST between; real compiler
+// output instead builds revert data and jumps through a shared encoding
+// helper several JUMPDESTs later, which the fast path never sees. From
+// the failing successor of one JUMPI (the fall-through for an even
+// ISZERO parity, the jump target for an odd one), every path within
+// REVERTING_SIDE_MAX_BLOCKS blocks must reach REVERT or INVALID without
+// crossing SSTORE or a CALL-family opcode, following proven CFG jumps.
+// A path that halts otherwise, leaves through a dynamic jump, loops, or
+// runs past the block cap never proves the side. Total and bounded: the
+// block cap and the visited set hold on hostile input, and the walk
+// never throws. The fast path stays first, so every shape it already
+// proved keeps its proof bit for bit.
+export const REVERTING_SIDE_MAX_BLOCKS = 24;
+
+const REVERTING_HALT_OPS: ReadonlySet<number> = new Set([0xfd, 0xfe]);
+const REVERTING_STATE_OPS: ReadonlySet<number> = new Set([0x55, 0xf1, 0xf2, 0xf4, 0xfa]);
+
+function revertingSideFastPath(
+  insns: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  jumpiPc: number,
+): boolean {
+  // Mirrors the legacy window exactly: a member REVERT within 32 PCs
+  // past the JUMPI with no member JUMPDEST between them.
+  let started = false;
+  for (const candidate of insns) {
+    if (!started) {
+      if (candidate.pc === jumpiPc) {
+        started = true;
+      }
+      continue;
+    }
+    if (!isMember(candidate.pc)) {
+      continue;
+    }
+    if (candidate.pc > jumpiPc + 32) {
+      return false;
+    }
+    if (candidate.opcode === 0x5b) {
+      return false;
+    }
+    if (candidate.opcode === 0xfd) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function revertingSideBounded(
+  bytecode: BytecodeType,
+  isMember: (pc: number) => boolean,
+  jumpiPc: number,
+  side: "jump" | "fall",
+): boolean {
+  const cfg = buildCfg(lift(bytecode));
+  let jumpBlock = -1;
+  for (const block of cfg.blocks) {
+    if (block.instructions.some((instruction) => instruction.pc === jumpiPc && instruction.opcode === 0x57)) {
+      jumpBlock = block.index;
+      break;
+    }
+  }
+  if (jumpBlock < 0 || jumpBlock >= cfg.blocks.length) {
+    return false;
+  }
+  const jump = cfg.blocks[jumpBlock];
+  const edge = jump?.successors.find((candidate) => candidate.kind === "conditional");
+  if (edge === undefined || edge.kind !== "conditional") {
+    return false;
+  }
+  const start = side === "jump" ? edge.to : edge.fallThrough;
+  const visit = (index: number, depth: number, path: ReadonlySet<number>): boolean => {
+    if (depth > REVERTING_SIDE_MAX_BLOCKS || path.has(index)) {
+      return false;
+    }
+    const current = cfg.blocks[index];
+    if (current === undefined) {
+      return false;
+    }
+    for (const instruction of current.instructions) {
+      if (REVERTING_STATE_OPS.has(instruction.opcode)) {
+        return false;
+      }
+      if (REVERTING_HALT_OPS.has(instruction.opcode)) {
+        return true;
+      }
+    }
+    const next = new Set(path);
+    next.add(index);
+    if (current.terminal === "jump") {
+      const target = current.successors.find((candidate) => candidate.kind === "jump");
+      if (target === undefined) {
+        return false;
+      }
+      return visit(target.to, depth + 1, next);
+    }
+    if (current.terminal === "jumpi") {
+      const conditional = current.successors.find((candidate) => candidate.kind === "conditional");
+      if (conditional === undefined || conditional.kind !== "conditional") {
+        return false;
+      }
+      return visit(conditional.to, depth + 1, next) && visit(conditional.fallThrough, depth + 1, next);
+    }
+    if (current.terminal === "fall") {
+      const through = current.successors.find((candidate) => candidate.kind === "fall-through");
+      if (through === undefined) {
+        return false;
+      }
+      return visit(through.to, depth + 1, next);
+    }
+    return false;
+  };
+  try {
+    return visit(start, 1, new Set<number>());
+  } catch {
+    return false;
+  }
+}
+
+// Reverting side of one JUMPI: REVERT on the failing successor, either
+// right after it (the legacy fast path, kept first for the `fall` side)
+// or down every bounded path through shared helpers (both sides). The
+// `fall` side is the legacy behavior (a compare that jumps away while
+// the fall-through reverts); the `jump` side covers an odd ISZERO parity
+// whose failing branch is the jump target.
+export function hasRevertingSide(
+  bytecode: BytecodeType,
+  code: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  jumpiPc: number,
+  side: "jump" | "fall",
+): boolean {
+  try {
+    if (side === "fall" && revertingSideFastPath(code, isMember, jumpiPc)) {
+      return true;
+    }
+    return revertingSideBounded(bytecode, isMember, jumpiPc, side);
+  } catch {
+    return false;
+  }
+}
+
+// Reverting gate after a compare: the first member JUMPI within the
+// legacy window past `afterPc` proves its failing fall-through side,
+// either right after it or down every bounded path. Used by the v2
+// transfer gates whose blocked side reverts through a shared helper.
+export function hasRevertingGateAfter(
+  bytecode: BytecodeType,
+  code: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  afterPc: number,
+): boolean {
+  let jumpiPc: number | null = null;
+  for (const candidate of code) {
+    if (!isMember(candidate.pc) || candidate.opcode !== 0x57) {
+      continue;
+    }
+    if (candidate.pc > afterPc && candidate.pc <= afterPc + 64) {
+      jumpiPc = candidate.pc;
+      break;
+    }
+  }
+  if (jumpiPc === null) {
+    return false;
+  }
+  return hasRevertingSide(bytecode, code, isMember, jumpiPc, "fall");
+}
+
 // Packed-bool gate proof (P-11 session 1 follow-up): the transfer path
 // reads the same slot and bit — SLOAD s, then a shift by the writer's
 // amount (DIV by 2**k with the old-solc EXP-built constant, DIV by a
@@ -2247,6 +2516,14 @@ function exprStripIszero(expr: Expr): { readonly inner: Expr; readonly count: nu
   return { inner, count };
 }
 
+// Address-mask proof (P-10e): the 2^160 - 1 mask in whatever form the
+// compiler built it. Constant folding already reduces pushed masks and
+// SHL/SUB-built masks to the same constant, so one comparison covers
+// every construction.
+function exprIsMask160(expr: Expr): boolean {
+  return exprConstValue(expr) === MASK160;
+}
+
 function exprIsCallerSide(expr: Expr): boolean {
   if (expr.kind === "caller") {
     return true;
@@ -2254,11 +2531,10 @@ function exprIsCallerSide(expr: Expr): boolean {
   if (expr.kind === "op" && expr.name === "AND" && expr.args.length === 2) {
     const left = expr.args[0] ?? EXPR_UNKNOWN;
     const right = expr.args[1] ?? EXPR_UNKNOWN;
-    const maskOf = (candidate: Expr): boolean => exprConstValue(candidate) === MASK160;
-    if (left.kind === "caller" && maskOf(right)) {
+    if (left.kind === "caller" && exprIsMask160(right)) {
       return true;
     }
-    if (right.kind === "caller" && maskOf(left)) {
+    if (right.kind === "caller" && exprIsMask160(left)) {
       return true;
     }
   }
@@ -2273,7 +2549,7 @@ function exprIsOwnerLoadSide(expr: Expr, ownerSlot: number): boolean {
   if (expr.kind === "op" && expr.name === "AND" && expr.args.length === 2) {
     const left = expr.args[0] ?? EXPR_UNKNOWN;
     const right = expr.args[1] ?? EXPR_UNKNOWN;
-    const maskOf = (candidate: Expr): boolean => exprConstValue(candidate) === MASK160;
+    const maskOf = (candidate: Expr): boolean => exprIsMask160(candidate);
     const loadOf = (candidate: Expr): boolean =>
       candidate.kind === "sload" && exprConstValue(candidate.slot) === wanted;
     if (loadOf(left) && maskOf(right)) {
@@ -2300,13 +2576,17 @@ function exprIsOwnerEq(expr: Expr, ownerSlot: number): boolean {
 
 // Owner caller check through expressions: a member JUMPI whose condition
 // (through ISZERO chains) is EQ of the owner load and caller (each
-// masked or not), with a revert on the failing side. Returns the proving
-// jump pc or null.
+// masked or not), with a revert on the failing side. An even ISZERO
+// parity fails through the fall-through (jump to the OK path); an odd
+// parity fails through the jump target. The revert proves either right
+// after the JUMPI (the legacy fast path) or down every bounded path
+// through shared helpers. Returns the proving jump pc or null.
 export function ownerCheckExpr(
   code: readonly Instruction[],
   isMember: (pc: number) => boolean,
   ownerSlot: number,
   jumpis: ReadonlyMap<number, Expr>,
+  bytecode?: BytecodeType,
 ): number | null {
   for (const [pc, cond] of jumpis) {
     if (!isMember(pc)) {
@@ -2315,11 +2595,18 @@ export function ownerCheckExpr(
     if (cond.kind === "unknown") {
       continue;
     }
-    const { inner } = exprStripIszero(cond);
+    const { inner, count } = exprStripIszero(cond);
     if (!exprIsOwnerEq(inner, ownerSlot)) {
       continue;
     }
-    if (hasRevertingJumpiAfter(code, isMember, pc - 1)) {
+    const side = count % 2 === 1 ? "jump" : "fall";
+    if (bytecode !== undefined) {
+      if (hasRevertingSide(bytecode, code, isMember, pc, side)) {
+        return pc;
+      }
+      continue;
+    }
+    if (side === "fall" && hasRevertingJumpiAfter(code, isMember, pc - 1)) {
       return pc;
     }
   }
@@ -2332,8 +2619,9 @@ export function ownerCheckVia(
   ownerSlot: number,
   slotOf?: SlotLookup,
   jumpis?: ReadonlyMap<number, Expr>,
+  bytecode?: BytecodeType,
 ): "expr" | "window" | null {
-  if (jumpis !== undefined && ownerCheckExpr(code, isMember, ownerSlot, jumpis) !== null) {
+  if (jumpis !== undefined && ownerCheckExpr(code, isMember, ownerSlot, jumpis, bytecode) !== null) {
     return "expr";
   }
   if (hasOwnerCallerCheck(code, isMember, ownerSlot, slotOf)) {

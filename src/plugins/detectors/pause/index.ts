@@ -24,7 +24,8 @@ import {
   analyzeOwnerControl,
   constSlotLoadNearFlavor,
   flavorBetween,
-  hasRevertingJumpiAfter,
+  hasRevertingGateAfter,
+  hasRevertingSide,
   interpretRegionExprs,
   interpretRegionSlots,
   isStandardTokenWriter,
@@ -372,8 +373,14 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     const candidateSlotOf: SlotLookup = (pc) => candidateSlots.get(pc);
     const candidateExprs = interpretRegionExprs(input.bytecode, region.selector);
     if (
-      ownerCheckVia(code, memberOf(region.selector), ownerSlot, candidateSlotOf, candidateExprs.jumpis) ===
-      null
+      ownerCheckVia(
+        code,
+        memberOf(region.selector),
+        ownerSlot,
+        candidateSlotOf,
+        candidateExprs.jumpis,
+        input.bytecode,
+      ) === null
     ) {
       continue;
     }
@@ -409,7 +416,10 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
       const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
       const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
-      if (ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis) === null) {
+      if (
+        ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode) ===
+        null
+      ) {
         continue;
       }
       const legacyWritePc = flagWriter(region, slot);
@@ -455,7 +465,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           const transferExprs = interpretRegionExprs(input.bytecode, transferSelector);
           const exprGate = packedGateReadExpr(transferExprs.jumpis, gateMember, slot);
           if (exprGate !== null && exprGate.shift === packedWrite.shift) {
-            if (!hasRevertingJumpiAfter(code, gateMember, exprGate.jumpiPc - 1)) {
+            if (!hasRevertingSide(input.bytecode, code, gateMember, exprGate.jumpiPc, "fall")) {
               continue;
             }
             gateEvidencePc = exprGate.jumpiPc;
@@ -466,7 +476,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             if (gate === null || gate.shift !== packedWrite.shift) {
               continue;
             }
-            if (!hasRevertingJumpiAfter(code, gateMember, gate.cmpPc)) {
+            if (!hasRevertingGateAfter(input.bytecode, code, gateMember, gate.cmpPc)) {
               continue;
             }
             gateEvidencePc = gate.loadPc;
@@ -476,7 +486,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           if (gate === null) {
             continue;
           }
-          if (!hasRevertingJumpiAfter(code, gateMember, gate.cmpPc)) {
+          if (!hasRevertingGateAfter(input.bytecode, code, gateMember, gate.cmpPc)) {
             continue;
           }
           gateEvidencePc = gate.loadPc;
