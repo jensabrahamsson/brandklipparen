@@ -932,7 +932,7 @@ function AssessedView({
 // tab-to-panel relationship stays intact on every tab. Collapsed by
 // default; the open state is remembered for the session only. Scores,
 // evidence and finding text never move.
-function CustomizeView({
+export function CustomizeView({
   mode,
   onModeChange,
   aiOn,
@@ -1213,7 +1213,7 @@ function CustomizeView({
   );
 }
 
-function OverviewSections({
+export function OverviewSections({
   result,
   heroBreakdown,
   plugins,

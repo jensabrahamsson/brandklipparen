@@ -6,7 +6,7 @@
 // draws its separator through CSS.
 import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
-import { TokenHeader } from "./TokenHeader.tsx";
+import { TokenHeader, groupAddressChunks } from "./TokenHeader.tsx";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { resolveTokenIdentity } from "../lib/tokenIdentity.ts";
 
@@ -47,7 +47,7 @@ describe("token heading fallbacks", () => {
     expect(html).toContain("<h1");
     expect(html).toContain(">NEW</h1>");
     expect(html).toContain("New Token");
-    expect(html).toContain(checksummed);
+    expect(html.replace(/<[^>]*>/g, "")).toContain(checksummed);
     expect(html).not.toContain(`>${address}<`);
     expect(html).toContain('aria-label="Copy contract address"');
   });
@@ -74,7 +74,7 @@ describe("token heading fallbacks", () => {
       />,
     );
     expect(html).toContain(">LIVE</h1>");
-    expect(html).toContain(checksummed);
+    expect(html.replace(/<[^>]*>/g, "")).toContain(checksummed);
     // Each meta item renders as one nowrap unit with its own separator.
     expect(html).toContain("Uniswap V3");
     expect(html).toContain("0.3%");
@@ -117,7 +117,31 @@ describe("token heading fallbacks", () => {
       <TokenHeader address={address} identity={{ symbol: null, name: null }} liveEntry={null} />,
     );
     expect(html).toContain(">0x5ab1…a001</h1>");
-    expect(html).toContain(checksummed);
+    expect(html.replace(/<[^>]*>/g, "")).toContain(checksummed);
     expect(html).toContain("token-address-full");
+  });
+});
+
+describe("grouped address keeps the exact value (N-15)", () => {
+  const address = "0x5ab1e0000000000000000000000000000000a001";
+  const checksummed = "0x5ab1E0000000000000000000000000000000a001";
+
+  test("four-character groups join to the full EIP-55 string with no spaces", () => {
+    const chunks = groupAddressChunks(checksummed);
+    expect(chunks.join("")).toBe(checksummed);
+    for (const chunk of chunks) {
+      expect(chunk).not.toContain(" ");
+      expect(chunk.length).toBeLessThanOrEqual(4);
+    }
+  });
+
+  test("accessible text and copy control keep the unchanged full address", () => {
+    const html = renderToString(
+      <TokenHeader address={address} identity={{ symbol: null, name: null }} liveEntry={null} />,
+    );
+    expect(html).toContain("addr-chunk");
+    expect(html).toContain('aria-label="Copy contract address"');
+    const stripped = html.replace(/<[^>]*>/g, "");
+    expect(stripped).toContain(checksummed);
   });
 });

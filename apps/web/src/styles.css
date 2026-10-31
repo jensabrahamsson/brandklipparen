@@ -147,12 +147,25 @@ a {
 /* Full contract addresses (S-134): always the exact 42-char value as
    plain text (mouse selection gives the full address), in readable
    phosphor tones only. Wrapping stays on this element alone so 390 px
-   and 320 px break cleanly onto two lines with no page scroll. */
+   and 320 px break cleanly onto two lines with no page scroll. Visual
+   grouping (N-15) uses 4-character spans with a CSS margin gap and no
+   space characters, so textContent stays the exact address. */
 .addr-full {
   font-family: var(--font-mono);
   color: var(--phosphor-hi);
   overflow-wrap: anywhere;
   word-break: break-all;
+}
+
+/* N-15: groups wrap only at a group boundary (a <wbr> sits between
+   groups), never mid-group. The gap is a trailing margin so a wrapped
+   line still starts flush with the row edge. */
+.addr-full .addr-chunk {
+  white-space: nowrap;
+}
+
+.addr-full .addr-chunk:not(:last-child) {
+  margin-right: 4px;
 }
 
 /* Screen-reader-only text: announced but takes no layout space.
@@ -1968,6 +1981,7 @@ pre.code {
 
 .ai-jump {
   margin-top: 8px;
+  justify-self: start;
 }
 
 .priorities {

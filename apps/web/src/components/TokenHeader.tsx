@@ -10,13 +10,26 @@
 // unit with interior separators, and every other boundary draws its
 // separator through CSS, clipped when the item starts a new line, so a
 // separator never strands at a line edge and "2 min ago" never splits.
-// The address item alone may wrap.
+// The address item alone may wrap, and only between its visual
+// 4-character groups (spans with a CSS margin gap, <wbr> between them,
+// no space characters) so the element textContent, the accessible text and a
+// mouse selection stay the exact EIP-55 string; the copy button copies
+// it unchanged.
+import { Fragment } from "react";
 import type { JSX } from "react";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { formatAge, shortAddress } from "../lib/liveTokens.ts";
 import type { LiveTokenEntry } from "../lib/liveTokens.ts";
 import type { TokenIdentity } from "../lib/tokenIdentity.ts";
 import { CopyButton } from "./CopyButton.tsx";
+
+export function groupAddressChunks(checksummed: string): readonly string[] {
+  const chunks: string[] = [];
+  for (let index = 0; index < checksummed.length; index += 4) {
+    chunks.push(checksummed.slice(index, index + 4));
+  }
+  return chunks;
+}
 
 export function TokenHeader({
   address,
@@ -39,7 +52,12 @@ export function TokenHeader({
         )}
         <span className="meta-item meta-addr">
           <span className="addr-full" data-testid="token-address-full">
-            {checksummed}
+            {groupAddressChunks(checksummed).map((chunk, index) => (
+              <Fragment key={index}>
+                {index === 0 ? null : <wbr />}
+                <span className="addr-chunk">{chunk}</span>
+              </Fragment>
+            ))}
           </span>{" "}
           <CopyButton value={checksummed} label="Copy contract address" testId="copy-contract-address" />
         </span>
