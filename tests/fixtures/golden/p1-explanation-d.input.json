@@ -1,0 +1,39 @@
+{
+  "templateVersion": "1.1.0",
+  "observed": {
+    "kind": "can-change",
+    "changer": "0x0102030405060708090a0b0c0d0e0f1011121314"
+  },
+  "signals": [
+    {
+      "kind": "capability",
+      "risk": "rug-pull",
+      "direction": "raises",
+      "severity": "high",
+      "temporality": {
+        "kind": "can-change",
+        "changer": "0x0102030405060708090a0b0c0d0e0f1011121314"
+      },
+      "evidence": [
+        { "selector": "0xa9059cbb", "offset": 11 }
+      ]
+    },
+    {
+      "kind": "capability",
+      "risk": "rug-pull",
+      "direction": "raises",
+      "severity": "high",
+      "temporality": {
+        "kind": "can-change",
+        "changer": "0x0102030405060708090a0b0c0d0e0f1011121314"
+      },
+      "evidence": [
+        { "selector": "0xa9059cbb", "offset": 12 }
+      ]
+    }
+  ],
+  "origins": {
+    "0": { "pluginId": "dev.brandklipparen.mint", "key": "mint" },
+    "1": { "pluginId": "dev.brandklipparen.mint", "key": "mint" }
+  }
+}

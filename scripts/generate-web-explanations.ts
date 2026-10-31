@@ -212,7 +212,7 @@ export function generateExplanationsModule(repoRoot: string): string {
   for (const risk of RISKS) {
     entries[`template:capability:${risk}`] = {
       title: `Template wording for ${risk}`,
-      body: `The template says the contract code lets an account ${effects[risk] ?? ""} This sentence names the capability, never intent: ${claimSentence}.`,
+      body: `The template says the contract code lets an account ${effects[risk] ?? ""}. This sentence names the capability, never intent: ${claimSentence}.`,
     };
     entries[`template:clone-match:${risk}`] = {
       title: `Template wording for a ${risk} template match`,

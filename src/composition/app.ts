@@ -114,10 +114,11 @@ export type BuiltApp = {
 };
 
 // Pinned template version for composed servers (K-102): the deterministic
-// template set is fixed in v1, so the builder pins it instead of reading
-// a per-setup value. A mismatch with the loaded artifact fails at the
-// first analysis like any caller-supplied version.
-const PINNED_TEMPLATE_VERSION = "1.0.0";
+// template set is fixed in v1.1.0, so the builder pins it instead of
+// reading a per-setup value. A mismatch with the loaded artifact fails at
+// the first analysis like any caller-supplied version. 1.0.0 stays
+// supported for reproducible reads.
+const PINNED_TEMPLATE_VERSION = "1.1.0";
 
 // Operational capability catalogue for composed servers (K-102, K-210):
 // the v1 mapping of structural capability keys to risk, direction and

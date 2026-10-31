@@ -20,7 +20,7 @@ import type { ResolveProxyError, ResolveProxyInput, ResolveProxySuccess } from "
 import { standardCantTell } from "../domain/cantTell.ts";
 import type { CantTellItem } from "../domain/cantTell.ts";
 import { explanationToCanonical, renderExplanation } from "../domain/explain.ts";
-import type { Explanation, ExplainError } from "../domain/explain.ts";
+import type { Explanation, ExplainError, ExplanationOrigin } from "../domain/explain.ts";
 import { score } from "../domain/risk.ts";
 import type { PluginFeatureMapping } from "../domain/risk.ts";
 import { canonicalSerialize } from "../domain/serialize.ts";
@@ -734,6 +734,68 @@ function ownerSlotProof(
   return null;
 }
 
+// Origin key read from a plugin finding payload (P-1): the capability
+// key the capability plugin reported, else the owner-control `feature`
+// the detector reported, else null. Unknown payloads stay origin-less;
+// the template falls back to its risk frame for those signals.
+function originKeyOf(finding: PluginFinding): string | null {
+  const payload: unknown = finding.payload;
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return null;
+  }
+  const record = payload as { readonly [field: string]: unknown };
+  const capability = capabilityKeyOf(finding);
+  if (capability !== null) {
+    return capability;
+  }
+  const feature: unknown = record["feature"];
+  if (typeof feature === "string" && feature.length > 0) {
+    return feature;
+  }
+  return null;
+}
+
+// Origins for the 1.1.0 explanation templates (P-1): one entry per
+// signal id naming the plugin and key behind the signal. Findings match
+// signals by evidence key, as `ownerSlotProof` already does: the same
+// selector-offset pairs on both sides name the same pattern. First match
+// wins, so signals sharing one id share one origin and merge into one
+// claim. Display-only: the map travels to the template renderer and never
+// touches score, probabilities or the signal list.
+function explanationOriginsOf(
+  results: readonly PluginResultEntry[],
+  signals: readonly Signal[],
+): ReadonlyMap<string, ExplanationOrigin> {
+  const byEvidence = new Map<string, ExplanationOrigin>();
+  for (const entry of results) {
+    if (entry.outcome !== "ok") {
+      continue;
+    }
+    for (const finding of entry.findings) {
+      const key = originKeyOf(finding);
+      if (key === null) {
+        continue;
+      }
+      const evidenceKey = evidenceKeyOf(finding.evidence);
+      if (!byEvidence.has(evidenceKey)) {
+        byEvidence.set(evidenceKey, Object.freeze({ pluginId: entry.pluginId as string, key }));
+      }
+    }
+  }
+  const origins = new Map<string, ExplanationOrigin>();
+  for (const signal of signals) {
+    const id = signal.id as string;
+    if (origins.has(id)) {
+      continue;
+    }
+    const found = byEvidence.get(evidenceKeyOf(signal.evidence));
+    if (found !== undefined) {
+      origins.set(id, found);
+    }
+  }
+  return origins;
+}
+
 function evidenceKeyOf(
   list: readonly { readonly selector: unknown; readonly offset?: unknown }[],
 ): string {
@@ -1056,7 +1118,14 @@ export async function analyzeToken(
     signals = attachSnippets(signals, codeHash.value, decompiled);
   }
   const risk = score(signals, loaded.value.artifact);
-  const rendered = renderExplanation({ signals, templateVersion: input.templateVersion, observed });
+  // Origins for the 1.1.0 templates travel as data beside the signals;
+  // scoring above never sees them, so text changes stay display-only.
+  const rendered = renderExplanation({
+    signals,
+    templateVersion: input.templateVersion,
+    observed,
+    origins: explanationOriginsOf(pluginResults, signals),
+  });
   if (!rendered.ok) {
     return err({ kind: "domain-error", requestId: input.requestId, error: rendered.error });
   }

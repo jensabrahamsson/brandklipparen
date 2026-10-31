@@ -96,7 +96,7 @@ export const EXPLANATIONS = Object.freeze({
   },
   "template:capability:rug-pull": {
     "title": "Template wording for rug-pull",
-    "body": "The template says the contract code lets an account move funds out of the contract This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+    "body": "The template says the contract code lets an account move funds out of the contract. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
   },
   "template:clone-match:rug-pull": {
     "title": "Template wording for a rug-pull template match",
@@ -104,7 +104,7 @@ export const EXPLANATIONS = Object.freeze({
   },
   "template:capability:honeypot": {
     "title": "Template wording for honeypot",
-    "body": "The template says the contract code lets an account block a withdrawal, so funds stay in This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+    "body": "The template says the contract code lets an account block a withdrawal, so funds stay in. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
   },
   "template:clone-match:honeypot": {
     "title": "Template wording for a honeypot template match",
@@ -112,7 +112,7 @@ export const EXPLANATIONS = Object.freeze({
   },
   "template:capability:bot-pump": {
     "title": "Template wording for bot-pump",
-    "body": "The template says the contract code lets an account favor one trade over another This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+    "body": "The template says the contract code lets an account favor one trade over another. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
   },
   "template:clone-match:bot-pump": {
     "title": "Template wording for a bot-pump template match",
@@ -260,7 +260,7 @@ export const EXPLANATION_PAYLOAD = {
     },
     "template:capability:rug-pull": {
       "title": "Template wording for rug-pull",
-      "body": "The template says the contract code lets an account move funds out of the contract This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+      "body": "The template says the contract code lets an account move funds out of the contract. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
     },
     "template:clone-match:rug-pull": {
       "title": "Template wording for a rug-pull template match",
@@ -268,7 +268,7 @@ export const EXPLANATION_PAYLOAD = {
     },
     "template:capability:honeypot": {
       "title": "Template wording for honeypot",
-      "body": "The template says the contract code lets an account block a withdrawal, so funds stay in This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+      "body": "The template says the contract code lets an account block a withdrawal, so funds stay in. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
     },
     "template:clone-match:honeypot": {
       "title": "Template wording for a honeypot template match",
@@ -276,7 +276,7 @@ export const EXPLANATION_PAYLOAD = {
     },
     "template:capability:bot-pump": {
       "title": "Template wording for bot-pump",
-      "body": "The template says the contract code lets an account favor one trade over another This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+      "body": "The template says the contract code lets an account favor one trade over another. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
     },
     "template:clone-match:bot-pump": {
       "title": "Template wording for a bot-pump template match",

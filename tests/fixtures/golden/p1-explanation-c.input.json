@@ -1,0 +1,76 @@
+{
+  "templateVersion": "1.1.0",
+  "observed": {
+    "kind": "can-change-unknown"
+  },
+  "signals": [
+    {
+      "kind": "capability",
+      "risk": "rug-pull",
+      "direction": "raises",
+      "severity": "high",
+      "temporality": {
+        "kind": "can-change",
+        "changer": "0x0102030405060708090a0b0c0d0e0f1011121314"
+      },
+      "evidence": [
+        { "selector": "0x40c10f19", "offset": 11 }
+      ]
+    },
+    {
+      "kind": "capability",
+      "risk": "honeypot",
+      "direction": "raises",
+      "severity": "medium",
+      "temporality": {
+        "kind": "can-change-unknown"
+      },
+      "evidence": [
+        { "selector": "0x0ecb93c0" }
+      ]
+    },
+    {
+      "kind": "capability",
+      "risk": "bot-pump",
+      "direction": "raises",
+      "severity": "low",
+      "temporality": {
+        "kind": "can-change-unknown"
+      },
+      "evidence": [
+        { "selector": "0x70a08231", "offset": 64 }
+      ]
+    },
+    {
+      "kind": "capability",
+      "risk": "honeypot",
+      "direction": "raises",
+      "severity": "medium",
+      "temporality": {
+        "kind": "can-change",
+        "changer": "0x0102030405060708090a0b0c0d0e0f1011121314"
+      },
+      "evidence": [
+        { "selector": "0x2e1a7d4d", "offset": 30 }
+      ]
+    },
+    {
+      "kind": "clone-match",
+      "risk": "honeypot",
+      "direction": "raises",
+      "severity": "medium",
+      "similarity": 0.85,
+      "group": "trap-erc20-fee",
+      "priorCount": 3,
+      "evidence": [
+        { "selector": "0x095ea7b3" }
+      ]
+    }
+  ],
+  "origins": {
+    "0": { "pluginId": "dev.brandklipparen.mint", "key": "mint" },
+    "1": { "pluginId": "dev.brandklipparen.blacklist", "key": "blacklist" },
+    "2": { "pluginId": "dev.brandklipparen.capability", "key": "storage-write" },
+    "3": { "pluginId": "dev.brandklipparen.capability", "key": "call" }
+  }
+}

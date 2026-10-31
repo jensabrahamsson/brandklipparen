@@ -493,15 +493,25 @@ describe("k301 template explanations from evidence", () => {
           }
           // Deterministic: repeated runs agree bit for bit.
           expect(renderText(second.value)).toBe(renderText(first.value));
-          // One claim per signal, every claim linked to an input signal, and
-          // the input left unchanged.
-          expect(first.value.claims.length).toBe(signals.length);
+          // 1.1.0 merges claims sharing one signal id and one origin
+          // (the catalogue id when no origins map is passed): one claim per
+          // distinct (signal id, origin), every claim linked to an input
+          // signal, every signal id covered, input left unchanged.
+          const expectedGroups = new Set(
+            signals.map((signal) => `${signal.id as string}|${templateCatalogueId(signal)}`),
+          );
+          expect(first.value.claims.length).toBe(expectedGroups.size);
           const ids = new Set(signals.map((signal) => signal.id as string));
+          const linked = new Set<string>();
           for (const claim of first.value.claims) {
             expect(claim.signalLinks.length).toBeGreaterThanOrEqual(1);
             for (const link of claim.signalLinks) {
               expect(ids.has(link as string)).toBe(true);
+              linked.add(link as string);
             }
+          }
+          for (const id of ids) {
+            expect(linked.has(id)).toBe(true);
           }
           expect(JSON.stringify(signals)).toBe(before);
         },

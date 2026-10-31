@@ -195,8 +195,9 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   }
 
   // "Can change" renders as a chip; the account shows in full with
-  // copy (S-134).
-  await expect(explanation.getByText("Owner can turn this on later").first()).toBeVisible();
+  // copy (S-134, P-1).
+  await expect(explanation.getByText("can change this").first()).toBeVisible();
+  await expect(explanation).not.toContainText("Owner can turn this on later");
   await expect(explanation).toContainText(C_CHANGER);
 
   // Evidence lives in a disclosure that opens and closes from the keyboard.

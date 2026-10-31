@@ -10,15 +10,17 @@
 // thresholds, weights or limits: risk, direction, severity and cause travel
 // as closed vocabulary words from the signals, and every number in the text
 // is evidence data (selector, offset, block, value, similarity, count).
-// The single supported template set is 1.0.0; rendering with any other
-// version yields the typed unknown-template-version error, so output always
-// records the version it was rendered with. Signals without their own
+// The supported template sets are 1.0.0 and 1.1.0; rendering with any
+// other version yields the typed unknown-template-version error, so output
+// always records the version it was rendered with. Signals without their own
 // temporality (clone-match, hard-to-analyze) receive the caller-supplied
 // observation context; the core invents no authority and no measurements.
 import { err, ok } from "./result.ts";
 import type { Result } from "./result.ts";
 import type { CanonicalValue } from "./serialize.ts";
+import { sortEvidence } from "./evidence.ts";
 import type { NonEmpty, Evidence as EvidenceType } from "./evidence.ts";
+import { tableSignatureFor } from "./evmNames.ts";
 import type {
   HardToAnalyzeCause,
   RiskType,
@@ -48,10 +50,36 @@ export type ExplainError = {
   readonly templateVersion: string;
 };
 
-// The single supported template set (K-301). New wording ships as a new
-// version beside this one; the version in the output keeps text reproducible.
+// Template sets (K-301, P-1). New wording ships as a new version beside
+// the old one; the version in the output keeps text reproducible. 1.0.0
+// renders one claim per signal with the original risk-verb sentences.
+// 1.1.0 renders one sentence per finding origin (capability key or
+// owner-control feature), merges claims that share a signal id and an
+// origin, and stays silent on storage-write. Both versions are
+// display-only: neither touches score, probabilities or the signal list.
 export const SUPPORTED_TEMPLATE_VERSION: TemplateVersionType =
-  "1.0.0" as TemplateVersionType;
+  "1.1.0" as TemplateVersionType;
+
+export const TEMPLATE_VERSION_1_1_0: TemplateVersionType =
+  "1.1.0" as TemplateVersionType;
+
+const SUPPORTED_TEMPLATE_VERSIONS: readonly string[] = Object.freeze([
+  "1.0.0",
+  "1.1.0",
+]);
+
+// Origin of one signal (P-1): who reported the pattern and under which
+// key. The key is the capability key (`call`, `storage-write`,
+// `delegatecall`, `selfdestruct`) or the owner-control `feature`
+// (`mint`, `blacklist`, `pause`, `transfer-fee`, `transfer-limits`,
+// `sell-block`, `transfer-hooks`, `proxy-upgrade`, `ownership`,
+// `owner-slot`, `renounce`). The application builds this map by matching
+// finding evidence to signal evidence and passes it as data; the template
+// never invents an origin.
+export type ExplanationOrigin = {
+  readonly pluginId: string;
+  readonly key: string;
+};
 
 // Catalogue id per signal: one template frame per capability risk, per
 // clone-match risk and per hard-to-analyze cause. The table over this closed
@@ -81,6 +109,39 @@ const CAPABILITY_EFFECT: Readonly<Record<RiskType, string>> = Object.freeze({
   honeypot: "block a withdrawal, so funds stay in",
   "bot-pump": "favor one trade over another",
 });
+
+// One honest sentence per finding origin (P-1). Each sentence states only
+// the power the finding proves, never a risk verb the code does not show:
+// a plain CALL is not a blocked withdrawal and a plain SSTORE is not a
+// rigged trade. `storage-write` is deliberately absent: every token writes
+// storage, so it stays a signal for the score but renders no claim.
+const ORIGIN_SENTENCE: Readonly<Record<string, string>> = Object.freeze({
+  blacklist: "The owner can stop chosen wallets from sending tokens.",
+  pause: "The owner can freeze all transfers.",
+  mint: "The owner can create new tokens.",
+  "transfer-fee": "The owner can change the fee taken on each transfer.",
+  "transfer-limits": "The owner can cap how much a wallet may send or hold.",
+  "sell-block": "Transfers to the trading pair can be blocked.",
+  "transfer-hooks": "Each transfer can call an outside contract the owner set.",
+  "proxy-upgrade": "The admin can replace the contract's code.",
+  ownership: "An owner account controls the functions below.",
+  "owner-slot": "An owner account controls the functions below.",
+  renounce: "The owner can give up ownership.",
+  selfdestruct: "The contract can destroy itself and redirect funds.",
+  delegatecall: "The contract can run foreign code in local storage context.",
+});
+
+// First sentence for a call capability (P-1): neutral, no risk verb. The
+// function label names where the call sits: the known canonical signature
+// from the versioned selector table, else the raw selector. The label is
+// display data from evidence and never invents a name.
+function callSentence(signal: Signal): string {
+  const first = signal.evidence[0];
+  const selector = first === undefined ? "0x00000000" : (first.selector as string);
+  const known = tableSignatureFor(selector);
+  const label = known ?? selector;
+  return `The contract can call other contracts or send ETH (in \`${label}\`).`;
+}
 
 // Cause leads in active plain English (K-303). Each states what the analysis
 // could not do, without blaming any actor.
@@ -163,20 +224,20 @@ function renderClaimText(signal: Signal, temporality: Temporality): string {
   }
 }
 
-// Pure render of one claim per signal in stable signal-id order (A-32).
-// Capability claims carry the signal's own temporality; clone-match and
-// hard-to-analyze claims carry the caller-supplied observation context.
+// Pure render in stable signal-id order (A-32). Capability claims carry
+// the signal's own temporality; clone-match and hard-to-analyze claims
+// carry the caller-supplied observation context.
 export function renderExplanation(input: {
   readonly signals: readonly Signal[];
   readonly templateVersion: TemplateVersionType;
   readonly observed: Temporality;
+  readonly origins?: ReadonlyMap<string, ExplanationOrigin> | undefined;
 }): Result<Explanation, ExplainError> {
   const wanted = input.templateVersion as string;
-  const supported = SUPPORTED_TEMPLATE_VERSION as string;
-  if (wanted !== supported) {
+  if (!SUPPORTED_TEMPLATE_VERSIONS.includes(wanted)) {
     return err({
       kind: "unknown-template-version",
-      message: `unknown template version: ${wanted}; supported version is ${supported}`,
+      message: `unknown template version: ${wanted}; supported versions are 1.0.0, 1.1.0`,
       templateVersion: wanted,
     });
   }
@@ -192,6 +253,15 @@ export function renderExplanation(input: {
     }
     return 0;
   });
+  if (wanted === "1.1.0") {
+    return ok(
+      Object.freeze({
+        kind: "template",
+        claims: Object.freeze(renderClaims110(ordered, input.observed, input.origins)),
+        templateVersion: input.templateVersion,
+      }),
+    );
+  }
   const claims: Claim[] = [];
   for (const signal of ordered) {
     const temporality = signal.kind === "capability" ? signal.temporality : input.observed;
@@ -210,6 +280,165 @@ export function renderExplanation(input: {
       templateVersion: input.templateVersion,
     }),
   );
+}
+
+// Group key for 1.1.0 merging (P-1): claims merge only when they resolve
+// to the same signal id and the same origin. Capability signals without
+// a recorded origin fall back to their risk frame, so distinct risks
+// sharing one id keep distinct claims.
+function groupKeyOf(signal: Signal, origins: ReadonlyMap<string, ExplanationOrigin> | undefined): string {
+  const origin = origins?.get(signal.id as string);
+  if (origin !== undefined) {
+    return `${signal.id as string}|origin:${origin.key}`;
+  }
+  return `${signal.id as string}|${templateCatalogueId(signal)}`;
+}
+
+// Deduplicated merge of grouped evidence in canonical order (A-32).
+// Entries carry untrusted snippet text, so dedupe compares the quoted
+// fields, never object identity.
+function mergeEvidence(signals: readonly Signal[]): NonEmpty<EvidenceType> | null {
+  const seen = new Set<string>();
+  const merged: EvidenceType[] = [];
+  for (const signal of signals) {
+    for (const entry of signal.evidence) {
+      const snippet = entry.snippet;
+      const key = JSON.stringify({
+        selector: entry.selector as string,
+        offset: (entry.offset as number | undefined) ?? null,
+        line: snippet === undefined ? null : snippet.line,
+        text: snippet === undefined ? null : snippet.text,
+      });
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      merged.push(entry);
+    }
+  }
+  const sorted = sortEvidence(merged);
+  const first = sorted[0];
+  if (first === undefined) {
+    return null;
+  }
+  return Object.freeze([first, ...sorted.slice(1)]) as NonEmpty<EvidenceType>;
+}
+
+// First sentence for a 1.1.0 capability claim (P-1): the origin sentence
+// when the signal carries a recorded origin, else the legacy risk frame
+// so callers without origins keep a meaningful sentence. A null return
+// means the signal renders no claim (`storage-write`).
+function firstSentenceOf(
+  signal: Extract<Signal, { readonly kind: "capability" }>,
+  origin: ExplanationOrigin | undefined,
+): string | null {
+  if (origin !== undefined) {
+    if (origin.key === "call") {
+      return callSentence(signal);
+    }
+    if (origin.key === "storage-write") {
+      return null;
+    }
+    const sentence = ORIGIN_SENTENCE[origin.key];
+    if (sentence !== undefined) {
+      return sentence;
+    }
+  }
+  return `The contract code lets an account ${CAPABILITY_EFFECT[signal.risk]}.`;
+}
+
+function renderClaimText110(
+  representative: Signal,
+  firstSentence: string,
+  evidence: NonEmpty<EvidenceType>,
+  temporality: Temporality,
+): string {
+  const marker = describeTemporality(temporality);
+  const pointers = renderEvidence(evidence);
+  switch (representative.kind) {
+    case "capability":
+      return (
+        `${firstSentence} ` +
+        `This ${representative.direction} the ${representative.risk} risk (severity ${representative.severity}). ` +
+        `${marker} ${pointers}`
+      );
+    case "clone-match": {
+      const count = representative.priorCount;
+      const tokenWord = count === 1 ? "token" : "tokens";
+      return (
+        `This code matches the known template group ${JSON.stringify(representative.group as string)} ` +
+        `with similarity ${representative.similarity as number}, seen in ${count} earlier ${tokenWord}. ` +
+        `This ${representative.direction} the ${representative.risk} risk (severity ${representative.severity}). ` +
+        `${marker} ${pointers}`
+      );
+    }
+    case "hard-to-analyze":
+      return (
+        `${HARD_TO_ANALYZE_LEAD[representative.cause]} ` +
+        `The analysis cannot rule out the ${representative.risk} risk. ` +
+        `${marker} ${pointers}`
+      );
+  }
+}
+
+// One claim per (signal id, origin) group in stable id order (P-1). The
+// merged claim lists every evidence pointer once; its risk sentence and
+// temporality come from the first signal of the group in id order, and
+// the input signals are never mutated.
+function renderClaims110(
+  ordered: readonly Signal[],
+  observed: Temporality,
+  origins: ReadonlyMap<string, ExplanationOrigin> | undefined,
+): Claim[] {
+  const groups = new Map<string, Signal[]>();
+  for (const signal of ordered) {
+    const key = groupKeyOf(signal, origins);
+    const known = groups.get(key);
+    if (known === undefined) {
+      groups.set(key, [signal]);
+    } else {
+      known.push(signal);
+    }
+  }
+  const claims: Claim[] = [];
+  for (const group of groups.values()) {
+    const representative = group[0];
+    if (representative === undefined) {
+      continue;
+    }
+    if (representative.kind === "capability") {
+      const firstSentence = firstSentenceOf(
+        representative,
+        origins?.get(representative.id as string),
+      );
+      const evidence = mergeEvidence(group);
+      if (firstSentence === null || evidence === null) {
+        continue;
+      }
+      const temporality = representative.temporality;
+      claims.push(
+        Object.freeze({
+          text: renderClaimText110(representative, firstSentence, evidence, temporality),
+          signalLinks: Object.freeze([representative.id]) as NonEmpty<SignalIdType>,
+          temporality,
+        }),
+      );
+      continue;
+    }
+    const temporality = observed;
+    const evidence = mergeEvidence(group);
+    if (evidence === null) {
+      continue;
+    }
+    claims.push(
+      Object.freeze({
+        text: renderClaimText110(representative, "", evidence, temporality),
+        signalLinks: Object.freeze([representative.id]) as NonEmpty<SignalIdType>,
+        temporality,
+      }),
+    );
+  }
+  return claims;
 }
 
 function temporalityToCanonical(temporality: Temporality): CanonicalValue {

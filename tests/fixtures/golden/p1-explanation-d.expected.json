@@ -1,0 +1,13 @@
+{
+  "templateVersion": "1.1.0",
+  "claims": [
+    {
+      "text": "The owner can create new tokens. This raises the rug-pull risk (severity high). Can change: account 0x0102030405060708090a0b0c0d0e0f1011121314 can activate this later. Evidence: selector 0xa9059cbb at byte offset 11; selector 0xa9059cbb at byte offset 12.",
+      "signalLinks": ["signal:0"],
+      "temporality": {
+        "kind": "can-change",
+        "changer": "0x0102030405060708090a0b0c0d0e0f1011121314"
+      }
+    }
+  ]
+}

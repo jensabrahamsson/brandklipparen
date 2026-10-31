@@ -54,8 +54,9 @@ describe("template explanation (design review P0-4)", () => {
     expect(html).toContain("Template explanation · v1.0.0");
     expect(html).toContain("The owner can stop you from selling.");
     expect(html).toContain("Launch mechanics were fair at deployment.");
-    expect(html).toContain("Owner can turn this on later");
-    expect(html).toContain("applies now");
+    expect(html).toContain("Owner can change this");
+    expect(html).not.toContain("Owner can turn this on later");
+    expect(html).toContain("Applies now");
     expect(html).not.toContain("owner-blacklist");
     expect(html).toContain("Owner can block transfers");
   });
@@ -74,6 +75,27 @@ describe("template explanation (design review P0-4)", () => {
     );
     expect(html).toContain("The owner can stop you from selling.");
     expect(html).not.toContain("v1.0.0");
+  });
+
+  test("p1_can_change_unknown_renders_neutral_chip", () => {
+    const html = renderToString(
+      <ExplanationList
+        claims={[
+          {
+            text: "The owner can create new tokens. This raises the rug-pull risk (severity high).",
+            signalLinks: [],
+            temporality: { kind: "can-change-unknown" },
+          },
+        ]}
+        signals={[]}
+        templateVersion="1.1.0"
+        expert={false}
+        onSignalLink={() => undefined}
+      />,
+    );
+    expect(html).toContain("Possible in code · no controlling account found");
+    expect(html).not.toContain("Owner can turn this on later");
+    expect(html).not.toContain("claim-account-full");
   });
 
   test("s134_account_chip_shows_full_address_with_copy", () => {
@@ -101,6 +123,8 @@ describe("template explanation (design review P0-4)", () => {
     expect(html).not.toContain(`>${account}<`);
     expect(html).toContain('aria-label="Copy account address"');
     expect(html).toContain(`data-copy-value="${checksummed}"`);
+    expect(html).toContain("can change this");
+    expect(html).not.toContain("Owner can turn this on later");
   });
 });
 

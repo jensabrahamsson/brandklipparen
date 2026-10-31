@@ -1,11 +1,12 @@
-// Readable template explanation (S-120, S-134): every claim renders as
-// one short summary first, labelled with its template version.
-// Temporality reads as a "Can change" chip or "applies now"; the
-// controlling account shows in full with copy; the raw locations sit in
-// a keyboard-operable disclosure grouped by selector. Signal links
-// expand and scroll to their signal in SignalList. Everything renders
-// as React text only, so hostile content stays inert: no HTML sinks
-// anywhere.
+// Readable template explanation (S-120, S-134, P-1): every claim renders
+// as one short summary first, labelled with its template version.
+// Temporality reads per kind: "Applies now", "Owner <account> can change
+// this" with the controlling account in full plus copy, or the neutral
+// "Possible in code · no controlling account found" when no account is
+// proven. The raw locations sit in a keyboard-operable disclosure grouped
+// by selector. Signal links expand and scroll to their signal in
+// SignalList. Everything renders as React text only, so hostile content
+// stays inert: no HTML sinks anywhere.
 import type { JSX } from "react";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { signalKey, signalTitle } from "../lib/signals.ts";
@@ -99,15 +100,25 @@ export function ExplanationList({
                 <div className="claim-text">{claimSummary(claim.text)}</div>
                 <div className="quiet" style={{ marginTop: 4 }}>
                   {claim.temporality.kind === "applies-now" ? (
-                    "applies now"
+                    account === null ? (
+                      "Applies now"
+                    ) : (
+                      <>
+                        Applies now
+                        {" · "}
+                        <span className="chip">
+                          Owner <AccountChip address={account} /> can change this
+                        </span>
+                      </>
+                    )
+                  ) : claim.temporality.kind === "can-change-unknown" ? (
+                    "Possible in code · no controlling account found"
+                  ) : account === null ? (
+                    <span className="chip">Owner can change this</span>
                   ) : (
-                    <span className="chip">Owner can turn this on later</span>
-                  )}
-                  {account === null ? null : (
-                    <>
-                      {" · "}
-                      <AccountChip address={account} />
-                    </>
+                    <span className="chip">
+                      Owner <AccountChip address={account} /> can change this
+                    </span>
                   )}
                   {claim.signalLinks.length > 0 ? (
                     <>

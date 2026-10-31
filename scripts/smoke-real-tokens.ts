@@ -60,7 +60,7 @@ const ZERO_WORD = `0x${"0".repeat(64)}`;
 // another shipped artifact; the default is the documented default artifact.
 const DEFAULT_MODEL_VERSION_TEXT = "1.0.1";
 const INDEX_VERSION_TEXT = "1.0.0";
-const TEMPLATE_VERSION_TEXT = "1.0.0";
+const TEMPLATE_VERSION_TEXT = "1.1.0";
 
 export type SmokeLabel = "legit" | "rug" | "honeypot" | "scam" | "unknown";
 
