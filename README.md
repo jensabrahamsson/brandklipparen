@@ -15,6 +15,13 @@ the portable bin directory instead:
 export PATH="$HOME/.local/node22/bin:$PATH"
 ```
 
+Clone the private repo and enter it:
+
+```sh
+git clone https://github.com/jensabrahamsson/brandklipparen
+cd brandklipparen
+```
+
 Install dependencies once (root and web UI):
 
 ```sh
@@ -61,8 +68,18 @@ Set `ETHERSCAN_API_KEY` (or `ETHERSCAN_API_KEY_FILE`) to turn it on;
 without any feed source the list reports `not-configured` instead.
 
 Optional local overrides live in a git-ignored `.env.local` file in the
-repo root (simple `KEY=VALUE` lines, `#` comments, optional quotes). The
-demo reads it for variables not already set in the environment, so the
+repo root (simple `KEY=VALUE` lines, `#` comments, optional quotes).
+Start from the documented names:
+
+```sh
+cp .env.example .env.local
+```
+
+Secrets are never written as values in `.env.local`: keys arrive only
+through `*_FILE` pointer variables that name a file holding the key (for
+example `BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE` or
+`ETHERSCAN_API_KEY_FILE`, absolute or repo-relative); the demo reads the
+file and sets the matching variable when it is not already set, so the
 environment wins over `.env.local`, which wins over the demo defaults.
 To try the model-assisted assessment against a temporary local
 chat-completions endpoint during development, set
@@ -85,6 +102,77 @@ for the optional LP feed (`lp feed: etherscan (key loaded)` when set,
 `lp feed: off` otherwise). The demo also points
 `BRANDKLIPPAREN_FEED_RPC_URL` at the same key-free public RPC, so the live
 list falls back to RPC logs when the log source is rate limited or unset.
+
+Optional model-assisted mapping via `BRANDKLIPPAREN_PERSONALIZE_PROVIDER`:
+when unset, the demo defaults it to `meta-model-api` if a Meta key is
+configured (`BRANDKLIPPAREN_ASSESSMENT_META_API_KEY` directly or via its
+`*_FILE` pointer); an explicit `"off"` (or no key) leaves the feature
+disabled with zero provider calls. The mapping reuses the assessment
+connection settings (key, model id, base URL), so no second key
+travels beside this variable. For the Meta setup, set
+`BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID=muse-spark-1.3`. The risk score and evidence stay
+deterministic and are never influenced by the model: scores and evidence
+pass through untouched with and without the adapter (see
+`k307_scores_and_evidence_identical_with_and_without_adapter` in
+`docs/requirements.md`).
+
+## REST API example
+
+The REST API listens on `BRANDKLIPPAREN_HTTP_PORT` (default `8080`) at
+`http://127.0.0.1:8080`; the web UI on `http://localhost:5173` talks to
+it through the dev-server proxy. Analysis calls carry the API key only in
+the `x-api-key` header, never in the URL or body. The demo generates a
+per-run local key when `BRANDKLIPPAREN_API_KEYS` is unset and injects it
+into the web UI automatically; set `BRANDKLIPPAREN_API_KEYS` in the
+environment or `.env.local` to call the API directly:
+
+```sh
+KEY="<a value from BRANDKLIPPAREN_API_KEYS>"
+curl -H "x-api-key: $KEY" \
+  "http://127.0.0.1:8080/v1/analyze?address=0x0102030405060708090a0b0c0d0e0f1011121314"
+```
+
+Replace the synthetic address with any ERC-20 contract address on Ethereum mainnet.
+
+`GET /v1/analyze` reads the address (plus an optional block) from the
+query string; `POST /v1/analyze` takes the same fields as a JSON body.
+`GET /health` is public and keyless.
+
+## MCP server
+
+```sh
+npm run start:mcp
+```
+
+The MCP server speaks minimal JSON-RPC 2.0 over stdio
+(newline-delimited frames on stdin, one response frame per line on
+stdout). Point an MCP client at the command above as a stdio server; no
+port is opened.
+
+## Tests and gates
+
+```sh
+npm test                # unit, integration and contract suites (vitest)
+npm run test:web        # web UI unit tests
+npm run e2e:web         # web UI end to end tests (builds, then Playwright)
+npm run lint            # eslint
+npm run typecheck       # root TypeScript check
+npm run typecheck:web   # web UI TypeScript check
+npm run check:english   # no Swedish letters in tracked files
+npm run check:vendors   # no non-Meta AI vendor names in tracked files
+npm run gate            # dependency-cruiser policy
+npm run check           # lint, gate, check:vendors, check:english, typecheck, test
+```
+
+## Troubleshooting
+
+If the web UI or the e2e tests fail with connection refused on
+`127.0.0.1` (IPv6/IPv4 resolution), run with:
+
+```sh
+NODE_OPTIONS=--dns-result-order=ipv4first npm run demo
+NODE_OPTIONS=--dns-result-order=ipv4first npm run e2e:web
+```
 
 ## What it is
 
