@@ -62,7 +62,7 @@ test("details_toggle_keyboard_and_programmatic_persist_across_reload", async ({ 
   await customize.locator("summary").focus();
   await page.keyboard.press("Enter");
   await expect.poll(() => customize.evaluate((element) => (element as HTMLDetailsElement).open)).toBe(true);
-  await expect(customize.getByRole("radiogroup", { name: "Detail depth" })).toBeVisible();
+  await expect(customize.getByRole("group", { name: "Detail" })).toBeVisible();
 
   // Remembered state survives reload.
   await page.reload();

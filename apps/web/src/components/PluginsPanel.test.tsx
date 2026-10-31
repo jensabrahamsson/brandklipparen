@@ -99,3 +99,44 @@ describe("generic plugins panel (S-046)", () => {
     expect(triggers).toHaveLength(2);
   });
 });
+
+describe("personalized order source (P2-18)", () => {
+  const order = ["dev.brandklipparen.capability"] as const;
+
+  test("deterministic order names what matters to the visitor", () => {
+    const html = renderToString(
+      <PluginsPanel plugins={[...PLUGINS]} results={[...RESULTS]} order={[...order]} personalized source="deterministic" />,
+    );
+    expect(html).toContain("Ordered by what matters to you.");
+    expect(html).not.toContain("Ordered by AI");
+  });
+
+  test("ai order names the model and the visitor priorities", () => {
+    const html = renderToString(
+      <PluginsPanel
+        plugins={[...PLUGINS]}
+        results={[...RESULTS]}
+        order={[...order]}
+        personalized
+        source="ai"
+        aiModelId="example-model-1"
+      />,
+    );
+    expect(html).toContain("Ordered by AI (example-model-1) from your priorities.");
+  });
+
+  test("ai order without a model id omits the parenthesis", () => {
+    const html = renderToString(
+      <PluginsPanel plugins={[...PLUGINS]} results={[...RESULTS]} order={[...order]} personalized source="ai" />,
+    );
+    expect(html).toContain("Ordered by AI from your priorities.");
+    expect(html).not.toContain("Ordered by AI (");
+  });
+
+  test("missing source keeps the deterministic notice", () => {
+    const html = renderToString(
+      <PluginsPanel plugins={[...PLUGINS]} results={[...RESULTS]} order={[...order]} personalized />,
+    );
+    expect(html).toContain("Ordered by what matters to you.");
+  });
+});

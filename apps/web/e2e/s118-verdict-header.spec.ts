@@ -133,7 +133,8 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     expect(await customize.evaluate((element) => (element as HTMLDetailsElement).open)).toBe(false);
     await expect(customize.locator('input[name="ui-mode"]')).toHaveCount(2);
     await expect(customize.locator('[data-testid="ai-personalize-toggle"]')).toHaveCount(1);
-    await expect(customize.locator("legend")).toContainText("Choose sections");
+    await expect(customize.locator("legend", { hasText: "Choose sections" })).toHaveCount(1);
+    await expect(customize.locator("legend", { hasText: "Detail" })).toHaveCount(1);
     await expect(customize.locator('[data-testid="priorities-field"]')).toHaveCount(1);
 
     // S-132: verdict copy sits near the top under the token meta with

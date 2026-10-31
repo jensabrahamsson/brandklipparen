@@ -20,13 +20,13 @@ export function FieldPicker({
   readonly onToggle: (sectionId: string) => void;
 }): JSX.Element {
   return (
-    <fieldset className="card" style={{ marginBottom: 20 }}>
+    <fieldset className="card picker">
       <legend>Choose sections</legend>
-      <p className="quiet" style={{ margin: "0 0 8px" }}>
+      <p className="quiet picker-note">
         The score always stays on top; picked sections render below it.
       </p>
       {PICKABLE_SECTIONS.map((section) => (
-        <label key={section.id} style={{ display: "block", margin: "4px 0" }}>
+        <label key={section.id} className="picker-option">
           <input
             type="checkbox"
             checked={visible.has(section.id)}

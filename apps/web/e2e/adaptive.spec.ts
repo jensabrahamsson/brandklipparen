@@ -323,8 +323,10 @@ test("k519_ai_personalize_toggle_states_priorities_before_first_call", async ({ 
   await openCustomize(page);
   await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
   await page.getByTestId("ai-personalize-toggle").check();
-  await expect(page.getByTestId("ai-personalize-preface")).toContainText("Sends your priorities text");
-  await expect(page.getByTestId("ai-personalize-preface")).toContainText("Nothing else is sent");
+  await expect(page.getByTestId("ai-personalize-preface")).toContainText("Sends your priorities text, plugin references");
+  await expect(page.getByTestId("ai-personalize-preface")).toContainText("hosted-open-weights");
+  await expect(page.getByTestId("ai-personalize-preface")).toContainText("once per Apply");
+  await expect(page.getByTestId("ai-personalize-preface")).toContainText("The token address is not sent");
   expect(counter.posts).toBe(0);
   await page.getByTestId("ai-personalize-apply").click();
   await expect(page.getByTestId("ai-personalize-result")).toContainText("AI order applied");

@@ -50,3 +50,13 @@ describe("count-up", () => {
     expect(renderToString(createElement(CountProbe, { target: 84 }))).toContain("0");
   });
 });
+
+describe("reduced motion keeps added highlights static (P2-20)", () => {
+  test("the shared flag is the single gate for animated fills", () => {
+    stubMatchMedia(true);
+    expect(reducedMotionRequested()).toBe(true);
+    expect(renderToString(createElement(CountProbe, { target: 84 }))).toContain("84");
+    stubMatchMedia(false);
+    expect(reducedMotionRequested()).toBe(false);
+  });
+});

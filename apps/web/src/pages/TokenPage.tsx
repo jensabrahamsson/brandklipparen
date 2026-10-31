@@ -841,6 +841,7 @@ function AssessedView({
               plugins={plugins}
               mode={mode}
               aiSpec={aiSpec}
+              aiModelId={aiProvider?.modelId}
               priorities={priorities}
               standardOrder={standardOrder}
               onShowStandardOrder={onShowStandardOrder}
@@ -997,22 +998,23 @@ function CustomizeView({
       <details ref={detailsRef} className="customize" open={open ? true : undefined} onToggle={remember}>
         <summary>Customize view</summary>
         <div className="customize-body">
-          <div>
-            <div role="radiogroup" aria-label="Detail depth" style={{ margin: "0 0 16px" }}>
-              <span className="quiet" style={{ marginRight: 12, fontSize: 14 }}>
-                Detail:
-              </span>
-              <label style={{ marginRight: 12, fontSize: 14 }}>
+          <div className="customize-col">
+            <fieldset className="card customize-row">
+              <legend>Detail</legend>
+              <label className="customize-option">
                 <input type="radio" name="ui-mode" value="simple" checked={mode === "simple"} onChange={() => onModeChange("simple")} />{" "}
                 Simple
               </label>
-              <label style={{ fontSize: 14 }}>
+              <label className="customize-option">
                 <input type="radio" name="ui-mode" value="expert" checked={mode === "expert"} onChange={() => onModeChange("expert")} />{" "}
                 Expert
               </label>
-            </div>
-            <section aria-label="AI personalize" style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 14, fontWeight: 600 }}>
+            </fieldset>
+            <section aria-label="AI personalize" className="card ai-panel">
+              <h2 className="customize-h">
+                AI order <span className="cantword">experimental</span>
+              </h2>
+              <label className="customize-check">
                 <input
                   type="checkbox"
                   data-testid="ai-personalize-toggle"
@@ -1023,32 +1025,26 @@ function CustomizeView({
                 />{" "}
                 AI personalize (experimental)
               </label>
-              <p
-                id="ai-personalize-status"
-                className="quiet"
-                data-testid="ai-personalize-label"
-                style={{ margin: "4px 0", fontSize: 13 }}
-              >
-                {personalizeProviderLabel(aiProvider)}
-              </p>
               {aiOn ? (
-                <div>
-                  <p className="quiet" data-testid="ai-personalize-preface" style={{ margin: "4px 0", fontSize: 13 }}>
-                    Sends your priorities text, plugin references and layout facts (code hash, score band,
-                    section list) to {providerName} for this one mapping call. The token address is not sent to
-                    the provider. Nothing else is sent.
-                  </p>
-                </div>
-              ) : null}
+                <p id="ai-personalize-status" className="quiet ai-preface" data-testid="ai-personalize-preface">
+                  Sends your priorities text, plugin references (ids, tags, max severity, short finding excerpts)
+                  and layout facts (code hash, score band, section list) to {providerName}, once per Apply. The
+                  token address is not sent to the provider.
+                </p>
+              ) : (
+                <p id="ai-personalize-status" className="quiet ai-status" data-testid="ai-personalize-label">
+                  {personalizeProviderLabel(aiProvider)}
+                </p>
+              )}
               <PrioritiesField value={priorities} onChange={onPrioritiesChange} onClear={onPrioritiesClear} />
               {aiOn ? (
-                <div>
+                <div className="ai-apply">
                   {applyEmpty ? (
-                    <p id="ai-apply-hint" className="quiet" style={{ margin: "4px 0", fontSize: 13 }}>
+                    <p id="ai-apply-hint" className="quiet ai-apply-hint">
                       Type what matters to you above to enable.
                     </p>
                   ) : null}
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <div className="ai-apply-row">
                     <button
                       type="button"
                       className="button"
@@ -1093,7 +1089,6 @@ function CustomizeView({
                       : "quiet"
                 }
                 data-testid="ai-personalize-result"
-                style={{ margin: "8px 0 0", fontSize: 13 }}
               >
                 {aiPending ? (
                   "Mapping your priorities…"
@@ -1106,9 +1101,8 @@ function CustomizeView({
                 {aiPending || aiNotice?.kind !== "failed" ? null : (
                   <button
                     type="button"
-                    className="button-ghost"
+                    className="button-ghost ai-retry"
                     data-testid="ai-personalize-retry"
-                    style={{ marginLeft: 8 }}
                     onClick={onApplyAiOrder}
                   >
                     Retry
@@ -1118,9 +1112,8 @@ function CustomizeView({
               {aiApplied ? (
                 <button
                   type="button"
-                  className="button-ghost"
+                  className="button-ghost ai-jump"
                   data-testid="ai-jump-results"
-                  style={{ marginTop: 8 }}
                   onClick={jumpToResults}
                 >
                   Jump to results
@@ -1141,6 +1134,7 @@ function OverviewSections({
   plugins,
   mode,
   aiSpec,
+  aiModelId,
   priorities,
   standardOrder,
   onShowStandardOrder,
@@ -1156,6 +1150,7 @@ function OverviewSections({
   readonly heroBreakdown: boolean;
   readonly plugins: readonly PluginListEntry[] | null;
   readonly mode: UiMode;
+  readonly aiModelId?: string | undefined;
   readonly priorities: string;
   readonly standardOrder: boolean;
   readonly onShowStandardOrder: () => void;
@@ -1298,6 +1293,8 @@ function OverviewSections({
           order={pluginOrder}
           matchedTags={activeMatchedTags}
           personalized={personalized}
+          source={aiActive ? "ai" : "deterministic"}
+          aiModelId={aiModelId}
           onShowStandardOrder={onShowStandardOrder}
         />
       </section>
@@ -1325,15 +1322,17 @@ function OverviewSections({
           {renderedSections.map((sectionId, sectionIndex) => {
             const collapsedByAi = collapsed.has(sectionId) && !aiExpanded.has(sectionId);
             if (collapsedByAi) {
+              const pickableLabel = PICKABLE_SECTIONS.find((section) => section.id === sectionId)?.label ?? sectionId;
               return (
                 <div key={sectionId} data-section={sectionId} data-collapsed="true">
                   <button
                     type="button"
                     className="button-ghost"
                     data-testid={`ai-expand-${sectionId}`}
+                    aria-expanded="false"
                     onClick={() => setAiExpanded(new Set([...aiExpanded, sectionId]))}
                   >
-                    Show {sectionId}
+                    Show {pickableLabel}
                   </button>
                 </div>
               );

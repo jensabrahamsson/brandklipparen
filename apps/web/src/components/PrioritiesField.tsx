@@ -16,33 +16,31 @@ export function PrioritiesField({
   readonly onClear: () => void;
 }): JSX.Element {
   return (
-    <div style={{ margin: "0 0 16px" }}>
-      <label htmlFor="priorities-field" style={{ display: "block", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+    <div className="priorities">
+      <label htmlFor="priorities-field" className="priorities-label">
         What matters to you?
       </label>
       <input
         id="priorities-field"
         data-testid="priorities-field"
-        className="input"
+        className="input priorities-input"
         type="text"
         value={value}
         maxLength={500}
         placeholder="Can the owner stop me selling? Can fees change? Can more tokens be minted?"
         onChange={(event) => onChange(event.target.value)}
-        style={{ maxWidth: 560 }}
       />
-      <div style={{ marginTop: 6, display: "flex", gap: 12, alignItems: "center" }}>
+      <div className="priorities-row">
         <button
           type="button"
           data-testid="priorities-clear"
-          className="button-ghost"
+          className="button-ghost priorities-clear"
           disabled={value.length === 0}
           onClick={onClear}
-          style={{ flex: "none", whiteSpace: "nowrap" }}
         >
           Clear
         </button>
-        <span className="quiet" style={{ fontSize: 13 }}>
+        <span className="quiet priorities-note">
           Stored only on this device. The deterministic order never sends it anywhere.
         </span>
       </div>

@@ -109,6 +109,8 @@ export function PluginsPanel({
   order,
   matchedTags,
   personalized,
+  source,
+  aiModelId,
   onShowStandardOrder,
 }: {
   readonly plugins: readonly PluginListEntry[] | null;
@@ -116,6 +118,8 @@ export function PluginsPanel({
   readonly order?: readonly string[] | undefined;
   readonly matchedTags?: ReadonlyMap<string, readonly string[]> | undefined;
   readonly personalized?: boolean | undefined;
+  readonly source?: "ai" | "deterministic" | undefined;
+  readonly aiModelId?: string | undefined;
   readonly onShowStandardOrder?: (() => void) | undefined;
 }): JSX.Element {
   if (results.length === 0) {
@@ -164,9 +168,13 @@ export function PluginsPanel({
     <section aria-label="Plugins">
       <h2>Plugins</h2>
       {active ? (
-        <div style={{ margin: "0 0 8px" }}>
-          <p className="quiet" data-testid="personalized-notice" style={{ margin: "0 0 4px", fontSize: 13 }}>
-            Ordered by what matters to you.
+        <div className="plugins-personalized">
+          <p className="quiet plugins-notice" data-testid="personalized-notice">
+            {source === "ai"
+              ? aiModelId === undefined || aiModelId.length === 0
+                ? "Ordered by AI from your priorities."
+                : `Ordered by AI (${aiModelId}) from your priorities.`
+              : "Ordered by what matters to you."}
           </p>
           {onShowStandardOrder === undefined ? null : (
             <button type="button" className="button-ghost" data-testid="standard-order" onClick={onShowStandardOrder}>
