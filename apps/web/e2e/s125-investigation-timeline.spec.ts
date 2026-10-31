@@ -113,8 +113,7 @@ test("s125_investigation_timeline_chips", async ({ page, browser }) => {
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
 
-  await page.getByRole("tab", { name: "Investigate" }).click();
-  await page.getByRole("button", { name: "Request investigation" }).click();
+  await page.getByRole("button", { name: "Investigate", exact: true }).click();
   const graph = page.locator('ol.timeline[aria-label="Investigation steps"]');
   await expect(graph.locator("li.timeline-step")).toHaveCount(2);
   await expect(page.locator('ol[data-graph="3d"]')).toHaveCount(0);
@@ -148,7 +147,8 @@ test("s125_investigation_timeline_chips", async ({ page, browser }) => {
   const chips = graph.locator('button.chip[data-evidence="signal:owner-blacklist"]');
   expect(await chips.count()).toBeGreaterThanOrEqual(2);
   await chips.first().click();
-  await expect(page.getByRole("tab", { name: "Overview", selected: true })).toBeVisible();
+  // With the tabs gone the chip moves focus straight to the linked
+  // signal article and expands it in place.
   const signalArticle = page.locator('section[aria-label="Signals"] article').first();
   await expect(signalArticle.locator("> button[aria-expanded='true']")).toBeVisible();
   await expect
@@ -156,7 +156,6 @@ test("s125_investigation_timeline_chips", async ({ page, browser }) => {
     .toBe(true);
 
   // Narrative citations render as the same chips.
-  await page.getByRole("tab", { name: "Investigate" }).click();
   await expect(page.locator("text=The frozen evidence shows the transfer guard.")).toBeVisible();
   await expect(page.locator('section[aria-label="Investigation"] button.chip[data-evidence]').first()).toBeVisible();
 
@@ -166,8 +165,7 @@ test("s125_investigation_timeline_chips", async ({ page, browser }) => {
   await mockRest(reducedPage);
   await reducedPage.goto(`/#/token/${ADDRESS}`);
   await expect(reducedPage.getByRole("img", { name: /Combined score/ })).toBeVisible();
-  await reducedPage.getByRole("tab", { name: "Investigate" }).click();
-  await reducedPage.getByRole("button", { name: "Request investigation" }).click();
+  await reducedPage.getByRole("button", { name: "Investigate", exact: true }).click();
   const reducedGraph = reducedPage.locator('ol.timeline[aria-label="Investigation steps"]');
   await expect(reducedGraph.locator("li.timeline-step")).toHaveCount(2);
   const bodyAnimation = await reducedGraph

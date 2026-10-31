@@ -189,8 +189,7 @@ test("reduced_motion_has_no_animation_or_transform", async ({ page }) => {
     expect(transform).toBe("none");
   }
 
-  await page.getByRole("tab", { name: "Investigate" }).click();
-  await page.getByRole("button", { name: "Request investigation" }).click();
+  await page.getByRole("button", { name: "Investigate", exact: true }).click();
   const graph = page.locator('ol[aria-label="Investigation steps"]');
   await expect(graph).toHaveAttribute("data-graph", "2d");
   await expect(graph.locator("li")).toHaveCount(2);
@@ -210,8 +209,7 @@ test("hover_leaves_cards_flat_without_perspective", async ({ page }) => {
     await page.locator(".token-grid").evaluate((element) => getComputedStyle(element).perspective),
   ).toBe("none");
 
-  await page.getByRole("tab", { name: "Investigate" }).click();
-  await page.getByRole("button", { name: "Request investigation" }).click();
+  await page.getByRole("button", { name: "Investigate", exact: true }).click();
   const graph = page.locator('ol[aria-label="Investigation steps"]');
   await expect(graph.locator("li")).toHaveCount(2);
   expect(await graph.evaluate((element) => getComputedStyle(element).perspective)).toBe("none");
@@ -231,8 +229,7 @@ test("investigation_graph_runs_no_animations", async ({ page }) => {
   await page.locator('section[aria-label="Signals"] article > button[aria-expanded]').first().click();
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
 
-  await page.getByRole("tab", { name: "Investigate" }).click();
-  await page.getByRole("button", { name: "Request investigation" }).click();
+  await page.getByRole("button", { name: "Investigate", exact: true }).click();
   const graph = page.locator('ol[aria-label="Investigation steps"]');
   await expect(graph.locator("li")).toHaveCount(2);
   await page.waitForTimeout(600);

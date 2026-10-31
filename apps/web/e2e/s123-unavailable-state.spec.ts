@@ -50,6 +50,8 @@ const HEALTH_ALL_DISABLED = {
   assessment: { disabled: true },
   investigation: { disabled: true },
   explain: { disabled: true },
+  chat: { disabled: true },
+  rug: { disabled: true },
   personalize: { disabled: true },
   onchain: { disabled: true },
   costUnits: "placeholder-cost-unit",
@@ -60,6 +62,8 @@ function isAiCall(pathname: string): boolean {
     pathname.startsWith("/v1/assessment") ||
     pathname.startsWith("/v1/investigate") ||
     pathname.startsWith("/v1/explain") ||
+    pathname.startsWith("/v1/chat") ||
+    pathname.startsWith("/v1/rug") ||
     pathname === "/v1/personalize"
   );
 }
@@ -107,86 +111,22 @@ test("s123_unavailable_state_blocks_all_ai_calls", async ({ page }) => {
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
 
-  // Overview panels decide up front: Explain and On-chain show the
-  // unavailable state with no enabled request button.
-  await expect(page.getByTestId("explain-unavailable")).toContainText("Explanations are not configured on this server.");
-  await expect(page.getByTestId("onchain-unavailable")).toContainText("On-chain features are not configured on this server.");
-  await page.getByTestId("explain-unavailable").locator("button").evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
-  await page.getByTestId("onchain-unavailable").locator("button").evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
-
-  // Assessment tab: neutral pill, plain reason, disabled primary button.
-  await page.getByRole("tab", { name: "Contract assessment" }).click();
-  const assessmentPanel = page.locator('section[aria-label="Contract assessment"]');
-  await expect(assessmentPanel.getByText("Contract assessment: Unavailable")).toBeVisible();
-  await expect(assessmentPanel.getByText("Contract assessment is not configured on this server.")).toBeVisible();
-  const assessmentButton = assessmentPanel.getByRole("button", { name: "Request assessment" });
-  await expect(assessmentButton).toBeDisabled();
-  await expect(assessmentButton).toHaveAttribute("aria-disabled", "true");
-  await assessmentButton.evaluate((element) => {
-    (element as HTMLButtonElement).click();
-  });
-
-  // Investigate tab: hidden when the loop is not configured, so no
-  // request control can invite a call that answers not-configured.
-  await expect(page.getByRole("tab", { name: "Investigate" })).toHaveCount(0);
+  // The console decides up front from /health: with nothing configured it
+  // collapses to one line and renders no request control at all, so no
+  // action can invite a call that answers not-configured.
+  const consoleCard = page.locator('section[aria-label="Muse console"]');
+  await expect(consoleCard.getByTestId("muse-unavailable")).toContainText("Muse is not connected on this server.");
+  await expect(consoleCard.getByTestId("muse-unavailable")).toContainText(
+    "Everything above is computed without it.",
+  );
+  await expect(consoleCard.locator("button")).toHaveCount(0);
+  await expect(consoleCard.locator("input")).toHaveCount(0);
+  await expect(page.locator('section[aria-label="Muse console"] button[disabled]')).toHaveCount(0);
   await expect(page.locator('section[aria-label="Investigation"]')).toHaveCount(0);
 
-  // AI personalize: a disabled checkbox with the reason as its description.
-  await page.getByRole("tab", { name: "Overview" }).click();
-  await page.locator("details.customize > summary").click();
-  const toggle = page.getByTestId("ai-personalize-toggle");
-  await expect(toggle).toBeDisabled();
-  await expect(toggle).toHaveAttribute("aria-describedby", "ai-personalize-status");
-  await expect(page.getByTestId("ai-personalize-label")).toContainText("Mapping provider not configured on this server.");
-
-  // Every click above targeted a disabled control: no AI request may fire.
+  // No AI request fires: there is no control left to press.
   await page.waitForTimeout(500);
   expect(aiCalls).toEqual([]);
-
-  // The disabled buttons keep a visible 3:1 boundary and announce the
-  // reason. Panels unmount on tab switch, so measure each tab in turn.
-  // The Investigate tab stays hidden while unconfigured.
-  const boundaries: Array<{ ratio: number; reason: string | null }> = [];
-  for (const tab of ["Overview", "Contract assessment"] as const) {
-    await page.getByRole("tab", { name: tab }).click();
-    const found = await page.evaluate(() => {
-      const parse = (value: string): readonly [number, number, number] => {
-        const match = value.match(/[\d.]+/g) ?? [];
-        return [Number(match[0] ?? 0), Number(match[1] ?? 0), Number(match[2] ?? 0)];
-      };
-      const luminance = (rgb: readonly [number, number, number]): number => {
-        const linear = rgb.map((channel) => {
-          const value = channel / 255;
-          return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-        });
-        return 0.2126 * (linear[0] ?? 0) + 0.7152 * (linear[1] ?? 0) + 0.0722 * (linear[2] ?? 0);
-      };
-      return Array.from(document.querySelectorAll("section button.button:disabled")).map((element) => {
-        const style = getComputedStyle(element);
-        const edge = luminance(parse(style.borderColor));
-        const face = luminance(parse(style.backgroundColor));
-        const describedBy = element.getAttribute("aria-describedby") ?? "";
-        const reason = describedBy === "" ? null : document.getElementById(describedBy)?.textContent ?? null;
-        return {
-          ratio: (Math.max(edge, face) + 0.05) / (Math.min(edge, face) + 0.05),
-          reason,
-        };
-      });
-    });
-    // The pills are neutral: no brand dot inside, only the outline icon.
-    expect(await page.locator(".unavailable-pill .assessment-dot").count()).toBe(0);
-    expect(await page.locator(".unavailable-pill svg").count()).toBeGreaterThan(0);
-    boundaries.push(...found);
-  }
-  expect(boundaries.length).toBe(3);
-  for (const boundary of boundaries) {
-    expect(boundary.ratio).toBeGreaterThanOrEqual(3);
-    expect(boundary.reason).toMatch(/not configured on this server/);
-  }
 
   // No operator instructions anywhere on the page.
   const bodyText = await page.evaluate(() => document.body.innerText);

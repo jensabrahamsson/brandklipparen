@@ -19,16 +19,26 @@ export function toAvailability(
 export type AiFeatureAvailability = {
   readonly investigation: Availability;
   readonly explain: Availability;
+  readonly chat: Availability;
+  readonly rug: Availability;
   readonly onchain: Availability;
 };
 
 export function toAiAvailability(health: HealthState | null): AiFeatureAvailability {
   if (health === null) {
-    return { investigation: "available", explain: "available", onchain: "available" };
+    return {
+      investigation: "available",
+      explain: "available",
+      chat: "available",
+      rug: "available",
+      onchain: "available",
+    };
   }
   return {
     investigation: toAvailability(health.investigation),
     explain: toAvailability(health.explain),
+    chat: toAvailability(health.chat),
+    rug: toAvailability(health.rug),
     onchain: toAvailability(health.onchain),
   };
 }

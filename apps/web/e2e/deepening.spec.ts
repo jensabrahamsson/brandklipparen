@@ -132,8 +132,10 @@ test("s101_explain_panel_shows_not_configured_without_key", async ({ page }) => 
     });
   });
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByRole("button", { name: "Request explanation" }).click();
-  await expect(page.getByTestId("explain-not-configured")).toContainText("Explanations are not configured on this server.");
+  await page.getByRole("button", { name: "Explain this result" }).click();
+  const output = page.getByTestId("muse-output");
+  await expect(output).toContainText("Explanations are not configured on this server.");
+  await expect(output.getByTestId("muse-advisory")).toContainText("Advisory. The score above did not change.");
 });
 
 test("s101_explain_panel_renders_checked_sentences_as_inert_text", async ({ page }) => {
@@ -157,12 +159,13 @@ test("s101_explain_panel_renders_checked_sentences_as_inert_text", async ({ page
     });
   });
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByRole("button", { name: "Request explanation" }).click();
-  const panel = page.locator('section[aria-label="Explain panel"]');
+  await page.getByRole("button", { name: "Explain this result" }).click();
+  const output = page.getByTestId("muse-output");
   // Script-bearing sentences stay inert text: no script element executes.
-  await expect(panel.getByText("<script>alert(1)</script> the owner can block selling.")).toBeVisible();
-  expect(await panel.locator("script").count()).toBe(0);
+  await expect(output.getByText("<script>alert(1)</script> the owner can block selling.")).toBeVisible();
+  expect(await output.locator("script").count()).toBe(0);
   await expect(page.getByTestId("explain-dropped")).toContainText("2 unsupported claims dropped.");
-  // Scores stand unchanged beside the panel.
+  await expect(output.getByTestId("muse-advisory")).toContainText("Advisory. The score above did not change.");
+  // Scores stand unchanged beside the console.
   await expect(page.locator('section[aria-label="Combined score"]')).toContainText("84 High");
 });

@@ -126,8 +126,7 @@ test("k036_investigation_graph_renders_trace_steps_as_inert_text", async ({ page
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(INVESTIGATE_DONE) });
   });
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByRole("tab", { name: "Investigate" }).click();
-  await page.getByRole("button", { name: "Request investigation" }).click();
+  await page.getByRole("button", { name: "Investigate", exact: true }).click();
   const graph = page.locator('ol[aria-label="Investigation steps"]');
   await expect(graph.locator("li")).toHaveCount(2);
   await expect(graph).toContainText("evidence.list");
@@ -165,11 +164,9 @@ test("k036_investigation_shows_not_configured_limit_and_failure_states", async (
     });
   });
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByRole("tab", { name: "Investigate" }).click();
-  await page.getByRole("button", { name: "Request investigation" }).click();
+  await page.getByRole("button", { name: "Investigate", exact: true }).click();
   await expect(page.getByText("AI investigation is not configured on this server.")).toBeVisible();
-  // The deterministic score stands untouched beside the panel.
-  await page.getByRole("tab", { name: "Overview" }).click();
+  // The deterministic score stands untouched beside the console.
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
 });
 
@@ -194,8 +191,7 @@ test("k036_investigation_step_limit_shows_plain_state_with_inert_narrative", asy
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(limited) });
   });
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByRole("tab", { name: "Investigate" }).click();
-  await page.getByRole("button", { name: "Request investigation" }).click();
+  await page.getByRole("button", { name: "Investigate", exact: true }).click();
   await expect(page.getByText(/step budget/)).toBeVisible();
 });
 
@@ -232,8 +228,7 @@ test("k036_investigation_forced_conclusion_names_the_step_limit", async ({ page 
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(forced) });
   });
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByRole("tab", { name: "Investigate" }).click();
-  await page.getByRole("button", { name: "Request investigation" }).click();
+  await page.getByRole("button", { name: "Investigate", exact: true }).click();
   await expect(page.getByText("Muse concluded at the step limit.")).toBeVisible();
 });
 
@@ -246,8 +241,7 @@ test("k036_investigation_post_fallback_renders_same_trace_without_events", async
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(INVESTIGATE_DONE) });
   });
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByRole("tab", { name: "Investigate" }).click();
-  await page.getByRole("button", { name: "Request investigation" }).click();
+  await page.getByRole("button", { name: "Investigate", exact: true }).click();
   const graph = page.locator('ol[aria-label="Investigation steps"]');
   await expect(graph.locator("li")).toHaveCount(2);
   await expect(page.getByText("The frozen evidence shows the transfer guard.").first()).toBeVisible();

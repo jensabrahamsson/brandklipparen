@@ -110,7 +110,9 @@ test("s121_elevation_tokens_cover_surfaces", async ({ page, browser }) => {
     .evaluate((element) => getComputedStyle(element).boxShadow);
   expect(tooltipShadow).not.toBe("none");
 
-  await page.getByRole("tab", { name: "Contract assessment" }).click();
+  await page.evaluate(() => {
+    document.querySelector('section[aria-label="Signals"]')?.scrollIntoView(true);
+  });
   const strip = page.locator(".compact-strip");
   await expect(strip).toBeVisible();
   expect(await strip.evaluate((element) => getComputedStyle(element).boxShadow)).not.toBe("none");
@@ -141,7 +143,7 @@ test("s121_elevation_tokens_cover_surfaces", async ({ page, browser }) => {
 
   // Score dial: static disc plus a band-coloured tick glow. The 50
   // ticks light once to the score share (84 lights 42).
-  await page.getByRole("tab", { name: "Overview" }).click();
+  await page.evaluate(() => window.scrollTo(0, 0));
   const disc = await page
     .locator(".score-disc")
     .first()

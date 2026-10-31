@@ -50,6 +50,32 @@ const HEALTH_DISABLED = {
   costUnits: "placeholder-cost-unit",
 };
 
+const HEALTH_NOTHING = {
+  status: "ok",
+  apiVersion: "v1",
+  assessment: { disabled: true },
+  investigation: { disabled: true },
+  explain: { disabled: true },
+  chat: { disabled: true },
+  rug: { disabled: true },
+  personalize: { disabled: true },
+  onchain: { disabled: true },
+  costUnits: "placeholder-cost-unit",
+};
+
+const EXPLAIN_OK = {
+  status: "ok",
+  apiVersion: "v1",
+  codeHash: "0xabc",
+  explain: {
+    kind: "ok",
+    narrative: ["The owner can stop chosen wallets from sending tokens.", "Pause and blacklist are owner-only."],
+    droppedClaims: 2,
+    provider: "test-adapter",
+    modelId: "test-explain-1",
+  },
+};
+
 const NOT_CONFIGURED = {
   status: 501,
   code: "assessment-not-configured",
@@ -71,6 +97,23 @@ async function mockRest(page: Page): Promise<void> {
   });
   await page.route("**/v1/assessment*", async (route) => {
     await route.fulfill({ status: 501, contentType: "application/json", body: JSON.stringify(NOT_CONFIGURED) });
+  });
+  await page.route("**/v1/explain*", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(EXPLAIN_OK) });
+  });
+}
+
+async function mockNothing(page: Page): Promise<void> {
+  await page.route("**/health", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_NOTHING) });
+  });
+  await page.route("**/v1/analyze*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "x-deepening-status": "pending" },
+      body: JSON.stringify(ANALYZE_FIXTURE),
+    });
   });
 }
 
@@ -108,15 +151,53 @@ test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await expect(page.getByLabel(/Template explanation/)).toContainText("v1.0.0");
 });
 
-test("k305_assessment_tab_shows_not_configured", async ({ page }) => {
+test("k305_console_shows_not_connected_when_nothing_configured", async ({ page }) => {
+  await mockNothing(page);
+  await page.goto(`/#/token/${ADDRESS}`);
+  const consoleCard = page.locator('section[aria-label="Muse console"]');
+  await expect(consoleCard.getByTestId("muse-unavailable")).toContainText("Muse is not connected on this server.");
+  // No buttons at all in the one-line state, enabled or disabled.
+  await expect(consoleCard.locator("button")).toHaveCount(0);
+  await expect(consoleCard.locator("button[disabled]")).toHaveCount(0);
+  // The deterministic score stands untouched beside the console.
+  await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
+});
+
+test("w3_console_sits_after_hero_with_explain_above_fold", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByRole("tab", { name: "Contract assessment" }).click();
-  await expect(page.getByText("Contract assessment is not configured on this server.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Request assessment" })).toBeDisabled();
-  // The deterministic score stands untouched beside the panel.
-  await page.getByRole("tab", { name: "Overview" }).click();
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
+  // The console is the next sibling after the hero section.
+  const nextLabel = await page.evaluate(() => {
+    const hero = document.querySelector('section[aria-label="Combined score"]');
+    const next = hero?.nextElementSibling;
+    return next?.getAttribute("aria-label") ?? "missing";
+  });
+  expect(nextLabel).toBe("Muse console");
+  // The Explain button sits above the fold at desktop size.
+  const box = await page.getByRole("button", { name: "Explain this result" }).boundingBox();
+  expect(box).not.toBeNull();
+  if (box !== null) {
+    expect(box.y + box.height).toBeLessThanOrEqual(900);
+  }
+});
+
+test("w3_explain_renders_sentences_dropped_count_and_advisory", async ({ page }) => {
+  await mockRest(page);
+  await page.goto(`/#/token/${ADDRESS}`);
+  const hero = page.locator('section[aria-label="Combined score"]');
+  await expect(page.locator(".score-dial .num")).toHaveText("84");
+  const before = await hero.innerText();
+  await page.getByRole("button", { name: "Explain this result" }).click();
+  const output = page.getByTestId("muse-output");
+  await expect(output.getByTestId("explain-sentences")).toContainText(
+    "The owner can stop chosen wallets from sending tokens.",
+  );
+  await expect(output.getByTestId("explain-dropped")).toContainText("2 unsupported claims dropped.");
+  await expect(output.getByTestId("muse-advisory")).toContainText("Advisory. The score above did not change.");
+  // Scores, gauges and hero text are byte-identical before and after Explain.
+  expect(await hero.innerText()).toBe(before);
 });
 
 test("k507_hostile_signal_renders_as_text_only", async ({ page }) => {
@@ -150,25 +231,6 @@ test("design_review_skip_link_keeps_hash", async ({ page }) => {
   await page.keyboard.press("Enter");
   expect(new URL(page.url()).hash).toBe(`#/token/${ADDRESS}`);
   await expect(page.locator("#main")).toBeFocused();
-});
-
-test("design_review_tabs_keyboard_and_panels", async ({ page }) => {
-  await mockRest(page);
-  await page.goto(`/#/token/${ADDRESS}`);
-  const overview = page.getByRole("tab", { name: "Overview" });
-  const assessment = page.getByRole("tab", { name: "Contract assessment" });
-  await expect(overview).toHaveAttribute("aria-controls", "panel-overview");
-  await expect(assessment).toHaveAttribute("aria-controls", "panel-assessment");
-  await overview.click();
-  await expect(overview).toHaveAttribute("tabindex", "0");
-  await expect(assessment).toHaveAttribute("tabindex", "-1");
-  await page.keyboard.press("ArrowRight");
-  await expect(assessment).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("#panel-assessment")).toBeVisible();
-  await expect(page.locator("#panel-overview")).toBeHidden();
-  await page.keyboard.press("ArrowLeft");
-  await expect(overview).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator("#panel-overview")).toBeVisible();
 });
 
 test("design_review_preview_serves_csp_header", async ({ request }) => {

@@ -1,6 +1,17 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { ApiError, PERSONALIZE_TIMEOUT_MS, analyzeToken, fetchAssessment, fetchHealth, requestPersonalizeMapping } from "./api.ts";
+import {
+  ApiError,
+  PERSONALIZE_TIMEOUT_MS,
+  analyzeToken,
+  fetchAssessment,
+  fetchChat,
+  fetchHealth,
+  fetchRug,
+  pickExplainSource,
+  requestPersonalizeMapping,
+} from "./api.ts";
 import type { AnalyzeSuccess } from "../types.ts";
+import type { HealthState } from "../types.ts";
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -182,4 +193,134 @@ test("personalize mapping composes a caller abort with the timeout", async () =>
   expect(result).toBeNull();
   expect(seenInit?.signal).toBeInstanceOf(AbortSignal);
   expect(seenInit?.signal?.aborted).toBe(true);
+});
+
+// Muse console overlays (UI v2 §1.2, W-3): /v1/chat answers and /v1/rug
+// narratives parse beside /v1/explain, and the single Explain button
+// picks the first configured source.
+describe("muse console overlays", () => {
+  const ADDRESS = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+  function chatOk(): Response {
+    return jsonResponse(200, {
+      chat: {
+        kind: "ok",
+        answers: ["The owner can stop you from selling."],
+        droppedClaims: 1,
+        provider: "meta-model-api",
+        modelId: "muse-spark-1.3",
+      },
+    });
+  }
+
+  test("chat_posts_the_question_and_returns_answers", async () => {
+    let seenUrl = "";
+    let seenBody = "";
+    let seenMethod = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
+        seenUrl = String(url);
+        seenMethod = String(init?.method ?? "GET");
+        seenBody = String(init?.body ?? "");
+        return chatOk();
+      }),
+    );
+    try {
+      const state = await fetchChat(ADDRESS, null, "Can the owner stop me selling?");
+      expect(seenUrl).toContain("/v1/chat");
+      expect(seenMethod).toBe("POST");
+      expect(seenBody).toContain("Can the owner stop me selling?");
+      expect(state.status).toBe("ready");
+      if (state.status !== "ready") {
+        return;
+      }
+      expect(state.answers).toEqual(["The owner can stop you from selling."]);
+      expect(state.droppedClaims).toBe(1);
+      expect(state.modelId).toBe("muse-spark-1.3");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("chat_rejects_empty_and_oversize_questions_without_a_request", async () => {
+    const fetchMock = vi.fn(async (): Promise<Response> => chatOk());
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      expect(await fetchChat(ADDRESS, null, "   ")).toEqual({ status: "failed" });
+      expect(await fetchChat(ADDRESS, null, "x".repeat(501))).toEqual({ status: "failed" });
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("chat_not_configured_maps_to_not_configured", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(200, { chat: { kind: "not-configured" } })));
+    try {
+      expect(await fetchChat(ADDRESS, null, "Can the owner stop me selling?")).toEqual({
+        status: "not-configured",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("rug_returns_the_narrative_with_its_model", async () => {
+    let seenUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string): Promise<Response> => {
+        seenUrl = String(url);
+        return jsonResponse(200, {
+          rug: {
+            kind: "ok",
+            narrative: ["The owner controls the transfer path."],
+            droppedClaims: 0,
+            provider: "meta-model-api",
+            modelId: "muse-spark-1.3",
+          },
+        });
+      }),
+    );
+    try {
+      const state = await fetchRug(ADDRESS, null);
+      expect(seenUrl).toContain("/v1/rug");
+      expect(state.status).toBe("ready");
+      if (state.status !== "ready") {
+        return;
+      }
+      expect(state.narrative).toEqual(["The owner controls the transfer path."]);
+      expect(state.modelId).toBe("muse-spark-1.3");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("rug_not_configured_maps_to_not_configured", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(200, { rug: { kind: "not-configured" } })));
+    try {
+      expect(await fetchRug(ADDRESS, null)).toEqual({ status: "not-configured" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("explain_source_prefers_explain_then_rug_then_assessment", () => {
+    const disabled = { disabled: true } as const;
+    const configured = { provider: "meta-model-api", modelId: "muse-spark-1.3" } as const;
+    const base: HealthState = {
+      assessment: disabled,
+      investigation: disabled,
+      explain: disabled,
+      chat: disabled,
+      rug: disabled,
+      onchain: { disabled: true },
+    };
+    expect(pickExplainSource(null)).toBe("explain");
+    expect(pickExplainSource({ ...base, explain: configured })).toBe("explain");
+    expect(pickExplainSource({ ...base, rug: configured })).toBe("rug");
+    expect(pickExplainSource({ ...base, assessment: configured })).toBe("assessment");
+    expect(pickExplainSource(base)).toBeNull();
+  });
 });

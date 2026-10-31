@@ -206,14 +206,13 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
     await expect(page.getByRole("tooltip")).toBeVisible();
     await page.keyboard.press("Escape");
 
-    for (const tab of ["Contract assessment", "Investigate"]) {
-      await page.getByRole("tab", { name: tab }).click();
+    for (const name of ["Explain this result", "Investigate"]) {
+      await page.getByRole("button", { name, exact: true }).click();
       await expectFitsViewport(page);
       await expectTapTargets(page);
     }
 
     // Expert mode with every section on.
-    await page.getByRole("tab", { name: "Overview" }).click();
     await openCustomize(page);
     await page.getByRole("radio", { name: "Expert" }).check();
     await expect(page.getByTestId("expert-detail")).toBeVisible();

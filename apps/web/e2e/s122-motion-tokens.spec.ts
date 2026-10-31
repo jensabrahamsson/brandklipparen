@@ -157,8 +157,8 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
   });
   expect(motionDeclarations).toEqual([]);
 
-  // Hover never changes transform on cards, tabs or explain triggers.
-  const hoverTargets = [cards.first(), page.locator(".tab").first(), page.locator(".explain-trigger").first()];
+  // Hover never changes transform on cards, console buttons or explain triggers.
+  const hoverTargets = [cards.first(), page.getByRole("button", { name: "Explain this result" }), page.locator(".explain-trigger").first()];
   for (const target of hoverTargets) {
     const before = await target.evaluate((element) => getComputedStyle(element).transform);
     await target.hover();
@@ -188,9 +188,7 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
   await reducedPage.locator(".card").first().hover();
   await reducedPage.locator('[data-testid="explain-score:combined"]').focus();
   await reducedPage.locator('section[aria-label="Signals"] article > button[aria-expanded]').first().click();
-  await reducedPage.getByRole("tab", { name: "Contract assessment" }).click();
-  await reducedPage.getByRole("tab", { name: "Investigate" }).click();
-  await reducedPage.getByRole("button", { name: "Request investigation" }).click();
+  await reducedPage.getByRole("button", { name: "Investigate", exact: true }).click();
   const graph = reducedPage.locator('ol[aria-label="Investigation steps"]');
   await expect(graph.locator("li")).toHaveCount(2);
   await reducedPage.waitForTimeout(600);

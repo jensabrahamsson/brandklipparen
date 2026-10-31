@@ -23,8 +23,10 @@ export function AssessmentPanel({
   readonly onRequest: () => void;
 }): JSX.Element {
   void score;
+  // No card of its own (UI v2 §1.2): the Muse console owns the frame and
+  // this block renders inside its output area.
   return (
-    <section className="card" aria-label="Contract assessment">
+    <section aria-label="Contract assessment">
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Contract assessment</h2>
       {provider.status === "loading" ? (
         <p className="assessment-label">

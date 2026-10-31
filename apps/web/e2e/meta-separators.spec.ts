@@ -534,15 +534,15 @@ test("brief40_mobile_separators_found_generically", async ({ page }) => {
   await page.goto("/#/token/" + TOKEN_A);
   await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
   const analysisScan = await genericScan(page, ['section[aria-label="Combined score"]']);
-  expect(analysisScan.rowCount).toBeGreaterThanOrEqual(3);
+  // W-3 §1 removes the analysis-complete meta row from the hero, leaving 2 separator rows.
+  expect(analysisScan.rowCount).toBeGreaterThanOrEqual(2);
   expect(analysisScan.failures, analysisScan.failures.join("; ")).toEqual([]);
   expect(analysisScan.wrapped).toBe(true);
 
-  // Hero lines share the token meta left edge.
+  // The hero score line shares the token meta left edge. (The retired
+  // analysis-complete line was removed with the W-3 hero compaction.)
   const tokenLeft = await expectRowAligned(page, ".token-meta", 0);
-  const completeLeft = await expectRowAligned(page, '[data-testid="analysis-complete-meta"]', 0);
   const scoreLeft = await expectRowAligned(page, '[data-testid="hero-score-meta"]', 0);
-  expect(Math.abs(completeLeft - tokenLeft), "analysis hero shares token meta edge").toBeLessThanOrEqual(0.5);
   expect(Math.abs(scoreLeft - tokenLeft), "score hero shares token meta edge").toBeLessThanOrEqual(0.5);
 
   // No horizontal scroll at 390 px.
@@ -576,7 +576,7 @@ test("brief40_desktop_separators_stay_visible_between_items", async ({ page }) =
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + TOKEN_A);
   await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
-  for (const selector of [".token-meta", '[data-testid="analysis-complete-meta"]', '[data-testid="hero-score-meta"]']) {
+  for (const selector of [".token-meta", '[data-testid="hero-score-meta"]']) {
     const items = await itemCount(page, selector, 0);
     expect(items).toBeGreaterThanOrEqual(2);
     let painted = 0;

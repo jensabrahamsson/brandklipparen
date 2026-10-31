@@ -318,7 +318,7 @@ a {
   position: relative;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 22px 40px 34px;
+  padding: 16px 40px 34px;
   border-radius: 26px;
   background: radial-gradient(110% 85% at 50% 38%, var(--glass-2) 0%, var(--glass) 55%, #020906 100%);
   box-shadow: var(--tube-rings), 0 30px 80px rgb(0 0 0 / 70%), inset 0 0 120px rgb(0 0 0 / 75%);
@@ -343,7 +343,7 @@ a {
   gap: 22px;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 6px 40px 18px;
+  padding: 6px 40px 12px;
   font-size: 12px;
   color: var(--dim);
 }
@@ -909,6 +909,8 @@ a {
 
 .card.verdict {
   border-top: 1px solid var(--verdict-band, var(--edge));
+  padding-top: 16px;
+  padding-bottom: 16px;
 }
 
 .row-card {
@@ -1886,6 +1888,110 @@ a:focus-visible {
   color: var(--phosphor-hi);
   border-bottom-color: var(--phosphor);
   text-shadow: 0 0 10px var(--glow);
+}
+
+/* Muse console (UI v2 §1.2): the advisory card directly under the hero.
+   A dashed double border sets it apart from the deterministic hero, which
+   keeps the solid band-coloured edge. The output grows downward only and
+   never re-lays out the hero. No motion of its own: results appear
+   instantly, static under prefers-reduced-motion through the global kill
+   switch below. All controls keep a real 44 px box on every width. */
+.muse-console {
+  border: 3px double var(--edge);
+  margin-bottom: 16px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.muse-console .muse-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+}
+
+.muse-console .button,
+.muse-console .button-ghost {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.muse-ask {
+  margin: 8px 0 0;
+}
+
+.muse-ask > label {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--phosphor-hi);
+}
+
+.muse-ask-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.muse-ask-row .input {
+  min-height: 44px;
+  min-width: 0;
+}
+
+.muse-console .icon-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  color: var(--dim);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+.muse-console .icon-btn:hover {
+  color: var(--phosphor-hi);
+  background: var(--glass-2);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+
+.muse-console .icon-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.muse-out {
+  margin-top: 12px;
+  border-top: 1px dashed var(--rule);
+  padding-top: 12px;
+}
+
+.muse-result-label {
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.muse-sentences {
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .muse-ask-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .muse-ask-row .button {
+    grid-column: 1 / -1;
+  }
 }
 
 pre.code {

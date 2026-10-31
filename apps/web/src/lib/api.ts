@@ -351,7 +351,13 @@ export async function fetchAnalyzeStream(address: string, apiKey: string | null)
 // how many model sentences failed the evidence check.
 export type ExplainState =
   | { readonly status: "not-configured" }
-  | { readonly status: "ready"; readonly narrative: readonly string[]; readonly droppedClaims: number }
+  | {
+      readonly status: "ready";
+      readonly narrative: readonly string[];
+      readonly droppedClaims: number;
+      readonly provider: string;
+      readonly modelId: string;
+    }
   | { readonly status: "fallback" }
   | { readonly status: "failed" };
 
@@ -364,19 +370,169 @@ export async function fetchExplain(address: string, apiKey: string | null): Prom
       return { status: "failed" };
     }
     const body = (await response.json()) as { explain?: unknown };
-    const explain = body.explain as { kind?: unknown; narrative?: unknown; droppedClaims?: unknown } | null;
+    const explain = body.explain as {
+      kind?: unknown;
+      narrative?: unknown;
+      droppedClaims?: unknown;
+      provider?: unknown;
+      modelId?: unknown;
+    } | null;
     if (explain === null || explain === undefined || typeof explain !== "object") {
       return { status: "fallback" };
     }
     if (explain.kind === "not-configured") {
       return { status: "not-configured" };
     }
-    if (explain.kind === "ok" && Array.isArray(explain.narrative) && typeof explain.droppedClaims === "number") {
+    if (
+      explain.kind === "ok" &&
+      Array.isArray(explain.narrative) &&
+      typeof explain.droppedClaims === "number" &&
+      typeof explain.provider === "string" &&
+      typeof explain.modelId === "string"
+    ) {
       const narrative = explain.narrative.filter((entry): entry is string => typeof entry === "string");
       if (narrative.length !== explain.narrative.length) {
         return { status: "fallback" };
       }
-      return { status: "ready", narrative, droppedClaims: explain.droppedClaims };
+      return {
+        status: "ready",
+        narrative,
+        droppedClaims: explain.droppedClaims,
+        provider: explain.provider,
+        modelId: explain.modelId,
+      };
+    }
+    return { status: "fallback" };
+  } catch {
+    return { status: "failed" };
+  }
+}
+
+export type ChatState =
+  | { readonly status: "not-configured" }
+  | {
+      readonly status: "ready";
+      readonly answers: readonly string[];
+      readonly droppedClaims: number;
+      readonly provider: string;
+      readonly modelId: string;
+    }
+  | { readonly status: "fallback" }
+  | { readonly status: "failed" };
+
+// Follow-up question over the frozen analysis (S-096, K-302): POST-only,
+// the question rides in the body beside the address (500 chars max, the
+// server rejects anything longer before analysis starts). Surviving
+// answers render like Explain sentences; uncited answers only move the
+// drop count. Scores, evidence and finding text are untouched.
+export async function fetchChat(address: string, apiKey: string | null, question: string): Promise<ChatState> {
+  const trimmed = question.trim();
+  if (trimmed.length === 0 || trimmed.length > 500) {
+    return { status: "failed" };
+  }
+  try {
+    const response = await fetch("/v1/chat", {
+      method: "POST",
+      headers: { ...apiHeaders(apiKey), "content-type": "application/json" },
+      body: JSON.stringify({ address, question: trimmed }),
+    });
+    if (!response.ok) {
+      return { status: "failed" };
+    }
+    const body = (await response.json()) as { chat?: unknown };
+    const chat = body.chat as {
+      kind?: unknown;
+      answers?: unknown;
+      droppedClaims?: unknown;
+      provider?: unknown;
+      modelId?: unknown;
+    } | null;
+    if (chat === null || chat === undefined || typeof chat !== "object") {
+      return { status: "fallback" };
+    }
+    if (chat.kind === "not-configured") {
+      return { status: "not-configured" };
+    }
+    if (
+      chat.kind === "ok" &&
+      Array.isArray(chat.answers) &&
+      typeof chat.droppedClaims === "number" &&
+      typeof chat.provider === "string" &&
+      typeof chat.modelId === "string"
+    ) {
+      const answers = chat.answers.filter((entry): entry is string => typeof entry === "string");
+      if (answers.length !== chat.answers.length) {
+        return { status: "fallback" };
+      }
+      return {
+        status: "ready",
+        answers,
+        droppedClaims: chat.droppedClaims,
+        provider: chat.provider,
+        modelId: chat.modelId,
+      };
+    }
+    return { status: "fallback" };
+  } catch {
+    return { status: "failed" };
+  }
+}
+
+export type RugState =
+  | { readonly status: "not-configured" }
+  | {
+      readonly status: "ready";
+      readonly narrative: readonly string[];
+      readonly droppedClaims: number;
+      readonly provider: string;
+      readonly modelId: string;
+    }
+  | { readonly status: "fallback" }
+  | { readonly status: "failed" };
+
+// Capability summary for the top risk type (S-097, K-302): one opt-in
+// overlay call beside Explain. The narrative renders like Explain
+// sentences with the same drop count; scores and evidence are untouched.
+export async function fetchRug(address: string, apiKey: string | null): Promise<RugState> {
+  try {
+    const response = await fetch(`/v1/rug?address=${encodeURIComponent(address)}`, {
+      headers: apiHeaders(apiKey),
+    });
+    if (!response.ok) {
+      return { status: "failed" };
+    }
+    const body = (await response.json()) as { rug?: unknown };
+    const rug = body.rug as {
+      kind?: unknown;
+      narrative?: unknown;
+      droppedClaims?: unknown;
+      provider?: unknown;
+      modelId?: unknown;
+    } | null;
+    if (rug === null || rug === undefined || typeof rug !== "object") {
+      return { status: "fallback" };
+    }
+    if (rug.kind === "not-configured") {
+      return { status: "not-configured" };
+    }
+    if (
+      rug.kind === "ok" &&
+      Array.isArray(rug.narrative) &&
+      typeof rug.droppedClaims === "number" &&
+      typeof rug.provider === "string" &&
+      typeof rug.modelId === "string"
+    ) {
+      const narrative = rug.narrative.filter((entry): entry is string => typeof entry === "string");
+      if (narrative.length !== rug.narrative.length) {
+        return { status: "fallback" };
+      }
+      return {
+        status: "ready",
+        narrative,
+        droppedClaims: rug.droppedClaims,
+        provider: rug.provider,
+        modelId: rug.modelId,
+      };
     }
     return { status: "fallback" };
   } catch {
@@ -496,4 +652,29 @@ export async function requestPersonalizeMapping(
   } catch {
     return null;
   }
+}
+
+// Explain source for the single console button (UI v2 §1.2, owner
+// decision: Explain + assessment + rug narrative merge into one
+// button). First configured feature wins: /v1/explain, then /v1/rug,
+// then /v1/assessment. Unknown fields (older servers) keep the previous
+// explicit-request behaviour and count as available, so explain stays
+// the default. Null when none of the three is configured: the console
+// then shows the one-line state with no buttons at all.
+export type ExplainSource = "explain" | "rug" | "assessment";
+
+export function pickExplainSource(health: HealthState | null): ExplainSource | null {
+  if (health === null) {
+    return "explain";
+  }
+  if (health.explain === undefined || !("disabled" in health.explain)) {
+    return "explain";
+  }
+  if (health.rug === undefined || !("disabled" in health.rug)) {
+    return "rug";
+  }
+  if (health.assessment === undefined || !("disabled" in health.assessment)) {
+    return "assessment";
+  }
+  return null;
 }

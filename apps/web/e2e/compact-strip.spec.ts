@@ -1,7 +1,8 @@
-// Result summary strip: hidden on Overview while the combined score ring
-// is visible, pinned to the viewport top once the ring scrolls out, and
-// always shown on the assessment tab. No live chain or provider calls:
-// every REST response is route-mocked like in smoke.spec.ts.
+// Result summary strip: hidden while the combined score ring is visible,
+// pinned to the viewport top once the ring scrolls out. With the tabs
+// gone the strip no longer depends on any tab: only ring visibility
+// decides. No live chain or provider calls: every REST response is
+// route-mocked like in smoke.spec.ts.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -88,7 +89,7 @@ test("result_summary_strip_follows_ring_visibility", async ({ page }) => {
   const ring = page.locator('section[aria-label="Combined score"]');
   const gauges = page.locator("section.gauge");
 
-  // Overview at the top: the ring is in view, so the strip stays unmounted
+  // At the top: the ring is in view, so the strip stays unmounted
   // (no layout space taken, nothing to overlap the gauges).
   await expect(ring).toBeInViewport();
   await expect(strip).toHaveCount(0);
@@ -122,12 +123,7 @@ test("result_summary_strip_follows_ring_visibility", async ({ page }) => {
     }
   }
 
-  // Assessment tab: the strip is always visible (no ring on that tab).
-  await page.getByRole("tab", { name: "Contract assessment" }).click();
-  await expect(strip).toBeVisible();
-
-  // Back to Overview at the top: ring visible again, strip hidden again.
-  await page.getByRole("tab", { name: "Overview" }).click();
+  // Scrolling back to the top: ring visible again, strip hidden again.
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(ring).toBeInViewport();
   await expect(strip).toHaveCount(0);

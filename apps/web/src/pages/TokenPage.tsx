@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX, type KeyboardEvent, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX, type SyntheticEvent } from "react";
 import { ApiError, analyzeToken, fetchAssessment, fetchHealth, fetchPersonalizeStatus, fetchPlugins, requestInvestigation, requestPersonalizeMapping } from "../lib/api.ts";
 import { ExpertDetail } from "../components/ExpertDetail.tsx";
 import { PluginsPanel } from "../components/PluginsPanel.tsx";
@@ -41,11 +41,9 @@ import {
   sortByImpact,
   strongestSignal,
 } from "../lib/signals.ts";
-import { AssessmentPanel } from "../components/AssessmentPanel.tsx";
-import { ExplainPanel } from "../components/ExplainPanel.tsx";
 import { FieldPicker, PICKABLE_SECTIONS } from "../components/FieldPicker.tsx";
 import { StreamView } from "../components/StreamView.tsx";
-import { InvestigationPanel } from "../components/InvestigationPanel.tsx";
+import { MuseConsole } from "../components/MuseConsole.tsx";
 import { OnchainPanel } from "../components/OnchainPanel.tsx";
 import { CantTellPanel } from "../components/CantTellPanel.tsx";
 import { ExplanationList } from "../components/ExplanationList.tsx";
@@ -56,7 +54,7 @@ import { useMediaQuery } from "../lib/useMediaQuery.ts";
 import { Sidebar } from "../components/Sidebar.tsx";
 import { SignalList } from "../components/SignalList.tsx";
 import { Explain } from "../components/Explain.tsx";
-import type { AnalyzeResult, AssessmentState, InvestigationState, InvestigationStep, ProviderInfo, RiskKind } from "../types.ts";
+import type { AnalyzeResult, AssessmentState, HealthState, InvestigationState, InvestigationStep, ProviderInfo, RiskKind } from "../types.ts";
 import { RISK_SHORT } from "../lib/risk.ts";
 
 const RISKS: readonly RiskKind[] = ["rug-pull", "honeypot", "bot-pump"];
@@ -73,8 +71,6 @@ export function verdictBandColor(score: number): string {
 // Deepening polls (design review P0-6): 1.5 s cadence, capped at 10.
 const DEEPEN_POLL_MS = 1500;
 const DEEPEN_POLL_MAX = 10;
-
-type Tab = "overview" | "assessment" | "investigate";
 
 // AI order notice (P1-9, P1-10): the always-rendered status region
 // shows the text for every kind. "failed" renders in the unavailable pill
@@ -115,7 +111,6 @@ export function TokenPage({
   const [aiNotice, setAiNotice] = useState<AiPersonalizeNotice | null>(null);
   const [aiPending, setAiPending] = useState(false);
   const [aiProvider, setAiProvider] = useState<{ provider: string; modelId: string } | null>(null);
-  const [tab, setTab] = useState<Tab>("overview");
   // Field picker (S-100, K-023): picked overview sections render, cleared
   // ones hide; the score stays pinned and is never pickable.
   const [visibleSections, setVisibleSections] = useState<ReadonlySet<string>>(
@@ -133,8 +128,13 @@ export function TokenPage({
   const [availability, setAvailability] = useState<AiFeatureAvailability>({
     investigation: "available",
     explain: "available",
+    chat: "available",
+    rug: "available",
     onchain: "available",
   });
+  // Raw /health for the console's Explain fallback chain (UI v2 §1.2):
+  // the first configured source among explain, rug and assessment wins.
+  const [health, setHealth] = useState<HealthState | null>(null);
   const healthPersonalize = useRef(false);
   const deepeningPolls = useRef(0);
   const aiRequestId = useRef(0);
@@ -206,29 +206,41 @@ export function TokenPage({
   useEffect(() => {
     let cancelled = false;
     fetchHealth().then(
-      (health) => {
+      (response) => {
         if (cancelled) {
           return;
         }
-        if ("disabled" in health.assessment) {
+        setHealth(response);
+        if ("disabled" in response.assessment) {
           setProvider({ status: "disabled" });
         } else {
-          setProvider({ status: "ready", provider: health.assessment.provider, modelId: health.assessment.modelId });
+          setProvider({
+            status: "ready",
+            provider: response.assessment.provider,
+            modelId: response.assessment.modelId,
+          });
         }
-        setAvailability(toAiAvailability(health));
-        if (health.personalize !== undefined) {
+        setAvailability(toAiAvailability(response));
+        if (response.personalize !== undefined) {
           healthPersonalize.current = true;
           setAiProvider(
-            "disabled" in health.personalize
+            "disabled" in response.personalize
               ? null
-              : { provider: health.personalize.provider, modelId: health.personalize.modelId },
+              : { provider: response.personalize.provider, modelId: response.personalize.modelId },
           );
         }
       },
       () => {
         if (!cancelled) {
+          setHealth(null);
           setProvider({ status: "disabled" });
-          setAvailability({ investigation: "unavailable", explain: "unavailable", onchain: "unavailable" });
+          setAvailability({
+            investigation: "unavailable",
+            explain: "unavailable",
+            chat: "unavailable",
+            rug: "unavailable",
+            onchain: "unavailable",
+          });
         }
       },
     );
@@ -449,41 +461,7 @@ export function TokenPage({
     });
   }, []);
 
-  // The Investigate tab renders only when /health reports the loop
-  // configured; keyboard order follows the visible tabs.
-  const investigateTabVisible = availability.investigation === "available";
-  useEffect(() => {
-    if (!investigateTabVisible) {
-      setTab((current) => (current === "investigate" ? "overview" : current));
-    }
-  }, [investigateTabVisible]);
 
-  const onTabKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      const order: Tab[] = investigateTabVisible
-        ? ["overview", "assessment", "investigate"]
-        : ["overview", "assessment"];
-      const current = order.indexOf(tab);
-      let next: number | null = null;
-      if (event.key === "ArrowRight") {
-        next = (current + 1) % order.length;
-      } else if (event.key === "ArrowLeft") {
-        next = (current - 1 + order.length) % order.length;
-      } else if (event.key === "Home") {
-        next = 0;
-      } else if (event.key === "End") {
-        next = order.length - 1;
-      }
-      if (next === null) {
-        return;
-      }
-      event.preventDefault();
-      const target = order[next] as Tab;
-      setTab(target);
-      document.getElementById(`tab-${target}`)?.focus();
-    },
-    [tab, investigateTabVisible],
-  );
 
   if (!isValidAddress(address)) {
     return (
@@ -500,7 +478,7 @@ export function TokenPage({
 
   return (
     <div className="page">
-      <button type="button" className="button-ghost" onClick={onHome} style={{ marginBottom: 16 }}>
+      <button type="button" className="button-ghost" onClick={onHome} style={{ marginBottom: 8 }}>
         ← Back to search
       </button>
       {result !== null && result.kind === "assessed" ? null : (
@@ -537,7 +515,6 @@ export function TokenPage({
       {result !== null && result.kind === "assessed" ? (
         <AssessedView
           result={result}
-          elapsed={elapsed}
           plugins={plugins}
           mode={mode}
           onModeChange={(next) => {
@@ -586,9 +563,7 @@ export function TokenPage({
             setAiNotice(null);
           }}
           availability={availability}
-          tab={tab}
-          onTab={setTab}
-          onTabKeyDown={onTabKeyDown}
+          health={health}
           assessment={assessment}
           provider={provider}
           onRequestAssessment={requestAssessment}
@@ -609,7 +584,6 @@ export function TokenPage({
 
 function AssessedView({
   result,
-  elapsed,
   plugins,
   mode,
   onModeChange,
@@ -628,9 +602,7 @@ function AssessedView({
   standardOrder,
   onShowStandardOrder,
   availability,
-  tab,
-  onTab,
-  onTabKeyDown,
+  health,
   assessment,
   provider,
   onRequestAssessment,
@@ -645,7 +617,6 @@ function AssessedView({
   onToggleSection,
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
-  readonly elapsed: number | null;
   readonly plugins: readonly PluginListEntry[] | null;
   readonly mode: UiMode;
   readonly onModeChange: (mode: UiMode) => void;
@@ -664,9 +635,7 @@ function AssessedView({
   readonly standardOrder: boolean;
   readonly onShowStandardOrder: () => void;
   readonly availability: AiFeatureAvailability;
-  readonly tab: Tab;
-  readonly onTab: (tab: Tab) => void;
-  readonly onTabKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
+  readonly health: HealthState | null;
   readonly assessment: AssessmentState;
   readonly provider: ProviderInfo;
   readonly onRequestAssessment: () => void;
@@ -691,12 +660,11 @@ function AssessedView({
   // on the linked signal (S-125).
   const jumpToSignal = useCallback(
     (key: string) => {
-      onTab("overview");
       if (!openSignals.has(key)) {
         onToggleSignal(key);
       }
-      // The overview panel remounts on the tab switch, so the article may
-      // not exist yet: retry until it commits, then scroll and focus it.
+      // The signal article may not exist yet on the first console click,
+      // so retry until it commits, then scroll and focus it.
       // getElementById takes the literal id: no CSS escaping (an escaped
       // leading digit would never match).
       let attempts = 0;
@@ -715,16 +683,14 @@ function AssessedView({
       };
       window.setTimeout(reveal, 0);
     },
-    [onTab, onToggleSignal, openSignals],
+    [onToggleSignal, openSignals],
   );
-  // Summary strip visibility: always on the assessment tab (no ring there);
-  // on Overview only once the combined score ring has scrolled out of view.
-  // Unmounted when hidden so it takes no layout space and cannot overlap
-  // the ring or gauge cards. The tab key re-subscribes when tab switches
-  // remount the Overview panel.
+  // Summary strip visibility (UI v2 §1): with the tabs gone the strip no
+  // longer depends on any tab. It stays unmounted while the combined
+  // score ring is in view and pins to the viewport top once the ring has
+  // scrolled out, so it never covers the ring or the gauge cards.
   const ringRef = useRef<HTMLElement | null>(null);
-  const ringGone = useRingOutOfView(ringRef, tab);
-  const stripVisible = tab === "assessment" || tab === "investigate" || ringGone;
+  const stripVisible = useRingOutOfView(ringRef);
   // R-5: the full string rides along as the accessible title, so sighted
   // readers on <= 480 px (where the row truncates with ellipsis) still get
   // every value on hover or long-press, matching the code-hash span below.
@@ -754,13 +720,6 @@ function AssessedView({
           identity={resolveTokenIdentity(result, liveEntry)}
           liveEntry={liveEntry}
         />
-        <p className="quiet numeric hero-meta" data-testid="analysis-complete-meta" style={{ marginBlock: "0 16px" }}>
-          <span className="meta-item">
-            Analysis complete{elapsed === null ? "" : ` in ${elapsed.toFixed(1)} s`}
-          </span>
-          <span className="meta-item">Block {result.block}</span>
-          <span className="meta-item">model {result.modelVersion}</span>
-        </p>
         <div className="score-ring-wrap">
           <div className="hero-copy" style={{ flex: "1 1 240px" }}>
             <p className="risk-meaning" style={{ margin: "0 0 8px" }}>
@@ -816,12 +775,21 @@ function AssessedView({
           </div>
           <ScoreRing score={result.score} />
         </div>
-        {result.deepening === "pending" ? (
-          <p className="quiet" style={{ margin: "16px 0 0" }}>
-            Deepening pending: decompiled snippets stream in here when ready. Score and probabilities stand meanwhile.
-          </p>
-        ) : null}
       </section>
+      <MuseConsole
+        address={address}
+        apiKey={apiKey}
+        health={health}
+        availability={availability}
+        score={result.score}
+        assessment={assessment}
+        provider={provider}
+        onRequestAssessment={onRequestAssessment}
+        investigation={investigation}
+        onRunInvestigation={onRunInvestigation}
+        signals={sorted}
+        onSignalLink={jumpToSignal}
+      />
       {stripVisible ? (
         <div className="compact-strip" aria-label="Result summary" data-testid="result-summary">
           <span className="numeric">
@@ -836,109 +804,43 @@ function AssessedView({
           </span>
         </div>
       ) : null}
-      <div className="tabs" role="tablist" aria-label="Token views" onKeyDown={onTabKeyDown}>
-        <button
-          type="button"
-          role="tab"
-          id="tab-overview"
-          aria-controls="panel-overview"
-          aria-selected={tab === "overview"}
-          tabIndex={tab === "overview" ? 0 : -1}
-          className="tab"
-          onClick={() => onTab("overview")}
-        >
-          Overview
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-assessment"
-          aria-controls="panel-assessment"
-          aria-selected={tab === "assessment"}
-          tabIndex={tab === "assessment" ? 0 : -1}
-          className="tab"
-          onClick={() => onTab("assessment")}
-        >
-          Contract assessment
-        </button>
-        {availability.investigation === "available" ? (
-          <button
-            type="button"
-            role="tab"
-            id="tab-investigate"
-            aria-controls="panel-investigate"
-            aria-selected={tab === "investigate"}
-            tabIndex={tab === "investigate" ? 0 : -1}
-            className="tab"
-            onClick={() => onTab("investigate")}
-          >
-            Investigate
-          </button>
-        ) : null}
-      </div>
-      <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" hidden={tab !== "overview"}>
-        {tab === "overview" ? (
-          <>
-            <CustomizeView
-              mode={mode}
-              onModeChange={onModeChange}
-              aiOn={aiOn}
-              onToggleAi={onToggleAi}
-              aiProvider={aiProvider}
-              aiPending={aiPending}
-              onApplyAiOrder={onApplyAiOrder}
-              aiNotice={aiNotice}
-              aiApplied={aiApplied}
-              onResetAiOrder={onResetAiOrder}
-              visibleSections={visibleSections}
-              onToggleSection={onToggleSection}
-              priorities={priorities}
-              onPrioritiesChange={onPrioritiesChange}
-              onPrioritiesClear={onPrioritiesClear}
-            />
-            <OverviewSections
-              result={result}
-              heroBreakdown={heroBreakdown}
-              plugins={plugins}
-              mode={mode}
-              aiSpec={aiSpec}
-              aiModelId={aiProvider?.modelId}
-              priorities={priorities}
-              standardOrder={standardOrder}
-              onShowStandardOrder={onShowStandardOrder}
-              sorted={sorted}
-              templateLine={templateLine}
-              openSignals={openSignals}
-              onToggleSignal={onToggleSignal}
-              onSignalLink={jumpToSignal}
-              visibleSections={visibleSections}
-              liveEntry={liveEntry}
-            />
-            {mode === "expert" ? <StreamView address={address} apiKey={apiKey} /> : null}
-            <ExplainPanel address={address} apiKey={apiKey} availability={availability.explain} />
-            <OnchainPanel address={address} apiKey={apiKey} availability={availability.onchain} />
-          </>
-        ) : null}
-      </div>
-      <div role="tabpanel" id="panel-assessment" aria-labelledby="tab-assessment" hidden={tab !== "assessment"}>
-        {tab === "assessment" ? (
-          <AssessmentPanel state={assessment} score={result.score} provider={provider} onRequest={onRequestAssessment} />
-        ) : null}
-      </div>
-      {availability.investigation === "available" ? (
-        <div role="tabpanel" id="panel-investigate" aria-labelledby="tab-investigate" hidden={tab !== "investigate"}>
-          {tab === "investigate" ? (
-            <InvestigationPanel
-              state={investigation}
-              score={result.score}
-              availability={availability.investigation}
-              signals={sorted}
-              onSignalLink={jumpToSignal}
-              onRequest={onRunInvestigation}
-            />
-          ) : null}
-        </div>
-      ) : null}
+      <CustomizeView
+        mode={mode}
+        onModeChange={onModeChange}
+        aiOn={aiOn}
+        onToggleAi={onToggleAi}
+        aiProvider={aiProvider}
+        aiPending={aiPending}
+        onApplyAiOrder={onApplyAiOrder}
+        aiNotice={aiNotice}
+        aiApplied={aiApplied}
+        onResetAiOrder={onResetAiOrder}
+        visibleSections={visibleSections}
+        onToggleSection={onToggleSection}
+        priorities={priorities}
+        onPrioritiesChange={onPrioritiesChange}
+        onPrioritiesClear={onPrioritiesClear}
+      />
+      <OverviewSections
+        result={result}
+        heroBreakdown={heroBreakdown}
+        plugins={plugins}
+        mode={mode}
+        aiSpec={aiSpec}
+        aiModelId={aiProvider?.modelId}
+        priorities={priorities}
+        standardOrder={standardOrder}
+        onShowStandardOrder={onShowStandardOrder}
+        sorted={sorted}
+        templateLine={templateLine}
+        openSignals={openSignals}
+        onToggleSignal={onToggleSignal}
+        onSignalLink={jumpToSignal}
+        visibleSections={visibleSections}
+        liveEntry={liveEntry}
+      />
+      {mode === "expert" ? <StreamView address={address} apiKey={apiKey} /> : null}
+      <OnchainPanel address={address} apiKey={apiKey} availability={availability.onchain} />
     </div>
   );
 }

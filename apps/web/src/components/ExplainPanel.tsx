@@ -1,88 +1,161 @@
-// Explain panel (S-101, K-020): the opt-in sentence-level explanation
-// overlay beside the deterministic result. Nothing fetches until the
-// visitor asks. Sentences render as inert React text (never HTML), the
-// drop count names how many model sentences failed the evidence check,
-// and the invalid-output branch falls back to the deterministic
-// explanation. Scores and evidence are untouched: the panel reads the
+// Explain block for the Muse console (S-101, K-020, UI v2 §1.2). The
+// opt-in sentence-level explanation overlay beside the deterministic
+// result, now without its own card: the console owns the frame, the
+// buttons and the advisory footer. Nothing fetches until the console
+// mounts this block. Sentences render as inert React text (never HTML),
+// the drop count names how many model sentences failed the evidence
+// check, and the invalid-output branch falls back to the deterministic
+// explanation. Scores and evidence are untouched: the block reads the
 // overlay endpoint only.
-import { useState, type JSX } from "react";
-import { fetchExplain } from "../lib/api.ts";
-import type { ExplainState } from "../lib/api.ts";
-import type { Availability } from "../lib/capabilities.ts";
-import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
+import { useEffect, useState, type JSX } from "react";
+import { fetchExplain, fetchRug } from "../lib/api.ts";
+import type { ExplainSource, ExplainState, RugState } from "../lib/api.ts";
+import type { Signal } from "../types.ts";
+import { evidenceSignalKey, splitNarrative } from "../lib/investigation.ts";
+
+export type ConsoleSentences = {
+  readonly narrative: readonly string[];
+  readonly droppedClaims: number;
+};
+
+// Sentences with evidence chips. Citation markers (`[E:signal:<id>]`)
+// inside model sentences become chips that move focus to the linked
+// signal; unknown ids render as plain text. Plain sentences without
+// markers render as-is.
+export function ExplainSentences({
+  narrative,
+  droppedClaims,
+  signals,
+  onSignalLink,
+}: ConsoleSentences & {
+  readonly signals: readonly Signal[];
+  readonly onSignalLink: (key: string) => void;
+}): JSX.Element {
+  return (
+    <div data-testid="explain-sentences">
+      {narrative.length === 0 ? (
+        <p style={{ margin: 0 }}>Every model sentence failed the evidence check.</p>
+      ) : (
+        <ul className="muse-sentences" style={{ margin: 0, paddingLeft: 20 }}>
+          {narrative.map((sentence, index) => (
+            <li key={index}>
+              {splitNarrative(sentence).map((part, partIndex) =>
+                part.kind === "text" ? (
+                  <span key={partIndex}>{part.text}</span>
+                ) : (
+                  <ExplainChip key={partIndex} id={part.id} signals={signals} onSignalLink={onSignalLink} />
+                ),
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {droppedClaims > 0 ? (
+        <p data-testid="explain-dropped" className="quiet" style={{ margin: "8px 0 0" }}>
+          {droppedClaims} unsupported {droppedClaims === 1 ? "claim" : "claims"} dropped.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ExplainChip({
+  id,
+  signals,
+  onSignalLink,
+}: {
+  readonly id: string;
+  readonly signals: readonly Signal[];
+  readonly onSignalLink: (key: string) => void;
+}): JSX.Element {
+  const key = evidenceSignalKey(signals, id);
+  const label = id.startsWith("signal:") ? id.slice("signal:".length) : id;
+  if (key === null) {
+    return (
+      <span className="tool-chip" style={{ margin: "2px 4px 2px 0" }}>
+        {label}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="chip mono"
+      data-evidence={id}
+      style={{ margin: "2px 4px 2px 0" }}
+      onClick={() => onSignalLink(key)}
+    >
+      {label}
+    </button>
+  );
+}
 
 export function ExplainPanel({
   address,
   apiKey,
-  availability,
+  source,
+  signals,
+  onSignalLink,
 }: {
   readonly address: string;
   readonly apiKey: string;
-  readonly availability: Availability;
+  readonly source: Extract<ExplainSource, "explain" | "rug">;
+  readonly signals: readonly Signal[];
+  readonly onSignalLink: (key: string) => void;
 }): JSX.Element {
-  const [state, setState] = useState<ExplainState | null>(null);
-  const [pending, setPending] = useState(false);
+  const [state, setState] = useState<ExplainState | RugState | null>(null);
 
-  async function onRequest(): Promise<void> {
-    setPending(true);
-    const next = await fetchExplain(address, apiKey);
-    setPending(false);
-    setState(next);
-  }
+  useEffect(() => {
+    let cancelled = false;
+    const run = source === "rug" ? fetchRug(address, apiKey) : fetchExplain(address, apiKey);
+    run.then(
+      (next) => {
+        if (!cancelled) {
+          setState(next);
+        }
+      },
+      () => {
+        if (!cancelled) {
+          setState({ status: "failed" });
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [address, apiKey, source]);
 
-  return (
-    <section className="card" aria-label="Explain panel" style={{ marginBottom: 20 }}>
-      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Explain</h2>
-      <p className="quiet" style={{ margin: "0 0 8px" }}>
-        One opt-in model explanation over the frozen analysis. Advisory only: the score stands.
+  if (state === null) {
+    return (
+      <p className="muted" role="status" style={{ margin: 0 }}>
+        Reading the frozen result…
       </p>
-      {state === null && availability === "unavailable" ? (
-        <div data-testid="explain-unavailable" style={{ marginTop: 8 }}>
-          <FeatureUnavailable
-            title="Explain"
-            reason="Explanations are not configured on this server."
-            actionLabel="Request explanation"
-          />
-        </div>
-      ) : (
-        <button type="button" className="button-ghost" onClick={() => void onRequest()} disabled={pending}>
-          {pending ? "Loading…" : "Request explanation"}
-        </button>
-      )}
-      {state === null ? null : state.status === "not-configured" ? (
-        <div data-testid="explain-not-configured" style={{ marginTop: 12 }}>
-          <FeatureUnavailable
-            title="Explain"
-            reason="Explanations are not configured on this server."
-            actionLabel="Request explanation"
-          />
-        </div>
-      ) : state.status === "ready" ? (
-        <div data-testid="explain-sentences" style={{ marginTop: 12 }}>
-          {state.narrative.length === 0 ? (
-            <p style={{ margin: 0 }}>Every model sentence failed the evidence check.</p>
-          ) : (
-            <ul style={{ margin: 0, paddingLeft: 20 }}>
-              {state.narrative.map((sentence, index) => (
-                <li key={index}>{sentence}</li>
-              ))}
-            </ul>
-          )}
-          {state.droppedClaims > 0 ? (
-            <p data-testid="explain-dropped" className="quiet" style={{ margin: "8px 0 0" }}>
-              {state.droppedClaims} unsupported {state.droppedClaims === 1 ? "claim" : "claims"} dropped.
-            </p>
-          ) : null}
-        </div>
-      ) : state.status === "fallback" ? (
-        <p data-testid="explain-fallback" style={{ margin: "12px 0 0" }}>
-          The deterministic explanation stands.
+    );
+  }
+  if (state.status === "not-configured") {
+    return <p style={{ margin: 0 }}>Explanations are not configured on this server.</p>;
+  }
+  if (state.status === "ready") {
+    return (
+      <div>
+        <p className="muse-result-label" style={{ margin: "0 0 8px" }}>
+          Explain · {state.modelId}
         </p>
-      ) : (
-        <p role="alert" style={{ margin: "12px 0 0" }}>
-          The explanation failed to load; the page result above stands.
-        </p>
-      )}
-    </section>
+        <ExplainSentences
+          narrative={state.narrative}
+          droppedClaims={state.droppedClaims}
+          signals={signals}
+          onSignalLink={onSignalLink}
+        />
+      </div>
+    );
+  }
+  if (state.status === "fallback") {
+    return <p style={{ margin: 0 }}>The deterministic explanation stands.</p>;
+  }
+  return (
+    <p role="alert" style={{ margin: 0 }}>
+      The explanation failed to load; the page result above stands.
+    </p>
   );
 }

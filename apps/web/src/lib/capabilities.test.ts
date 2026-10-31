@@ -15,7 +15,13 @@ describe("ai capabilities", () => {
   test("s123_disabled_capabilities_are_unavailable", () => {
     expect(toAvailability({ disabled: true })).toBe("unavailable");
     const availability = toAiAvailability(BASE);
-    expect(availability).toEqual({ investigation: "unavailable", explain: "unavailable", onchain: "unavailable" });
+    expect(availability).toEqual({
+      investigation: "unavailable",
+      explain: "unavailable",
+      chat: "available",
+      rug: "available",
+      onchain: "unavailable",
+    });
   });
 
   test("s123_configured_capabilities_are_available", () => {
@@ -27,18 +33,34 @@ describe("ai capabilities", () => {
       ...BASE,
       investigation: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
       explain: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      chat: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      rug: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
       onchain: { available: true },
     });
-    expect(availability).toEqual({ investigation: "available", explain: "available", onchain: "available" });
+    expect(availability).toEqual({
+      investigation: "available",
+      explain: "available",
+      chat: "available",
+      rug: "available",
+      onchain: "available",
+    });
   });
 
   test("s123_unknown_capabilities_keep_explicit_request", () => {
     expect(toAvailability(undefined)).toBe("available");
     const availability = toAiAvailability({ assessment: { disabled: true } });
-    expect(availability).toEqual({ investigation: "available", explain: "available", onchain: "available" });
+    expect(availability).toEqual({
+      investigation: "available",
+      explain: "available",
+      chat: "available",
+      rug: "available",
+      onchain: "available",
+    });
     expect(toAiAvailability(null)).toEqual({
       investigation: "available",
       explain: "available",
+      chat: "available",
+      rug: "available",
       onchain: "available",
     });
   });
