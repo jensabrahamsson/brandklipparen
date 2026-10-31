@@ -311,6 +311,10 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
   const loaded = deps.ports.modelArtifacts.load(config.modelVersion);
   const pluginWeights = loaded.ok ? loaded.value.artifact.pluginWeights : undefined;
   const apiKeys = config.apiKeys ?? Object.freeze([]);
+  // Snippet deepening source (B-2, S-095, K-008): the route reads the
+  // contract code through the bound chain port, so a composed server
+  // answers `/v1/snippet` instead of the not-available branch.
+  const snippetRpc = deps.ports.rpc;
   // On-chain feature reads (session A): serving-mode reads through the
   // bound chain port with the operator-configured canonical WETH (null
   // when unset, in which case WETH-quoted pools do not qualify).
@@ -345,6 +349,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     personalizeService: personalize.value,
     personalizePromptVersion:
       personalizePromptVersion === undefined ? undefined : personalizePromptVersion.value,
+    snippetRpc,
     onchain,
     rateLimit: rateLimit.value,
     liveTokens,
