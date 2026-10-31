@@ -216,12 +216,16 @@ describe("vendor-neutral assessment request shape (session 18)", () => {
     });
     expect((await meta.assess(fixedEvidence(), fixedPrompt(), fixedContext())).ok).toBe(true);
     expect((await hosted.assess(fixedEvidence(), fixedPrompt(), fixedContext())).ok).toBe(true);
-    for (const calls of [metaCalls, hostedCalls]) {
-      const body = JSON.parse(calls[0]?.body ?? "{}") as Record<string, unknown>;
-      expect(body["temperature"]).toBe(0);
-      expect(body["max_tokens"]).toBe(1024);
-      expect("top_p" in body).toBe(false);
-    }
+    const metaBody = JSON.parse(metaCalls[0]?.body ?? "{}") as Record<string, unknown>;
+    expect(metaBody["temperature"]).toBe(0);
+    expect(metaBody["max_tokens"]).toBe(8192);
+    expect(metaBody["reasoning_effort"]).toBe("low");
+    expect("top_p" in metaBody).toBe(false);
+    const hostedBody = JSON.parse(hostedCalls[0]?.body ?? "{}") as Record<string, unknown>;
+    expect(hostedBody["temperature"]).toBe(0);
+    expect(hostedBody["max_tokens"]).toBe(1024);
+    expect("reasoning_effort" in hostedBody).toBe(false);
+    expect("top_p" in hostedBody).toBe(false);
   });
 });
 

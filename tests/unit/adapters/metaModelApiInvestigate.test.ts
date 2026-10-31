@@ -148,8 +148,9 @@ describe("meta investigate adapter over a fake transport", () => {
     expect(call.headers["Content-Type"]).toBe("application/json");
     const body = JSON.parse(call.body) as Record<string, unknown>;
     expect(body["model"]).toBe(MODEL_ID);
-    expect(Object.keys(body).sort()).toEqual(["max_tokens", "messages", "model", "temperature"]);
-    expect(body["max_tokens"]).toBe(1024);
+    expect(Object.keys(body).sort()).toEqual(["max_tokens", "messages", "model", "reasoning_effort", "temperature"]);
+    expect(body["max_tokens"]).toBe(8192);
+    expect(body["reasoning_effort"]).toBe("low");
     expect(body["temperature"]).toBe(0);
     expect("top_p" in body).toBe(false);
     const messages = body["messages"] as Array<{ role: string; content: string }>;
@@ -218,6 +219,28 @@ describe("meta investigate adapter over a fake transport", () => {
     expect(unavailable.ok).toBe(false);
     if (!unavailable.ok) {
       expect(unavailable.error.kind).toBe("unavailable");
+    }
+  });
+
+  test("a length finish reason is a typed invalid-output error", async () => {
+    const truncated = decideCase(
+      null,
+      200,
+      JSON.stringify({
+        id: "chatcmpl-test-meta-truncated",
+        object: "chat.completion",
+        created: 1700000000,
+        model: MODEL_ID,
+        choices: [
+          { index: 0, message: { role: "assistant", content: JSON.stringify(concludeInner()) }, finish_reason: "length" },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 8192, total_tokens: 8202 },
+      }),
+    );
+    const result = await makeAdapter(truncated.transport).decide(fixedInput(), fixedContext());
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe("invalid-output");
     }
   });
 
@@ -325,5 +348,24 @@ describe("meta investigate adapter factory validation", () => {
     if (!built.ok) {
       expect(built.error.variable).toBe("BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL");
     }
+  });
+});
+
+describe("m2d conclude prompt over a fake transport", () => {
+  test("system prompt shows the citation syntax with a collected id", async () => {
+    const input = fixedInput();
+    const captured = decideCase(concludeInner());
+    await makeAdapter(captured.transport).decide(input, fixedContext());
+    expect(captured.calls.length).toBe(1);
+    const call = captured.calls[0];
+    if (call === undefined) {
+      throw new Error("expected one outgoing call");
+    }
+    const body = JSON.parse(call.body) as { messages: Array<{ role: string; content: string }> };
+    const system = body.messages[0]?.content ?? "";
+    expect(system).toContain("[E:<id>]");
+    expect(system).toContain("every sentence must end with one or more [E:<id>] markers");
+    expect(system).toContain("[E:signal:sig-1]");
+    expect(system).toContain("Collected evidence ids (copy verbatim): signal:sig-1, signal:sig-2");
   });
 });

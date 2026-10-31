@@ -135,8 +135,15 @@ export type InvestigationState =
       readonly steps: readonly InvestigationStep[];
       readonly narrative: string;
       readonly droppedClaims: number;
+      // Typed drop accounting (M-2d): uncited vs unknown-id counts, so
+      // the panel can name why an empty narrative shows nothing.
+      // Absent on older cached reports, which only carry droppedClaims.
+      readonly dropReasons?: { readonly uncited: number; readonly unknownId: number } | undefined;
       readonly provider: string;
       readonly modelId: string;
+      // Budget-forced conclusion (M-2c): true when the run concluded
+      // only through the forced final conclude call at the step limit.
+      readonly forcedConclusion: boolean;
     };
 
 // Provider label for the assessment panel (design review P0-3): the real

@@ -127,6 +127,7 @@ type RecordedFixture = {
     readonly collectedEvidenceIds: readonly string[];
     readonly narrative?: string;
     readonly droppedClaims?: number;
+    readonly forcedConclusion?: boolean;
     readonly reasonKind?: string;
     readonly reasonLimit?: number;
     readonly reasonToolId?: string;
@@ -146,7 +147,7 @@ describe("recorded investigation traces", () => {
   test("k036_recorded_trace_library_covers_each_graph_outcome", async () => {
     const fixtures = loadFixtures();
     const outcomes = fixtures.map((fixture) => fixture.name).sort();
-    expect(outcomes).toEqual(["done", "invalid-decision", "step-limit", "token-limit", "tool-timeout"]);
+    expect(outcomes).toEqual(["done", "forced-conclusion", "invalid-decision", "step-limit", "token-limit", "tool-timeout"]);
     for (const fixture of fixtures) {
       const catalogue = fixture.catalogue === "with-hang" ? hangingCatalogue() : standardCatalogue();
       const frozen = { now: () => 1700000000000 };
@@ -165,6 +166,7 @@ describe("recorded investigation traces", () => {
           steps: unknown;
           narrative: unknown;
           droppedClaims: unknown;
+          forcedConclusion: unknown;
           collectedEvidenceIds: unknown;
         };
         reason?: { kind: string; limit?: number; toolId?: string };
@@ -180,6 +182,7 @@ describe("recorded investigation traces", () => {
         expect(stripTraceTiming(first.report?.steps as never)).toEqual(fixture.expected.steps);
         expect(first.report?.narrative).toBe(fixture.expected.narrative);
         expect(first.report?.droppedClaims).toBe(fixture.expected.droppedClaims);
+        expect(first.report?.forcedConclusion ?? false).toBe(fixture.expected.forcedConclusion ?? false);
       } else {
         expect(first.collectedEvidenceIds).toEqual(fixture.expected.collectedEvidenceIds);
         expect(stripTraceTiming(first.partial as never)).toEqual(fixture.expected.partial);

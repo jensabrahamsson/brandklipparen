@@ -3,13 +3,20 @@
 import { describe, expect, test } from "vitest";
 import * as fc from "fast-check";
 import { Bytecode, CodeHash, ModelId, RequestId, Timestamp } from "../../../src/domain/types.ts";
+import { ok } from "../../../src/domain/result.ts";
 import type { Result } from "../../../src/domain/result.ts";
 import type {
   InvestigationDecision,
   InvestigationModelError,
+  InvestigationModelInput,
   InvestigationModelPort,
   InvestigationCallContext,
 } from "../../../src/ports/investigationModel.ts";
+import { InvestigationModelInput as InvestigationModelInputCtor } from "../../../src/ports/investigationModel.ts";
+import {
+  buildInvestigateSystemPrompt,
+  collectedIdsForPrompt,
+} from "../../../src/adapters/investigation/investigateChatCompletions.ts";
 import {
   advanceInvestigation,
   buildInvestigationCatalogue,
@@ -138,6 +145,10 @@ describe("investigation graph runner", () => {
       args: {},
       rationale: "Keep inspecting.",
     };
+    // The final step is reserved for conclude (M-2c): the eighth call is
+    // a conclude-only step, so the repeated tool call is invalid there
+    // and the forced conclusion fails too, ending with that typed
+    // failure and the seven executed steps preserved.
     const stepCapped = await investigateToken(
       scriptedAdapter([alwaysRun]),
       catalogue(),
@@ -150,8 +161,8 @@ describe("investigation graph runner", () => {
     if (stepCapped.status !== "failed") {
       return;
     }
-    expect(stepCapped.reason.kind).toBe("step-limit");
-    expect(stepCapped.partial.length).toBe(8);
+    expect(stepCapped.reason.kind).toBe("invalid-decision");
+    expect(stepCapped.partial.length).toBe(7);
 
     const tokenCapped = await investigateToken(
       scriptedAdapter([alwaysRun]),
@@ -214,6 +225,33 @@ describe("investigation graph runner", () => {
     expect(second.report.droppedClaims).toBe(first.report.droppedClaims);
   });
 
+  test("m2c_tool_call_on_the_conclude_only_step_is_invalid", () => {
+    const tools = catalogue();
+    const facts = frozenFacts();
+    const lim = limits({ maxSteps: 3 });
+    const finalState = { trace: [], collected: [], stepsUsed: 2, tokensSpent: 10, concluded: false };
+    const rejected = advanceInvestigation(
+      finalState,
+      { kind: "run-tool", toolId: "evidence.list", args: {}, rationale: "One more read before concluding." },
+      tools,
+      facts,
+      lim,
+    );
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.error.reason.kind).toBe("invalid-decision");
+      expect(rejected.error.stepsUsed).toBe(3);
+    }
+    const concludeAllowed = advanceInvestigation(
+      finalState,
+      { kind: "conclude", narrativeDraft: "Done. [E:sig-1]", rationale: "Conclude on the final step." },
+      tools,
+      facts,
+      lim,
+    );
+    expect(concludeAllowed.ok).toBe(true);
+  });
+
   test("k520_investigation_leaves_score_and_evidence_unchanged", async () => {
     await fc.assert(
       fc.asyncProperty(fc.string({ maxLength: 120 }), async (draftTail) => {
@@ -236,5 +274,266 @@ describe("investigation graph runner", () => {
       }),
       { numRuns: 25 },
     );
+  });
+});
+
+describe("forced conclusion at the step budget (M-2c)", () => {
+  function recordingAdapter(
+    decisions: readonly InvestigationDecision[],
+  ): InvestigationModelPort & { inputs: InvestigationModelInput[] } {
+    const modelId = mustOk(ModelId.parse("meta-models/muse-spark-open-1026"));
+    const inputs: InvestigationModelInput[] = [];
+    let calls = 0;
+    return {
+      inputs,
+      provider: () => "hosted-open-weights",
+      modelId: () => modelId,
+      async decide(input: InvestigationModelInput): Promise<Result<InvestigationDecision, InvestigationModelError>> {
+        inputs.push(input);
+        calls += 1;
+        const next = decisions[Math.min(calls - 1, decisions.length - 1)] as InvestigationDecision;
+        return ok(next);
+      },
+    };
+  }
+
+  const keepInspecting: InvestigationDecision = {
+    kind: "run-tool",
+    toolId: "evidence.list",
+    args: {},
+    rationale: "List the frozen evidence.",
+  };
+
+  test("m2c_model_that_never_concludes_ends_completed_with_the_forced_note", async () => {
+    const forcedConclude: InvestigationDecision = {
+      kind: "conclude",
+      narrativeDraft: "The frozen evidence shows the finding. [E:sig-1] An uncited guess follows.",
+      rationale: "Forced rationale: conclude from the frozen evidence.",
+    };
+    const adapter = recordingAdapter([keepInspecting, keepInspecting, keepInspecting, forcedConclude]);
+    const done = await investigateToken(adapter, catalogue(), frozenFacts(), context(), limits({ maxSteps: 3 }), {
+      now: () => 1000,
+    });
+    expect(done.status).toBe("done");
+    if (done.status !== "done") {
+      return;
+    }
+    expect(done.report.forcedConclusion).toBe(true);
+    // The forced narrative passes the same citation check as any conclude.
+    expect(done.report.narrative).toBe("The frozen evidence shows the finding. [E:sig-1]");
+    expect(done.report.droppedClaims).toBe(1);
+    expect(done.report.steps.length).toBe(2);
+    // The open steps offered the catalogue; the conclude-only step and
+    // the forced call offered no tools.
+    expect(adapter.inputs.length).toBe(4);
+    expect(adapter.inputs[0]?.concludeOnly).toBe(false);
+    expect(adapter.inputs[0]?.tools.length).toBeGreaterThan(0);
+    expect(adapter.inputs[2]?.concludeOnly).toBe(true);
+    expect(adapter.inputs[2]?.tools).toEqual([]);
+    expect(adapter.inputs[3]?.concludeOnly).toBe(true);
+    expect(adapter.inputs[3]?.tools).toEqual([]);
+  });
+
+  test("m2c_invalid_forced_conclusion_ends_with_the_typed_failure", async () => {
+    // The forced call repeats the tool call instead of concluding.
+    const repeating = recordingAdapter([keepInspecting, keepInspecting, keepInspecting]);
+    const repeated = await investigateToken(repeating, catalogue(), frozenFacts(), context(), limits({ maxSteps: 2 }), {
+      now: () => 1000,
+    });
+    expect(repeated.status).toBe("failed");
+    if (repeated.status !== "failed") {
+      return;
+    }
+    expect(repeated.reason.kind).toBe("invalid-decision");
+    expect(repeated.partial.length).toBe(1);
+    // The forced call concludes with a blank draft.
+    const blank: InvestigationDecision = {
+      kind: "conclude",
+      narrativeDraft: "   ",
+      rationale: "Forced rationale with no draft.",
+    };
+    const blanking = recordingAdapter([keepInspecting, keepInspecting, blank]);
+    const blanked = await investigateToken(blanking, catalogue(), frozenFacts(), context(), limits({ maxSteps: 2 }), {
+      now: () => 1000,
+    });
+    expect(blanked.status).toBe("failed");
+    if (blanked.status !== "failed") {
+      return;
+    }
+    expect(blanked.reason.kind).toBe("invalid-decision");
+  });
+
+  test("m2c_early_conclude_is_unchanged", async () => {
+    const adapter = recordingAdapter([
+      keepInspecting,
+      {
+        kind: "conclude",
+        narrativeDraft: "The frozen evidence shows the finding. [E:sig-1]",
+        rationale: "Conclude from the frozen evidence.",
+      },
+    ]);
+    const done = await investigateToken(adapter, catalogue(), frozenFacts(), context(), limits({ maxSteps: 8 }), {
+      now: () => 1000,
+    });
+    expect(done.status).toBe("done");
+    if (done.status !== "done") {
+      return;
+    }
+    expect(done.report.forcedConclusion).toBe(false);
+    expect(done.report.narrative).toBe("The frozen evidence shows the finding. [E:sig-1]");
+    expect(done.report.steps.length).toBe(1);
+    expect(adapter.inputs.length).toBe(2);
+  });
+
+  test("m2c_prompt_states_steps_left_and_must_conclude", () => {
+    const modelId = mustOk(ModelId.parse("meta-models/muse-spark-open-1026"));
+    const normal = buildInvestigateSystemPrompt({
+      provider: "hosted-open-weights",
+      modelId,
+      stepsLeft: 5,
+      concludeOnly: false,
+    });
+    expect(normal).toContain("Steps left in the step budget: 5.");
+    expect(normal).toContain("Conclude as soon as the collected evidence answers the question");
+    expect(normal).toContain("must call conclude");
+    expect(normal).not.toContain("reply with a conclude decision only");
+    const last = buildInvestigateSystemPrompt({
+      provider: "hosted-open-weights",
+      modelId,
+      stepsLeft: 1,
+      concludeOnly: true,
+    });
+    expect(last).toContain("Steps left in the step budget: 1.");
+    expect(last).toContain("reply with a conclude decision only");
+  });
+});
+
+describe("m2d conclude prompt and tolerant citation check", () => {
+  function concludeScript(draft: string): readonly InvestigationDecision[] {
+    return [
+      { kind: "run-tool", toolId: "evidence.list", args: {}, rationale: "List the frozen evidence." },
+      { kind: "conclude", narrativeDraft: draft, rationale: "Conclude from the frozen evidence." },
+    ];
+  }
+
+  async function concludeWithDraft(draft: string) {
+    return investigateToken(scriptedAdapter(concludeScript(draft)), catalogue(), frozenFacts(), context(), limits(), {
+      now: () => 1000,
+    });
+  }
+
+  test("m2d_each_tolerated_variant_is_kept_through_the_fake_loop", async () => {
+    const variants = [
+      "The frozen evidence shows the finding. [E: sig-1]",
+      "The frozen evidence shows the finding. [e:sig-1]",
+      "The frozen evidence shows the finding. [E:sig-1, sig-2]",
+      "The frozen evidence shows the finding. [E:sig-1; sig-2]",
+      "The frozen evidence shows the finding. [E:`sig-1`]",
+      "The frozen evidence shows the finding [E:sig-1].",
+    ];
+    for (const draft of variants) {
+      const done = await concludeWithDraft(draft);
+      expect(done.status).toBe("done");
+      if (done.status !== "done") {
+        continue;
+      }
+      expect(done.report.droppedClaims).toBe(0);
+      expect(done.report.dropReasons).toEqual({ uncited: 0, unknownId: 0 });
+      expect(done.report.narrative).toBe(draft);
+    }
+  });
+
+  test("m2d_unknown_id_drops_but_status_stays_done", async () => {
+    const done = await concludeWithDraft("The frozen evidence shows the finding. [E:sig-ghost]");
+    expect(done.status).toBe("done");
+    if (done.status !== "done") {
+      return;
+    }
+    expect(done.report.narrative).toBe("");
+    expect(done.report.droppedClaims).toBe(1);
+    expect(done.report.dropReasons).toEqual({ uncited: 0, unknownId: 1 });
+  });
+
+  test("m2d_uncited_sentence_drops_with_typed_reason", async () => {
+    const done = await concludeWithDraft("A guess with no citation at all.");
+    expect(done.status).toBe("done");
+    if (done.status !== "done") {
+      return;
+    }
+    expect(done.report.narrative).toBe("");
+    expect(done.report.droppedClaims).toBe(1);
+    expect(done.report.dropReasons).toEqual({ uncited: 1, unknownId: 0 });
+  });
+
+  test("m2d_mixed_draft_reports_split_reason_counts", async () => {
+    const done = await concludeWithDraft(
+      "The frozen evidence shows one finding. [E:sig-1] A guess with no citation. Another guess. [E:sig-ghost]",
+    );
+    expect(done.status).toBe("done");
+    if (done.status !== "done") {
+      return;
+    }
+    expect(done.report.narrative).toBe("The frozen evidence shows one finding. [E:sig-1]");
+    expect(done.report.droppedClaims).toBe(2);
+    expect(done.report.dropReasons).toEqual({ uncited: 1, unknownId: 1 });
+  });
+
+  test("m2d_prompt_shows_syntax_example_over_a_collected_id", () => {
+    const modelId = mustOk(ModelId.parse("meta-models/muse-spark-open-1026"));
+    const prompt = buildInvestigateSystemPrompt({
+      provider: "hosted-open-weights",
+      modelId,
+      stepsLeft: 1,
+      concludeOnly: true,
+      collectedIds: ["signal:owner-blacklist", "signal:fee-cap"],
+    });
+    expect(prompt).toContain("[E:<id>]");
+    expect(prompt).toContain("[E:signal:owner-blacklist]");
+    expect(prompt).toContain("every sentence must end with one or more [E:<id>] markers");
+    expect(prompt).toContain("Collected evidence ids (copy verbatim): signal:owner-blacklist, signal:fee-cap");
+    expect(prompt).toContain("reply with a conclude decision only");
+  });
+
+  test("m2d_collected_ids_prefer_step_evidence_and_cap_the_list", () => {
+    const facts = frozenFacts();
+    const modelInput = mustOk(
+      InvestigationModelInputCtor.create({
+        codeHash: facts.codeHash,
+        scoreBand: facts.scoreBand,
+        signalIds: ["sig-1", "sig-2"],
+        tools: [{ toolId: "evidence.list", description: "list", argNames: [] }],
+        trace: [
+          { step: 1, toolId: "evidence.list", rationale: "First.", evidenceIds: ["signal:fee-cap"] },
+          { step: 2, toolId: "evidence.list", rationale: "Second.", evidenceIds: ["signal:fee-cap", "doc:fee-capability"] },
+        ],
+        budgets: { stepsLeft: 6, tokensLeft: 90000, deadlineMs: 20000 },
+      }),
+    );
+    expect(collectedIdsForPrompt(modelInput)).toEqual(["signal:fee-cap", "doc:fee-capability"]);
+    const emptyTrace = mustOk(
+      InvestigationModelInputCtor.create({
+        codeHash: facts.codeHash,
+        scoreBand: facts.scoreBand,
+        signalIds: ["sig-1"],
+        tools: [{ toolId: "evidence.list", description: "list", argNames: [] }],
+        trace: [],
+        budgets: { stepsLeft: 8, tokensLeft: 90000, deadlineMs: 20000 },
+      }),
+    );
+    expect(collectedIdsForPrompt(emptyTrace)).toEqual(["signal:sig-1"]);
+    const manyEvidence = Array.from({ length: 25 }, (_, index) => `signal:ev-${index}`);
+    const crowded = mustOk(
+      InvestigationModelInputCtor.create({
+        codeHash: facts.codeHash,
+        scoreBand: facts.scoreBand,
+        signalIds: ["sig-1"],
+        tools: [{ toolId: "evidence.list", description: "list", argNames: [] }],
+        trace: [{ step: 1, toolId: "evidence.list", rationale: "Many.", evidenceIds: manyEvidence }],
+        budgets: { stepsLeft: 6, tokensLeft: 90000, deadlineMs: 20000 },
+      }),
+    );
+    const capped = collectedIdsForPrompt(crowded);
+    expect(capped.length).toBe(20);
+    expect(capped[0]).toBe("signal:ev-0");
   });
 });

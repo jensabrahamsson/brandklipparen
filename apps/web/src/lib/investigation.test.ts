@@ -29,4 +29,21 @@ describe("investigation timeline", () => {
       { kind: "evidence", id: "signal:b" },
     ]);
   });
+
+  test("m2d_tolerated_markers_split_into_evidence_chips", () => {
+    expect(splitNarrative("Guard holds. [e: signal:owner-blacklist] Done.")).toEqual([
+      { kind: "text", text: "Guard holds. " },
+      { kind: "evidence", id: "signal:owner-blacklist" },
+      { kind: "text", text: " Done." },
+    ]);
+    expect(splitNarrative("Guard holds. [E:signal:a, signal:b]")).toEqual([
+      { kind: "text", text: "Guard holds. " },
+      { kind: "evidence", id: "signal:a" },
+      { kind: "evidence", id: "signal:b" },
+    ]);
+    expect(splitNarrative("Guard holds. [E:`signal:a`]")).toEqual([
+      { kind: "text", text: "Guard holds. " },
+      { kind: "evidence", id: "signal:a" },
+    ]);
+  });
 });

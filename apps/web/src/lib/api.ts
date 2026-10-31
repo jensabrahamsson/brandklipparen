@@ -155,18 +155,30 @@ function toInvestigationState(body: unknown): InvestigationState {
     const report = (envelope.report ?? {}) as {
       narrative?: unknown;
       droppedClaims?: unknown;
+      dropReasons?: unknown;
       steps?: unknown;
+      forcedConclusion?: unknown;
     };
     const steps = Array.isArray(report.steps)
       ? report.steps.map((entry) => toStep(entry as RawStep)).filter((entry) => entry !== null)
       : [];
+    const dropRecord = report.dropReasons as { uncited?: unknown; unknownId?: unknown } | null;
+    const dropReasons =
+      dropRecord !== null &&
+      typeof dropRecord === "object" &&
+      typeof dropRecord.uncited === "number" &&
+      typeof dropRecord.unknownId === "number"
+        ? { uncited: dropRecord.uncited, unknownId: dropRecord.unknownId }
+        : undefined;
     return {
       status: "done",
       steps,
       narrative: typeof report.narrative === "string" ? report.narrative : "",
       droppedClaims: typeof report.droppedClaims === "number" ? report.droppedClaims : 0,
+      dropReasons,
       provider,
       modelId,
+      forcedConclusion: report.forcedConclusion === true,
     };
   }
   const reason = (envelope.reason ?? {}) as { kind?: unknown; message?: unknown };

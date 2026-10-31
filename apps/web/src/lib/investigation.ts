@@ -29,16 +29,31 @@ export function evidenceSignalKey(signals: readonly Signal[], evidenceId: string
 export type NarrativePart = { readonly kind: "text"; readonly text: string } | { readonly kind: "evidence"; readonly id: string };
 
 // Split a checked narrative on [E:<evidence>] citations into ordered text
-// and evidence parts. Plain text without citations stays a single part.
+// and evidence parts. The kept narrative may carry tolerated marker
+// variants (`[e: id]`, several ids per marker, backticked ids), so markers
+// parse the same way as the citation check: split multi-id markers and
+// normalise each id before it becomes a chip. Plain text without
+// citations stays a single part.
 export function splitNarrative(narrative: string): NarrativePart[] {
   const parts: NarrativePart[] = [];
-  const pattern = /\[E:([^\]]+)\]/g;
+  const pattern = /\[\s*[Ee]\s*:\s*([^\]]+)\]/g;
   let last = 0;
   for (let match = pattern.exec(narrative); match !== null; match = pattern.exec(narrative)) {
     if (match.index > last) {
       parts.push({ kind: "text", text: narrative.slice(last, match.index) });
     }
-    parts.push({ kind: "evidence", id: match[1] ?? "" });
+    const inner = match[1] ?? "";
+    let pushed = false;
+    for (const entry of inner.split(/[,;]/)) {
+      const id = entry.trim().replace(/^`+|`+$/g, "").trim();
+      if (id.length > 0) {
+        parts.push({ kind: "evidence", id });
+        pushed = true;
+      }
+    }
+    if (!pushed) {
+      parts.push({ kind: "text", text: match[0] });
+    }
     last = match.index + match[0].length;
   }
   if (last < narrative.length) {

@@ -8,7 +8,8 @@
 // fixtures through the injected transport and never touch the network;
 // production passes the fetch-based transport. Every call POSTs a
 // standard chat-completions body (model, system + user messages,
-// max_tokens, temperature only) to `<baseUrl>/chat/completions` and
+// max_tokens, temperature only, plus an opt-in reasoning_effort for
+// reasoning models) to `<baseUrl>/chat/completions` and
 // reads the assessment from `choices[0].message.content`. The user
 // message carries the closed evidence list only (K-302); raw bytecode
 // never enters the prompt. Responses validate with
@@ -115,6 +116,9 @@ export const CHAT_COMPLETIONS_TEMPERATURE = 0;
 // The configured endpoint is a base URL (no path suffix assumed); every
 // call targets the chat-completions route below it. Trailing slashes on
 // the base URL are stripped so the join never yields a double slash.
+// Reasoning models send an opt-in `reasoning_effort` alongside the
+// standard body (the Meta reasoning path sends "low"); other providers
+// keep the standard body without it.
 export const CHAT_COMPLETIONS_PATH = "/chat/completions";
 
 export function joinChatCompletionsUrl(baseUrl: string): string {
@@ -142,6 +146,10 @@ export type ChatCompletionsAdapterOptions = {
   // travels only when sampling parameters are sent.
   readonly temperature?: number | undefined;
   readonly omitSamplingParams?: boolean | undefined;
+  // Opt-in reasoning effort for reasoning models (the Meta reasoning
+  // path sends "low"): travels as `reasoning_effort` only when set, so
+  // other providers keep their current body without it.
+  readonly reasoningEffort?: string | undefined;
   readonly transport?: ChatCompletionsTransport | undefined;
   readonly onLog?: ((entry: ChatCompletionsLogEntry) => void) | undefined;
   // Warn sink for refused or invalid answers: one line per refused
@@ -238,6 +246,7 @@ function buildRequestBody(
   maxTokens: number,
   omitSamplingParams: boolean,
   temperature: number | undefined,
+  reasoningEffort: string | undefined,
 ): string {
   const body: Record<string, unknown> = {
     model: modelId as string,
@@ -247,6 +256,7 @@ function buildRequestBody(
     ],
     max_tokens: maxTokens,
     ...(omitSamplingParams ? {} : { temperature: temperature ?? CHAT_COMPLETIONS_TEMPERATURE }),
+    ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
   };
   if (jsonResponseFormat) {
     body["response_format"] = { type: "json_object" };
@@ -491,6 +501,7 @@ export class ChatCompletionsAdapter implements AssessmentModelPort {
   private readonly maxTokens: number;
   private readonly temperature: number | undefined;
   private readonly omitSamplingParams: boolean;
+  private readonly reasoningEffort: string | undefined;
   private readonly transport: ChatCompletionsTransport;
   private readonly onLog: ((entry: ChatCompletionsLogEntry) => void) | undefined;
   private readonly onWarn: (line: string) => void;
@@ -511,6 +522,7 @@ export class ChatCompletionsAdapter implements AssessmentModelPort {
     this.maxTokens = options.maxTokens ?? CHAT_COMPLETIONS_MAX_TOKENS;
     this.temperature = options.temperature;
     this.omitSamplingParams = options.omitSamplingParams ?? false;
+    this.reasoningEffort = options.reasoningEffort;
     this.transport = options.transport ?? fetchChatCompletionsTransport;
     this.onLog = options.onLog;
     this.onWarn = options.onWarn ?? ((line: string): void => console.warn(line));
@@ -559,6 +571,7 @@ export class ChatCompletionsAdapter implements AssessmentModelPort {
       this.maxTokens,
       this.omitSamplingParams,
       this.temperature,
+      this.reasoningEffort,
     );
     if (byteLength(body) > this.maxBytesOut) {
       const error: AssessmentModelError = {

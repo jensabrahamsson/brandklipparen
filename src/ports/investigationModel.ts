@@ -67,6 +67,9 @@ export type InvestigationBudgets = {
 
 // Closed, frozen model input (P-30): frozen analysis summary, tool
 // catalogue, trace so far and remaining budgets. Nothing else enters.
+// `concludeOnly` marks the reserved final step (M-2c): the runner offers
+// no tools there and the model must conclude, so the loop always ends
+// with a checked narrative instead of a spent step budget.
 export type InvestigationModelInput = {
   readonly codeHash: CodeHashType;
   readonly scoreBand: string;
@@ -74,6 +77,7 @@ export type InvestigationModelInput = {
   readonly tools: readonly InvestigationToolDescriptor[];
   readonly trace: readonly InvestigationTraceEntry[];
   readonly budgets: InvestigationBudgets;
+  readonly concludeOnly: boolean;
 };
 
 export const InvestigationModelInput = {
@@ -84,11 +88,16 @@ export const InvestigationModelInput = {
     readonly tools: readonly InvestigationToolDescriptor[];
     readonly trace: readonly InvestigationTraceEntry[];
     readonly budgets: InvestigationBudgets;
+    readonly concludeOnly?: boolean | undefined;
   }): Result<InvestigationModelInput, { kind: "invalid-investigation-input"; message: string }> {
     if (input.scoreBand.length === 0 || input.scoreBand.length > 64) {
       return err({ kind: "invalid-investigation-input", message: "score band must be a short label" });
     }
-    if (input.tools.length === 0) {
+    const concludeOnly = input.concludeOnly === true;
+    // The reserved final step offers no tools (M-2c): an empty catalogue
+    // is valid only there, so the model cannot reach for another tool
+    // when one step is left.
+    if (input.tools.length === 0 && !concludeOnly) {
       return err({ kind: "invalid-investigation-input", message: "tool catalogue must not be empty" });
     }
     if (input.budgets.stepsLeft < 0 || input.budgets.tokensLeft < 0 || input.budgets.deadlineMs <= 0) {
@@ -102,6 +111,7 @@ export const InvestigationModelInput = {
         tools: Object.freeze(input.tools.slice()),
         trace: Object.freeze(input.trace.slice()),
         budgets: Object.freeze({ ...input.budgets }),
+        concludeOnly,
       }),
     );
   },

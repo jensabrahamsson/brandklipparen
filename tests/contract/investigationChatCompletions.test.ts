@@ -1,7 +1,8 @@
 // Outgoing chat-completions shape for the investigation adapter (S-073,
 // K-036, K-520). Written first per A-21 (red): every decide call must
 // POST a standard chat-completions body (model, system + user messages,
-// max_tokens, temperature only) to `<base>/chat/completions`, and must
+// max_tokens, temperature only, plus an opt-in reasoning_effort on the
+// Meta reasoning binding) to `<base>/chat/completions`, and must
 // read the decision from `choices[0].message.content`. No live calls, no
 // real keys: the transport is an in-memory capture.
 import { describe, expect, test } from "vitest";
@@ -125,6 +126,7 @@ describe("investigation chat-completions request shape", () => {
     expect(Object.keys(body).sort()).toEqual(["max_tokens", "messages", "model", "temperature"]);
     expect(body["max_tokens"]).toBe(1024);
     expect(body["temperature"]).toBe(0);
+    expect("reasoning_effort" in body).toBe(false);
     expect("top_p" in body).toBe(false);
     expect("codeHash" in body).toBe(false);
     expect("tools" in body).toBe(false);

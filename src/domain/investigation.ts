@@ -12,7 +12,7 @@ import type { Result } from "./result.ts";
 
 // Collected evidence id: opaque string minted by the runner when a tool
 // returns evidence (P-32). The citation marker in narrative text is
-// `[E:<id>]`, matched by CITATION_PATTERN below.
+// `[E:<id>]`, matched by TOLERANT_MARKER_PATTERN below.
 export type EvidenceRef = string;
 
 // One executed step in the investigation trace (P-31, P-36). The trace is
@@ -45,10 +45,20 @@ export type InvestigationFailure =
   | { kind: "tool-timeout"; message: string; toolId: string }
   | { kind: "invalid-decision"; message: string; detail: string };
 
+// Typed drop accounting (M-2d): why each dropped sentence failed the
+// citation check. `uncited` counts sentences carrying no parseable marker;
+// `unknownId` counts sentences citing at least one id outside the
+// collected set. The two always sum to `droppedClaims`.
+export type DropReasonSummary = {
+  readonly uncited: number;
+  readonly unknownId: number;
+};
+
 // Checked narrative with its drop accounting (P-35).
 export type CheckedNarrative = {
   readonly narrative: string;
   readonly droppedClaims: number;
+  readonly dropReasons: DropReasonSummary;
 };
 
 // Final report written only by the runner into `done` (P-33): scores,
@@ -58,6 +68,7 @@ export type InvestigationReport = {
   readonly outcome: "done";
   readonly narrative: string;
   readonly droppedClaims: number;
+  readonly dropReasons: DropReasonSummary;
   readonly steps: InvestigationTrace;
   readonly collectedEvidenceIds: readonly EvidenceRef[];
 };
@@ -139,18 +150,27 @@ export function transitionInvestigation(
   }
 }
 
-// Citation marker `[E:<id>]`: the id carries word characters, dashes and
-// dots so runner-minted ids match without quoting surprises.
-const CITATION_PATTERN = /\[E:([A-Za-z0-9_.:-]+)\]/g;
+// Citation marker `[E:<id>]`: the runner mints ids with word characters,
+// dashes, dots and colons, so the check matches them without quoting
+// surprises. Parsing tolerates harmless format variants and normalises
+// them before the strict check: a space after the colon (`[E: id]`),
+// a lowercase `e` (`[e:id]`), several ids in one marker
+// (`[E:id1, id2]` / `[E:id1; id2]`), and ids wrapped in backticks
+// (`` [E:`id`] ``). The id itself stays strict: after trimming whitespace
+// and surrounding backticks it must equal a collected id exactly.
+const TOLERANT_MARKER_PATTERN = /\[\s*[Ee]\s*:\s*([^\]]+)\]/g;
 
 function citedIds(sentence: string): string[] {
   const found: string[] = [];
-  CITATION_PATTERN.lastIndex = 0;
+  TOLERANT_MARKER_PATTERN.lastIndex = 0;
   let match: RegExpExecArray | null;
-  while ((match = CITATION_PATTERN.exec(sentence)) !== null) {
-    const id = match[1];
-    if (id !== undefined) {
-      found.push(id);
+  while ((match = TOLERANT_MARKER_PATTERN.exec(sentence)) !== null) {
+    const inner = match[1] ?? "";
+    for (const part of inner.split(/[,;]/)) {
+      const id = part.trim().replace(/^`+|`+$/g, "").trim();
+      if (id.length > 0) {
+        found.push(id);
+      }
     }
   }
   return found;
@@ -170,6 +190,9 @@ const MAX_SENTENCE_CHARS = 500;
 function splitSentences(draft: string): string[] {
   const raw: string[] = [];
   let current = "";
+  // Square-bracket depth: terminators inside a citation marker never
+  // split, so `[E:id1, id2]` and dotted ids stay one sentence.
+  let depth = 0;
   const flush = (): void => {
     const trimmed = current.trim();
     if (trimmed.length > 0) {
@@ -179,7 +202,16 @@ function splitSentences(draft: string): string[] {
   };
   for (let index = 0; index < draft.length; index += 1) {
     const char = draft[index] ?? "";
+    if (char === "[") {
+      depth += 1;
+    }
     current += char;
+    if (char === "]" && depth > 0) {
+      depth -= 1;
+    }
+    if (depth !== 0) {
+      continue;
+    }
     if (char === "." || char === "!" || char === "?" || char === ";") {
       const next = draft[index + 1];
       if (next === undefined || next === " " || next === "\t" || next === "\n" || next === "\r") {
@@ -194,10 +226,11 @@ function splitSentences(draft: string): string[] {
     raw.push(tail);
   }
   // Leading citation markers belong to the sentence they trail: drafts
-  // cite as `claim. [E:id] next claim`, so the split leaves `[E:id]` at
-  // the head of the following segment. Move those markers back.
+  // cite as `claim. [E:id] next claim` (or `claim. [e: id] next claim`),
+  // so the split leaves the marker at the head of the following segment.
+  // Move those markers back, in any tolerated format variant.
   const sentences: string[] = [];
-  const leadingMarkers = /^(\[E:[A-Za-z0-9_.:-]+\]\s*)+/;
+  const leadingMarkers = /^(?:\[\s*[Ee]\s*:[^\]]+\]\s*)+/;
   for (const segment of raw) {
     const markers = segment.match(leadingMarkers)?.[0] ?? "";
     const rest = markers.length > 0 ? segment.slice(markers.length).trim() : segment;
@@ -214,17 +247,38 @@ function splitSentences(draft: string): string[] {
       sentences.push(segment);
     }
   }
+  // Overlong sentences split into capped chunks, never inside a marker:
+  // a chunk boundary waits for the closing bracket so each chunk is
+  // citation-checked on its own instead of letting an uncited blob ride
+  // on a trailing marker.
   const capped: string[] = [];
   for (const sentence of sentences) {
     if (sentence.length <= MAX_SENTENCE_CHARS) {
       capped.push(sentence);
       continue;
     }
-    for (let start = 0; start < sentence.length; start += MAX_SENTENCE_CHARS) {
-      const chunk = sentence.slice(start, start + MAX_SENTENCE_CHARS).trim();
-      if (chunk.length > 0) {
-        capped.push(chunk);
+    let chunk = "";
+    let chunkDepth = 0;
+    for (let index = 0; index < sentence.length; index += 1) {
+      const char = sentence[index] ?? "";
+      if (char === "[") {
+        chunkDepth += 1;
       }
+      chunk += char;
+      if (char === "]" && chunkDepth > 0) {
+        chunkDepth -= 1;
+      }
+      if (chunk.length >= MAX_SENTENCE_CHARS && chunkDepth === 0) {
+        const trimmed = chunk.trim();
+        if (trimmed.length > 0) {
+          capped.push(trimmed);
+        }
+        chunk = "";
+      }
+    }
+    const remainder = chunk.trim();
+    if (remainder.length > 0) {
+      capped.push(remainder);
     }
   }
   return capped;
@@ -233,7 +287,8 @@ function splitSentences(draft: string): string[] {
 // Deterministic sentence-level citation check (P-35): a sentence survives
 // exactly when every id it cites is collected and it cites at least one.
 // Uncited sentences drop (the checker cannot verify them), and sentences
-// citing an uncollected id drop. Each drop increments `droppedClaims`.
+// citing an uncollected id drop. Each drop increments `droppedClaims` and
+// its typed reason counter in `dropReasons`.
 export function checkCitations(
   draft: string,
   collectedIds: readonly EvidenceRef[],
@@ -241,10 +296,13 @@ export function checkCitations(
   const collected = new Set<string>(collectedIds);
   const kept: string[] = [];
   let dropped = 0;
+  let uncited = 0;
+  let unknownId = 0;
   for (const sentence of splitSentences(draft)) {
     const cited = citedIds(sentence);
     if (cited.length === 0) {
       dropped += 1;
+      uncited += 1;
       continue;
     }
     let unknown = false;
@@ -256,9 +314,10 @@ export function checkCitations(
     }
     if (unknown) {
       dropped += 1;
+      unknownId += 1;
       continue;
     }
     kept.push(sentence);
   }
-  return { narrative: kept.join(" "), droppedClaims: dropped };
+  return { narrative: kept.join(" "), droppedClaims: dropped, dropReasons: { uncited, unknownId } };
 }

@@ -199,6 +199,44 @@ test("k036_investigation_step_limit_shows_plain_state_with_inert_narrative", asy
   await expect(page.getByText(/step budget/)).toBeVisible();
 });
 
+test("k036_investigation_forced_conclusion_names_the_step_limit", async ({ page }) => {
+  await mockBase(page);
+  const forced = {
+    ...ANALYZE_FIXTURE,
+    investigation: {
+      status: "done",
+      report: {
+        narrative: "The frozen evidence shows the transfer guard. [E:signal:owner-blacklist]",
+        droppedClaims: 0,
+        forcedConclusion: true,
+        steps: [
+          {
+            step: 1,
+            toolId: "evidence.list",
+            rationale: "List the frozen evidence first.",
+            evidenceIds: ["signal:owner-blacklist"],
+            elapsedMs: 0,
+          },
+        ],
+        collectedEvidenceIds: ["signal:owner-blacklist"],
+      },
+      limits: { maxSteps: 8, maxTokens: 8000, deadlineMs: 60000, toolTimeoutMs: 5000 },
+    },
+    investigationProvider: "hosted-open-weights",
+    investigationModel: "meta-models/muse-spark-open-1026",
+  };
+  await page.route("**/v1/investigate/events*", async (route) => {
+    await route.abort("failed");
+  });
+  await page.route("**/v1/investigate*", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(forced) });
+  });
+  await page.goto(`/#/token/${ADDRESS}`);
+  await page.getByRole("tab", { name: "Investigate" }).click();
+  await page.getByRole("button", { name: "Request investigation" }).click();
+  await expect(page.getByText("Muse concluded at the step limit.")).toBeVisible();
+});
+
 test("k036_investigation_post_fallback_renders_same_trace_without_events", async ({ page }) => {
   await mockBase(page);
   await page.route("**/v1/investigate/events*", async (route) => {

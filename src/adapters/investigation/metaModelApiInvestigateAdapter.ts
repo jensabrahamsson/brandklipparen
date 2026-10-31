@@ -54,6 +54,38 @@ export async function fetchMetaInvestigateTransport(
 // strings cannot leak into logs.
 export type MetaInvestigateLogEntry = InvestigateChatLogEntry;
 
+// Placeholder operational limits for tests and offline use. Production
+// passes the versioned values from the validated configuration; the
+// adapter never invents its own. The per-call timeout mirrors the
+// personalize mapping timeout (60 s) so a reasoning model has room to
+// answer each step.
+export const DEFAULT_META_INVESTIGATE_TIMEOUT_MS = 60000;
+
+// Per-call completion budget: the reasoning model reasons before
+// answering and reasoning tokens count against this budget, so the bound
+// leaves room for a low reasoning effort plus the decision JSON
+// (mirroring the personalize mapping budget).
+export const DEFAULT_META_INVESTIGATE_MAX_TOKENS = 8192;
+
+// The investigation choice is small and structured, so each call asks
+// for low reasoning effort (the provider rejects "none").
+export const META_INVESTIGATE_REASONING_EFFORT = "low";
+
+// Loop budget for the Meta reasoning path: up to 8 steps at the default
+// per-step token pace, with a 120 s wall-clock deadline. Explicit
+// configuration still wins at the composition root; other providers keep
+// the shared default limits.
+export const META_INVESTIGATE_LOOP_MAX_TOKENS = 64000;
+export const META_INVESTIGATE_LOOP_DEADLINE_MS = 120000;
+
+export function resolveMetaInvestigateTimeoutMs(value: number | undefined): number {
+  return value ?? DEFAULT_META_INVESTIGATE_TIMEOUT_MS;
+}
+
+export function resolveMetaInvestigateMaxTokens(value: number | undefined): number {
+  return value ?? DEFAULT_META_INVESTIGATE_MAX_TOKENS;
+}
+
 export type MetaModelApiInvestigateAdapterOptions = {
   readonly endpoint: string;
   readonly apiKey: SecretString;
@@ -62,6 +94,8 @@ export type MetaModelApiInvestigateAdapterOptions = {
   readonly maxBytesIn?: number | undefined;
   readonly maxBytesOut?: number | undefined;
   readonly maxOutputChars?: number | undefined;
+  // Optional per-call completion budget override: defaults to 8192.
+  readonly maxTokens?: number | undefined;
   readonly transport?: MetaInvestigateTransport | undefined;
   readonly onLog?: ((entry: MetaInvestigateLogEntry) => void) | undefined;
 };
@@ -139,10 +173,12 @@ export class MetaModelApiInvestigateAdapter
       apiKey: options.apiKey,
       modelId: options.modelId,
       provider: "meta-model-api",
-      timeoutMs: options.timeoutMs,
+      timeoutMs: resolveMetaInvestigateTimeoutMs(options.timeoutMs),
       maxBytesIn: options.maxBytesIn,
       maxBytesOut: options.maxBytesOut,
       maxOutputChars: options.maxOutputChars,
+      maxTokens: resolveMetaInvestigateMaxTokens(options.maxTokens),
+      reasoningEffort: META_INVESTIGATE_REASONING_EFFORT,
       transport: options.transport,
       onLog: options.onLog,
     });

@@ -1,7 +1,8 @@
 // Outgoing chat-completions shape for the assessment adapters (K-305,
 // K-309). Written first per A-21 (red): every binding must POST a
 // standard chat-completions body (model, system + user messages,
-// max_tokens, temperature only) to `<base>/chat/completions`, and must
+// max_tokens, temperature only, plus an opt-in reasoning_effort on the
+// Meta reasoning binding) to `<base>/chat/completions`, and must
 // read the assessment from `choices[0].message.content`. No live calls,
 // no real keys: the transport is an in-memory capture.
 import { describe, expect, test, vi } from "vitest";
@@ -141,14 +142,33 @@ const BINDINGS: readonly Binding[] = [
   },
 ];
 
-// Per-provider request budgets (session 18): the Meta and hosted
-// bindings keep deterministic sampling (temperature 0, 1024 tokens),
-// while the vendor-neutral binding sends no sampling parameter at all
-// with a larger token budget.
-const EXPECTED_REQUEST: Record<string, { keys: readonly string[]; maxTokens: number; temperature: number | undefined }> = {
-  meta: { keys: ["max_tokens", "messages", "model", "temperature"], maxTokens: 1024, temperature: 0 },
-  hosted: { keys: ["max_tokens", "messages", "model", "temperature"], maxTokens: 1024, temperature: 0 },
-  "generic-compatible": { keys: ["max_tokens", "messages", "model"], maxTokens: 4096, temperature: undefined },
+// Per-provider request budgets (session 18, M2b): the hosted binding
+// keeps deterministic sampling (temperature 0, 1024 tokens), the Meta
+// reasoning binding sends 8192 tokens with a low reasoning effort, and
+// the vendor-neutral binding sends no sampling parameter at all with a
+// larger token budget. Only the Meta binding sends reasoning_effort.
+const EXPECTED_REQUEST: Record<
+  string,
+  { keys: readonly string[]; maxTokens: number; temperature: number | undefined; reasoningEffort: string | undefined }
+> = {
+  meta: {
+    keys: ["max_tokens", "messages", "model", "reasoning_effort", "temperature"],
+    maxTokens: 8192,
+    temperature: 0,
+    reasoningEffort: "low",
+  },
+  hosted: {
+    keys: ["max_tokens", "messages", "model", "temperature"],
+    maxTokens: 1024,
+    temperature: 0,
+    reasoningEffort: undefined,
+  },
+  "generic-compatible": {
+    keys: ["max_tokens", "messages", "model"],
+    maxTokens: 4096,
+    temperature: undefined,
+    reasoningEffort: undefined,
+  },
 };
 
 const EXPECTED_URLS: Record<string, string> = {
@@ -191,6 +211,11 @@ describe("assessment chat-completions request shape", () => {
         expect("temperature" in body).toBe(false);
       } else {
         expect(body["temperature"]).toBe(expected.temperature);
+      }
+      if (expected.reasoningEffort === undefined) {
+        expect("reasoning_effort" in body).toBe(false);
+      } else {
+        expect(body["reasoning_effort"]).toBe(expected.reasoningEffort);
       }
       expect("top_p" in body).toBe(false);
       expect("promptVersion" in body).toBe(false);

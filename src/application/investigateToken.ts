@@ -251,6 +251,17 @@ export function advanceInvestigation(
       detail: "every decision carries a non-empty rationale",
     });
   }
+  // The reserved final step (M-2c): when one step is left, no tools
+  // are offered and a tool call is an invalid decision. The step is
+  // still consumed, so the budget cannot be gamed by retrying
+  // validation failures.
+  if (decision.kind === "run-tool" && state.stepsUsed + 1 >= limits.maxSteps) {
+    return fail({
+      kind: "invalid-decision",
+      message: "the final step is reserved for conclude",
+      detail: "no tools are offered when one step is left",
+    });
+  }
   if (decision.kind === "conclude") {
     return ok({
       trace: state.trace.slice(),
@@ -288,6 +299,9 @@ export type InvestigationEnvelope =
       readonly report: {
         readonly narrative: string;
         readonly droppedClaims: number;
+        // Typed drop accounting (M-2d): uncited vs unknown-id counts, so
+        // the UI can name why an empty narrative shows nothing.
+        readonly dropReasons: { readonly uncited: number; readonly unknownId: number };
         // Conclude rationale (S-112): the token report always names why
         // the trace answers the question, beside the narrative.
         readonly rationale: string;
@@ -295,6 +309,11 @@ export type InvestigationEnvelope =
         // the report marks unverified instead of presenting as chain
         // findings.
         readonly verifiedInput: boolean;
+        // Budget-forced conclusion (M-2c): true when the run concluded
+        // only through the forced final conclude call after the model
+        // never concluded on the reserved final step, so the UI can name
+        // the budget-forced ending. False for a model conclude.
+        readonly forcedConclusion: boolean;
         readonly steps: InvestigationTrace;
         readonly collectedEvidenceIds: readonly EvidenceRef[];
       };
@@ -351,16 +370,22 @@ function buildModelInput(
   state: RunnerState,
   limits: InvestigationLimits,
   remainingMs: number,
+  concludeOnly: boolean,
 ): Result<InvestigationModelInput, { kind: string; message: string }> {
   return InvestigationModelInputCtor.create({
     codeHash: facts.codeHash,
     scoreBand: facts.scoreBand,
     signalIds: facts.signalIds.slice(),
-    tools: catalogue.tools.map((tool) => ({
-      toolId: tool.toolId,
-      description: tool.description,
-      argNames: tool.argNames.slice(),
-    })),
+    // The reserved final step offers no tools (M-2c): the catalogue
+    // travels empty and the model must conclude.
+    tools: concludeOnly
+      ? []
+      : catalogue.tools.map((tool) => ({
+          toolId: tool.toolId,
+          description: tool.description,
+          argNames: tool.argNames.slice(),
+        })),
+    concludeOnly,
     trace: state.trace.map((step) => ({
       step: step.step,
       toolId: step.toolId,
@@ -402,6 +427,63 @@ function runToolAccounted(
   return { timedOut: false, evidenceIds: observed };
 }
 
+// Budget-forced final conclude call (M-2c): when the model never
+// concludes on the reserved final step, or the step budget is spent, the
+// runner asks once more for a conclude-only decision over the trace
+// collected so far. The call runs inside the remaining token and time
+// budgets, and its narrative passes the same citation check as any
+// conclude. A forced conclusion reports `done` with `forcedConclusion`
+// set, so the UI can name the budget-forced ending. Any failure returns
+// null and the caller ends with the failure it already computed.
+async function attemptForcedConclusion(
+  adapter: InvestigationModelPort,
+  facts: FrozenInvestigationFacts,
+  catalogue: InvestigationCatalogue,
+  ctx: InvestigationCallContext,
+  state: RunnerState,
+  limits: InvestigationLimits,
+  deadlineAt: number,
+  now: () => number,
+): Promise<InvestigationEnvelope | null> {
+  if (state.tokensSpent >= limits.maxTokens) {
+    return null;
+  }
+  const remainingMs = deadlineAt - now();
+  if (remainingMs <= 0) {
+    return null;
+  }
+  const built = buildModelInput(facts, catalogue, state, limits, remainingMs, true);
+  if (!built.ok) {
+    return null;
+  }
+  const decided = await adapter.decide(built.value, ctx);
+  if (!decided.ok) {
+    return null;
+  }
+  const decision = decided.value;
+  if (decision.kind !== "conclude") {
+    return null;
+  }
+  if (decision.rationale.trim().length === 0 || decision.narrativeDraft.trim().length === 0) {
+    return null;
+  }
+  const checked: CheckedNarrative = checkCitations(decision.narrativeDraft, state.collected);
+  return {
+    status: "done",
+    report: {
+      narrative: checked.narrative,
+      droppedClaims: checked.droppedClaims,
+      dropReasons: checked.dropReasons,
+      rationale: decision.rationale,
+      verifiedInput: facts.synthetic !== true,
+      forcedConclusion: true,
+      steps: state.trace.slice(),
+      collectedEvidenceIds: state.collected.slice(),
+    },
+    limits,
+  };
+}
+
 // The graph loop (P-31, P-34): limit checks first, then one model decision,
 // then validation and execution. Adapter errors map to typed failures with
 // the partial trace preserved; `not-configured` answers immediately with
@@ -422,13 +504,19 @@ export async function investigateToken(
 
   for (;;) {
     if (state.stepsUsed >= limits.maxSteps) {
-      return {
+      const failed: InvestigationEnvelope = {
         status: "failed",
         reason: { kind: "step-limit", message: "investigation step budget spent", limit: limits.maxSteps },
         partial: state.trace.slice(),
         collectedEvidenceIds: state.collected.slice(),
         limits,
       };
+      // A zero-step budget offers no step at all: fail directly instead
+      // of forcing a conclusion over an empty trace.
+      if (limits.maxSteps <= 0) {
+        return failed;
+      }
+      return (await attemptForcedConclusion(adapter, facts, catalogue, ctx, state, limits, deadlineAt, now)) ?? failed;
     }
     if (state.tokensSpent >= limits.maxTokens) {
       return {
@@ -448,7 +536,11 @@ export async function investigateToken(
         limits,
       };
     }
-    const built = buildModelInput(facts, catalogue, state, limits, deadlineAt - now());
+    // The final step is reserved for the conclusion (M-2c): the model
+    // input carries no tools there and the prompt says plainly that the
+    // model must conclude on this step.
+    const concludeOnlyStep = limits.maxSteps - state.stepsUsed === 1;
+    const built = buildModelInput(facts, catalogue, state, limits, deadlineAt - now(), concludeOnlyStep);
     if (!built.ok) {
       return {
         status: "failed",
@@ -463,24 +555,32 @@ export async function investigateToken(
       if (decided.error.kind === "not-configured") {
         return { status: "not-configured", limits };
       }
-      return {
+      const failed: InvestigationEnvelope = {
         status: "failed",
         reason: providerFailure(decided.error),
         partial: state.trace.slice(),
         collectedEvidenceIds: state.collected.slice(),
         limits,
       };
+      if (!concludeOnlyStep) {
+        return failed;
+      }
+      return (await attemptForcedConclusion(adapter, facts, catalogue, ctx, state, limits, deadlineAt, now)) ?? failed;
     }
     const decision = decided.value;
     const advanced = advanceInvestigation(state, decision, catalogue, facts, limits);
     if (!advanced.ok) {
-      return {
+      const failed: InvestigationEnvelope = {
         status: "failed",
         reason: advanced.error.reason,
         partial: advanced.error.partial,
         collectedEvidenceIds: state.collected.slice(),
         limits,
       };
+      if (!concludeOnlyStep) {
+        return failed;
+      }
+      return (await attemptForcedConclusion(adapter, facts, catalogue, ctx, state, limits, deadlineAt, now)) ?? failed;
     }
     state = advanced.value;
     if (decision.kind === "conclude") {
@@ -490,8 +590,10 @@ export async function investigateToken(
         report: {
           narrative: checked.narrative,
           droppedClaims: checked.droppedClaims,
+          dropReasons: checked.dropReasons,
           rationale: decision.rationale,
           verifiedInput: facts.synthetic !== true,
+          forcedConclusion: false,
           steps: state.trace.slice(),
           collectedEvidenceIds: state.collected.slice(),
         },

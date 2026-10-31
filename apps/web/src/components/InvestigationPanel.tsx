@@ -204,6 +204,11 @@ export function InvestigationPanel({
               Investigated with {providerDisplayName(state.provider)} · model {state.modelId}
             </span>
           </p>
+          {state.forcedConclusion ? (
+            <p className="quiet" style={{ margin: "4px 0 0" }}>
+              Muse concluded at the step limit.
+            </p>
+          ) : null}
           <StepGraph steps={state.steps} signals={signals} onSignalLink={onSignalLink} />
           <h3 style={{ fontSize: 16, margin: "12px 0 4px" }}>
             <span>Checked narrative</span> <Explain explainKey="investigation:narrative" label="Checked narrative" />
@@ -212,13 +217,15 @@ export function InvestigationPanel({
             <CheckedNarrative narrative={state.narrative} signals={signals} onSignalLink={onSignalLink} />
           ) : (
             <p className="muted" style={{ margin: "0 0 4px" }}>
-              Every drafted claim failed citation checking, so no narrative stands.
+              Muse&apos;s conclusion did not cite collected evidence, so it is not shown.
             </p>
           )}
           <p className="quiet" style={{ margin: 0 }}>
             {state.droppedClaims === 0
               ? "Every cited claim matched collected evidence."
-              : `${state.droppedClaims} uncited claim${state.droppedClaims === 1 ? "" : "s"} dropped by citation checking.`}
+              : state.dropReasons === undefined
+                ? `${state.droppedClaims} uncited claim${state.droppedClaims === 1 ? "" : "s"} dropped by citation checking.`
+                : `${state.droppedClaims} claim${state.droppedClaims === 1 ? "" : "s"} dropped by citation checking (${state.dropReasons.uncited} uncited, ${state.dropReasons.unknownId} with unknown ids).`}
           </p>
           <button type="button" className="button-ghost" onClick={onRequest} style={{ marginTop: 8 }}>
             Run again

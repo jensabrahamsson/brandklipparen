@@ -43,7 +43,11 @@ import {
   createhostedInvestigateAdapterFromConfig,
 } from "../adapters/investigation/hostedInvestigateAdapter.ts";
 import type { hostedInvestigateTransport } from "../adapters/investigation/hostedInvestigateAdapter.ts";
-import { createMetaModelApiInvestigateAdapterFromConfig } from "../adapters/investigation/metaModelApiInvestigateAdapter.ts";
+import {
+  META_INVESTIGATE_LOOP_DEADLINE_MS,
+  META_INVESTIGATE_LOOP_MAX_TOKENS,
+  createMetaModelApiInvestigateAdapterFromConfig,
+} from "../adapters/investigation/metaModelApiInvestigateAdapter.ts";
 import type { InvestigationModelPort } from "../ports/investigationModel.ts";
 import { DEFAULT_INVESTIGATION_LIMITS } from "../application/investigateToken.ts";
 import { createMetaModelApiAdapterFromConfig } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
@@ -584,6 +588,14 @@ function buildInvestigationService(
   config: AppConfig,
   detectors: DetectorSet,
   configured: boolean,
+  // Fallback loop budget when the validated configuration names no
+  // explicit value: the Meta reasoning path passes a larger budget (up to
+  // 8 steps of a reasoning model); every other path keeps the shared
+  // defaults. Explicit configuration always wins.
+  loopDefaults: { readonly maxTokens: number; readonly deadlineMs: number } = {
+    maxTokens: DEFAULT_INVESTIGATION_LIMITS.maxTokens,
+    deadlineMs: DEFAULT_INVESTIGATION_LIMITS.deadlineMs,
+  },
 ): InvestigationService {
   return createInvestigationService({
     adapter,
@@ -591,8 +603,8 @@ function buildInvestigationService(
     docs: {},
     limits: {
       maxSteps: config.investigateMaxSteps ?? DEFAULT_INVESTIGATION_LIMITS.maxSteps,
-      maxTokens: config.investigateMaxTokens ?? DEFAULT_INVESTIGATION_LIMITS.maxTokens,
-      deadlineMs: config.investigateDeadlineMs ?? DEFAULT_INVESTIGATION_LIMITS.deadlineMs,
+      maxTokens: config.investigateMaxTokens ?? loopDefaults.maxTokens,
+      deadlineMs: config.investigateDeadlineMs ?? loopDefaults.deadlineMs,
       toolTimeoutMs: config.investigateToolTimeoutMs ?? DEFAULT_INVESTIGATION_LIMITS.toolTimeoutMs,
     },
     promptVersion:
@@ -669,6 +681,10 @@ export function createInvestigationServiceFromConfig(
         config,
         detectors,
         !(built.value instanceof NotConfiguredInvestigateAdapter),
+        {
+          maxTokens: META_INVESTIGATE_LOOP_MAX_TOKENS,
+          deadlineMs: META_INVESTIGATE_LOOP_DEADLINE_MS,
+        },
       ),
     );
   }

@@ -56,13 +56,30 @@ export type MetaAssessmentLogEntry = ChatCompletionsLogEntry;
 // Placeholder operational limits for tests and offline use (A-17, I-14).
 // Production passes the versioned values from the validated configuration
 // through createMetaModelApiAdapterFromConfig; the adapter never invents
-// its own.
-export const DEFAULT_META_TIMEOUT_MS = 30000;
+// its own. The timeout mirrors the personalize mapping timeout (60 s) so
+// a reasoning model has room to answer; the response byte cap stays at
+// 1 MiB, far above the largest valid answer, so a complete assessment is
+// never rejected as oversize.
+export const DEFAULT_META_TIMEOUT_MS = 60000;
 export const DEFAULT_META_MAX_BYTES_IN = 1048576;
 export const DEFAULT_META_MAX_BYTES_OUT = 20000;
 
+// Completion budget for one assessment call: the configured reasoning
+// model reasons before answering and reasoning tokens count against this
+// budget, so the bound leaves room for a low reasoning effort plus the
+// assessment JSON (mirroring the personalize mapping budget).
+export const DEFAULT_META_MAX_TOKENS = 8192;
+
+// The assessment is a small structured choice, so the call asks for low
+// reasoning effort (the provider rejects "none").
+export const META_REASONING_EFFORT = "low";
+
 export function resolveMetaTimeoutMs(value: number | undefined): number {
   return value ?? DEFAULT_META_TIMEOUT_MS;
+}
+
+export function resolveMetaMaxTokens(value: number | undefined): number {
+  return value ?? DEFAULT_META_MAX_TOKENS;
 }
 
 export function resolveMetaMaxBytesIn(value: number | undefined): number {
@@ -81,6 +98,8 @@ export type MetaModelApiAdapterOptions = {
   readonly maxBytesIn?: number | undefined;
   readonly maxBytesOut?: number | undefined;
   readonly maxOutputChars?: number | undefined;
+  // Optional completion budget override: defaults to 8192.
+  readonly maxTokens?: number | undefined;
   readonly transport?: MetaModelApiTransport | undefined;
   readonly onLog?: ((entry: MetaAssessmentLogEntry) => void) | undefined;
   readonly onWarn?: ((line: string) => void) | undefined;
@@ -154,6 +173,8 @@ export class MetaModelApiAdapter extends ChatCompletionsAdapter implements Asses
       maxBytesIn: resolveMetaMaxBytesIn(options.maxBytesIn),
       maxBytesOut: resolveMetaMaxBytesOut(options.maxBytesOut),
       maxOutputChars: options.maxOutputChars,
+      maxTokens: resolveMetaMaxTokens(options.maxTokens),
+      reasoningEffort: META_REASONING_EFFORT,
       transport: options.transport,
       onLog: options.onLog,
       onWarn: options.onWarn,

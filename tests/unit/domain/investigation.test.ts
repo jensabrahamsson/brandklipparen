@@ -14,6 +14,7 @@ function doneState(): InvestigationState {
       outcome: "done",
       narrative: "Kept. [E:sig-1]",
       droppedClaims: 0,
+      dropReasons: { uncited: 0, unknownId: 0 },
       steps: [],
       collectedEvidenceIds: ["sig-1"],
     },
@@ -86,5 +87,80 @@ describe("investigation state machine", () => {
     expect(fromDone.ok).toBe(false);
     const fromFailed = transitionInvestigation(failedState(), { kind: "decide" });
     expect(fromFailed.ok).toBe(false);
+  });
+});
+
+describe("m2d tolerated citation variants", () => {
+  const collected = ["sig-1", "sig-2", "signal:owner-blacklist"];
+
+  test("m2d_each_harmless_variant_is_kept", () => {
+    const drafts = [
+      "The guard holds. [E: sig-1]",
+      "The guard holds. [e:sig-1]",
+      "The guard holds. [E:sig-1, sig-2]",
+      "The guard holds. [E:sig-1; sig-2]",
+      "The guard holds. [E:`sig-1`]",
+      "The guard holds [E:sig-1].",
+      "The guard holds. [E:sig-1]",
+    ];
+    for (const draft of drafts) {
+      const checked = checkCitations(draft, collected);
+      expect(checked.droppedClaims).toBe(0);
+      expect(checked.narrative).toBe(draft);
+      expect(checked.dropReasons).toEqual({ uncited: 0, unknownId: 0 });
+    }
+  });
+
+  test("m2d_mixed_markers_are_split_and_checked_per_id", () => {
+    const checked = checkCitations("Both guards hold. [E:sig-1, sig-2]", collected);
+    expect(checked.droppedClaims).toBe(0);
+    expect(checked.narrative).toBe("Both guards hold. [E:sig-1, sig-2]");
+    const partial = checkCitations("One guard holds. [E:sig-1, sig-ghost]", collected);
+    expect(partial.narrative).toBe("");
+    expect(partial.droppedClaims).toBe(1);
+    expect(partial.dropReasons).toEqual({ uncited: 0, unknownId: 1 });
+  });
+
+  test("m2d_unknown_id_still_drops_with_typed_reason", () => {
+    const checked = checkCitations("The guard holds. [E:sig-ghost]", collected);
+    expect(checked.narrative).toBe("");
+    expect(checked.droppedClaims).toBe(1);
+    expect(checked.dropReasons).toEqual({ uncited: 0, unknownId: 1 });
+  });
+
+  test("m2d_uncited_sentence_still_drops_with_typed_reason", () => {
+    const checked = checkCitations("No marker on this claim.", collected);
+    expect(checked.narrative).toBe("");
+    expect(checked.droppedClaims).toBe(1);
+    expect(checked.dropReasons).toEqual({ uncited: 1, unknownId: 0 });
+  });
+
+  test("m2d_reason_counts_split_uncited_from_unknown_id", () => {
+    const draft = [
+      "Kept. [E:sig-1]",
+      "No marker here.",
+      "Wrong marker. [E:sig-ghost]",
+      "Spaced but known. [E: sig-2]",
+    ].join(" ");
+    const checked = checkCitations(draft, collected);
+    expect(checked.droppedClaims).toBe(2);
+    expect(checked.dropReasons).toEqual({ uncited: 1, unknownId: 1 });
+    expect(checked.narrative).toBe("Kept. [E:sig-1] Spaced but known. [E: sig-2]");
+  });
+
+  test("m2d_markers_before_and_after_the_full_stop_attach_to_the_claim", () => {
+    const before = checkCitations("The guard holds [E:sig-1]. Next uncited claim.", collected);
+    expect(before.narrative).toBe("The guard holds [E:sig-1].");
+    expect(before.droppedClaims).toBe(1);
+    const after = checkCitations("The guard holds. [E: sig-1] Next uncited claim.", collected);
+    expect(after.narrative).toBe("The guard holds. [E: sig-1]");
+    expect(after.droppedClaims).toBe(1);
+  });
+
+  test("m2d_no_split_inside_a_marker", () => {
+    const draft = "Both guards hold. [E:sig-1, sig-2] Done.";
+    const checked = checkCitations(draft, collected);
+    expect(checked.droppedClaims).toBe(1);
+    expect(checked.narrative).toBe("Both guards hold. [E:sig-1, sig-2]");
   });
 });
