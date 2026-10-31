@@ -26,11 +26,12 @@ import {
   flavorBetween,
   hasOwnerCallerCheck,
   hasRevertingJumpiAfter,
+  interpretRegionSlots,
   isStandardTokenWriter,
   packedBoolWriteAt,
   packedGateShift,
 } from "../../../domain/ownerControl.ts";
-import type { RegionFacts } from "../../../domain/ownerControl.ts";
+import type { RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
 import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
 import type { Selector as SelectorType } from "../../../domain/types.ts";
@@ -358,7 +359,10 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     if (isStandardTokenWriter(region.selector)) {
       continue;
     }
-    if (!hasOwnerCallerCheck(code, memberOf(region.selector), ownerSlot)) {
+    // The v2 interpreter proves the writer guard through DUP/SWAP chains.
+    const candidateSlots = interpretRegionSlots(input.bytecode, region.selector);
+    const candidateSlotOf: SlotLookup = (pc) => candidateSlots.get(pc);
+    if (!hasOwnerCallerCheck(code, memberOf(region.selector), ownerSlot, candidateSlotOf)) {
       continue;
     }
     for (const store of region.stores) {
@@ -377,7 +381,9 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         continue;
       }
       const writerMember = memberOf(region.selector);
-      if (!hasOwnerCallerCheck(code, writerMember, ownerSlot)) {
+      const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
+      const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
+      if (!hasOwnerCallerCheck(code, writerMember, ownerSlot, writerSlotOf)) {
         continue;
       }
       const writePc = flagWriter(region, slot);
@@ -390,7 +396,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       // the slot must match.
       const writeIndex = sstoreIndexAt(writePc);
       const packedWrite =
-        writeIndex >= 0 ? (packedBoolWriteAt(code, writeIndex, slot) ?? null) : null;
+        writeIndex >= 0 ? (packedBoolWriteAt(code, writeIndex, slot, writerSlotOf) ?? null) : null;
       const orderedTransfers = [TRANSFER_SELECTOR, TRANSFER_FROM_SELECTOR]
         .filter((selector) => selector !== region.selector)
         .sort();
@@ -402,7 +408,9 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         const gateMember = memberOf(transferSelector);
         let gateEvidencePc: number | null = null;
         if (packedWrite !== null && packedWrite.shift !== null) {
-          const gate = packedGateShift(code, gateMember, slot);
+          const transferSlots = interpretRegionSlots(input.bytecode, transferSelector);
+          const transferSlotOf: SlotLookup = (pc) => transferSlots.get(pc);
+          const gate = packedGateShift(code, gateMember, slot, transferSlotOf);
           if (gate === null || gate.shift !== packedWrite.shift) {
             continue;
           }

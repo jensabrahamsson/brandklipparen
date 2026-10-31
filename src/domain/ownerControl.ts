@@ -15,6 +15,7 @@
 // finding rather than a guessed one.
 import { attributeFunctions, findFunctionEntries } from "./evmFlow.ts";
 import { buildCfg, lift, resolveEntryReachV2 } from "./evmLift.ts";
+import type { CfgBlock } from "./evmLift.ts";
 import { nameForSelector } from "./evmNames.ts";
 import { disassemble, extractSelectors } from "./selectors.ts";
 import type { Instruction, SelectorEntry } from "./selectors.ts";
@@ -37,11 +38,18 @@ function mustSelector(raw: string): SelectorType {
 export const TRANSFER_SELECTOR: SelectorType = mustSelector("0xa9059cbb");
 export const TRANSFER_FROM_SELECTOR: SelectorType = mustSelector("0x23b872dd");
 
-// Best-effort storage slot reference for one SLOAD or SSTORE.
+// Best-effort storage slot reference for one SLOAD or SSTORE. A mapping
+// slot carries its hashed base slot when the v2 stack interpreter proves
+// it (`base` is null when the base stays unknown); old consumers keep
+// working by reading `kind` alone.
 export type SlotRef =
   | { readonly kind: "const"; readonly value: number }
-  | { readonly kind: "mapping" }
+  | { readonly kind: "mapping"; readonly base: number | null }
   | { readonly kind: "unknown" };
+
+// Lookup of the v2 interpreter slot per SLOAD/SSTORE pc: undefined when
+// the interpreter holds no information for the pc.
+export type SlotLookup = (pc: number) => SlotRef | undefined;
 
 export type StoreOp = {
   readonly pc: number;
@@ -163,10 +171,514 @@ function resolveSlot(insns: readonly Instruction[], index: number): SlotRef {
       break;
     }
     if (candidate.opcode === 0x20) {
-      return { kind: "mapping" };
+      return { kind: "mapping", base: null };
     }
   }
   return { kind: "unknown" };
+}
+
+// Prefer an interpreter slot over the legacy window proof: a known
+// interpreter result (const through DUP/SWAP chains, mapping with a
+// proven base) always wins, while an unknown or missing interpreter
+// result keeps the legacy answer untouched, so v1 output never changes.
+function pickSlot(interpreter: SlotRef | undefined, legacy: SlotRef): SlotRef {
+  if (interpreter === undefined || interpreter.kind === "unknown") {
+    return legacy;
+  }
+  return interpreter;
+}
+
+// Abstract stack interpreter for v2 slot resolution (P-10c). Old solc
+// puts storage slots on the stack through PUSH/DUP/SWAP chains and moves
+// mapping hashes the same way, which the adjacent-PUSH window proof
+// never sees. Per region (one selector under v2 reachability) abstract
+// values flow through the blocks the entry reaches: const(n) for short
+// pushes, keccak with the proven mapping base for SHA3 over [0x00,0x40),
+// unknown for anything else. PUSHn, DUPn, SWAPn and POP move values;
+// MSTORE/MLOAD track constants at memory 0x00/0x20; SHA3 over 0x00/0x40
+// reads the base constant stored at 0x20; ADD of keccak and const keeps
+// the mapping base (struct/array offset); every other opcode pops its
+// inputs and pushes unknown results. Blocks walk in CFG order from the
+// entry with a per-block entry state; joins merge differing values to
+// unknown. Total and bounded: the visit cap and the depth cap hold on
+// hostile input, and the interpreter never throws.
+type V2Abs =
+  | { readonly tag: "const"; readonly value: number }
+  | { readonly tag: "keccak"; readonly base: number | null }
+  | { readonly tag: "unknown" };
+
+const V2_UNKNOWN: V2Abs = Object.freeze({ tag: "unknown" }) as V2Abs;
+
+// Total block-visit budget for one region walk: merging only ever moves
+// values toward unknown, so the walk settles on its own; the cap is the
+// backstop on hostile shapes.
+export const V2_SLOT_MAX_VISITS = 4096;
+const V2_SLOT_MAX_DEPTH = 64;
+
+type V2State = {
+  readonly stack: readonly V2Abs[];
+  readonly mem0: V2Abs;
+  readonly mem32: V2Abs;
+};
+
+function v2PushValue(immediate: readonly number[]): V2Abs {
+  if (immediate.length === 0 || immediate.length > MAX_SLOT_PUSH_BYTES) {
+    return V2_UNKNOWN;
+  }
+  let value = 0;
+  for (const byte of immediate) {
+    value = value * 256 + (byte ?? 0);
+    if (value > 0xffffffff) {
+      return V2_UNKNOWN;
+    }
+  }
+  return Object.freeze({ tag: "const", value }) as V2Abs;
+}
+
+function v2Equal(left: V2Abs, right: V2Abs): boolean {
+  if (left.tag !== right.tag) {
+    return false;
+  }
+  if (left.tag === "const" && right.tag === "const") {
+    return left.value === right.value;
+  }
+  if (left.tag === "keccak" && right.tag === "keccak") {
+    return left.base === right.base;
+  }
+  return true;
+}
+
+function v2MergeValue(left: V2Abs, right: V2Abs): V2Abs {
+  return v2Equal(left, right) ? left : V2_UNKNOWN;
+}
+
+function v2SlotOf(key: V2Abs): SlotRef {
+  if (key.tag === "const") {
+    return { kind: "const", value: key.value };
+  }
+  if (key.tag === "keccak") {
+    return { kind: "mapping", base: key.base };
+  }
+  return { kind: "unknown" };
+}
+
+function v2MergeSlot(left: SlotRef, right: SlotRef): SlotRef {
+  if (left.kind === "const" && right.kind === "const" && left.value === right.value) {
+    return left;
+  }
+  if (left.kind === "mapping" && right.kind === "mapping" && left.base === right.base) {
+    return left;
+  }
+  if (left.kind === "unknown" && right.kind === "unknown") {
+    return left;
+  }
+  return { kind: "unknown" };
+}
+
+// Generic stack effect (pops, pushes) for opcodes the interpreter does
+// not model precisely; null ends the block (halting opcodes). Counts
+// mirror the stack-depth table in `./evmFlow.ts`; results are always
+// unknown, so drift here only costs precision, never soundness of a
+// proven slot.
+function v2EffectOf(opcode: number): { readonly pops: number; readonly pushes: number } | null {
+  switch (opcode) {
+    case 0x00:
+    case 0xfe:
+    case 0xff:
+    case 0xf3:
+    case 0xfd:
+      return null;
+    case 0x01:
+    case 0x02:
+    case 0x03:
+    case 0x04:
+    case 0x05:
+    case 0x06:
+    case 0x07:
+    case 0x0b:
+    case 0x0c:
+    case 0x0d:
+    case 0x10:
+    case 0x11:
+    case 0x12:
+    case 0x13:
+    case 0x14:
+    case 0x16:
+    case 0x17:
+    case 0x18:
+    case 0x1a:
+    case 0x1b:
+    case 0x1c:
+    case 0x1d:
+      return { pops: 2, pushes: 1 };
+    case 0x08:
+    case 0x09:
+      return { pops: 3, pushes: 1 };
+    case 0x0a:
+      return { pops: 2, pushes: 1 };
+    case 0x15:
+    case 0x19:
+      return { pops: 1, pushes: 1 };
+    case 0x31:
+    case 0x35:
+    case 0x3b:
+    case 0x3f:
+    case 0x40:
+    case 0x42:
+    case 0x49:
+    case 0x5c:
+      return { pops: 1, pushes: 1 };
+    case 0x30:
+    case 0x32:
+    case 0x33:
+    case 0x34:
+    case 0x36:
+    case 0x38:
+    case 0x3a:
+    case 0x3d:
+    case 0x41:
+    case 0x43:
+    case 0x44:
+    case 0x45:
+    case 0x46:
+    case 0x47:
+    case 0x48:
+    case 0x4a:
+    case 0x58:
+    case 0x59:
+    case 0x5a:
+      return { pops: 0, pushes: 1 };
+    case 0x37:
+    case 0x39:
+    case 0x3e:
+    case 0x5e:
+      return { pops: 3, pushes: 0 };
+    case 0x3c:
+      return { pops: 4, pushes: 0 };
+    case 0x5d:
+      return { pops: 2, pushes: 0 };
+    case 0xa0:
+    case 0xa1:
+    case 0xa2:
+    case 0xa3:
+    case 0xa4:
+      return { pops: 2 + (opcode - 0xa0), pushes: 0 };
+    case 0xf0:
+      return { pops: 3, pushes: 1 };
+    case 0xf1:
+    case 0xf2:
+      return { pops: 7, pushes: 1 };
+    case 0xf4:
+    case 0xfa:
+      return { pops: 6, pushes: 1 };
+    case 0xf5:
+      return { pops: 4, pushes: 1 };
+    default:
+      return { pops: 0, pushes: 0 };
+  }
+}
+
+type V2Sim = {
+  stack: V2Abs[];
+  mem0: V2Abs;
+  mem32: V2Abs;
+};
+
+function v2Pop(sim: V2Sim): V2Abs {
+  return sim.stack.pop() ?? V2_UNKNOWN;
+}
+
+function v2Push(sim: V2Sim, value: V2Abs): void {
+  if (sim.stack.length >= V2_SLOT_MAX_DEPTH) {
+    sim.stack.shift();
+  }
+  sim.stack.push(value);
+}
+
+// Simulate one member block from its entry state, recording the slot of
+// every member SLOAD/SSTORE into `found` (conflicts merge to unknown).
+// Stops at the first halting opcode; JUMP/JUMPI end the block after
+// popping their inputs.
+function v2SimulateBlock(
+  block: CfgBlock,
+  entry: V2State,
+  isMember: (pc: number) => boolean,
+  found: Map<number, SlotRef>,
+): V2Sim {
+  const sim: V2Sim = { stack: [...entry.stack], mem0: entry.mem0, mem32: entry.mem32 };
+  const record = (pc: number, key: V2Abs): void => {
+    const slot = v2SlotOf(key);
+    const known = found.get(pc);
+    found.set(pc, known === undefined ? slot : v2MergeSlot(known, slot));
+  };
+  for (const instruction of block.instructions) {
+    const opcode = instruction.opcode;
+    if (opcode === 0x5b) {
+      continue;
+    }
+    if (opcode === 0x5f) {
+      v2Push(sim, Object.freeze({ tag: "const", value: 0 }) as V2Abs);
+      continue;
+    }
+    if (opcode >= 0x60 && opcode <= 0x7f) {
+      v2Push(sim, v2PushValue(instruction.immediate));
+      continue;
+    }
+    if (opcode >= 0x80 && opcode <= 0x8f) {
+      const depth = opcode - 0x7f;
+      v2Push(sim, sim.stack[sim.stack.length - depth] ?? V2_UNKNOWN);
+      continue;
+    }
+    if (opcode >= 0x90 && opcode <= 0x9f) {
+      const depth = opcode - 0x8f;
+      const top = sim.stack.length - 1;
+      const other = top - depth;
+      if (top >= 0 && other >= 0) {
+        const saved = sim.stack[top] ?? V2_UNKNOWN;
+        sim.stack[top] = sim.stack[other] ?? V2_UNKNOWN;
+        sim.stack[other] = saved;
+      } else {
+        v2Push(sim, V2_UNKNOWN);
+      }
+      continue;
+    }
+    if (opcode === 0x50) {
+      v2Pop(sim);
+      continue;
+    }
+    if (opcode === 0x01) {
+      const right = v2Pop(sim);
+      const left = v2Pop(sim);
+      if (left.tag === "const" && right.tag === "const") {
+        const sum = left.value + right.value;
+        v2Push(sim, sum <= 0xffffffff ? ({ tag: "const", value: sum }) : V2_UNKNOWN);
+      } else if (left.tag === "keccak" && right.tag === "const") {
+        v2Push(sim, Object.freeze({ tag: "keccak", base: left.base }) as V2Abs);
+      } else if (left.tag === "const" && right.tag === "keccak") {
+        v2Push(sim, Object.freeze({ tag: "keccak", base: right.base }) as V2Abs);
+      } else {
+        v2Push(sim, V2_UNKNOWN);
+      }
+      continue;
+    }
+    if (opcode === 0x52 || opcode === 0x53) {
+      const offset = v2Pop(sim);
+      const value = v2Pop(sim);
+      if (offset.tag === "const" && offset.value === 0) {
+        sim.mem0 = value;
+      } else if (offset.tag === "const" && offset.value === 0x20) {
+        sim.mem32 = value;
+      }
+      continue;
+    }
+    if (opcode === 0x51) {
+      const address = v2Pop(sim);
+      if (address.tag === "const" && address.value === 0) {
+        v2Push(sim, sim.mem0);
+      } else if (address.tag === "const" && address.value === 0x20) {
+        v2Push(sim, sim.mem32);
+      } else {
+        v2Push(sim, V2_UNKNOWN);
+      }
+      continue;
+    }
+    if (opcode === 0x20) {
+      const offset = v2Pop(sim);
+      const size = v2Pop(sim);
+      if (offset.tag === "const" && offset.value === 0 && size.tag === "const" && size.value === 0x40) {
+        const base = sim.mem32.tag === "const" ? sim.mem32.value : null;
+        v2Push(sim, Object.freeze({ tag: "keccak", base }) as V2Abs);
+      } else {
+        v2Push(sim, V2_UNKNOWN);
+      }
+      continue;
+    }
+    if (opcode === 0x54) {
+      const key = sim.stack[sim.stack.length - 1] ?? V2_UNKNOWN;
+      if (isMember(instruction.pc)) {
+        record(instruction.pc, key);
+      }
+      v2Pop(sim);
+      v2Push(sim, V2_UNKNOWN);
+      continue;
+    }
+    if (opcode === 0x55) {
+      const key = sim.stack[sim.stack.length - 1] ?? V2_UNKNOWN;
+      if (isMember(instruction.pc)) {
+        record(instruction.pc, key);
+      }
+      v2Pop(sim);
+      v2Pop(sim);
+      continue;
+    }
+    if (opcode === 0x56) {
+      v2Pop(sim);
+      return sim;
+    }
+    if (opcode === 0x57) {
+      v2Pop(sim);
+      v2Pop(sim);
+      return sim;
+    }
+    const effect = v2EffectOf(opcode);
+    if (effect === null) {
+      return sim;
+    }
+    for (let at = 0; at < effect.pops; at += 1) {
+      v2Pop(sim);
+    }
+    for (let at = 0; at < effect.pushes; at += 1) {
+      v2Push(sim, V2_UNKNOWN);
+    }
+  }
+  return sim;
+}
+
+// A dynamic JUMP block: ends in JUMP with no proven jump edge, so v1
+// records it as unresolved (mirrors the helper in `./evmLift.ts` without
+// importing it).
+function v2IsDynamicJump(block: CfgBlock): boolean {
+  const last = block.instructions[block.instructions.length - 1];
+  return (
+    block.terminal === "jump" &&
+    last !== undefined &&
+    last.opcode === 0x56 &&
+    !block.successors.some((edge) => edge.kind === "jump")
+  );
+}
+
+function v2MergeState(known: V2State | undefined, incoming: V2State): { readonly state: V2State; readonly changed: boolean } {
+  if (known === undefined) {
+    return { state: incoming, changed: true };
+  }
+  const length = Math.min(known.stack.length, incoming.stack.length);
+  const stack: V2Abs[] = [];
+  for (let at = 0; at < length; at += 1) {
+    stack.push(v2MergeValue(known.stack[at] ?? V2_UNKNOWN, incoming.stack[at] ?? V2_UNKNOWN));
+  }
+  const state: V2State = Object.freeze({
+    stack: Object.freeze(stack),
+    mem0: v2MergeValue(known.mem0, incoming.mem0),
+    mem32: v2MergeValue(known.mem32, incoming.mem32),
+  });
+  // Changed only when the merged content differs from the known entry:
+  // truncation to the shorter stack counts, but an incoming state that
+  // merges back to exactly what is known re-queues nothing, so loops
+  // settle instead of burning the visit budget.
+  let changed = known.stack.length !== length;
+  if (!changed) {
+    for (let at = 0; at < length; at += 1) {
+      if (!v2Equal(known.stack[at] ?? V2_UNKNOWN, stack[at] ?? V2_UNKNOWN)) {
+        changed = true;
+        break;
+      }
+    }
+  }
+  if (!changed && (!v2Equal(known.mem0, state.mem0) || !v2Equal(known.mem32, state.mem32))) {
+    changed = true;
+  }
+  return { state, changed };
+}
+
+// Resolve every member SLOAD/SSTORE slot of one v2 region through the
+// abstract stack interpreter: const slots surface through DUP/SWAP
+// chains and mapping slots carry their proven base (null when the base
+// stays unknown). Total: hostile bytecode yields a partial map, never
+// an exception.
+export function interpretRegionSlots(bytecode: BytecodeType, selector: SelectorType): ReadonlyMap<number, SlotRef> {
+  const found = new Map<number, SlotRef>();
+  try {
+    const cfg = buildCfg(lift(bytecode));
+    let entryTarget: number | null = null;
+    for (const candidate of extractSelectors(bytecode)) {
+      if (candidate.kind === "paired" && candidate.selector === (selector as string)) {
+        entryTarget = candidate.target as number;
+        break;
+      }
+    }
+    if (entryTarget === null) {
+      return found;
+    }
+    let entryBlock = -1;
+    for (const block of cfg.blocks) {
+      if (block.range.startPc === entryTarget) {
+        entryBlock = block.index;
+        break;
+      }
+    }
+    if (entryBlock < 0 || entryBlock >= cfg.blocks.length) {
+      return found;
+    }
+    const attribution = attributeFunctions(bytecode, { mode: "v2" });
+    const isMember = (pc: number): boolean => attribution.holdersOf(pc).includes(selector);
+    const reached = resolveEntryReachV2(cfg, entryBlock).reachedBlocks;
+    const isWalkable = (index: number): boolean => {
+      if (!reached.has(index)) {
+        return false;
+      }
+      const block = cfg.blocks[index];
+      return block !== undefined && block.instructions.some((instruction) => isMember(instruction.pc));
+    };
+    // Return candidates mirror the v2 return-jump resolver: a dynamic
+    // jump reached from this entry may continue at any reached member
+    // block opening with JUMPDEST.
+    const returnBlocks: number[] = [];
+    for (const block of cfg.blocks) {
+      if (
+        reached.has(block.index) &&
+        block.instructions[0]?.opcode === 0x5b &&
+        block.instructions.some((instruction) => isMember(instruction.pc))
+      ) {
+        returnBlocks.push(block.index);
+      }
+    }
+    const entries = new Map<number, V2State>();
+    const empty: V2State = Object.freeze({ stack: Object.freeze([]), mem0: V2_UNKNOWN, mem32: V2_UNKNOWN });
+    entries.set(entryBlock, empty);
+    const queue: number[] = [entryBlock];
+    let visits = 0;
+    while (queue.length > 0 && visits < V2_SLOT_MAX_VISITS) {
+      const index = queue.pop() ?? -1;
+      const block = cfg.blocks[index];
+      const entry = entries.get(index);
+      if (block === undefined || entry === undefined) {
+        continue;
+      }
+      visits += 1;
+      const simulated = v2SimulateBlock(block, entry, isMember, found);
+      const exit: V2State = Object.freeze({
+        stack: Object.freeze(simulated.stack),
+        mem0: simulated.mem0,
+        mem32: simulated.mem32,
+      });
+      const targets: number[] = [];
+      for (const edge of block.successors) {
+        if (edge.kind === "conditional") {
+          targets.push(edge.to, edge.fallThrough);
+        } else {
+          targets.push(edge.to);
+        }
+      }
+      // A resolved dynamic return may continue at any reached member
+      // JUMPDEST, mirroring the v2 return-jump resolver.
+      if (v2IsDynamicJump(block)) {
+        targets.push(...returnBlocks);
+      }
+      for (const target of targets) {
+        if (target < 0 || target >= cfg.blocks.length || !isWalkable(target)) {
+          continue;
+        }
+        const merged = v2MergeState(entries.get(target), exit);
+        if (merged.changed) {
+          entries.set(target, merged.state);
+          queue.push(target);
+        }
+      }
+    }
+  } catch {
+    // Bounded by construction; a partial map still beats no map.
+  }
+  return found;
 }
 
 // The pushed SSTORE value beside the slot key: only an adjacent value
@@ -281,6 +793,7 @@ export function packedBoolWriteAt(
   insns: readonly Instruction[],
   index: number,
   slot: number,
+  slotOf?: SlotLookup,
 ): PackedBoolProof | null {
   let loadIndex = -1;
   for (let back = index - 1, steps = 0; back >= 0 && steps < PACKED_BOOL_LOOKBACK; back -= 1, steps += 1) {
@@ -292,13 +805,17 @@ export function packedBoolWriteAt(
       continue;
     }
     const slotPush = insns[back - 1];
-    if (
-      slotPush === undefined ||
-      !((slotPush.opcode === 0x5f && slot === 0) ||
+    const adjacent =
+      slotPush !== undefined &&
+      ((slotPush.opcode === 0x5f && slot === 0) ||
         (slotPush.opcode >= 0x60 &&
           slotPush.opcode <= 0x7f &&
-          pushNumber(slotPush.immediate) === slot))
-    ) {
+          pushNumber(slotPush.immediate) === slot));
+    // In v2 the slot may arrive through DUP/SWAP chains instead of an
+    // adjacent PUSH; the interpreter names it. Without a lookup the
+    // legacy adjacent proof stands alone.
+    const interpreted = slotOf?.(candidate.pc);
+    if (!adjacent && (interpreted === undefined || interpreted.kind !== "const" || interpreted.value !== slot)) {
       continue;
     }
     loadIndex = back;
@@ -441,8 +958,9 @@ function resolvePackedBoolWrite(
   insns: readonly Instruction[],
   index: number,
   slot: number,
+  slotOf?: SlotLookup,
 ): number | null {
-  return packedBoolWriteAt(insns, index, slot)?.value ?? null;
+  return packedBoolWriteAt(insns, index, slot, slotOf)?.value ?? null;
 }
 
 // Region facts read the full instruction stream at each index, but only
@@ -455,6 +973,7 @@ function regionOf(
   insns: readonly Instruction[],
   isMember: (pc: number) => boolean,
   packedBools: boolean,
+  slotOf?: SlotLookup,
 ): RegionFacts {
   let hasCaller = false;
   const callerPcs: number[] = [];
@@ -538,7 +1057,9 @@ function regionOf(
         opPcs["gt"].push(instruction.pc);
         break;
       case 0x55: {
-        const slot = resolveSlot(insns, index);
+        // In v2 the interpreter resolves slots through DUP/SWAP chains;
+        // v1 keeps the legacy window proof untouched.
+        const slot = pickSlot(slotOf?.(instruction.pc), resolveSlot(insns, index));
         const value = resolveStoreValue(insns, index);
         // Packed-bool writes resolve only in v2 views (P-11): the v1
         // scored path never sees them, so existing feature findings and
@@ -549,7 +1070,7 @@ function regionOf(
           !value.valueIsZero &&
           value.valueConst === null &&
           slot.kind === "const"
-            ? resolvePackedBoolWrite(insns, index, slot.value)
+            ? resolvePackedBoolWrite(insns, index, slot.value, slotOf)
             : null;
         stores.push({
           pc: instruction.pc,
@@ -560,7 +1081,7 @@ function regionOf(
         break;
       }
       case 0x54:
-        loads.push({ pc: instruction.pc, slot: resolveSlot(insns, index) });
+        loads.push({ pc: instruction.pc, slot: pickSlot(slotOf?.(instruction.pc), resolveSlot(insns, index)) });
         break;
       case 0xf1:
       case 0xfa:
@@ -735,10 +1256,33 @@ export function isStandardTokenWriter(selector: SelectorType): boolean {
 // later JUMPDEST (the revert-free path). This is the ownership proof the
 // scored path uses, evaluated instruction by instruction instead of by
 // region flags, so a function reachable by anyone never counts.
+
+// One proven owner-slot load: the adjacent slot PUSH (legacy proof) or,
+// in v2, the interpreter resolving the load to the owner slot through
+// DUP/SWAP chains. Shared with the packed-bool gate proof below.
+function isProvenOwnerLoad(
+  insns: readonly Instruction[],
+  at: number,
+  slotOf: SlotLookup | undefined,
+  ownerSlot: number,
+  isSlotPush: (candidate: Instruction | undefined) => boolean,
+): boolean {
+  if (isSlotPush(insns[at - 1])) {
+    return true;
+  }
+  const loadPc = insns[at]?.pc;
+  if (loadPc === undefined) {
+    return false;
+  }
+  const interpreted = slotOf?.(loadPc);
+  return interpreted !== undefined && interpreted.kind === "const" && interpreted.value === ownerSlot;
+}
+
 export function hasOwnerCallerCheck(
   insns: readonly Instruction[],
   isMember: (pc: number) => boolean,
   ownerSlot: number,
+  slotOf?: SlotLookup,
 ): boolean {
   const isSlotPush = (candidate: Instruction | undefined): boolean => {
     if (candidate === undefined) {
@@ -768,7 +1312,7 @@ export function hasOwnerCallerCheck(
     }
     if (candidate.opcode === 0x33) {
       callers.push(at);
-    } else if (candidate.opcode === 0x54 && isSlotPush(insns[at - 1])) {
+    } else if (candidate.opcode === 0x54 && isProvenOwnerLoad(insns, at, slotOf, ownerSlot, isSlotPush)) {
       loads.push(at);
     } else if (candidate.opcode === 0x14 || candidate.opcode === 0x15) {
       compares.push(at);
@@ -859,7 +1403,15 @@ export function mappingBaseNearAccess(
   insns: readonly Instruction[],
   isMember: (pc: number) => boolean,
   accessPc: number,
+  slotOf?: SlotLookup,
 ): number | null {
+  // The v2 interpreter base wins when proven: the stack carries the
+  // hash from its MSTORE pattern even across gaps the window scan
+  // cannot cross. Otherwise the legacy pattern proof stands.
+  const interpreted = slotOf?.(accessPc);
+  if (interpreted !== undefined && interpreted.kind === "mapping" && interpreted.base !== null) {
+    return interpreted.base;
+  }
   let accessIndex = -1;
   for (let at = 0; at < insns.length; at += 1) {
     if (insns[at]?.pc === accessPc) {
@@ -945,6 +1497,7 @@ export function packedGateShift(
   insns: readonly Instruction[],
   isMember: (pc: number) => boolean,
   slot: number,
+  slotOf?: SlotLookup,
 ): { readonly loadPc: number; readonly cmpPc: number; readonly shift: number } | null {
   const isSlotPush = (candidate: Instruction | undefined): boolean => {
     if (candidate === undefined) {
@@ -1002,7 +1555,7 @@ export function packedGateShift(
     if (loadInsn === undefined || loadInsn.opcode !== 0x54 || !isMember(loadInsn.pc)) {
       continue;
     }
-    if (!isSlotPush(insns[load - 1])) {
+    if (!isProvenOwnerLoad(insns, load, slotOf, slot, isSlotPush)) {
       continue;
     }
     let shift: number | null = null;
@@ -1105,8 +1658,13 @@ export function analyzeOwnerControl(bytecode: BytecodeType, options?: OwnerContr
     const start = entry.target as number;
     const wanted = entry.selector;
     if (reach === "v2") {
+      // The v2 stack interpreter resolves slots through DUP/SWAP
+      // chains and proves mapping bases; the scored v1 path below never
+      // sees it.
+      const interpreted = interpretRegionSlots(bytecode, entry.selector);
+      const slotOf: SlotLookup = (pc) => interpreted.get(pc);
       regions.push(
-        regionOf(entry.selector, start, code, (pc) => holdersByPc.get(pc)?.includes(wanted) ?? false, true),
+        regionOf(entry.selector, start, code, (pc) => holdersByPc.get(pc)?.includes(wanted) ?? false, true, slotOf),
       );
     } else {
       const expected = wanted as string;

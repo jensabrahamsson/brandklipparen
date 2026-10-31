@@ -24,11 +24,12 @@ import {
   flavorBetween,
   hasOwnerCallerCheck,
   hasRevertingJumpiAfter,
+  interpretRegionSlots,
   isStandardTokenWriter,
   mappingBaseNearAccess,
   mappingLoadNearFlavor,
 } from "../../../domain/ownerControl.ts";
-import type { RegionFacts } from "../../../domain/ownerControl.ts";
+import type { RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
 import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
 import type { Selector as SelectorType } from "../../../domain/types.ts";
@@ -283,14 +284,18 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       continue;
     }
     const writerMember = memberOf(region.selector);
-    if (!hasOwnerCallerCheck(code, writerMember, ownerSlot)) {
+    // The v2 interpreter proves the writer slot through DUP/SWAP chains
+    // and prefers its mapping base over the window scan.
+    const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
+    const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
+    if (!hasOwnerCallerCheck(code, writerMember, ownerSlot, writerSlotOf)) {
       continue;
     }
     for (const write of region.stores) {
       if (write.slot.kind !== "mapping") {
         continue;
       }
-      const writeBase = mappingBaseNearAccess(code, writerMember, write.pc);
+      const writeBase = mappingBaseNearAccess(code, writerMember, write.pc, writerSlotOf);
       if (writeBase === null) {
         continue;
       }
@@ -307,7 +312,9 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           continue;
         }
         const gateMember = memberOf(transferSelector);
-        const gateBase = mappingBaseNearAccess(code, gateMember, gate.loadPc);
+        const gateSlots = interpretRegionSlots(input.bytecode, transferSelector);
+        const gateSlotOf: SlotLookup = (pc) => gateSlots.get(pc);
+        const gateBase = mappingBaseNearAccess(code, gateMember, gate.loadPc, gateSlotOf);
         if (gateBase === null || gateBase !== writeBase) {
           continue;
         }
