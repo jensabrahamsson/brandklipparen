@@ -58,11 +58,17 @@ export function toPluginListEntries(raw: unknown): PluginListEntry[] {
     const description = shortString(entry["description"]) ?? "";
     const outputSchema = isRecord(entry["outputSchema"]) ? entry["outputSchema"] : undefined;
     const frontmatter = frontmatterOf(entry["frontmatter"]);
+    // Calibrated detector weight (UI v2 §5.2 provenance): a finite
+    // number when the server exposes it, otherwise absent.
+    const rawWeight = entry["weight"];
+    const weight =
+      typeof rawWeight === "number" && Number.isFinite(rawWeight) ? rawWeight : undefined;
     const base = { id, version, displayName, description };
     out.push({
       ...base,
       ...(outputSchema === undefined ? {} : { outputSchema }),
       ...(frontmatter === undefined ? {} : { frontmatter }),
+      ...(weight === undefined ? {} : { weight }),
     });
   }
   return out;

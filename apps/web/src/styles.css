@@ -3435,6 +3435,313 @@ a {
   align-items: center;
 }
 
+/* Plugin detail view, level 2 (UI v2 W-5 §5.2, §5.3). Phosphor Console:
+   opacity/colour/glow only, no movement; the global reduced-motion kill
+   keeps it static. Sentence case throughout. */
+.detail-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+}
+
+.expert-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+.expert-switch:hover {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+}
+
+.expert-switch:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.expert-switch[aria-checked="true"] {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+  box-shadow: 0 0 10px var(--glow-soft);
+}
+
+.expert-switch-icon {
+  display: inline-flex;
+}
+
+.detail-head {
+  animation: bk-poweron 420ms var(--ease-out) both;
+}
+
+.detail-head .lamp {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  vertical-align: -4px;
+}
+
+.detail-owner {
+  grid-column: 2;
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.owner-chip {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--phosphor);
+}
+
+.owner-chip.is-unknown {
+  border: 1px dashed var(--edge);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--dim);
+}
+
+.owner-chip.is-renounced {
+  color: var(--dim);
+}
+
+.owner-control {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.owner-kind {
+  font-size: 12px;
+  color: var(--dim);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.detail-temporality {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.extended-chip {
+  display: inline-block;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Evidence rows (UI v2 §5.3). At and above 640 px the row is one grid
+   line: name, offset, copy, expand. Below 640 px the name takes the
+   first line and offset, copy and expand share a right-aligned second
+   line. No role word renders: no payload carries a role yet. */
+.evidence-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.evidence-row {
+  padding-block: 12px;
+  border-bottom: 1px dashed var(--rule);
+  animation: bk-poweron 180ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+.evidence-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+@media (min-width: 640px) {
+  .evidence-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 44px 44px;
+    column-gap: 12px;
+  }
+}
+
+.evidence-name {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 640px) {
+  .evidence-name {
+    flex: none;
+  }
+}
+
+.evidence-at {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .evidence-at {
+    margin-left: 0;
+  }
+}
+
+.evidence-expand {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--dim);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+.evidence-expand:hover {
+  color: var(--phosphor-hi);
+  background: var(--glass-2);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+
+.evidence-expand:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.evidence-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.evidence-expert {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.evidence-snippet {
+  margin-top: 8px;
+  border-left: 2px solid var(--phosphor);
+  padding-left: 12px;
+  animation: bk-rail 500ms var(--ease-out) 1;
+}
+
+@keyframes bk-rail {
+  from {
+    border-color: var(--edge);
+    box-shadow: var(--shadow-off);
+  }
+
+  to {
+    border-color: var(--phosphor);
+    box-shadow: 0 0 10px var(--glow-soft);
+  }
+}
+
+.scan-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.snippet-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.snippet-line {
+  display: flex;
+  gap: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.snippet-no {
+  flex: none;
+  width: 3ch;
+  text-align: right;
+  color: var(--dim);
+  user-select: none;
+}
+
+.snippet-text {
+  min-width: 0;
+}
+
+.snippet-more {
+  margin-top: 8px;
+}
+
+.evidence-more {
+  margin-top: 12px;
+}
+
+.detail-limits-text {
+  margin: 8px 0 0;
+  font-size: 15px;
+}
+
+.detail-raw-finding {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--rule);
+}
+
+.detail-raw-finding h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.detail-raw-finding p {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
 
 
 

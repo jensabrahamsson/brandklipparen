@@ -16,6 +16,10 @@ export type PluginCopyEntry = {
   // extended finding payload for the plugin; unknown shapes fall back to
   // the question so the tile never renders nothing.
   readonly foundLine: (payloads: readonly unknown[]) => string;
+  // "What this check can't tell you" (UI v2 §5.2): the honest limit in
+  // plain words, paraphrased from the detector PLUGIN.md. Sentence case,
+  // never the mechanism twice.
+  readonly limits: string;
 };
 
 // Canonical registry order: 9 owner powers, then 4 analysis tools.
@@ -263,6 +267,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "owner",
     group: "owner",
     foundLine: ownershipLine,
+    limits: "The code proves a stored owner and the functions it guards. Who holds the seat right now is read separately, and only at a pinned block.",
   },
   pause: {
     slug: "pause",
@@ -271,6 +276,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "pause",
     group: "owner",
     foundLine: pauseLine,
+    limits: "The code proves the freeze mechanism, not whether the switch is on right now or still callable.",
   },
   blacklist: {
     slug: "blacklist",
@@ -279,6 +285,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "blacklist",
     group: "owner",
     foundLine: () => blacklistLine(),
+    limits: "The code proves the blocking mechanism, not whether it is a block list or an allow list, and not which wallets are listed.",
   },
   mint: {
     slug: "mint",
@@ -287,6 +294,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "mint",
     group: "owner",
     foundLine: mintLine,
+    limits: "The code proves new tokens can be created. Whether the function is still callable is not in the code.",
   },
   "transfer-fee": {
     slug: "transfer-fee",
@@ -295,6 +303,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "fee",
     group: "owner",
     foundLine: feeLine,
+    limits: "The code proves the fee can change. The highest it can go is unknown when the setter has no cap.",
   },
   "transfer-limits": {
     slug: "transfer-limits",
@@ -303,6 +312,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "limits",
     group: "owner",
     foundLine: limitsLine,
+    limits: "The code proves limits can change, not the live numbers sitting in storage.",
   },
   "sell-block": {
     slug: "sell-block",
@@ -311,6 +321,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "sellblock",
     group: "owner",
     foundLine: sellBlockLine,
+    limits: "The code proves a recipient-based block, not which direction counts as the sell.",
   },
   "transfer-hooks": {
     slug: "transfer-hooks",
@@ -319,6 +330,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "hooks",
     group: "owner",
     foundLine: hooksLine,
+    limits: "The code proves each transfer can call another contract, not what that contract does.",
   },
   "proxy-upgrade": {
     slug: "proxy-upgrade",
@@ -327,6 +339,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "upgrade",
     group: "owner",
     foundLine: proxyLine,
+    limits: "The code proves it can be replaced. Who can trigger the upgrade lives outside the code.",
   },
   capability: {
     slug: "capability",
@@ -335,6 +348,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "capability",
     group: "tools",
     foundLine: capabilityLine,
+    limits: "Presence is not reachability: a listed power may sit in dead code the token never runs.",
   },
   decompiler: {
     slug: "decompiler",
@@ -343,6 +357,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "decompiler",
     group: "tools",
     foundLine: decompilerLine,
+    limits: "A readable reconstruction, not the original source. Names are display only.",
   },
   "clone-match": {
     slug: "clone-match",
@@ -351,6 +366,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "clone",
     group: "tools",
     foundLine: cloneMatchLine,
+    limits: "A similar template is a warning, not a verdict: the details can still differ.",
   },
   "hard-to-analyze": {
     slug: "hard-to-analyze",
@@ -359,8 +375,25 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "tangle",
     group: "tools",
     foundLine: hardToAnalyzeLine,
+    limits: "Marks a coverage gap, not a risk. Treat it as a reason to be careful.",
   },
 });
+
+// Temporality for the detail header (UI v2 §5.2): a renounce finding no
+// longer applies; every other proven finding applies now. Quiet states
+// have no temporality line.
+export function temporalityLine(payloads: readonly unknown[]): string | null {
+  for (const payload of payloads) {
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+      continue;
+    }
+    const record = payload as Record<string, unknown>;
+    if (record["feature"] === "renounce" || record["fact"] === "renounce") {
+      return "No longer applies";
+    }
+  }
+  return "Applies now";
+}
 
 function lastSegment(id: string): string {
   const parts = id.split(".");

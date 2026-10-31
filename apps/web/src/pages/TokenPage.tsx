@@ -9,6 +9,7 @@ import type { TokenView } from "../lib/route.ts";
 import { PluginBoard, buildBoardModel } from "../components/plugins/PluginBoard.tsx";
 import { PluginDetailView } from "../components/plugins/PluginDetail.tsx";
 import { copyForPluginId, slugForPluginId } from "../lib/pluginCopy.ts";
+import { buildSelectorNames } from "../lib/selectorNames.ts";
 import { planLayout } from "../lib/layout.ts";
 import { hasStoredCustomize, readStoredCustomize, readStoredMode, writeStoredCustomize, writeStoredMode } from "../lib/uiMode.ts";
 import type { UiMode } from "../lib/uiMode.ts";
@@ -787,14 +788,23 @@ function AssessedView({
     const entry = plugins?.find((candidate) => slugForPluginId(candidate.id, allIds) === view.slug);
     const position = board.allTiles.findIndex((candidate) => candidate.slug === view.slug);
     const identity = resolveTokenIdentity(result, liveEntry);
+    const detailResult = tile === null ? undefined : detailViews.find((view) => view.pluginId === tile.pluginId);
+    const decompilerFindings =
+      detailViews.find((view) => view.pluginId === "dev.brandklipparen.decompiler")?.findings ?? [];
+    const names = buildSelectorNames(decompilerFindings);
     return (
       <PluginDetailView
         address={address}
+        apiKey={apiKey}
         symbol={identity.symbol ?? "Token"}
         slug={view.slug}
         tile={tile}
         entry={entry}
+        findings={detailResult?.findings ?? []}
+        names={names}
         modelVersion={result.modelVersion}
+        mode={mode}
+        onModeChange={onModeChange}
         prev={position > 0 ? (board.allTiles[position - 1] ?? null) : null}
         next={position >= 0 ? (board.allTiles[position + 1] ?? null) : null}
       />

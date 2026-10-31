@@ -20,6 +20,10 @@ export type PluginListEntry = {
   readonly description: string;
   readonly outputSchema?: unknown;
   readonly frontmatter?: PluginFrontmatterView;
+  // Calibrated detector weight from GET /v1/plugins (UI v2 §5.2): above
+  // 0 means the finding can enter the score. Undefined when the server
+  // omits it (older servers), in which case the tile state decides.
+  readonly weight?: number | undefined;
 };
 
 export type PluginFindingView = {

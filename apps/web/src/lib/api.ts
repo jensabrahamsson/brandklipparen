@@ -478,6 +478,86 @@ export async function fetchChat(address: string, apiKey: string | null, question
   }
 }
 
+export type SnippetLine = {
+  readonly lineNumber: number;
+  readonly text: string;
+};
+
+export type SnippetResult = {
+  readonly selector: string;
+  readonly entryPc: number;
+  readonly lines: readonly SnippetLine[];
+};
+
+// Snippet cache for evidence rows (UI v2 §5.3): one `/v1/snippet`
+// request per address + selector, shared across rows and re-expands.
+// Display text only; scores, signals and evidence are untouched.
+const snippetCache = new Map<string, Promise<SnippetResult>>();
+
+export function clearSnippetCache(): void {
+  snippetCache.clear();
+}
+
+function snippetKey(address: string, selector: string): string {
+  return `${address.toLowerCase()}:${selector.toLowerCase()}`;
+}
+
+function toSnippetResult(body: unknown): SnippetResult | null {
+  const record = body as { snippet?: unknown };
+  const snippet = record.snippet as
+    | { selector?: unknown; entryPc?: unknown; lines?: unknown }
+    | null
+    | undefined;
+  if (snippet === null || snippet === undefined || typeof snippet !== "object") {
+    return null;
+  }
+  if (typeof snippet.selector !== "string" || typeof snippet.entryPc !== "number" || !Array.isArray(snippet.lines)) {
+    return null;
+  }
+  const lines: SnippetLine[] = [];
+  for (const entry of snippet.lines) {
+    const line = entry as { lineNumber?: unknown; text?: unknown };
+    if (typeof line.lineNumber !== "number" || typeof line.text !== "string") {
+      return null;
+    }
+    lines.push({ lineNumber: line.lineNumber, text: line.text });
+  }
+  return { selector: snippet.selector, entryPc: snippet.entryPc, lines };
+}
+
+export function fetchSnippet(address: string, selector: string, apiKey: string | null): Promise<SnippetResult> {
+  const key = snippetKey(address, selector);
+  const cached = snippetCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const pending: Promise<SnippetResult> = loadSnippet(address, selector, apiKey);
+  snippetCache.set(key, pending);
+  // A failed snippet must not poison the cache: the next expand retries
+  // the request instead of replaying the failure.
+  void pending.catch(() => {
+    if (snippetCache.get(key) === pending) {
+      snippetCache.delete(key);
+    }
+  });
+  return pending;
+}
+
+async function loadSnippet(address: string, selector: string, apiKey: string | null): Promise<SnippetResult> {
+  const response = await fetch(
+    `/v1/snippet?address=${encodeURIComponent(address)}&selector=${encodeURIComponent(selector)}`,
+    { headers: apiHeaders(apiKey) },
+  );
+  if (!response.ok) {
+    throw await readError(response, "request-failed");
+  }
+  const parsed = toSnippetResult(await response.json());
+  if (parsed === null) {
+    throw new ApiError("request-failed", 200, "Readable code is not available for this function.");
+  }
+  return parsed;
+}
+
 export type RugState =
   | { readonly status: "not-configured" }
   | {
