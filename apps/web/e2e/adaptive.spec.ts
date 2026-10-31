@@ -292,7 +292,7 @@ test("k519_invalid_or_missing_personalize_spec_falls_back_to_deterministic_basel
   await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
   await page.getByTestId("ai-personalize-toggle").check();
   await page.getByTestId("ai-personalize-apply").click();
-  await expect(page.getByTestId("ai-personalize-result")).toContainText("AI layout unavailable");
+  await expect(page.getByTestId("ai-personalize-result")).toContainText("AI order unavailable right now");
   await expect(page.getByTestId("ai-emphasis-signals")).toHaveCount(0);
   const sections = await page.locator("div.token-grid div[data-section]").evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute("data-section")),

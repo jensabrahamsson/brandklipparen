@@ -38,6 +38,7 @@ export function PrioritiesField({
           className="button-ghost"
           disabled={value.length === 0}
           onClick={onClear}
+          style={{ flex: "none", whiteSpace: "nowrap" }}
         >
           Clear
         </button>

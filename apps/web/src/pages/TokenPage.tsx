@@ -76,6 +76,15 @@ const DEEPEN_POLL_MAX = 10;
 
 type Tab = "overview" | "assessment" | "investigate";
 
+// AI personalize notice (P1-9, P1-10): the always-rendered status region
+// shows the text for every kind. "failed" renders in the unavailable pill
+// with a Retry button, "applied" renders in phosphor with a check prefix,
+// and "info" renders as plain quiet text.
+type AiPersonalizeNotice = {
+  readonly text: string;
+  readonly kind: "applied" | "failed" | "info";
+};
+
 // Token page: combined score ring with a meaning sentence, three gauges,
 // full template explanation, expandable evidence, Can't-tell panel and
 // sidebar. The fast path renders first; while x-deepening-status is
@@ -103,7 +112,7 @@ export function TokenPage({
   const [standardOrder, setStandardOrder] = useState(false);
   const [aiOn, setAiOn] = useState<boolean>(() => readStoredAiPersonalize());
   const [aiSpec, setAiSpec] = useState<AiPersonalizeSpec | null>(null);
-  const [aiNotice, setAiNotice] = useState<string | null>(null);
+  const [aiNotice, setAiNotice] = useState<AiPersonalizeNotice | null>(null);
   const [aiPending, setAiPending] = useState(false);
   const [aiProvider, setAiProvider] = useState<{ provider: string; modelId: string } | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
@@ -269,7 +278,7 @@ export function TokenPage({
       const spec = parsePersonalizeEnvelope(body, context);
       if (spec === null) {
         setAiSpec(null);
-        setAiNotice("AI layout unavailable — showing deterministic order.");
+        setAiNotice({ text: "AI order unavailable right now: showing the standard order.", kind: "failed" });
       } else {
         setAiSpec(spec);
         if (result?.kind === "assessed") {
@@ -281,9 +290,9 @@ export function TokenPage({
             cantTellCount: result.cantTell.length,
           });
           const applied = applyAiSectionOrder(plan, spec, [...requiredFlooredSections(result.signals)]);
-          setAiNotice(aiOrderNotice(plan, applied));
+          setAiNotice({ text: aiOrderNotice(plan, applied), kind: "applied" });
         } else {
-          setAiNotice("AI order applied. Scores, evidence and text are unchanged.");
+          setAiNotice({ text: "AI order applied. Scores, evidence and text are unchanged.", kind: "applied" });
         }
       }
     });
@@ -495,18 +504,34 @@ export function TokenPage({
           aiPending={aiPending}
           onApplyAiOrder={applyAiOrder}
           aiNotice={aiNotice}
+          aiApplied={aiSpec !== null}
+          onResetAiOrder={() => {
+            setStandardOrder(true);
+            setAiSpec(null);
+            setAiNotice(null);
+          }}
           priorities={priorities}
           onPrioritiesChange={(text) => {
             setPriorities(text);
             writeStoredPriorities(text);
             setStandardOrder(false);
+            if (aiSpec !== null) {
+              setAiNotice({ text: "Priorities changed: apply again to update the AI order.", kind: "info" });
+            }
           }}
           onPrioritiesClear={() => {
             clearStoredPriorities();
             setPriorities("");
+            if (aiSpec !== null) {
+              setAiNotice({ text: "Priorities changed: apply again to update the AI order.", kind: "info" });
+            }
           }}
           standardOrder={standardOrder}
-          onShowStandardOrder={() => setStandardOrder(true)}
+          onShowStandardOrder={() => {
+            setStandardOrder(true);
+            setAiSpec(null);
+            setAiNotice(null);
+          }}
           availability={availability}
           tab={tab}
           onTab={setTab}
@@ -542,6 +567,8 @@ function AssessedView({
   aiPending,
   onApplyAiOrder,
   aiNotice,
+  aiApplied,
+  onResetAiOrder,
   priorities,
   onPrioritiesChange,
   onPrioritiesClear,
@@ -575,7 +602,9 @@ function AssessedView({
   readonly aiProvider: { provider: string; modelId: string } | null;
   readonly aiPending: boolean;
   readonly onApplyAiOrder: () => void;
-  readonly aiNotice: string | null;
+  readonly aiNotice: AiPersonalizeNotice | null;
+  readonly aiApplied: boolean;
+  readonly onResetAiOrder: () => void;
   readonly priorities: string;
   readonly onPrioritiesChange: (text: string) => void;
   readonly onPrioritiesClear: () => void;
@@ -786,24 +815,26 @@ function AssessedView({
           Investigate
         </button>
       </div>
-      <CustomizeView
-        mode={mode}
-        onModeChange={onModeChange}
-        aiOn={aiOn}
-        onToggleAi={onToggleAi}
-        aiProvider={aiProvider}
-        aiPending={aiPending}
-        onApplyAiOrder={onApplyAiOrder}
-        aiNotice={aiNotice}
-        visibleSections={visibleSections}
-        onToggleSection={onToggleSection}
-        priorities={priorities}
-        onPrioritiesChange={onPrioritiesChange}
-        onPrioritiesClear={onPrioritiesClear}
-      />
       <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" hidden={tab !== "overview"}>
         {tab === "overview" ? (
           <>
+            <CustomizeView
+              mode={mode}
+              onModeChange={onModeChange}
+              aiOn={aiOn}
+              onToggleAi={onToggleAi}
+              aiProvider={aiProvider}
+              aiPending={aiPending}
+              onApplyAiOrder={onApplyAiOrder}
+              aiNotice={aiNotice}
+              aiApplied={aiApplied}
+              onResetAiOrder={onResetAiOrder}
+              visibleSections={visibleSections}
+              onToggleSection={onToggleSection}
+              priorities={priorities}
+              onPrioritiesChange={onPrioritiesChange}
+              onPrioritiesClear={onPrioritiesClear}
+            />
             <OverviewSections
               result={result}
               heroBreakdown={heroBreakdown}
@@ -852,10 +883,12 @@ function AssessedView({
 // P-19): the plan comes from the frozen analysis only, DOM order equals
 // visual order, and every section stays present in every band. Only order
 // changes; scores, evidence and finding text never move.
-// Collapsed "Customize view" disclosure (S-118): Detail radios, AI
-// personalize, the section picker and the priorities field live here,
-// after the tabs. Collapsed by default; the open state is remembered for
-// the session only. Scores, evidence and finding text never move.
+// Collapsed "Customize view" disclosure (S-118, P1-13): Detail radios, AI
+// personalize (with the priorities field), and the section picker live
+// here, inside the Overview panel above the sections they affect, so the
+// tab-to-panel relationship stays intact on every tab. Collapsed by
+// default; the open state is remembered for the session only. Scores,
+// evidence and finding text never move.
 function CustomizeView({
   mode,
   onModeChange,
@@ -865,6 +898,8 @@ function CustomizeView({
   aiPending,
   onApplyAiOrder,
   aiNotice,
+  aiApplied,
+  onResetAiOrder,
   visibleSections,
   onToggleSection,
   priorities,
@@ -878,7 +913,9 @@ function CustomizeView({
   readonly aiProvider: { provider: string; modelId: string } | null;
   readonly aiPending: boolean;
   readonly onApplyAiOrder: () => void;
-  readonly aiNotice: string | null;
+  readonly aiNotice: AiPersonalizeNotice | null;
+  readonly aiApplied: boolean;
+  readonly onResetAiOrder: () => void;
   readonly visibleSections: ReadonlySet<string>;
   readonly onToggleSection: (sectionId: string) => void;
   readonly priorities: string;
@@ -939,7 +976,11 @@ function CustomizeView({
     }, 0);
   }, []);
   const providerName = personalizeProviderName(aiProvider);
-  const aiApplied = aiNotice !== null && aiNotice.startsWith("AI order applied");
+  // Reading order (P1-7): the priorities field lives inside the AI
+  // section directly above the Apply button, so the dependency reads in
+  // order. The Apply button is never removed from the tab order: empty or
+  // pending renders as aria-disabled with an explaining hint instead.
+  const applyEmpty = priorities.trim().length === 0;
   return (
     <>
       <div className="ai-bar">
@@ -993,30 +1034,87 @@ function CustomizeView({
               {aiOn ? (
                 <div>
                   <p className="quiet" data-testid="ai-personalize-preface" style={{ margin: "4px 0", fontSize: 13 }}>
-                    Sends your priorities text and plugin references to {providerName} for this one mapping call.
-                    Nothing else is sent.
+                    Sends your priorities text, plugin references and layout facts (code hash, score band,
+                    section list) to {providerName} for this one mapping call. The token address is not sent to
+                    the provider. Nothing else is sent.
                   </p>
-                  <button
-                    type="button"
-                    className="button"
-                    data-testid="ai-personalize-apply"
-                    disabled={aiPending || priorities.trim().length === 0}
-                    onClick={onApplyAiOrder}
-                  >
-                    {aiPending ? "Mapping…" : "Apply AI order"}
-                  </button>
                 </div>
               ) : null}
-              {aiNotice === null ? null : (
-                <p
-                  role="status"
-                  className="quiet"
-                  data-testid="ai-personalize-result"
-                  style={{ margin: "4px 0 0", fontSize: 13 }}
-                >
-                  {aiNotice}
-                </p>
-              )}
+              <PrioritiesField value={priorities} onChange={onPrioritiesChange} onClear={onPrioritiesClear} />
+              {aiOn ? (
+                <div>
+                  {applyEmpty ? (
+                    <p id="ai-apply-hint" className="quiet" style={{ margin: "4px 0", fontSize: 13 }}>
+                      Type what matters to you above to enable.
+                    </p>
+                  ) : null}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <button
+                      type="button"
+                      className="button"
+                      data-testid="ai-personalize-apply"
+                      aria-describedby={
+                        applyEmpty ? "ai-apply-hint ai-personalize-result" : "ai-personalize-result"
+                      }
+                      aria-disabled={aiPending || applyEmpty}
+                      aria-busy={aiPending}
+                      onClick={onApplyAiOrder}
+                    >
+                      {aiPending ? (
+                        <>
+                          Mapping<b className="cursor" aria-hidden="true" />…
+                        </>
+                      ) : (
+                        "Apply AI order"
+                      )}
+                    </button>
+                    {aiApplied ? (
+                      <button
+                        type="button"
+                        className="button-ghost"
+                        data-testid="ai-personalize-reset"
+                        onClick={onResetAiOrder}
+                      >
+                        Reset to standard order
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+              <p
+                id="ai-personalize-result"
+                role="status"
+                aria-live="polite"
+                className={
+                  aiNotice?.kind === "failed"
+                    ? "unavailable-pill"
+                    : aiNotice?.kind === "applied"
+                      ? "quiet ai-ok"
+                      : "quiet"
+                }
+                data-testid="ai-personalize-result"
+                style={{ margin: "8px 0 0", fontSize: 13 }}
+              >
+                {aiPending ? (
+                  "Mapping your priorities…"
+                ) : (
+                  <>
+                    {aiNotice?.kind === "applied" ? <span aria-hidden="true">{"✓ "}</span> : null}
+                    {aiNotice?.text ?? ""}
+                  </>
+                )}
+                {aiPending || aiNotice?.kind !== "failed" ? null : (
+                  <button
+                    type="button"
+                    className="button-ghost"
+                    data-testid="ai-personalize-retry"
+                    style={{ marginLeft: 8 }}
+                    onClick={onApplyAiOrder}
+                  >
+                    Retry
+                  </button>
+                )}
+              </p>
               {aiApplied ? (
                 <button
                   type="button"
@@ -1030,7 +1128,6 @@ function CustomizeView({
               ) : null}
             </section>
           </div>
-          <PrioritiesField value={priorities} onChange={onPrioritiesChange} onClear={onPrioritiesClear} />
           <FieldPicker visible={visibleSections} onToggle={onToggleSection} />
         </div>
       </details>

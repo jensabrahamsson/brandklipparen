@@ -445,17 +445,23 @@ export async function fetchPersonalizeStatus(
 
 // One explicit mapping call (S-070, K-519, P-27): the visitor's priorities
 // text plus quoted plugin references for this request only. Null on any
-// failure: the deterministic baseline stands.
+// failure: the deterministic baseline stands. The call times out after 15
+// seconds (overridable in tests): a slow model call falls back to the
+// deterministic order instead of hanging the page.
+export const PERSONALIZE_TIMEOUT_MS = 15000;
 export async function requestPersonalizeMapping(
   apiKey: string | null,
   address: string,
   priorities: string,
+  options?: { readonly timeoutMs?: number },
 ): Promise<unknown> {
+  const timeoutMs = options?.timeoutMs ?? PERSONALIZE_TIMEOUT_MS;
   try {
     const response = await fetch("/v1/personalize", {
       method: "POST",
       headers: { ...apiHeaders(apiKey), "content-type": "application/json" },
       body: JSON.stringify({ address, priorities }),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       return null;

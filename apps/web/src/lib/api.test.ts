@@ -1,5 +1,5 @@
-import { describe, expect, test, vi } from "vitest";
-import { ApiError, analyzeToken, fetchAssessment, fetchHealth } from "./api.ts";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { ApiError, PERSONALIZE_TIMEOUT_MS, analyzeToken, fetchAssessment, fetchHealth, requestPersonalizeMapping } from "./api.ts";
 import type { AnalyzeSuccess } from "../types.ts";
 
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
@@ -108,4 +108,63 @@ describe("REST API client (K-021, K-305)", () => {
       vi.unstubAllGlobals();
     }
   });
+});
+
+// Timeout cover for the AI personalize mapping call (P1-8): a slow
+// model call must fall back to the deterministic order instead of
+// hanging the page. Uses an injected fetch that never resolves on its
+// own, asserting the caller observes the fallback (null) result.
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+function stubFetch(impl: (init: RequestInit | undefined) => Promise<Response>): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((_url: string, init?: RequestInit): Promise<Response> => impl(init)),
+  );
+}
+
+function hangingFetch(): (init: RequestInit | undefined) => Promise<Response> {
+  // Never resolves by itself: only the abort signal settles it, the way a
+  // hung provider connection behaves when the timeout fires.
+  return (init) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        reject(new DOMException("The operation was aborted.", "AbortError"));
+      });
+    });
+}
+
+test("personalize mapping times out after 15 seconds", () => {
+  expect(PERSONALIZE_TIMEOUT_MS).toBe(15000);
+});
+
+test("personalize mapping falls back to null when the provider hangs", async () => {
+  let seenInit: RequestInit | undefined;
+  stubFetch((init) => {
+    seenInit = init;
+    return hangingFetch()(init);
+  });
+  const result = await requestPersonalizeMapping(null, "0xabc", "fees", { timeoutMs: 20 });
+  expect(result).toBeNull();
+  expect(seenInit?.signal).toBeInstanceOf(AbortSignal);
+});
+
+test("personalize mapping returns the parsed body on success", async () => {
+  const body = { personalize: { kind: "ok" } };
+  let seenBody = "";
+  stubFetch((init) => {
+    seenBody = String(init?.body ?? "");
+    return Promise.resolve({ ok: true, json: async () => body }) as unknown as Promise<Response>;
+  });
+  const result = await requestPersonalizeMapping(null, "0xabc", "fees", { timeoutMs: 1000 });
+  expect(result).toEqual(body);
+  expect(seenBody).toContain("fees");
+});
+
+test("personalize mapping falls back to null on server error", async () => {
+  stubFetch(() => Promise.resolve({ ok: false, json: async () => ({}) }) as unknown as Promise<Response>);
+  const result = await requestPersonalizeMapping(null, "0xabc", "fees", { timeoutMs: 1000 });
+  expect(result).toBeNull();
 });

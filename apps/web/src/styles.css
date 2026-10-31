@@ -95,6 +95,8 @@
 
 html {
   background: var(--void);
+  /* P1-11: anchor and focus jumps clear the sticky summary strip. */
+  scroll-padding-top: 160px;
 }
 
 body {
@@ -875,7 +877,7 @@ a {
   max-width: 100%;
 }
 
-.button:hover:not(:disabled) {
+.button:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--phosphor-hi);
   color: var(--void);
 }
@@ -898,6 +900,23 @@ a {
   background: var(--surface-2);
   color: var(--dim);
   border: 1px solid var(--edge);
+}
+
+/* P1-9: the applied AI order reads in phosphor, never quiet grey, so
+   success and fallback never differ by colour alone (the check prefix
+   carries the meaning for non-colour users). */
+.ai-ok {
+  color: var(--phosphor);
+}
+
+/* P1-7, P1-8: the Apply button stays focusable while unavailable, so the
+   tone matches the disabled tone without removing it from the tab order.
+   Clicks are ignored in the handler; focus never drops to the body. */
+.button[aria-disabled="true"] {
+  background: var(--surface-2);
+  border: 1px solid var(--dim);
+  color: var(--dim);
+  cursor: not-allowed;
 }
 
 .button-ghost {
@@ -2148,7 +2167,7 @@ details[open] > *:not(summary) {
     opacity var(--dur-hover) var(--ease-out);
 }
 
-.button:active:not(:disabled) {
+.button:active:not(:disabled):not([aria-disabled="true"]) {
   box-shadow: var(--elev-pressed);
 }
 
@@ -2331,6 +2350,17 @@ details[open] > *:not(summary) {
   summary {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  /* P1-11: the sticky summary strip collapses to a single row on phones
+     so it never covers the customize controls underneath it. */
+  .compact-strip-hash {
+    display: none;
+  }
+
+  .compact-strip {
+    padding: 6px 12px;
+    gap: 10px;
   }
 }
 
