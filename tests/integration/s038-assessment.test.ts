@@ -341,19 +341,35 @@ describe("S-038 assessment service over fakes (K-305, K-309)", () => {
       expect(otherAdapter.callCount).toBe(1);
       expect(adapter.callCount).toBe(2);
       // The full key is distinct per component: spot-check the encoding.
-      const base: AssessmentCacheKeyParts = {
+      const baseEvidenceRecord = {
         codeHash: "deadbeef",
+        evidence: [{ selector: "0xa9059cbb" }],
+        meanings: [{ id: "signal:one", meaning: "first narrative" }],
+      };
+      const baseEvidence = baseEvidenceRecord as unknown as CanonicalValue;
+      const base: AssessmentCacheKeyParts = {
         promptVersion: "1.0.0",
         templateVersion: "1.0.0",
         provider,
         modelId: MODEL_IDS[provider],
+        evidence: baseEvidence,
       };
       const altered: readonly AssessmentCacheKeyParts[] = [
-        { ...base, codeHash: "beefdead" },
+        {
+          ...base,
+          evidence: { ...baseEvidenceRecord, codeHash: "beefdead" } as unknown as CanonicalValue,
+        },
         { ...base, promptVersion: "2.0.0" },
         { ...base, templateVersion: "2.0.0" },
         { ...base, provider: otherProvider, modelId: MODEL_IDS[otherProvider] },
         { ...base, modelId: "another-model-id" },
+        {
+          ...base,
+          evidence: {
+            ...baseEvidenceRecord,
+            meanings: [{ id: "signal:one", meaning: "second narrative" }],
+          } as unknown as CanonicalValue,
+        },
       ];
       const keys = new Set([assessmentCacheKeyOf(base), ...altered.map((entry) => assessmentCacheKeyOf(entry))]);
       expect(keys.size).toBe(1 + altered.length);

@@ -13,7 +13,7 @@
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
 import type { Evidence as EvidenceType } from "../domain/evidence.ts";
-import { canonicalSerialize } from "../domain/serialize.ts";
+import { canonicalSerialize, modelInputKey } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
 import type { Temporality } from "../domain/signals.ts";
 import type {
@@ -41,27 +41,27 @@ import type {
   MuseAssessment,
 } from "../ports/assessmentModel.ts";
 
-// Full assessment cache key (K-305, K-309, I-14): code hash, prompt
-// version, template version, provider and model id. A new value in any
-// part misses, so a changed prompt, template, provider or model never
-// serves stale text.
+// Full assessment cache key (K-305, K-309, I-14, C-20): prompt version,
+// template version, provider, model id and the exact model input: the
+// closed evidence list (code hash, evidence entries and their owner/state
+// meanings). A new value in any part misses, so a changed prompt,
+// template, provider, model or evidence never serves stale text.
 export type AssessmentCacheKeyParts = {
-  readonly codeHash: string;
   readonly promptVersion: string;
   readonly templateVersion: string;
   readonly provider: AssessmentProvider;
   readonly modelId: string;
+  readonly evidence: CanonicalValue;
 };
 
 export function assessmentCacheKeyOf(parts: AssessmentCacheKeyParts): string {
-  return [
-    "assessment",
-    parts.codeHash,
-    parts.promptVersion,
-    parts.templateVersion,
-    parts.provider,
-    parts.modelId,
-  ].join("|");
+  return modelInputKey("assessment", {
+    promptVersion: parts.promptVersion,
+    templateVersion: parts.templateVersion,
+    provider: parts.provider,
+    modelId: parts.modelId,
+    evidence: parts.evidence,
+  });
 }
 
 // Injected assessment text store. The default in-memory map below serves
@@ -363,13 +363,15 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
       });
     }
     // Cache lookup before the cap and the provider: a hit costs zero
-    // provider calls and zero meter consumption (I-14).
+    // provider calls and zero meter consumption (I-14). The key hashes
+    // the exact evidence list, so another address's owner/state narrative
+    // never serves here (C-20).
     const key = assessmentCacheKeyOf({
-      codeHash: envelope.codeHash as string,
       promptVersion: deps.promptVersion as string,
       templateVersion: envelope.templateVersion as string,
       provider: adapter.provider(),
       modelId: adapter.modelId() as string,
+      evidence: evidence.value as unknown as CanonicalValue,
     });
     const cached = cache.get(key);
     if (cached !== null) {

@@ -2,8 +2,8 @@
 // survive only with valid line and evidence citations; unknown lines,
 // unknown evidence, uncited entries and meta-statements drop with a count.
 // Malformed model output discards the whole overlay as `invalid-output`.
-// The budget cache keys on code hash, selector, view and prompt version,
-// so re-opening a function costs zero provider calls.
+// The budget cache key hashes the full input, so re-opening a function
+// costs zero provider calls while changed lines or files miss.
 import { describe, expect, test } from "vitest";
 import {
   checkExplainCodeCitations,
@@ -157,6 +157,48 @@ describe("explain-code service", () => {
     }
     await service.explainCode(sourceView, "key-1");
     expect(fake.calls.length).toBe(2);
+  });
+
+  test("c20_explain_code_key_includes_lines_and_file", async () => {
+    // The key hashes the full input: different lines or a different file
+    // miss even when code hash, selector, view and prompt version match.
+    const fake = new FakeExplainCodeModelAdapter("ok");
+    const budget = new OverlayBudget({ dailyCapPerKey: 100, today: () => "2026-11-01" });
+    const service = createExplainCodeService(fake, budget);
+    await service.explainCode(testInput(), "key-1");
+    const relined = ExplainCodeInput.create({
+      codeHash: "code-hash-for-unit-suite",
+      selector: "0xa9059cbb",
+      view: "decompiled",
+      promptVersion: "explain-code-1",
+      lines: [
+        { lineNumber: 1, text: "function move(address to) {" },
+        { lineNumber: 2, text: "balances[to] += 2;" },
+        { lineNumber: 3, text: "}" },
+      ],
+      evidenceIds: ["signal:first"],
+    });
+    if (relined === null) {
+      throw new Error("expected valid explain-code input");
+    }
+    await service.explainCode(relined, "key-1");
+    expect(fake.calls.length).toBe(2);
+    const withFile = ExplainCodeInput.create({
+      codeHash: "code-hash-for-unit-suite",
+      selector: "0xa9059cbb",
+      view: "source",
+      promptVersion: "explain-code-1",
+      lines: testLines(),
+      file: "contracts/Token.sol",
+      evidenceIds: ["signal:first"],
+    });
+    if (withFile === null) {
+      throw new Error("expected valid explain-code input");
+    }
+    await service.explainCode(withFile, "key-1");
+    expect(fake.calls.length).toBe(3);
+    await service.explainCode(withFile, "key-1");
+    expect(fake.calls.length).toBe(3);
   });
 
   test("a capped key answers capped with zero provider calls", async () => {

@@ -11,8 +11,8 @@
 // survivor list yields an empty explanation, never a repaired substitute.
 // Scores, evidence and finding text are untouched: this service reads the
 // frozen code lines and returns a separate overlay. The budget cache key
-// carries code hash, selector, view, prompt version, provider and model
-// id, so re-opening a function costs zero and spends nothing.
+// hashes the full input, so re-opening a function costs zero and spends
+// nothing while changed lines or evidence always miss.
 import type {
   ExplainCodeInput,
   ExplainCodeModelOutcome,
@@ -21,6 +21,8 @@ import type {
   ExplainCodeSummarySentence,
 } from "../ports/explainCodeModel.ts";
 import type { OverlayBudget } from "./overlayBudget.ts";
+import { modelInputKey } from "../domain/serialize.ts";
+import type { CanonicalValue } from "../domain/serialize.ts";
 
 export const MAX_EXPLAIN_CODE_SUMMARY_SENTENCES = 3;
 export const MAX_EXPLAIN_CODE_NOTES = 6;
@@ -28,8 +30,8 @@ export const MAX_EXPLAIN_CODE_TEXT_CHARS = 1000;
 export const MAX_EXPLAIN_CODE_CITES_PER_ENTRY = 8;
 export const MAX_EXPLAIN_CODE_LINES_PER_NOTE = 32;
 // Versioned identifier of the explain-code prompt and code format. The
-// overlay cache key carries code hash, selector, view, this version,
-// provider and model id.
+// overlay cache key hashes this version beside the full input, provider
+// and model id.
 export const EXPLAIN_CODE_PROMPT_VERSION = "explain-code-1";
 
 // Meta-statements about grounding or evidence carry no holder impact:
@@ -264,6 +266,37 @@ export type ExplainCodeOutcome =
   | { readonly kind: "invalid-output" }
   | { readonly kind: "capped" };
 
+// Exact-input cache key (C-20, F-20): the provider and model id plus the
+// full explain-code input (selector, view, numbered lines, source file,
+// evidence ids with their meanings, prompt version), so a clone with
+// different lines or another address's narrative never serves here.
+export function explainCodeInputToCanonical(input: ExplainCodeInput): CanonicalValue {
+  return {
+    codeHash: input.codeHash,
+    selector: input.selector.toLowerCase(),
+    view: input.view,
+    promptVersion: input.promptVersion,
+    lines: input.lines.map((line) => ({ lineNumber: line.lineNumber, text: line.text })),
+    ...(input.file === undefined ? {} : { file: input.file }),
+    evidenceIds: input.evidenceIds.slice(),
+    ...(input.meanings === undefined
+      ? {}
+      : { meanings: input.meanings as unknown as CanonicalValue }),
+  };
+}
+
+export function explainCodeCacheKeyOf(
+  provider: string,
+  modelId: string,
+  input: ExplainCodeInput,
+): string {
+  return modelInputKey("explain-code", {
+    provider,
+    modelId,
+    input: explainCodeInputToCanonical(input),
+  });
+}
+
 export type ExplainCodeService = {
   readonly enabled: boolean;
   readonly provider: string | null;
@@ -291,8 +324,7 @@ export function createExplainCodeService(
     provider: port.provider(),
     modelId: port.modelId(),
     explainCode: async (input: ExplainCodeInput, keyId?: string | undefined): Promise<ExplainCodeOutcome> => {
-      const cacheKey =
-        `explain-code|${port.provider()}|${port.modelId()}|${input.codeHash}|${input.selector.toLowerCase()}|${input.view}|${input.promptVersion}`;
+      const cacheKey = explainCodeCacheKeyOf(port.provider(), port.modelId(), input);
       if (budget !== undefined && keyId !== undefined) {
         const hit = budget.lookup<ExplainCodeOutcome>(cacheKey);
         if (hit !== null) {

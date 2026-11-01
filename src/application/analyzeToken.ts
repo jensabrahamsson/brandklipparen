@@ -385,6 +385,53 @@ function envelopeFromCached(
   });
 }
 
+// Owner-state refresh for a code-hash hit carrying an owner-slot proof
+// (C-20, F-21): the cached score and probabilities are reused untouched,
+// while the owner is re-read at the requesting address and the
+// explanation re-rendered beside the refreshed signals. Null means the
+// re-read cannot complete (artifact or RPC failure, or an unreadable
+// render): the caller falls through to the fresh path instead of serving
+// another address's owner.
+async function reattachOwnerStateOnHit(
+  counted: AnalyzeTokenPorts,
+  input: AnalyzeTokenInput,
+  block: BlockNumberType,
+  codeHash: CodeHashType,
+  analysisBytecode: BytecodeType,
+  cached: CachedAssessment,
+): Promise<{ signals: readonly Signal[]; explanation: Explanation } | null> {
+  const loaded = counted.modelArtifacts.load(input.modelVersion);
+  if (!loaded.ok) {
+    return null;
+  }
+  const ownerState = await attachOwnerState(
+    counted.rpc,
+    input,
+    block,
+    counted.clock.now(),
+    codeHash,
+    cached.pluginResults,
+    cached.signals,
+    loaded.value.artifact.pluginWeights,
+    loaded.value.artifact.pluginFeatureCatalogue,
+    analysisBytecode,
+  );
+  if (ownerState.readFailed) {
+    return null;
+  }
+  const origins = explanationOriginsOf(cached.pluginResults, ownerState.signals);
+  const rendered = renderExplanation({
+    signals: ownerState.signals,
+    templateVersion: cached.templateVersion,
+    observed: { kind: "can-change-unknown" },
+    origins,
+  });
+  if (!rendered.ok) {
+    return null;
+  }
+  return { signals: ownerState.signals, explanation: rendered.value };
+}
+
 // Proxy resolution that degrades to no proxy info on a typed port failure
 // (K-002, K-005): the deterministic analysis still delivers its result.
 async function resolveProxyOrNone(
@@ -837,28 +884,35 @@ function dispatchedOwnerGetters(bytecode: BytecodeType): ReadonlySet<string> {
 }
 
 // One owner getter answer at the pinned block through RpcPort: the
-// proven address, or null when the call fails or the answer is not a
-// zero-padded address word. A slot word counts as an owner only beside
-// an answering getter; agreement is decided by the caller.
+// proven address, or null when the answer is not a zero-padded address
+// word. A slot word counts as an owner only beside an answering getter;
+// agreement is decided by the caller. A failed call is reported through
+// `failed` (not as a null address) so the caller can tell an RPC error
+// apart from a non-address answer (C-20): only the error skips the cache.
+type OwnerGetterRead = {
+  readonly address: AddressType | null;
+  readonly failed: boolean;
+};
+
 async function readOwnerGetter(
   rpc: RpcPort,
   target: AddressType,
   selector: string,
   ctx: CallContext,
-): Promise<AddressType | null> {
+): Promise<OwnerGetterRead> {
   const data = CallData.parse(selector);
   if (!data.ok) {
-    return null;
+    return { address: null, failed: false };
   }
   const called = await rpc.call(target, data.value, ctx);
   if (!called.ok) {
-    return null;
+    return { address: null, failed: true };
   }
   let hex = "0x";
   for (const byte of called.value) {
     hex += byte.toString(16).padStart(2, "0");
   }
-  return addressOfStoredWord(hex.toLowerCase());
+  return { address: addressOfStoredWord(hex.toLowerCase()), failed: false };
 }
 
 async function attachOwnerState(
@@ -872,7 +926,7 @@ async function attachOwnerState(
   pluginWeights: Readonly<Record<string, number>>,
   featureCatalogue: Readonly<Record<string, PluginFeatureMapping>>,
   analysisBytecode: BytecodeType,
-): Promise<{ signals: readonly Signal[]; enriched: boolean }> {
+): Promise<{ signals: readonly Signal[]; enriched: boolean; readFailed: boolean }> {
   const ctx: CallContext = { requestId: input.requestId, deadline: input.deadline, block };
   const proof = ownerSlotProof(pluginResults);
   const mapping = featureCatalogue[OWNERSHIP_PLUGIN_ID] ?? null;
@@ -883,7 +937,10 @@ async function attachOwnerState(
   // unwritten slot or a stubbed offline read, so the run keeps its
   // changerless temporality. A nonzero word with nonzero upper bytes is
   // not an address at all (P-2 item 1), so the run names no changer and
-  // carries no measured value for it.
+  // carries no measured value for it. A failed storage read is neither:
+  // it sets `readFailed` so the run skips the code-hash cache instead of
+  // freezing an unread owner under the code hash (C-20).
+  let readFailed = false;
   let slotValue: StorageWordType | null = null;
   let slot: SlotType | null = null;
   let slotAddress: AddressType | null = null;
@@ -891,13 +948,15 @@ async function attachOwnerState(
     const parsed = Slot.parse(`0x${proof.slot.toString(16).padStart(64, "0")}`);
     if (parsed.ok) {
       const stored = await rpc.getStorageAt(input.address, parsed.value, ctx);
-      if (stored.ok) {
+      if (!stored.ok) {
+        readFailed = true;
+      } else {
         if (/^0+$/.test((stored.value as string).slice(2))) {
-          return { signals, enriched: false };
+          return { signals, enriched: false, readFailed };
         }
         const candidate = addressOfStoredWord(stored.value as string);
         if (candidate === null) {
-          return { signals, enriched: false };
+          return { signals, enriched: false, readFailed };
         }
         slotValue = stored.value;
         slot = parsed.value;
@@ -907,7 +966,9 @@ async function attachOwnerState(
   }
   // Getter answers where the bytecode dispatches them (P-2 item 2): one
   // eth_call per dispatched getter at the pinned block through RpcPort.
-  // The calls ride the counted rpc, so the request sink counts them.
+  // The calls ride the counted rpc, so the request sink counts them. A
+  // failed call marks the run, never an address: the failure skips the
+  // cache while a non-address answer simply proves nothing (C-20).
   const dispatched = dispatchedOwnerGetters(analysisBytecode);
   const getterAddresses: AddressType[] = [];
   for (const selector of [OWNER_SELECTOR, GET_OWNER_SELECTOR]) {
@@ -915,8 +976,12 @@ async function attachOwnerState(
       continue;
     }
     const answer = await readOwnerGetter(rpc, input.address, selector, ctx);
-    if (answer !== null) {
-      getterAddresses.push(answer);
+    if (answer.failed) {
+      readFailed = true;
+      continue;
+    }
+    if (answer.address !== null) {
+      getterAddresses.push(answer.address);
     }
   }
   const gettersRepeat = (base: AddressType): boolean =>
@@ -932,7 +997,7 @@ async function attachOwnerState(
   let slotAccepted = false;
   if (slotAddress !== null && getterAddresses.length > 0) {
     if (!gettersRepeat(slotAddress)) {
-      return { signals, enriched: false };
+      return { signals, enriched: false, readFailed };
     }
     proven = slotAddress;
     slotAccepted = true;
@@ -940,16 +1005,16 @@ async function attachOwnerState(
     // No getter proves the slot: the stored value may be a supply, a
     // packed word or unrelated storage that happens to fit in 20 bytes,
     // so the run keeps changerless temporality and no measured value.
-    return { signals, enriched: false };
+    return { signals, enriched: false, readFailed };
   } else if (getterAddresses.length > 0) {
     const first = getterAddresses[0];
     if (first === undefined || !gettersRepeat(first)) {
-      return { signals, enriched: false };
+      return { signals, enriched: false, readFailed };
     }
     proven = first;
     slotAccepted = false;
   } else {
-    return { signals, enriched: false };
+    return { signals, enriched: false, readFailed };
   }
   // Evidence keys behind owner-gated findings (P-2 item 3): only signals
   // with one of these keys may name the proven owner as their changer.
@@ -1026,7 +1091,7 @@ async function attachOwnerState(
     }
     return signal;
   });
-  return { signals: Object.freeze(out), enriched };
+  return { signals: Object.freeze(out), enriched, readFailed };
 }
 
 // Proven controller behind a stored owner word: the last 20 bytes parsed
@@ -1076,6 +1141,9 @@ export async function analyzeToken(
   // rebuilds the envelope with the live target, block and timestamp, so a
   // hit never serves another address's details. A miss, a rejected entry
   // or an unreachable store falls through to the fresh path below (A-15).
+  // A proxied hit or a hit carrying an owner-slot proof falls through to
+  // the code-hash path below instead: the proxy facts are address state
+  // and the owner is re-read for the requesting address (C-20, F-21).
   if (ports.cache !== undefined && input.block !== "latest") {
     const memoKey = memoKeyOf(input);
     const remembered = addressIndex.get(memoKey);
@@ -1083,15 +1151,18 @@ export async function analyzeToken(
       const hit = await ports.cache.get(remembered);
       if (hit.ok && hit.value !== null) {
         const proxy = await resolveProxyOrNone(countedPorts, proxyInputFor(input.block));
-        const envelope = envelopeFromCached(hit.value, input.address, input.block, proxy, ports.clock.now());
-        const metadata = await readTokenMetadata(countedPorts.rpc, input.address, {
-          requestId: input.requestId,
-          deadline: input.deadline,
-          block: input.block,
-        });
-        return ok({ kind: "assessed", envelope: withTokenMetadata(envelope, metadata) });
+        if (proxyFactOf(proxy) === null && ownerSlotProof(hit.value.pluginResults) === null) {
+          const envelope = envelopeFromCached(hit.value, input.address, input.block, proxy, ports.clock.now());
+          const metadata = await readTokenMetadata(countedPorts.rpc, input.address, {
+            requestId: input.requestId,
+            deadline: input.deadline,
+            block: input.block,
+          });
+          return ok({ kind: "assessed", envelope: withTokenMetadata(envelope, metadata) });
+        }
+      } else {
+        addressIndex.delete(memoKey);
       }
-      addressIndex.delete(memoKey);
     }
   }
   // Resolved analysis code shared with the code routes (C-4, F-6):
@@ -1124,16 +1195,47 @@ export async function analyzeToken(
   // Second lookup on the code-hash key: a new address with known code and
   // a request without a memo entry still skips decompilation and the model
   // load, rebuilding the envelope with its own target, block and timestamp
-  // beside the already resolved proxy (K-013).
+  // beside the already resolved proxy (K-013). A proxied hit is ignored:
+  // proxy facts are address state and never enter the cache (C-20, F-21).
+  // A hit carrying an owner-slot proof re-reads the owner for the
+  // requesting address and re-renders the explanation, reusing the cached
+  // score and probabilities, which never move with owner state.
   if (ports.cache !== undefined) {
     const hit = await ports.cache.get(cacheKey.value);
-    if (hit.ok && hit.value !== null) {
-      if (input.block !== "latest") {
-        addressIndex.set(memoKeyOf(input), cacheKey.value);
+    if (hit.ok && hit.value !== null && proxyFactOf(proxy) === null) {
+      if (ownerSlotProof(hit.value.pluginResults) !== null) {
+        const reowned = await reattachOwnerStateOnHit(
+          countedPorts,
+          input,
+          block,
+          codeHash.value,
+          analysisBytecode,
+          hit.value,
+        );
+        if (reowned !== null) {
+          if (input.block !== "latest") {
+            addressIndex.set(memoKeyOf(input), cacheKey.value);
+          }
+          const envelope = envelopeFromCached(hit.value, input.address, block, proxy, ports.clock.now());
+          const rebuilt: AssessmentEnvelope = Object.freeze({
+            ...envelope,
+            signals: reowned.signals,
+            explanation: reowned.explanation,
+          });
+          const metadata = await readTokenMetadata(countedPorts.rpc, input.address, blockCtx);
+          return ok({ kind: "assessed", envelope: withTokenMetadata(rebuilt, metadata) });
+        }
+        // A failed re-read falls through to the fresh path below, which
+        // re-runs detection and reports the same outcome deterministically
+        // instead of serving another address's owner.
+      } else {
+        if (input.block !== "latest") {
+          addressIndex.set(memoKeyOf(input), cacheKey.value);
+        }
+        const envelope = envelopeFromCached(hit.value, input.address, block, proxy, ports.clock.now());
+        const metadata = await readTokenMetadata(countedPorts.rpc, input.address, blockCtx);
+        return ok({ kind: "assessed", envelope: withTokenMetadata(envelope, metadata) });
       }
-      const envelope = envelopeFromCached(hit.value, input.address, block, proxy, ports.clock.now());
-      const metadata = await readTokenMetadata(countedPorts.rpc, input.address, blockCtx);
-      return ok({ kind: "assessed", envelope: withTokenMetadata(envelope, metadata) });
     }
   }
   const loaded = ports.modelArtifacts.load(input.modelVersion);
@@ -1284,10 +1386,20 @@ export async function analyzeToken(
   // hit. A transient decompiler failure skips the store, so a degraded run
   // never poisons the shared entry (A-07, K-102). An owner-state enriched
   // run skips the store too: the live value is chain state, not
-  // code-derived, and must never serve another block from the cache. A new
-  // model version keys new entries, so older entries stay unused beside
-  // the new one.
-  if (ports.cache !== undefined && !transientDecompilerFailure && !ownerState.enriched) {
+  // code-derived, and must never serve another block from the cache. A
+  // run whose owner read failed skips the store as well (C-20): a later
+  // hit must re-read instead of inheriting an unread owner. A proxied run
+  // never stores: the proxy-upgrade facts are address state, and the hit
+  // paths ignore proxied entries (C-20, F-21). A new model version keys
+  // new entries, so older entries stay unused beside the new one.
+  const proxied = proxyFactOf(proxy) !== null;
+  if (
+    ports.cache !== undefined &&
+    !transientDecompilerFailure &&
+    !ownerState.enriched &&
+    !ownerState.readFailed &&
+    !proxied
+  ) {
     const stored: CachedAssessment = {
       kind: "assessed",
       codeHash: envelope.codeHash,

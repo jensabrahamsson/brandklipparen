@@ -219,6 +219,14 @@ function sha256Blocks(padded: Uint8Array): Uint8Array {
   return out;
 }
 
+// Exact-model-input cache key (C-20, F-20): the feature label plus the
+// SHA-256 of the canonical bytes of the full serialized model input, so
+// any change in owner/state meanings, evidence, lines or file misses
+// instead of serving another address's narrative.
+export function modelInputKey(feature: string, parts: CanonicalValue): string {
+  return `${feature}|${sha256Hex(canonicalBytes(parts))}`;
+}
+
 export function sha256Hex(bytes: Uint8Array): string {
   const bitLength = bytes.length * 8;
   const withOne = bytes.length + 1;

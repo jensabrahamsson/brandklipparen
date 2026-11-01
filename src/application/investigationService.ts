@@ -7,7 +7,7 @@
 // and serving the frozen ids keeps bytecode out of the loop. Scores,
 // probabilities, signals and evidence pass through untouched; the
 // investigation lands in its own envelope field (K-307, P-33).
-import { canonicalSerialize } from "../domain/serialize.ts";
+import { canonicalSerialize, modelInputKey } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
 import { serializeAssessment } from "./analyzeToken.ts";
 import type { AssessmentEnvelope, DetectorSet } from "./analyzeToken.ts";
@@ -131,24 +131,27 @@ export function serializeTokenInvestigation(
   });
 }
 
-// Full investigation cache key (S-077, K-036, I-14): code hash, prompt
-// version, provider and model id. A new value in any part misses, so a
-// changed prompt, provider or model never serves a stale narrative.
+// Full investigation cache key (S-077, K-036, I-14, C-20): prompt
+// version, provider, model id and the exact model input: the frozen facts
+// (which carry the owner and state meanings) and the tool catalogue. A
+// new value in any part misses, so a changed prompt, provider, model or
+// meaning never serves another address's narrative.
 export type InvestigationCacheKeyParts = {
-  readonly codeHash: string;
   readonly promptVersion: string;
   readonly provider: string;
   readonly modelId: string;
+  readonly facts: CanonicalValue;
+  readonly catalogue: CanonicalValue;
 };
 
 export function investigationCacheKeyOf(parts: InvestigationCacheKeyParts): string {
-  return [
-    "investigation",
-    parts.codeHash,
-    parts.promptVersion,
-    parts.provider,
-    parts.modelId,
-  ].join("|");
+  return modelInputKey("investigation", {
+    promptVersion: parts.promptVersion,
+    provider: parts.provider,
+    modelId: parts.modelId,
+    facts: parts.facts,
+    catalogue: parts.catalogue,
+  });
 }
 
 export type InvestigationDoneReport = Extract<InvestigationEnvelope, { status: "done" }>["report"];
@@ -265,11 +268,21 @@ export function createInvestigationService(options: InvestigationServiceOptions)
     investigateEnvelope: async (envelope, ctx, hooks, quota) => {
       const provider = options.adapter.provider();
       const modelId = options.adapter.modelId() as string;
+      const facts = frozenFactsOfEnvelope(envelope);
+      const catalogue = catalogueOfEnvelope(options.detectors, envelope, options.docs);
       const key = investigationCacheKeyOf({
-        codeHash: envelope.codeHash as string,
         promptVersion,
         provider,
         modelId,
+        facts: facts as unknown as CanonicalValue,
+        catalogue: {
+          tools: catalogue.tools.map((tool) => ({
+            toolId: tool.toolId,
+            description: tool.description,
+            argNames: tool.argNames.slice(),
+          })),
+          docs: { ...options.docs },
+        },
       });
       const hit = cache.get(key);
       if (hit !== null) {
@@ -289,8 +302,8 @@ export function createInvestigationService(options: InvestigationServiceOptions)
       }
       const result = await investigateToken(
         options.adapter,
-        catalogueOfEnvelope(options.detectors, envelope, options.docs),
-        frozenFactsOfEnvelope(envelope),
+        catalogue,
+        facts,
         ctx,
         options.limits,
         hooks,

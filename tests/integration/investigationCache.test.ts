@@ -20,7 +20,11 @@ import {
 import type { CapabilityCatalogue } from "../../src/domain/signals.ts";
 import { createAppServices } from "../../src/application/analyzeToken.ts";
 import type { AssessmentEnvelope } from "../../src/application/analyzeToken.ts";
-import { createInvestigationService } from "../../src/application/investigationService.ts";
+import {
+  createInvestigationService,
+  investigationCacheKeyOf,
+} from "../../src/application/investigationService.ts";
+import type { CanonicalValue } from "../../src/domain/serialize.ts";
 import type {
   InvestigationDecision,
   InvestigationModelError,
@@ -180,6 +184,52 @@ describe("investigation cache and caps", () => {
     const otherPrompt = await second.investigateEnvelope(envelope, investigationCtx("4003"), FROZEN_CLOCK, QUOTA);
     expect(otherPrompt.status).toBe("done");
     expect(counter.calls).toBeGreaterThan(callsAfterMiss);
+  });
+
+  test("c20_investigation_key_differs_by_meanings", () => {
+    // The key hashes the exact model input: two runs over the same code
+    // hash with different owner/state meanings must never share a cache
+    // entry. A changed prompt, provider or model misses as before.
+    const baseFactsRecord = {
+      codeHash: "deadbeef",
+      scoreBand: "Low",
+      signalIds: ["aa"],
+      evidenceIds: ["signal:aa"],
+      score: 20,
+      snapshot: null,
+      meanings: [{ id: "signal:aa", meaning: "first narrative" }],
+    };
+    const baseFacts = baseFactsRecord as unknown as CanonicalValue;
+    const baseCatalogue = {
+      tools: [{ toolId: "evidence.list", description: "List.", argNames: [] }],
+      docs: {},
+    } as unknown as CanonicalValue;
+    const base = {
+      promptVersion: "1.0.0",
+      provider: "hosted-open-weights",
+      modelId: "open-weights-1",
+      facts: baseFacts,
+      catalogue: baseCatalogue,
+    };
+    const keyOf = (facts: CanonicalValue): string => investigationCacheKeyOf({ ...base, facts });
+    expect(keyOf(baseFacts)).toBe(investigationCacheKeyOf({ ...base }));
+    expect(
+      keyOf({ ...baseFactsRecord, scoreBand: "High" } as unknown as CanonicalValue),
+    ).not.toBe(keyOf(baseFacts));
+    expect(
+      keyOf(
+        {
+          ...baseFactsRecord,
+          meanings: [{ id: "signal:aa", meaning: "second narrative" }],
+        } as unknown as CanonicalValue,
+      ),
+    ).not.toBe(keyOf(baseFacts));
+    expect(investigationCacheKeyOf({ ...base, promptVersion: "2.0.0" })).not.toBe(
+      investigationCacheKeyOf({ ...base }),
+    );
+    expect(investigationCacheKeyOf({ ...base, modelId: "open-weights-2" })).not.toBe(
+      investigationCacheKeyOf({ ...base }),
+    );
   });
 
   test("k036_investigation_capped_key_makes_zero_calls", async () => {
