@@ -16,6 +16,18 @@ M-xx) by `docs/threat-model.md`. This ADR owns D-01 onward. Proposed
 new K-IDs are listed in section 9; they enter `docs/requirements.md`
 in the first implementation story, in the same change.
 
+## Decision update
+
+The external comparison tool is removed: the product runs only the
+internal decompiler (decompiler v2 with the v1 fallback) behind
+`DecompilerPort`, with no external binary, worker process, or
+decompiler variable in the operations configuration. The
+hard-to-analyze signal now comes solely from the internal engine's
+own limits (input and output byte caps, unresolved control flow).
+The sections below stay as the historical record of the comparison
+that motivated the promotion; `docs/eval-decompiler-results.md`
+stays as the historical record of its runs.
+
 ## 1. Context, goal, and rule numbering
 
 Brandklipparen's deepening today decompiles through extdecomp behind

@@ -248,11 +248,6 @@ const V = {
   modelVersion: "BRANDKLIPPAREN_MODEL_VERSION",
   modelArtifactPath: "BRANDKLIPPAREN_MODEL_ARTIFACT_PATH",
   cloneIndexVersion: "BRANDKLIPPAREN_CLONE_INDEX_VERSION",
-  extdecompDeadlineMs: "BRANDKLIPPAREN_extdecomp_DEADLINE_MS",
-  extdecompMaxMemoryMb: "BRANDKLIPPAREN_extdecomp_MAX_MEMORY_MB",
-  extdecompMaxOutputBytes: "BRANDKLIPPAREN_extdecomp_MAX_OUTPUT_BYTES",
-  extdecompMaxConcurrency: "BRANDKLIPPAREN_extdecomp_MAX_CONCURRENCY",
-  extdecompBinaryPath: "BRANDKLIPPAREN_extdecomp_BINARY_PATH",
   rpcDeadlineMs: "BRANDKLIPPAREN_RPC_DEADLINE_MS",
   rpcMaxConcurrency: "BRANDKLIPPAREN_RPC_MAX_CONCURRENCY",
   rpcRetryBudget: "BRANDKLIPPAREN_RPC_RETRY_BUDGET",
@@ -416,24 +411,10 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!cloneIndexVersion.ok) {
     return cloneIndexVersion;
   }
-  const extdecompDeadlineMs = requiredField(env, V.extdecompDeadlineMs, (raw) =>
-    parseInteger(V.extdecompDeadlineMs, raw, 1, 3600000),
-  );
-  if (!extdecompDeadlineMs.ok) {
-    return extdecompDeadlineMs;
-  }
-  const extdecompMaxMemoryMb = requiredField(env, V.extdecompMaxMemoryMb, (raw) =>
-    parseInteger(V.extdecompMaxMemoryMb, raw, 1, 1048576),
-  );
-  if (!extdecompMaxMemoryMb.ok) {
-    return extdecompMaxMemoryMb;
-  }
-  const extdecompMaxOutputBytes = requiredField(env, V.extdecompMaxOutputBytes, (raw) =>
-    parseInteger(V.extdecompMaxOutputBytes, raw, 1, 1073741824),
-  );
-  if (!extdecompMaxOutputBytes.ok) {
-    return extdecompMaxOutputBytes;
-  }
+  // The internal decompiler needs no operational variables: it runs
+  // in-process under the engine's own deterministic caps (K-008). Any
+  // leftover entries for the removed external-decompiler variables in
+  // the environment are ignored here, so they never fail startup.
   const logLevel = requiredField(env, V.logLevel, parseLogLevel);
   if (!logLevel.ok) {
     return logLevel;
@@ -470,22 +451,6 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   const rpcUrls = requiredWhen(env, V.rpcUrls, isDemo, (raw) => parseRpcUrls(V.rpcUrls, raw));
   if (!rpcUrls.ok) {
     return rpcUrls;
-  }
-  const extdecompMaxConcurrency = requiredWhen(env, V.extdecompMaxConcurrency, isDemo, (raw) =>
-    parseInteger(V.extdecompMaxConcurrency, raw, 1, 1024),
-  );
-  if (!extdecompMaxConcurrency.ok) {
-    return extdecompMaxConcurrency;
-  }
-  // Path to the decompiler executable (the pinned extdecomp binary in the
-  // demo per I-05, the fake worker script in tests). Optional in every
-  // setup: the adapter factory reports the missing variable when a worker
-  // is bound without it.
-  const extdecompBinaryPath = optionalField(env, V.extdecompBinaryPath, (raw) =>
-    parseNonEmpty(V.extdecompBinaryPath, raw, "a non-empty binary path"),
-  );
-  if (!extdecompBinaryPath.ok) {
-    return extdecompBinaryPath;
   }
   const rpcDeadlineMs = requiredWhen(env, V.rpcDeadlineMs, isDemo, (raw) =>
     parseInteger(V.rpcDeadlineMs, raw, 1, 3600000),
@@ -1117,21 +1082,12 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     modelVersion: modelVersion.value,
     modelArtifactPath: modelArtifactPath.value,
     cloneIndexVersion: cloneIndexVersion.value,
-    extdecompDeadlineMs: extdecompDeadlineMs.value,
-    extdecompMaxMemoryMb: extdecompMaxMemoryMb.value,
-    extdecompMaxOutputBytes: extdecompMaxOutputBytes.value,
     logLevel: logLevel.value,
     ...(httpPort.value === undefined ? {} : { httpPort: httpPort.value }),
     ...(cacheDir.value === undefined ? {} : { cacheDir: cacheDir.value }),
     ...(apiKeys.value === undefined ? {} : { apiKeys: apiKeys.value }),
     ...(chainId.value === undefined ? {} : { chainId: chainId.value }),
     ...(rpcUrls.value === undefined ? {} : { rpcUrls: rpcUrls.value }),
-    ...(extdecompMaxConcurrency.value === undefined
-      ? {}
-      : { extdecompMaxConcurrency: extdecompMaxConcurrency.value }),
-    ...(extdecompBinaryPath.value === undefined
-      ? {}
-      : { extdecompBinaryPath: extdecompBinaryPath.value }),
     ...(rpcDeadlineMs.value === undefined ? {} : { rpcDeadlineMs: rpcDeadlineMs.value }),
     ...(rpcMaxConcurrency.value === undefined ? {} : { rpcMaxConcurrency: rpcMaxConcurrency.value }),
     ...(rpcRetryBudget.value === undefined ? {} : { rpcRetryBudget: rpcRetryBudget.value }),

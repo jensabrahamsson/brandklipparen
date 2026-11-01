@@ -120,11 +120,11 @@ user's own systems.
   signals, probabilities and score, plus a template-based explanation
   per K-101. The fast path consists solely of deterministic steps and
   RPC reads per K-102.
-- **Deepening:** the second delivery in the same analysis: extdecomp
-  snippets linked to signals, streamed to the interface after the fast
-  path per K-101. The Muse contract assessment per K-305 is a separate
-  on-request delivery outside the deterministic analysis path and
-  outside the deepening.
+- **Deepening:** the second delivery in the same analysis: internal
+  decompiler snippets linked to signals, streamed to the interface
+  after the fast path per K-101. The Muse contract assessment per
+  K-305 is a separate on-request delivery outside the deterministic
+  analysis path and outside the deepening.
 - **Deterministic analysis:** the same bytecode and the same block
   number for on-chain reads give a bit-identical result with the same
   evidence per K-102.
@@ -149,9 +149,10 @@ user's own systems.
   and evidence format. The assessment cache key carries code hash,
   prompt version, provider and model id per K-305 and K-309.
 - **Operations configuration:** time, resource, rate and quota limits
-  for operations, versioned in `docs/infrastructure.md`. extdecomp's
-  limits belong here per K-008. The risk model's thresholds, weights
-  and limits belong to the model artifact per K-210.
+  for operations, versioned in `docs/infrastructure.md`. Decompilation
+  runs under the internal engine's own deterministic caps per K-008.
+  The risk model's thresholds, weights and limits belong to the model
+  artifact per K-210.
 
 ## 4. MVP vs stretch
 
@@ -188,7 +189,7 @@ resolution, timeline, current storage values and baseline comparison.
 | K-005 UUPS resolution | MVP | Shares slot with K-002 plus selector check |
 | K-006 Diamond resolution | Stretch | Loupe calls against several facets |
 | K-007 EIP-7702 resolution | MVP | Prefix check on EOA code |
-| K-008 Decompilation with extdecomp | MVP | The deepening's core evidence per K-101 |
+| K-008 Decompilation with the internal engine | MVP | The deepening's core evidence per K-101 |
 | K-009 Selector and pattern extraction | MVP | The fast path's first evidence cards |
 | K-010 Signals with evidence | MVP | The product's core value |
 | K-011 Probabilities and score | MVP | The demo delivers a number with evidence |
@@ -196,7 +197,7 @@ resolution, timeline, current storage values and baseline comparison.
 | K-013 Cache per code hash | MVP | Response time and cost per K-101, K-107 |
 | K-014 Just-deployed flow | MVP | The demo's main flow |
 | K-039 New LP pairs feed on mainnet | MVP | Discovery only; never moves score or evidence |
-| K-037 Own ERC-20 EVM decompiler | MVP | Deterministic token-scoped pipeline beside extdecomp |
+| K-037 Own ERC-20 EVM decompiler | MVP | Deterministic token-scoped pipeline; the only decompiler in the product |
 | K-038 Differential eval and naming overlay | MVP | Local-only harness; opt-in display-only names |
 | K-521 Decompiler output safety | MVP | Resolve or record, never guess; labelled fallback |
 | K-015 Timeline since deploy | Stretch | Builds on event index and re-evaluation |
@@ -371,27 +372,29 @@ the delegation address.
   Verification: property test
   `k007_other_prefix_means_no_eip7702_delegation`.
 
-### K-008 Decompilation with extdecomp (MVP)
+### K-008 Decompilation with the internal engine (MVP)
 
-The project decompiles the implementation's bytecode with extdecomp in
-the deepening per K-101 and links the result to the signals' evidence.
-The fast path delivers probabilities and score ahead of the deepening.
+The project decompiles the implementation's bytecode with the internal
+in-process engine in the deepening per K-101 and links the result to
+the signals' evidence. The fast path delivers probabilities and score
+ahead of the deepening.
 
 - Successful decompilation returns readable functions linked to
   selectors. Verification: integration test
-  `k008_decompilation_links_functions_to_selectors` against a frozen
-  fixture.
-- Timeout, resource excess or an error in extdecomp returns the signal
-  "hard-to-analyse code" in the deepening, and the fast path's response
-  stands. Verification: integration test
-  `k008_timeout_yields_hard_to_analyze_signal` with a pathological
-  fixture.
-- The time limit, memory limit and output-size limit are operations
-  configuration. The values are versioned in
-  `docs/infrastructure.md` (I-11) and follow the same change path as
-  other operations configuration. Verification: review
-  `k008_limits_sourced_from_infra_config`, which compares the running
-  configuration with the version in `docs/infrastructure.md`.
+  `k008_internal_decompilation_links_snippets_to_evidence` against a
+  frozen fixture.
+- Input or output past the engine caps returns the hard-to-analyse
+  finding as a display record, and unresolved control flow returns the
+  signal "hard-to-analyse code" in the deepening; the fast path's
+  response stands in both cases. Verification: integration tests
+  `k008_internal_limits_yield_typed_finding_without_signal` and
+  `k008_unresolved_control_flow_yields_hard_to_analyze_signal` with a
+  pathological fixture.
+- The engine caps are the deterministic bounds in
+  `src/domain/decompileV2.ts` and `src/domain/evmSsa.ts` with the
+  port-level input and output limits in
+  `src/adapters/decompiler/internalDecompilerAdapter.ts`; no
+  decompiler variable travels in the operations configuration.
 - The risk model's detection thresholds, weights and limits are the
   learned set, and they are versioned solely per K-210. Verification:
   review `k008_learned_values_only_in_model_artifact`, which searches
@@ -799,9 +802,9 @@ deepening into the same page per K-101.
   explanation as soon as it is ready, with placeholders for the
   deepening's parts. Verification: e2e test
   `k021_fast_path_renders_before_deepening` against a recorded fixture
-  with delayed extdecomp.
-- The deepening's content (extdecomp snippets) streams into the
-  placeholders in the same view, and score and probabilities stand
+  with a delayed decompiler.
+- The deepening's content (internal decompiler snippets) streams into
+  the placeholders in the same view, and score and probabilities stand
   during streaming. The Muse contract assessment per K-305 appears in
   its own tab or panel after the user's request, clearly separate from
   score, probabilities and evidence. Verification: e2e test
@@ -1057,7 +1060,7 @@ The project delivers each analysis in two steps. The fast path
 clone matching, signals, probabilities and score, plus a template-based
 explanation per K-301) appears first. The fast path consists solely of
 deterministic steps and RPC reads per K-102 and carries zero assessment
-calls. The deepening (extdecomp snippets linked to signals) streams in
+calls. The deepening (internal snippets linked to signals) streams in
 afterwards in the same response and the same view. The Muse contract
 assessment per K-305 is a separate on-request delivery with its own
 response. Time is measured
@@ -1072,10 +1075,10 @@ from receipt of a validated address. The targets hold at p95.
 - Fast path, cache hit: p95 at most 2 seconds to the same content.
   Verification: timing test `k101_cached_fast_path_p95_within_2s`.
 - Deepening: p95 at most 30 seconds from the fast path's delivery to
-  extdecomp snippets in place. On timeout or error per K-008 the
+  internal snippets in place. On timeout or error per K-008 the
   template-based text per K-301 stands. Verification: timing test
   `k101_deepening_p95_within_30s_or_template` with a delayed fake for
-  extdecomp, plus the measurement `k101_live_deepening_p95`
+  the decompiler, plus the measurement `k101_live_deepening_p95`
   in the demo environment.
 - Muse contract assessment: the on-request assessment per K-305
   responds within the assessment timeout in the operations
@@ -1169,9 +1172,10 @@ The project logs in structured form per analysis per I-10 in
 - Each analysis logs request ID, address, code hash, model version,
   step times for fast path and deepening, plus outcome. Verification:
   unit test `k104_analysis_log_has_required_fields`.
-- Health checks show status for RPC, cache, extdecomp and the selected
-  assessment provider per K-305 and K-309, with provider and model id.
-  Verification: integration test `k104_health_reports_each_dependency_status`.
+- Health checks show status for RPC, cache, the internal decompiler
+  and the selected assessment provider per K-305 and K-309, with
+  provider and model id. Verification: integration test
+  `k104_health_reports_each_dependency_status`.
 - Log fields follow the field allowlist in K-509. Verification: unit
   test `k509_log_fields_follow_allowlist`.
 
@@ -1391,8 +1395,8 @@ versions the report.
 
 The project learns and calibrates the risk model's detection
 thresholds, weights and limits from data and versions them in the model
-artifact. The scope is the risk model: extdecomp's time and resource
-limits belong to operations configuration in K-008, and rate and quota
+artifact. The scope is the risk model: decompilation runs under the
+internal engine's deterministic caps per K-008, and rate and quota
 limits belong to operations configuration in K-504.
 
 - Each value in the artifact has version, training data and measurement
@@ -1789,9 +1793,9 @@ I-11 in `docs/infrastructure.md` during the assessment period.
   states it visibly in the UI and in the API response. Verification:
   integration test `k402_demo_shows_submission_model_version`.
 - The health check per K-104 is publicly reachable and shows status for
-  RPC, cache, extdecomp and the selected assessment provider per K-309
-  with provider and model id. Verification: integration test
-  `k402_public_health_check_reports_dependencies`.
+  RPC, cache, the internal decompiler and the selected assessment
+  provider per K-309 with provider and model id. Verification:
+  integration test `k402_public_health_check_reports_dependencies`.
 - The Muse contract assessment per K-305 works in the demo through
   the button or tab, the REST endpoint and the MCP tool with the
   selected provider. Verification: e2e test
@@ -1920,12 +1924,12 @@ per requirement.
 ### K-501 Hostile bytecode (MVP)
 
 The project handles bytecode as hostile input in each step, with
-sandbox, time limits and size limits. Fulfilled by M-01 and M-02
-against H-01 in `docs/threat-model.md`.
+deterministic caps, input and output size limits. Fulfilled by M-01
+and M-02 against H-01 in `docs/threat-model.md`.
 
-- Decompilation runs in an isolated process with versioned time limit,
-  memory limit and output limit per K-008 and I-11. Verification:
-  integration test `k008_timeout_yields_hard_to_analyze_signal`.
+- Decompilation runs in-process under the engine's deterministic caps
+  with port-level input and output limits per K-008. Verification:
+  integration test `k501_pathological_input_stays_bounded_in_process`.
 - Obfuscated or incomplete code returns the signal "hard-to-analyse
   code" per K-008 as the analysis outcome. Verification: fuzz test
   `k501_mutated_bytecode_yields_signal_or_typed_error`, which feeds
@@ -2025,9 +2029,8 @@ licences. Fulfilled by M-12 against H-06 in `docs/threat-model.md`.
 - Licences are checked against the allowlist ahead of each release.
   Verification: CI check `k506_license_allowlist_blocks_release`.
 - Known vulnerabilities in dependencies are scanned in CI and block
-  release on a hit; Actions are pinned on SHA and extdecomp on version
-  and checksum per I-03 and I-05. Verification: CI check
-  `k506_pinning_and_vulnerability_scan_block_release`.
+  release on a hit; Actions are pinned on SHA per I-03. Verification:
+  CI check `k506_pinning_and_vulnerability_scan_block_release`.
 
 ### K-507 XSS in the web UI (MVP)
 
@@ -2281,22 +2284,20 @@ calibration artifact names it.
   `d07_decompiler_output_consumed_identically_in_rest_mcp_and_expert_ui`
   and `d08_decompiler_findings_leave_score_and_evidence_unchanged`.
 
-### K-038 Differential eval and naming overlay (MVP)
+### K-038 Internal eval and naming overlay (MVP)
 
-The dev/eval-only harness compares the own pipeline against extdecomp on
-the frozen ERC-20 corpus over local bytecode only, and suggested
-function names arrive solely through an opt-in display-only overlay.
-Proposed in `docs/adr-evm-decompiler.md` (D-09–D-11); this story enters
-the ID with the implementation.
+The dev/eval-only harness evaluates the internal pipeline on the
+frozen ERC-20 corpus over local bytecode only, and suggested function
+names arrive solely through an opt-in display-only overlay. Proposed
+in `docs/adr-evm-decompiler.md` (D-09–D-11, with the comparison path
+retired by the Decision update); this story enters the ID with the
+implementation.
 
-- The harness invokes only the binary named by `extdecomp_BIN` as
-  `extdecomp decompile <hex-or-file>` with `HOME` set to a fresh temp
-  dir, checks `extdecomp --version` against the pinned expected `0.9.1`,
+- The harness runs the internal pipeline over the frozen corpus files
   and reports the four metrics (CFG/function boundaries, unresolved
-  jumps, token-pattern readability, offset mapping) per corpus contract
-  for both decompilers. Verification: unit tests
-  `d09_eval_runs_only_on_local_bytecode_without_network_or_llm_flags`,
-  `d10_version_check_expects_extdecomp_0_9_1` and
+  jumps, token-pattern readability, offset mapping) per corpus
+  contract. Verification: unit tests
+  `d09_eval_runs_internal_only_over_local_corpus` and
   `d09_metrics_table_reports_all_four_metrics_per_contract`.
 - The naming overlay suggests display names only, behind an explicit
   opt-in, validated whole and rendered as a labelled overlay; without a
@@ -2343,7 +2344,7 @@ the test per acceptance criterion.
 | K-005 | `k005_uups_returns_implementation` (golden) |
 | K-006 | `k006_diamond_lists_facets_per_selector` (contract) |
 | K-007 | `k007_eip7702_follows_delegation` (golden) |
-| K-008 | `k008_timeout_yields_hard_to_analyze_signal` (integration) |
+| K-008 | `k008_unresolved_control_flow_yields_hard_to_analyze_signal` (integration) |
 | K-009 | `k009_every_selector_paired_or_marked_unknown` (property) |
 | K-010 | `k010_signal_requires_selector_and_carries_offset_when_derivable` (unit) |
 | K-011 | `k011_probabilities_in_unit_interval_and_integer_score` (property) |
@@ -2423,7 +2424,7 @@ the test per acceptance criterion.
 | K-516 | `k516_deterministic_audit_fails_forbidden_import_and_capability_mismatch` (unit) |
 | K-520 | `k520_investigation_leaves_score_and_evidence_unchanged` (property) |
 | K-037 | `d07_decompiler_output_consumed_identically_in_rest_mcp_and_expert_ui` (unit) |
-| K-038 | `d09_eval_runs_only_on_local_bytecode_without_network_or_llm_flags` (unit) |
+| K-038 | `d09_eval_runs_internal_only_over_local_corpus` (unit) |
 | K-521 | `d12_pathological_bytecode_yields_typed_outcome_or_labelled_fallback` (property) |
 
 ### 12.2 Security requirements to threats and countermeasures

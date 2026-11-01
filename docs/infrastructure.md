@@ -6,8 +6,8 @@ Reading guide: The requirements (K-IDs) live in `docs/requirements.md`.
 The architecture rules (A-xx) live in `docs/architecture.md`. Threats with
 countermeasures (H-xx, M-xx) live in `docs/threat-model.md`. This file owns
 the infrastructure rules (I-xx) and the versioned operations configuration:
-the limits for extdecomp and the ports under K-008 and A-17, the rate and
-quota limits under K-504, and the cost caps under K-107.
+the decompilation caps under K-008 and the port limits under A-17, the
+rate and quota limits under K-504, and the cost caps under K-107.
 The risk model's detection thresholds, weights and limits are learned and
 calibrated from data and are versioned only in the calibration artifact
 under K-210 and K-211. Each rule below is phrased positively and states
@@ -38,7 +38,7 @@ required status checks with the same names as the table.
 | 8 | `gitleaks` | Secret scanning of the change and, at release, of the full history under I-02 | Yes |
 | 9 | `sast` | Static security analysis (SAST) of the TypeScript code; findings at the highest severity level turn the job red | Yes |
 | 10 | `license-check` | License check of all dependencies against the allowlist under I-04 | Yes |
-| 11 | `build` | Reproducible build of web UI, REST API, MCP server and extdecomp worker under I-04–I-06, with a build log stating versions and checksums | Yes |
+| 11 | `build` | Reproducible build of web UI, REST API and MCP server under I-04–I-06, with a build log stating versions and checksums | Yes |
 
 Each job runs on an ephemeral runner with the checked-in lockfiles as
 the only dependency source, and each job uploads its report (coverage,
@@ -124,33 +124,28 @@ the allowlist, and an introduced dependency with a license outside the
 allowlist or with a known vulnerability at the highest severity level
 turns the job red.
 
-**I-05 Pinned runtime, pinned tools and pinned extdecomp.**
-The project pins the runtime, the package manager and every tool to an
-exact version: Node.js and the package manager under A-29 in `.nvmrc` and
+**I-05 Pinned runtime and pinned tools.** The project pins the
+runtime, the package manager and every tool to an exact version:
+Node.js and the package manager under A-29 in `.nvmrc` and
 `package.json`, Python for `offline/` under A-29, and lint,
 type checking, the test runner, `dependency-cruiser`, gitleaks and
-the SAST tool in a lockfile or tool manifest in the repo. extdecomp
-is pinned to an exact version and SHA-256 checksum in the manifest
-`tools/extdecomp/manifest.json` in the repo; the manifest states version,
-download source and checksum per platform. The build downloads the
-binary, verifies the checksum against the manifest and writes the
-version and checksum to the build log before every decompilation run,
-and the start of the extdecomp worker verifies the same checksum before
-the first decompilation under I-11. The same pinned versions hold
-locally, in CI and in the demo under I-07.
-(K-008, K-102, K-506, A-27, A-29, M-12)
+the SAST tool in a lockfile or tool manifest in the repo.
+Decompilation needs no external tool: the internal engine ships with
+the source under A-27, so no decompiler version or checksum is pinned
+here. The same pinned versions hold locally, in CI and in the demo
+under I-07.
+(K-102, K-506, A-27, A-29, M-12)
 
 Acceptance: The CI check
 `k506_pinning_and_vulnerability_scan_block_release` requires the
-build log to state the version and checksum for extdecomp and every
-pinned tool; a changed byte in the extdecomp binary produces a checksum
-mismatch and a red build before start.
+build log to state the version for every pinned tool; the internal
+decompiler needs no pin because it ships with the source.
 
 **I-06 Digest-pinned images and frozen fixtures with code hash.**
 The project pins every container image and every base image to a
 digest (`@sha256:…`) in the build and operations definitions, and the
-build log in job 11 under I-01 reports the base image digest, extdecomp's
-version and checksum under I-05 and the lockfiles' versions, so every
+build log in job 11 under I-01 reports the base image digest
+and the lockfiles' versions, so every
 demo build is reproducible from the log. Test fixtures are fetched
 fresh from public on-chain sources by the project itself during the
 hackathon and are frozen in `tests/fixtures/` with address, block
@@ -213,11 +208,6 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_MODEL_VERSION` | Version of the calibration artifact that the core loads under K-211 | No | All |
 | `BRANDKLIPPAREN_MODEL_ARTIFACT_PATH` | Path inside the repo to `model/artifact-<version>.json` under A-20 | No | All |
 | `BRANDKLIPPAREN_CLONE_INDEX_VERSION` | Version of the clone index under K-017 | No | All |
-| `BRANDKLIPPAREN_extdecomp_DEADLINE_MS` | Time limit per decompilation under A-17 and I-11 | No | All |
-| `BRANDKLIPPAREN_extdecomp_MAX_MEMORY_MB` | Memory limit per extdecomp worker under A-17 and I-11 | No | All |
-| `BRANDKLIPPAREN_extdecomp_MAX_OUTPUT_BYTES` | Size limit for decompiled output under A-17 and I-11 | No | All |
-| `BRANDKLIPPAREN_extdecomp_MAX_CONCURRENCY` | Number of parallel extdecomp workers under A-17 | No | Demo |
-| `BRANDKLIPPAREN_extdecomp_BINARY_PATH` | Path to the decompiler executable: the pinned extdecomp binary in the demo per I-05, the fake worker script in tests | No | Local, demo |
 | `BRANDKLIPPAREN_RPC_DEADLINE_MS` | Time limit per RPC call under A-17 | No | Demo |
 | `BRANDKLIPPAREN_RPC_MAX_CONCURRENCY` | Parallel RPC calls under A-17 | No | Demo |
 | `BRANDKLIPPAREN_RPC_RETRY_BUDGET` | Retries with backoff rate per RPC call under A-17 | No | Demo |
@@ -368,7 +358,7 @@ requires zero hits after the procedure.
 request ID.** The project logs in structured form as JSON through `pino`
 under A-29, one record per event. Each call receives a request ID
 at the boundary (`RequestId` under A-10) that follows the analysis through
-the application service, the cache, the extdecomp worker and the
+the application service, the cache, the internal decompiler and the
 assessment call after an explicit request, and that is returned in every API
 response under K-023. Each field in each log line belongs to the field
 allowlist in the table; the schema for log records is versioned in the
@@ -386,7 +376,7 @@ output. (K-104, K-509, A-29, M-16)
 | `stepDurationsMs`, `outcome` | Step times for the fast path and deep dive, and the typed outcome or error branch under A-15 |
 | `rpcCallCount`, `assessmentCallCount`, `cacheHit` | Consumption per analysis under K-107 and cache outcome under K-013 |
 | `assessmentProvider`, `assessmentModelId`, `promptVersion` | Selected provider, model id and prompt version per assessment under K-305 and K-309 |
-| `decompilerVersion`, `explanationSchemaVersion` | Versions for extdecomp and the assessment schema under K-305 |
+| `decompilerVersion`, `explanationSchemaVersion` | Versions for the internal decompiler and the assessment schema under K-305 |
 
 Redaction happens in the logging library configuration with named
 paths (`req.headers.authorization`, `req.headers.*key*`,
@@ -420,20 +410,20 @@ demo's log extract before submission against the same allowlist.
 
 ## 7. Demo operations
 
-**I-11 Public demo on Modal with extdecomp in a sandbox.** The project
-operates the public demo on Modal during the assessment period.
+**I-11 Public demo on Modal.** The project operates the public demo
+on Modal during the assessment period.
 The choice is based on the shape of the workload: the demo is a CPU- and
-RPC-bound analysis service with bursty, isolation-sensitive
+RPC-bound analysis service with bursty in-process
 decompilation and with the Muse contract assessment through the
 selected provider under I-13 and I-18, so the platform's value for the
 project is scaling to zero
-between calls, sandbox execution per worker, the secret store and
+between calls, isolated execution, the secret store and
 HTTPS endpoints in the same platform. The partner credits are compared in
 the table, and Modal is chosen for the demo application:
 
 | Platform (credit) | Fit for the demo | Role in the project |
 |---|---|---|
-| Modal | Web endpoints, containers that scale to zero, sandboxes per worker, volumes and secret store in the same platform | Chosen platform for the public demo application under this rule |
+| Modal | Web endpoints, containers that scale to zero, isolated execution, volumes and secret store in the same platform | Chosen platform for the public demo application under this rule |
 | hosted | Serving of open-weight models with GPU inference as the core offering | Serves Muse Spark Open with model id `meta-models/muse-spark-open-1026` for the hosted assessment adapter under I-18 |
 | Fireworks | Inference API for open models as the core offering | The project uses the Meta Model API and hosted per I-13 and I-18 for the assessment providers |
 
@@ -449,7 +439,7 @@ sandbox and operations in the same platform.
 | Web UI | Static files that Modal serves on the same HTTPS domain as the API | Start page, token page and timeline under K-020–K-022, with the REST API as the only data source under A-04 |
 | REST API and MCP server | Modal web endpoint, scalable container | Driving adapters over the same application service under K-027 |
 | Application service and core | Same container as the API | `analyzeToken`, `resolveProxy`, `listJustDeployed` under A-02, with artifact and clone index loaded at startup |
-| extdecomp worker | Modal sandbox, a dedicated process per decompilation | Pinned extdecomp under I-05 behind `DecompilerPort`; the sandbox holds bytecode as the only input flow, a read-only file system and outbound network disabled under M-01 |
+| Internal decompiler | Same container as the API | Deterministic in-process engine behind `DecompilerPort` under A-27; bytecode as the sole input flow under M-01 |
 | Cache and index | Modal volume | Cache entries per code hash and model version under K-013, clone index and calibration artifact as versioned files |
 | Database for keys and consumption | Modal-managed storage behind the adapter | Salted key hashes, quotas and consumption per key under K-510 and I-14 |
 | Assessment calls | Outbound HTTPS calls from the API container to the selected assessment provider (Meta Model API or hosted) | Solely after an explicit assessment request under I-13 and I-18 |
@@ -464,40 +454,42 @@ artifact version in the same run, so the demo URL under
 `BRANDKLIPPAREN_DEMO_PUBLIC_URL` in I-08 keeps responding with the most
 recent green version during the assessment period.
 
-The operations limits for extdecomp and each external port are set from
-the configuration under I-08 with A-17's fields per port: time
-limit per call, size limit in and out, parallelism and
-retry budget. The table below is operations configuration v1 for
-the demo; each value change happens as a change to this file with a new
-version, and the startup test under Acceptance compares the running
-configuration against the table's version. The risk model's learned
-values live only in the artifact under K-210.
+The decompilation caps and the operations limits for each external
+port are set under A-17: the engine's deterministic caps bound the
+pipeline itself, the port-level input and output byte caps bound the
+deepening, and time limit per call, size limit in and out,
+parallelism and retry budget bound the ports. The table below is
+operations configuration v1 for the demo; each value change happens
+as a change to this file with a new version, and the startup test
+under Acceptance compares the running configuration against the
+table's version. The risk model's learned values live only in the
+artifact under K-210.
 
-| Limit (v1) | Configuration variable under I-08 | Holds for |
+| Limit (v1) | Bound | Holds for |
 |---|---|---|
-| Time limit per decompilation | `BRANDKLIPPAREN_extdecomp_DEADLINE_MS` | Every extdecomp run; exceeding the limit produces the error branch `timeout` under A-15 and the hard-to-analyse code signal under K-008 |
-| Memory limit per worker | `BRANDKLIPPAREN_extdecomp_MAX_MEMORY_MB` | Every extdecomp sandbox; exceeding the limit produces the error branch `resource-limit` under A-15 |
-| Output from decompilation | `BRANDKLIPPAREN_extdecomp_MAX_OUTPUT_BYTES` | stdout from extdecomp; exceeding the limit produces the error branch `output-too-large` under A-15 |
-| Parallel workers | `BRANDKLIPPAREN_extdecomp_MAX_CONCURRENCY` | The demo environment; the analysis queues within its own time budget under K-101 |
+| Input cap for decompilation | Port-level input byte cap in `src/adapters/decompiler` | Every deepening; exceeding the cap produces the error branch `resource-limit` under A-15 |
+| Output cap for decompilation | Port-level output byte cap in `src/adapters/decompiler` | Every deepening; exceeding the cap produces the error branch `output-too-large` under A-15 |
+| Unresolved control flow | Engine report in `src/domain/decompileV2.ts` | Every deepening; labelled control flow produces the error branch `invalid-output` and the hard-to-analyse code signal under K-008 |
 | Time limit per RPC call | `BRANDKLIPPAREN_RPC_DEADLINE_MS` | Every RPC read; exceeding the limit produces the error branch `timeout` in `RpcPort` under A-15 |
 
 Acceptance: The integration test
-`k008_timeout_yields_hard_to_analyze_signal` requires that a
-decompilation over the time limit produces the hard-to-analyse code
-signal in the deep dive with the fast path's response intact;
-the integration test `k501_pathological_input_isolates_to_its_analysis`
-requires that parallel analyses continue during a pathological
-run; the review `k008_limits_sourced_from_infra_config`
-compares the running limits against table v1 in this rule;
-the health check `k402_demo_serves_ui_rest_and_mcp` requires responses
-from the web UI, REST API and MCP at the demo URL.
+`k008_unresolved_control_flow_yields_hard_to_analyze_signal` requires
+that a decompilation with unresolved control flow produces the
+hard-to-analyse code signal in the deep dive with the fast path's
+response intact; the integration test
+`k501_pathological_input_stays_bounded_in_process` requires that
+parallel analyses continue during a pathological run; the config unit
+test that loads `.env.example` compares the running configuration
+against table v1 in this rule; the health check
+`k402_demo_serves_ui_rest_and_mcp` requires responses from the web UI,
+REST API and MCP at the demo URL.
 
 **I-12 HTTPS, health checks and rate limiting in the demo.**
 The project exposes the demo only over HTTPS with the platform's
 current TLS settings and a canonical demo URL
 (`BRANDKLIPPAREN_DEMO_PUBLIC_URL` under I-08) that the README links
 under I-15. The health check is publicly reachable at the path `/health`
-and shows status per dependency (RPC, cache, extdecomp and the selected
+and shows status per dependency (RPC, cache, the internal decompiler and the selected
 assessment provider per K-309, with provider and model id) with model version and
 artifact checksum, with secrets kept outside the response. Responses
 from the demo carry the content security policy under K-507 on every
@@ -508,7 +500,7 @@ The call rate is limited per API key and globally, and a daily quota
 holds per key; the limits are read from the configuration under I-08
 and are summarised in the table. Exceeding a limit produces a
 machine-readable error with the HTTP status for rate limiting exceeded
-and a retry time under A-18. Expensive steps (extdecomp decompilation
+and a retry time under A-18. Expensive steps (in-process decompilation
 and Muse contract assessment calls for either provider per K-309)
 require a valid key with
 remaining quota under K-504; cached responses are delivered within the
@@ -623,7 +615,7 @@ ID, consumption and remaining share, and the same levels are shown on
 the health check under I-12, so the operator sees approaching ceilings
 in the log and health response before the ceiling. On reaching the daily
 ceiling, the service closes the expensive paths (new
-extdecomp decompilations and assessment calls for the selected provider)
+in-process decompilations and assessment calls for the selected provider)
 and keeps responding with
 cache hits and the fast path's cached content, so the demo
 stays reachable during the assessment period.
@@ -634,7 +626,7 @@ zero paid calls under I-07. (K-013, K-107, K-504, K-513, M-08, M-09)
 | Cap (v1) | Configuration variable under I-08 | Scope | Enforced through |
 |---|---|---|---|
 | At most one assessment call per uncached request | Fixed rule in the assessment path per K-305 | Each assessment request, both providers | Caching per code hash, prompt version, provider and model id under K-013 and K-309, with call counting per request in the log under I-10 |
-| Zero external calls on a cache hit | `CacheKey` under A-10 | Each cache hit | Cache lookup before RPC, extdecomp and assessment in the request path |
+| Zero external calls on a cache hit | `CacheKey` under A-10 | Each cache hit | Cache lookup before RPC, decompilation and assessment in the request path |
 | Daily cap for RPC calls in the demo | `BRANDKLIPPAREN_BUDGET_DAILY_CAP_RPC_CALLS` | The whole demo environment | Consumption measurement per day; alarm at the configured alarm levels before the ceiling; expensive paths close at the ceiling |
 | Daily cap for RPC calls per key | `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_RPC_CALLS` | Each API key | Consumption measurement per key and day; the key's expensive steps close at the ceiling |
 | Daily cap for assessment calls (selected provider) | `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS` | The whole demo environment, selected provider | Consumption measurement per day; assessment calls close at the ceiling and the template text under K-301 keeps responding |

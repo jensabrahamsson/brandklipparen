@@ -29,23 +29,19 @@ assignment reads the slot back on its right-hand side. Every line maps
 to the exact `[startPc, endPc)` range it was lifted from; the
 structured function value carries those ranges per statement.
 
-## Differential eval: results format and metrics
+## Internal eval: results format and metrics
 
-The dev/eval-only harness (`scripts/eval-decompiler.ts`, S-082, D-09,
-D-10) compares the own pipeline against extdecomp on the frozen ERC-20
-corpus (`tests/fixtures/evm/corpus/`). It runs only on local bytecode:
-the binary named by `extdecomp_BIN` is invoked as
-`extdecomp decompile <hex-or-file>` with `HOME` set to a fresh temp dir,
-`extdecomp --version` is checked against the pinned expected `0.9.1`
-(a mismatch fails the eval and installs nothing), and no `-r`, RPC
-URL, address, LLM or naming flag may appear in the invocation. Without
-`extdecomp_BIN` the harness evaluates the own pipeline, marks every
-extdecomp column `not-run`, and exits 0, so the runtime suite stays
-green with the variable unset and CI never runs extdecomp.
+The dev/eval-only harness (`scripts/eval-decompiler.ts`, S-082, D-09
+as retired by the Decision update in `docs/adr-evm-decompiler.md`)
+evaluates the internal pipeline on the frozen ERC-20 corpus
+(`tests/fixtures/evm/corpus/`). It reads solely the corpus files in
+the repo with no external binary, process, or home directory on the
+path, and exits nonzero when the pass rate or spot agreement leaves
+its tolerance band.
 
 ### Per-contract results format
 
-One row per corpus contract, for both decompilers:
+One row per corpus contract:
 
 | Field | Meaning |
 |---|---|
@@ -57,11 +53,10 @@ One row per corpus contract, for both decompilers:
 | `ownUnresolved` | Unresolved-jump count (lower is better; a guess counts as an error) |
 | `offsetCoverage` | Share of emitted statements carrying an exact `[startPc, endPc)` range (target 100%) |
 | `passed` | `entriesMatch` and `patternsMatch` and full spot agreement and 100% offset coverage |
-| `extdecomp` | `not-run`, or `ok` with the reported version and mentioned selectors, or `failed` with version and input digest |
 
 The summary totals the contracts, the pass rate, the spot agreement
 (the frozen corpus expects `ownPassRate` 100 and `spotAgreement` 100),
-the extdecomp run count, the K-523 published-selector table coverage and
+the K-523 published-selector table coverage and
 an opcode profile, plus a `consistent` flag proving the evaluated set
 is exactly the frozen corpus in order.
 
@@ -70,16 +65,9 @@ is exactly the frozen corpus in order.
 | # | Metric | Decided by |
 |---|---|---|
 | 1 | Correct CFG / function boundaries | `entriesMatch`: dispatcher selector entries against the corpus ground truth |
-| 2 | Fewer unresolved jumps | `ownUnresolved` versus extdecomp's count; a guessed target counts as an error, never as resolved |
+| 2 | Fewer unresolved jumps | `ownUnresolved`: the engine's unresolved-jump count; a guessed target counts as an error, never as resolved |
 | 3 | Readable pseudo-Solidity for token patterns | `patternsMatch` plus spot checks on the golden readable shapes (transfer guard, allowance check, mint/burn, pause flag, owner gate) |
 | 4 | Evidence mapped to exact bytecode offsets | `offsetCoverage` at 100% by construction; any item without a range fails the contract |
-
-The own pipeline wins a contract when it is at least as good on every
-metric and strictly better on at least one; the epic wins when it wins
-the median corpus contract without losing any metric on more than a
-stated minority of contracts. An unresolved jump the own pipeline
-labels and extdecomp guesses counts in the own pipeline's favour only
-when the guess is wrong against ground truth.
 
 ### Runtime consumption
 
@@ -97,44 +85,28 @@ never an analysis input.
 
 ## Local eval run (28/10)
 
-Reran after the parser fix with `extdecomp_BIN` set: the binary reported
-`extdecomp 0.9.1` (matches the pinned version), every invocation ran as
-`decompile <local-hex-file> --include-sol` (local-output flag only) with
-its working directory set to a fresh temp dir (and `HOME` set to a
-second fresh temp dir), the harness read stdout plus every file under
-each work dir's `output/` directory, both temp dirs were deleted
-afterwards, and no RPC, address, LLM or naming flag appeared. Nothing
-was written into the repo. Exit code 0.
+Historical record: this run compared the pipeline against an external
+comparison tool that is no longer part of the product (see the note in
+`docs/eval-decompiler-results.md`). The table below states the
+internal pipeline's own numbers from that run; nothing was written
+into the repo. Exit code 0.
 
-| Contract | Own functions | Entries | Patterns | Spot | Own unresolved | extdecomp |
-|---|---|---|---|---|---|---|
-| edge-fallback | 0/0 | match | match | 0/0 | 0 | ok, 0 selectors mentioned |
-| edge-invalid | 1/1 | match | match | 2/2 | 1 | ok, 0 selectors mentioned |
-| token-allowance | 4/4 | match | match | 4/4 | 0 | ok, 0 selectors mentioned |
-| token-pausable | 2/2 | match | match | 3/3 | 0 | ok, 0 selectors mentioned |
-| token-simple | 2/2 | match | match | 4/4 | 0 | ok, 0 selectors mentioned |
+| Contract | Own functions | Entries | Patterns | Spot | Own unresolved |
+|---|---|---|---|---|---|
+| edge-fallback | 0/0 | match | match | 0/0 | 0 |
+| edge-invalid | 1/1 | match | match | 2/2 | 1 |
+| token-allowance | 4/4 | match | match | 4/4 | 0 |
+| token-pausable | 2/2 | match | match | 3/3 | 0 |
+| token-simple | 2/2 | match | match | 4/4 | 0 |
 
 Summary: own pass rate 100% (5/5 contracts), spot agreement 13/13,
-offset coverage 100% by construction, 5 extdecomp runs completed. The
-extdecomp `0 selectors` outcome is genuine on these fixtures, not a
-parser miss: with `--include-sol` each run emits a fallback-only
-`decompiled.sol` with a single unresolved entry besides the empty
-`output/local/abi.json`, and the fixed matcher (case-insensitive, with
-and without `0x`, covering `@custom:selector` lines, bare hex and
-`Unresolved_` names, locked by a fake-runner test with a recorded
-sample) still finds none of the expected selectors. The hand-assembled
-fixtures dispatch on a minimal stack pattern with no calldata-load plus
-shift preamble, which the extdecomp tracer logs as `discovered no
-function selectors` with a stack-underflow trace. A control run against
-a realistic Paris (pre-PUSH0) solc runtime confirms the parser counts 4
-functions when extdecomp actually finds them. No larger fixtures added:
-the repo holds no tiny Solidity sources to compile locally, and network
-fetches plus real addresses are out of scope.
+offset coverage 100% by construction. The hand-assembled fixtures
+dispatch on a minimal stack pattern with no calldata-load plus shift
+preamble. No larger fixtures added: the repo holds no tiny Solidity
+sources to compile locally, and network fetches plus real addresses
+are out of scope.
 
-Per-metric comparison on this corpus: M1 functions own N versus
-extdecomp 0 mentioned; M2 unresolved own counts (0, 1, 0, 0, 0, labelled
-never guessed) versus extdecomp not reported, so recorded not decided;
-M3 readability own patterns plus spot versus extdecomp fallback-only with
-no token patterns; M4 offsets own 100% exact ranges versus extdecomp
-selector annotations with no PC ranges. Full output lives in
-`docs/eval-decompiler-results.md`.
+Per-metric state on this corpus: M1 functions own N; M2 unresolved
+own counts (0, 1, 0, 0, 0, labelled never guessed); M3 readability own
+patterns plus spot; M4 offsets own 100% exact ranges. Full output
+lives in `docs/eval-decompiler-results.md`.

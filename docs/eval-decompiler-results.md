@@ -1,5 +1,7 @@
 # Decompiler differential eval: own pipeline versus extdecomp
 
+> Historical record: past runs compared the internal pipeline against an external comparison tool; that tool is no longer part of the product.
+
 Corpus contracts: 5. Own pass rate: 100.0% (expected 100 ± 3).
 Spot agreement: 13/13 (100.0%, expected 100 ± 3).
 extdecomp runs: 5 (binary extdecomp 0.9.1).

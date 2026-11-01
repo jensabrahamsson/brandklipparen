@@ -50,7 +50,7 @@ application service; driven adapters each implement one port.
 | Application service | `application` | Exactly three services: `analyzeToken`, `resolveProxy` and `listJustDeployed`. Orchestrates ports, the key and quota step and the deepening. | K-027 |
 | Domain core | `domain` | Pure functional core: types, proxy resolution, selector and pattern matching, signals, risk function, evidence, can't tell list and template-based explanations. The core performs zero I/O. | K-010–K-012, K-017, K-301 |
 | RPC adapter | `adapters/rpc` behind `RpcPort` | Bytecode, storage, calls and block number against Ethereum mainnet via allowlisted RPC hosts. | K-001, K-016 |
-| extdecomp worker | `adapters/extdecomp` behind `DecompilerPort` | Decompilation in its own isolated process per run, with bytecode as the sole input. | K-008 |
+| Internal decompiler | `adapters/decompiler` behind `DecompilerPort` | Deterministic in-process decompilation per run, with bytecode as the sole input. | K-008 |
 | Selector and clone adapters | `adapters/selectors`, `adapters/clones` behind `SelectorTablePort`, `CloneIndexPort` | Local, synchronous lookups: selector to name suggestion and risk relevance; code hash and skeleton hash matching against known templates. | K-009, K-017 |
 | Cache adapter | `adapters/cache` behind `CachePort` | Reading and writing analysis results per code hash and model version. | K-013 |
 | Model artifact adapter | `adapters/model` behind `ModelArtifactPort` | Loading and checksum verification of the frozen calibration artifact at startup. | K-011, K-210, K-211 |
@@ -63,7 +63,7 @@ application service; driven adapters each implement one port.
 | Composition root | `composition` | The sole module that knows concrete adapter classes. Binds every port to exactly one adapter and hands a ready `AppServices` to the driving adapters. | K-027 |
 | Offline chain | `offline/` (Python) | Dataset, training, calibration and evaluation with locked seeds. Delivers solely the versioned model artifact under `model/` to the runtime. | K-201–K-211 |
 | Configuration and secrets | Platform secret store, environment variables as per I-08 and I-09 | Typed configuration validated at startup; keys solely as environment variables from the secret store. | K-505, K-510 |
-| CI and supply chain | GitHub Actions gate as per I-01 | Locked dependencies, pinned tools and Actions, extdecomp binary with checksum, secret, vulnerability and licence scanning. | K-506 |
+| CI and supply chain | GitHub Actions gate as per I-01 | Locked dependencies, pinned tools and Actions, secret, vulnerability and licence scanning. | K-506 |
 
 The ports are normative as per A-05: `RpcPort`, `DecompilerPort`,
 `SelectorTablePort`, `CloneIndexPort`, `CachePort`, `AssessmentModelPort`,
@@ -88,7 +88,7 @@ flowchart TB
     APP["application: analyzeToken, resolveProxy, listJustDeployed"]
     CORE["domain: pure core"]
     RPCA["adapters/rpc"]
-    HEIM["adapters/extdecomp: isolated worker"]
+    INTDEC["adapters/decompiler: internal engine"]
     SEL["adapters/selectors, adapters/clones"]
     CACHE["adapters/cache"]
     FEED["adapters/feed"]
@@ -112,8 +112,8 @@ flowchart TB
     APP -->|F-04 address, slot, block via RpcPort| RPCA
     RPCA -->|F-13 bytecode, storage, block number| RPCN
     RPCN -->|F-13 RPC response| RPCA
-    APP -->|F-05 bytecode via DecompilerPort| HEIM
-    HEIM -->|F-05 decompiled functions and snippets| APP
+    APP -->|F-05 bytecode via DecompilerPort| INTDEC
+    INTDEC -->|F-05 decompiled functions and snippets| APP
     APP -->|F-11 selector, code hash, skeleton hash| SEL
     APP <-->|F-07 result per code hash and model version| CACHE
     APP -->|F-09 page size via DeploymentFeedPort| FEED
@@ -128,7 +128,6 @@ flowchart TB
     hosted -->|F-12 validated assessment text with provider and model id| MUSEA
     APP -->|F-08 analysis log with allowlisted fields| LOGG
     CI -->|F-16 pinned artifacts, image and demo deployment| REST
-    CI -->|F-16 pinned extdecomp binary| HEIM
 ```
 
 | ID | Flow | Content | Crosses boundary |
@@ -137,7 +136,7 @@ flowchart TB
 | F-02 | Client → MCP server | Tool call, in the MVP `assess_token` with an address parameter against the published input schema. | B1, B8 |
 | F-03 | REST API and MCP server → application service | Validated `Address` as a typed domain value, key identity as hash ID and quota state. | B2 |
 | F-04 | Application service ↔ RPC adapter via `RpcPort` | Address, slot and block number out; bytecode, storage words and call responses in, bound to block number. | B3, B6 |
-| F-05 | Application service ↔ extdecomp worker via `DecompilerPort` | Bytecode out as the sole input; decompiled functions and snippets in under the output limit. | B4, B5 |
+| F-05 | Application service ↔ internal decompiler via `DecompilerPort` | Bytecode out as the sole input; decompiled functions and snippets in under the output cap. | B3, B4, B6 |
 | F-06 | Application service ↔ selected Muse assessment adapter via `AssessmentModelPort` | Closed typed evidence list out; validated assessment text in with provider and model id. The flow is active solely on request as per section 6. | B3, B6 |
 | F-07 | Application service ↔ cache via `CachePort` | Analysis result keyed on code hash and model version; assessment text keyed on code hash, prompt version, provider and model id. | B3, B6 |
 | F-08 | Application service and adapters → logs and health check | Allowlisted fields as per I-10: request-id, address, code hash, versions, step times, outcome and consumption. Health status per dependency on `/health`. | B7, B8 |
@@ -148,7 +147,7 @@ flowchart TB
 | F-13 | RPC adapter → RPC nodes | `eth_getCode`, `eth_getStorageAt`, `eth_call` and block number to allowlisted hosts with the provider key in URL or header. | B5, B6 |
 | F-14 | Configuration, secrets and clock → composition root, application service and adapters | Typed operational configuration at startup, keys as environment variables from the secret store and current time as a `Timestamp` value per call. | B7 |
 | F-15 | Application service → client via web UI, REST API and MCP server | Assessment with probabilities, grade, signals with evidence, can't tell list, template-based explanation and, on request, clearly marked Muse-refined text. The response side of F-01 and F-02. | B8 |
-| F-16 | CI and build chain → running components and demo | Installed dependencies from lockfile, pinned extdecomp binary with verified checksum, digest-pinned image, model artifact and deployment to the demo. | B9 |
+| F-16 | CI and build chain → running components and demo | Installed dependencies from lockfile, digest-pinned image, model artifact and deployment to the demo. | B9 |
 | F-17 | Operator or CI → plugin audit, and on opt-in audit → hosted endpoint (design per ADR section 12) | Plugin source, manifest, and `PLUGIN.md` from one plugin directory in; deterministic check results and, on opt-in, structured advisory findings out. | B9, B5, B6 |
 | F-18 | Plugin registry → REST, MCP, and web UI callers (design per ADR P-16) | Validated `PLUGIN.md` content with its section list, read-only. | B8 |
 | F-19 | Web UI → REST layout route → layout service → hosted endpoint (design per ADR section 13; retired by the critical review, ADR section 0.1 — never implemented) | Closed layout facts and quoted finding titles out after an explicit opt-in; validated declarative layout spec in with provider and model id. The deterministic adaptive layout (schema-driven rendering, risk-adaptive order, Simple / Expert) is client-side over F-15 data and adds no flow. Kept as the record of the retired leg; the live AI presentation flow is F-20 only. | B1, B8, B5, B6 |
@@ -192,8 +191,8 @@ flowchart LR
         MODEL["adapters/model"]
         CLOCK["adapters/clock, adapters/config"]
     end
-    subgraph Z4["Z4: isolated decompilation"]
-        HEIM["extdecomp worker: own process, sandbox"]
+    subgraph Z4["Z4: in-process decompilation"]
+        INTDEC["Internal engine: same process, engine caps"]
     end
     subgraph Z5["Z5: external services"]
         RPCN["Allowlisted RPC nodes"]
@@ -213,20 +212,19 @@ flowchart LR
     Z2 --> Z5
     Z6 -.->|F-14, F-16| Z1
     Z6 -.->|F-10, F-14, F-16| Z2
-    Z6 -.->|F-16| Z4
 ```
 
 | Boundary | Flows | What crosses the boundary | Conditions at passage |
 |---|---|---|---|
 | B1: Z0 → Z1 | F-01, F-02 | Address, filter, page size, API key in header, MCP tool call | Schema validation and key check before the first analysis step (M-08, M-10, M-15). |
 | B2: Z1 → Z2 | F-03 | Validated address and key identity | Solely typed domain values through smart constructors as per A-11; raw text stays in the driving adapter (M-10, M-15). |
-| B3: Z2 → Z3/Z4 | F-04, F-05, F-06, F-07, F-09, F-11 | Address and block to the RPC adapter, bytecode to extdecomp, evidence list to the selected Muse assessment adapter, keys to cache and feed and lookup values to the selector and clone adapters | Calls go solely through the ports as per A-05 with `CallContext`, deadline and limits as per A-17 (M-01, M-07, M-20). |
-| B4: Z2 → Z4 | F-05 out | Bytecode as the sole input to the extdecomp worker | Bytecode is treated as hostile input; the worker runs in its own process with a time limit, a memory limit, outbound networking switched off and a read-only filesystem as per I-11 (M-01). |
+| B3: Z2 → Z3/Z4 | F-04, F-05, F-06, F-07, F-09, F-11 | Address and block to the RPC adapter, bytecode to the internal decompiler, evidence list to the selected Muse assessment adapter, keys to cache and feed and lookup values to the selector and clone adapters | Calls go solely through the ports as per A-05 with `CallContext`, deadline and limits as per A-17 (M-01, M-07, M-20). |
+| B4: Z2 → Z4 | F-05 out | Bytecode as the sole input to the internal engine | Bytecode is treated as hostile input; the engine runs in-process under its deterministic caps with port-level input and output byte caps as per A-27 (M-01). |
 | B5: Z3/Z2 → Z5 | F-12, F-13 | RPC calls to allowlisted nodes; assessment calls to the selected provider (Meta Model API or hosted) after an explicit request | Targets are fetched solely from validated configuration as per I-08, I-13 and I-18; server-side provider keys; a valid key with remaining quota before expensive steps (M-07, M-08, M-09, M-20). |
 | B6: Z5/Z4/Z3 → Z2 | F-04 in, F-05 in, F-06 in, F-07 in, F-09 in, F-13 in | RPC responses, decompiled code, provider assessment output, cache entries, feed entries and lookup responses | Boundary validation at the boundary as per A-16, size limits as per A-17 and typed error branches as per A-15; provider and model identity is verified per M-20; contract strings pass `UntrustedText.quote` as per A-10 (M-02, M-05, M-14, M-20). |
 | B7: Z6 → Z1/Z2 | F-08 out, F-14 in | Configuration and keys at startup; logs and health responses out | Keys are read solely from the environment at startup and are logged solely in redacted form; log fields follow the allowlist as per I-10 (M-11, M-16). |
 | B8: Z1/Z2 → Z0 | F-15, the response side of F-01 and F-02 and F-08 | Assessment, evidence, explanations, MCP output and health status | Contract data and explanation text are rendered as text with a strict CSP in the web UI; MCP output is marked as untrusted data with a size limit (M-13, M-15). |
-| B9: Z6 → Z2/Z4 | F-10, F-16 | Model artifact from the offline chain; dependencies, extdecomp binary, image and demo deployment from CI | The artifact checksum is verified on loading; dependencies are installed from lockfile, binary and image are pinned on checksum and digest respectively (M-12, M-17). |
+| B9: Z6 → Z2 | F-10, F-16 | Model artifact from the offline chain; dependencies, image and demo deployment from CI | The artifact checksum is verified on loading; dependencies are installed from lockfile, the image is pinned on digest (M-12, M-17). |
 
 ## 4. STRIDE per component and data flow
 
@@ -292,16 +290,16 @@ section 5.
 | D | A node responds slowly, with oversized responses or with errors in series. | Time limit, response size limit and retry budget per call as per A-17 and I-11; cached responses continue during a provider outage (H-09, M-14). |
 | E | A user address or parameter steers the network target towards an internal service. | User input becomes address values in the calls; targets are fetched solely from the configuration (H-03, M-07). |
 
-### 4.6 extdecomp worker (F-05, F-16 in)
+### 4.6 Internal decompiler (F-05)
 
 | Cat. | Threat | Handling |
 |---|---|---|
-| S | A replaced extdecomp binary runs in place of the pinned one. | The binary is pinned on exact version and SHA-256 checksum in the manifest as per I-05; the checksum is verified at build and before the first decompilation (H-06, M-12). |
+| S | A foreign engine replaces the reviewed pipeline. | The engine ships with the source as reviewed code as per A-27; no binary is downloaded, installed, or pinned (H-06, M-12). |
 | T | Distorted decompiled output reaches the core as evidence. | The output is schema-validated and size-bounded at the port boundary before the core (H-01, M-02). |
-| R | A crash or timeout passes through the deepening unrecorded. | The worker logs code hash, decompiler version and typed outcome per run as per I-10 (H-01, M-01). |
-| I | Bytecode or intermediate results leak to network or filesystem. | The worker runs with outbound networking switched off and a read-only filesystem; solely stdout under the output limit is read (H-01, M-01). |
-| D | Hostile bytecode consumes CPU, memory, time or output in decompilation. | Own process per decompilation with a versioned time limit, memory limit and output limit as per I-11; exceeding them gives an error branch and the hard-to-analyze code signal, and parallel analyses continue (H-01, M-01, M-02). |
-| E | Decompilation writes to the host or reaches the host's services. | Read-only filesystem, switched-off networking and bytecode as the sole input flow bound every run to its sandbox as per I-11 (H-01, M-01). |
+| R | A cap breach or labelled control flow passes through the deepening unrecorded. | The adapter records code hash, decompiler version and the typed outcome per run as per I-10 (H-01, M-01). |
+| I | Bytecode or intermediate results leak to network or filesystem. | The engine performs no network access and writes solely the bounded output through the port (H-01, M-01). |
+| D | Hostile bytecode consumes CPU, memory, time or output in decompilation. | In-process execution under the engine's deterministic caps with port-level input and output byte caps as per A-27; exceeding them gives an error branch and the hard-to-analyze code finding or signal, and parallel analyses continue (H-01, M-01, M-02). |
+| E | Decompilation writes to the host or reaches the host's services. | No host writes and no network exist on this path; bytecode as the sole input flow bounds every run as per A-27 (H-01, M-01). |
 
 ### 4.7 Selector and clone adapters (F-11)
 
@@ -378,7 +376,7 @@ surface in every mode per section 6.
 
 | Cat. | Threat | Handling |
 |---|---|---|
-| S | A forged Action, base image or extdecomp binary impersonates the pinned one. | Actions are pinned on full commit SHA, images on digest and extdecomp on version with SHA-256 checksum as per I-03, I-05 and I-06 (H-06, M-12). |
+| S | A forged Action or base image impersonates the pinned one. | Actions are pinned on full commit SHA and images on digest as per I-03 and I-06 (H-06, M-12). |
 | T | A crafted dependency, a lockfile or a build step changes running code. | Installation happens in locked mode from the lockfile; vulnerability scanning and licence checks against the allowlist block release as per I-04 (H-06, M-12). |
 | R | A change is merged with zero traceable review. | A green gate as per I-01 with named jobs in a fixed order is required for merge; every job uploads its report as an artifact (H-06, M-12). |
 | I | A CI secret leaks in build log or test output. | `GITHUB_TOKEN` has read permission by default and write permission per job solely for the resource the job writes; secrets are exposed solely to the jobs that name them, and analysis in tests runs against fakes (H-05, H-06, M-11, M-12). |
@@ -455,10 +453,10 @@ B3 and adds no flow. The harness runs on the operator machine only.
 
 | Cat. | Threat | Handling |
 |---|---|---|
-| S | A foreign binary or corpus file impersonates the pinned decompiler or a frozen fixture. | The harness invokes only the binary named by `extdecomp_BIN`, checks `extdecomp --version` against the pinned expected string `0.9.1`, and fails on mismatch — never installs or upgrades (H-41, M-47). Corpus fixtures are frozen files in the repo. |
+| S | A foreign corpus file impersonates a frozen fixture. | The internal-only harness reads solely the frozen corpus files in the repo with no external binary on the path (H-41, M-47). |
 | T | Guessed jump targets, meaning-changing lifting, or shifted offsets produce plausible but wrong pseudo-Solidity. | Resolve-or-record accounting (H-37, M-43), interpreter-checked lifting (H-38, M-44), and exact-range construction (H-39, M-45). |
 | R | A decompilation outcome is disputed afterwards. | Every emitted item carries its exact `[startPc, endPc)` range and the output records the unresolved-jump count, so the result is recreated from the bytecode alone (H-39, M-45). |
-| I | The harness leaks a target, bytecode, or operator configuration to a network service or provider. | Local bytecode only, `HOME` set to a temp directory, no RPC, target-address, or LLM/naming flags; the runtime pipeline performs no network access (H-41, M-47). |
+| I | The harness leaks a target, bytecode, or operator configuration to a network service or provider. | Local corpus files only with no external process; the runtime pipeline performs no network access (H-41, M-47). |
 | D | Pathological bytecode binds or crashes the in-process pipeline. | Bounded pure stages under A-17 limits with typed outcomes and labelled fallbacks (H-40, M-46). |
 | E | A suggested AI name feeds back into analysis, or the plugin output steers the score. | Display-only overlay with no field the analysis reads; weight 0 until the artifact names the plugin (H-42, M-48; H-35 discipline). |
 
@@ -490,39 +488,36 @@ other names follow the same pattern and are included in the suite as per A-22.
 
 **H-01 Decompilation DoS and resource exhaustion via hostile
 bytecode (F-05, B4, B6).**
-An attacker deploys a contract whose bytecode makes extdecomp or
-the fast path's extraction consume a disproportionate amount of
-CPU, memory, time or output: huge contracts up to
-the operational limit for `Bytecode` as per A-10 and A-17, pathological
-jump tables and control flows, deeply nested or obfuscated
-structures as per `kunskap/bytecode-forskning.md` and output that
-grows far beyond the input size. A successful exhaustion binds
-the deepening and, with shared resources, parallel analyses during
-the assessment period.
+An attacker deploys a contract whose bytecode makes the internal
+engine or the fast path's extraction consume a disproportionate
+amount of CPU, memory, time or output: huge contracts up to
+the operational limit for `Bytecode` as per A-10 and A-17,
+pathological jump tables and control flows, deeply nested or
+obfuscated structures as per `kunskap/bytecode-forskning.md` and
+output that grows far beyond the input size. A successful exhaustion
+binds the deepening and, with shared resources, parallel analyses
+during the assessment period.
 
-- M-01 Isolated extdecomp worker with hard resource limits:
-  decompilation runs in its own process per run in a sandbox
-  as per I-11 and A-27, with bytecode as the sole input flow,
-  a versioned time limit per decompilation
-  (`BRANDKLIPPAREN_extdecomp_DEADLINE_MS`), a versioned memory limit
-  per worker (`BRANDKLIPPAREN_extdecomp_MAX_MEMORY_MB`),
-  outbound networking switched off, a read-only filesystem and solely
-  stdout under the output limit read back. Concurrency
-  is bounded by `BRANDKLIPPAREN_extdecomp_MAX_CONCURRENCY`, so a
-  pathological run occupies solely its own worker and its own
-  time budget. Requirement: K-501. Test: the integration test
-  `k501_pathological_input_isolates_to_its_analysis` requires that
+- M-01 Bounded in-process decompiler with hard caps:
+  decompilation runs in-process per run under the engine's own
+  deterministic caps as per A-27, with bytecode as the sole input flow
+  and port-level input and output byte caps in
+  `src/adapters/decompiler`, so a pathological run stays within its
+  own caps and resolves to a typed outcome. Requirement: K-501. Test:
+  the integration test
+  `k501_pathological_input_stays_bounded_in_process` requires that
   parallel analyses continue during a pathological run, and
-  the integration test `k008_timeout_yields_hard_to_analyze_signal`
-  requires that a run over the time limit gives the
+  the integration test
+  `k008_unresolved_control_flow_yields_hard_to_analyze_signal`
+  requires that labelled control flow gives the
   hard-to-analyze code signal in the deepening with the fast path's response
   intact.
 - M-02 Size limits and typed outcomes for pathological structures
   in every analysis step: bytecode, RPC responses, decompiled output and
-  cache entries are bounded by the fields `maxBytesIn`, `maxBytesOut` and
-  `maxConcurrency` as per A-17; huge contracts, pathological
-  jump tables and oversized decompiled output give the port's typed
-  error branches `timeout`, `resource-limit`, `process-error`,
+  cache entries are bounded by engine caps and the fields
+  `maxBytesIn`, `maxBytesOut` and `maxConcurrency` as per A-17; huge
+  contracts, pathological jump tables and oversized decompiled output
+  give the port's typed error branches `resource-limit`,
   `invalid-output` or `output-too-large` as per A-15 and
   are mapped to the hard-to-analyze code signal as per K-008. Every
   distorted bytecode gives, per analysis step, a signal or a typed
@@ -533,7 +528,8 @@ the assessment period.
   or a typed error per run; the property test in A-22 with the same
   invariant tests arbitrary distorted bytecode, and
   the contract suite `runDecompilerPortContract` tests successful
-  decompilation and pathological timeout against fake and real adapter.
+  decompilation and the cap and structural branches against the fake
+  and the internal adapter.
 
 ### 5.2 Determinism as a protected property
 
@@ -765,7 +761,7 @@ a redirect there.
 F-06, F-12, F-13, B1, B5).**
 A flood of calls, a rotation of addresses that hit the cache
 rarely or repeated assessment requests consume RPC quota,
-extdecomp capacity and the selected provider's budget for either
+decompilation capacity and the selected provider's budget for either
 provider, so the demo responds slowly or reaches its
 cost cap during the assessment period.
 
@@ -775,7 +771,7 @@ cost cap during the assessment period.
   with the values versioned in I-12. Exceeding them gives a
   machine-readable error with HTTP status for rate exceeded and
   retry time as per A-18. Expensive steps, namely
-  extdecomp decompilation and Muse contract assessment calls for either
+  in-process decompilation and Muse contract assessment calls for either
   provider,
   require a valid API key with remaining quota; the quota and
   rate step is shared by REST and MCP. Requirement: K-504. Test:
@@ -858,10 +854,9 @@ paths under the stolen key's quota and consumption profile.
 
 ### 5.7 Supply chain
 
-**H-06 Manipulated dependency, binary or build step (F-16, B9).**
-A crafted dependency, a replaced extdecomp binary, a forged
-Action or a base image with foreign content brings code into
-the runtime, into decompilation or into the demo.
+**H-06 Manipulated dependency or build step (F-16, B9).**
+A crafted dependency, a forged Action or a base image with foreign
+content brings code into the runtime or into the demo.
 
 - M-12 Locked, pinned and scanned supply chain: dependencies
   are installed reproducibly in locked mode from the lockfile as per
@@ -871,19 +866,17 @@ the runtime, into decompilation or into the demo.
   severity level; GitHub Actions are pinned on full commit SHA with
   an explicit minimum `permissions` block per job as per I-03;
   base images and container images are pinned on digest as per
-  I-06; extdecomp is pinned on exact version and SHA-256 checksum
-  in `tools/extdecomp/manifest.json` as per I-05, with the checksum
-  verified in the build log and before the first decompilation;
-  the SAST job in the gate as per I-01 turns red at a finding at the highest
-  severity level. Requirement: K-506. Test: the CI check
-  `k506_clean_clone_installs_from_lockfile` installs from
-  the lockfile in a clean environment and requires bit-equal versions;
-  the CI check `k506_license_allowlist_blocks_release` requires
-  a green licence against the allowlist; the CI check
+  I-06; the internal decompiler ships with the source as per A-27 and
+  needs no binary pin; the SAST job in the gate as per I-01 turns red
+  at a finding at the highest severity level. Requirement: K-506.
+  Test: the CI check `k506_clean_clone_installs_from_lockfile`
+  installs from the lockfile in a clean environment and requires
+  bit-equal versions; the CI check
+  `k506_license_allowlist_blocks_release` requires a green licence
+  against the allowlist; the CI check
   `k506_pinning_and_vulnerability_scan_block_release` requires
-  pinned references, a current lockfile and a stated version with
-  checksum for extdecomp in the build log, and turns red at a
-  changed byte in the binary; the CI check
+  pinned references, a current lockfile and a stated version for
+  every pinned tool in the build log; the CI check
   `i03_actions_pinned_and_least_privilege` requires a full
   commit SHA and an explicit permission block per job.
 
@@ -1975,8 +1968,8 @@ checkable against the bytecode (K-010).
 (pipeline, B3 in the plugin host).**
 Mutated or adversarial bytecode (huge jump tables, deep stack
 shapes, truncated PUSH at the boundary) binds or crashes the
-lifting stages where extdecomp's process sandbox (M-01) does not
-apply, because the own pipeline runs in-process as a detector.
+lifting stages, because the own pipeline runs in-process as a
+detector under the engine caps (M-01).
 
 - M-46 Bounded pure pipeline with typed outcomes under the
   detector limits: the pipeline is pure, deterministic, and total
@@ -1997,32 +1990,19 @@ apply, because the own pipeline runs in-process as a detector.
 
 **H-41 Eval harness escapes its local-only bounds (operator
 machine, outside the runtime boundaries).**
-The comparison harness invokes an external decompiler binary; a
+The internal-only harness evaluates the in-process pipeline; a
 harness that accepted a target address, an RPC flag, an LLM or
-naming flag, or the operator's home configuration would turn a
-local eval into a network call, a third-party disclosure of the
-target, or an unreviewed config dependency — and a harness that
-installed or upgraded the binary would break the pinned-version
-discipline in M-12.
+naming flag would turn a local eval into a network call or a
+third-party disclosure of the target.
 
-- M-47 Local-bytecode-only harness with a pinned expected version
-  and an isolated home: the harness invokes only the binary named
-  by the `extdecomp_BIN` environment variable, only on local hex or
-  file input (`extdecomp decompile <hex-or-file>`), with `HOME` set
-  to a temp directory for the run so no operator configuration is
-  picked up, and it fails on any RPC, target-address, or LLM and
-  naming flag in the invocation (ADR D-09). The binary's
-  `extdecomp --version` output is checked against the pinned
-  expected version string `0.9.1`; a mismatch fails the eval and
-  never installs or upgrades anything (ADR D-10). The harness is
-  dev/eval only, never a runtime dependency: the runtime suite
-  passes with `extdecomp_BIN` unset and no runtime test reaches the
-  harness. No operator-local path and no install or upgrade
-  instruction is recorded in any tracked file; tracked files name
-  only the `extdecomp_BIN` variable. Requirement: K-521
-  (proposed), K-506. Test: the unit tests
-  `d09_eval_runs_only_on_local_bytecode_without_network_or_llm_flags`
-  and `d10_version_check_expects_extdecomp_0_9_1` in story S-082.
+- M-47 Local-corpus-only internal harness: the harness reads solely
+  the frozen corpus files in the repo and evaluates the internal
+  pipeline over them, with no external binary, process, or home
+  directory on the path (ADR D-09 as retired by the Decision update).
+  The harness is dev/eval only, never a runtime dependency: no
+  runtime test reaches the harness. Requirement: K-521
+  (proposed), K-506. Test: the unit test
+  `d09_eval_runs_internal_only_over_local_corpus` in story S-082.
 
 **H-42 Suggested names from the optional AI naming plugin are
 read as decompiled truth (plugin output, B8; Stretch, S-083).**
@@ -2148,7 +2128,7 @@ The statement holds explicitly:
   calls to LLM or model APIs ahead of an explicit assessment request.
   The fast path and the deepening consist
   of deterministic steps and RPC readings as per K-102, with
-  extdecomp snippets as the deepening's sole addition.
+  internal decompiler snippets as the deepening's sole addition.
 - The core receives contract strings solely as typed values through
   `UntrustedText.quote` for quoting in template text and UI. The strings
   pass solely deterministic templates as per K-301, so
@@ -2190,7 +2170,7 @@ M-03–M-06 and M-20 against H-02 and H-14 for both providers:
 | Token name and symbol | Strings from the contract's metadata and storage reading | Quoted untrusted data with a length limit through `UntrustedText.quote` (M-04); shown at most as a quotation (K-308). |
 | Revert strings and error messages | Strings extracted from bytecode and decompiled code | The same quoting and length limit (M-04); the response structure is governed by the evidence list (M-03). |
 | Function names and selector suggestions | Name suggestions from the local selector table linked to selectors in the bytecode | Typed evidence entries with selector as key; the name suggestion travels as a quoted field in the entry (M-03, M-04). |
-| Decompiled code | Snippets from extdecomp linked to signals after the deepening | The snippet travels with the evidence entry as quoted data with a size limit; raw bytecode stays in the analysis path as per K-302 (M-03, M-04). |
+| Decompiled code | Snippets from the internal decompiler linked to signals after the deepening | The snippet travels with the evidence entry as quoted data with a size limit; raw bytecode stays in the analysis path as per K-302 (M-03, M-04). |
 | Current values and capabilities | Measured values as per K-016 and permissions from proxy resolution | Typed fields in the evidence entry with value, slot, block and point in time and authorised changer respectively as per K-303 (M-03). |
 
 Every path meets the same protections in series for both providers: the closed typed
@@ -2337,14 +2317,14 @@ as per K-210.
 | MCP: the `assess_token` tool | API key as per the MCP transport with the same quota as REST | Address parameter against the published strict input schema | The same rate, quota and cost cap as REST; output is marked as untrusted data with a size limit (M-15). |
 | MCP: tool list and tool discovery | API key as per the MCP transport | Zero address input | Closed versioned list; unknown tools give a machine-readable error with the tool name (M-15). |
 | Muse contract assessment: button or tab, REST endpoint and MCP tool | API key with remaining quota; solely on request with the selected provider per K-309 | Code hash and evidence list for an already analysed contract | At most one assessment call per uncached request; cache per code hash, prompt version, provider and model id; per-provider daily caps and cost caps; timeout and input and output size limits (M-08, M-09, M-20). |
-| extdecomp worker via `DecompilerPort` | Internal port; calls solely from the application service | Bytecode as the sole input | Own process per run; time limit, memory limit and output limit; outbound networking switched off; read-only filesystem; concurrency cap (M-01, M-02). |
+| Internal decompiler via `DecompilerPort` | Internal port; calls solely from the application service | Bytecode as the sole input | In-process engine under its deterministic caps; port-level input and output byte caps; unresolved control flow as `invalid-output` (M-01, M-02). |
 | RPC responses via `RpcPort` | Provider key in URL or header at an allowlisted host | Bytecode, storage words, call responses and block number | Schema validation at the boundary; time limit, response size limit and retry budget per call; uncertainty flag at deviation (M-14). |
 | Cache via `CachePort` | Internal port; write path solely via the application service | Analysis results per code hash and model version | Verification at reading against code hash and model version; a new model version keys new entries (M-14). |
 | Model artifact via `ModelArtifactPort` | File from the repo under `model/`, checked in with checksum | Artifact with model version, checksum and training data version | Checksum verification on loading before the first analysis; typed startup error at deviation (M-17). |
 | DeploymentFeed via `DeploymentFeedPort` | Internal port from the project's own source | Recently deployed tokens with address, block and deploy time | Schema validation per entry; page size limit and time limit per call (M-14). |
 | Configuration and secrets at startup | Platform secret store; operator access outside the repo | Prefixed environment variables as per I-08, keys as environment variables | Typed validation at startup; a startup error names the variable with the values kept outside the error text; `.env.example` carries solely names (M-11). |
 | Logs and health responses out | Operator access to the platform log extract; open health status | Allowlisted log fields out; status per dependency out | Field allowlist and redaction as per I-10 at every log level (M-16). |
-| CI: push, pull request and release | GitHub permission with least privilege per job as per I-03 | Code, lockfiles, fixtures and artifacts | Green gate with eleven named blocking jobs as per I-01; pinned Actions on SHA, images on digest and extdecomp on checksum; gitleaks, vulnerability and licence checks (M-12). |
+| CI: push, pull request and release | GitHub permission with least privilege per job as per I-03 | Code, lockfiles, fixtures and artifacts | Green gate with eleven named blocking jobs as per I-01; pinned Actions on SHA, images on digest; gitleaks, vulnerability and licence checks (M-12). |
 | Offline chain: dataset and training | Operator access outside the repo; run during the hackathon | Fresh public on-chain data with address, bytecode, deploy block and label source | Provenance per data point, label policy, time- and cluster-divided splits, locked seeds and a reproducible command; export solely as artifact under `model/` (M-18, M-19). |
 | Plugin registry and `pluginResults` (design per `docs/adr-plugin-architecture.md`) | Internal; registration solely at build time from reviewed source in the repo | Frozen manifests and declared deterministic facts in; validated findings out under `pluginResults` | Static compile-time registration with startup manifest, API-version, and capability validation; output schema, evidence, count, and size bounds; weight 0 until the artifact names the plugin; text-only generic rendering (M-21, M-22). |
 | Plugin audit: CLI and CI job (design per ADR P-13, P-14) | Operator or CI identity; AI phase solely on opt-in with a configured hosted key | Plugin source, manifest, and `PLUGIN.md` from one plugin directory in; deterministic check results and, on opt-in, structured advisory findings out | Deterministic checks run first and block on failure; the AI phase sends solely the listed plugin files, quoted as untrusted data under size caps, tool-free; findings are schema-validated and advisory only; without a key the AI phase reports `not configured` with zero provider calls (M-23–M-25). |
@@ -2355,7 +2335,7 @@ as per K-210.
 | AI personalize: `POST /v1/personalize` and hosted personalize call (design per ADR P-27) | API key in header; solely after the explicit `AI personalize (experimental)` opt-in in the web UI | Current priorities text (quoted), code hash, closed layout facts, and quoted frontmatter/section excerpts in; validated ranking-plus-layout spec with provider and model id out | Off by default; `not-configured` with zero provider calls without a key; whitelist spec validation with total fallback to the deterministic baseline; cache per code hash, prompt version, provider, and model id (never per priorities text); at most one call per uncached view with per-provider caps (M-33–M-35). |
 | Investigate with Muse: `POST /v1/tokens/:address/investigate`, `GET /v1/investigations/:id/events`, MCP `investigate_token` (design per `docs/adr-investigate-with-muse.md`) | API key with remaining quota; solely after an explicit investigation request | Frozen analysis summary, registry tool catalogue, trace so far, and quoted on-chain/`PLUGIN.md` strings in; schema-validated decision (one allowlisted tool call or conclude) out per step; trace steps streamed to the web UI | Off by default; `investigation-not-configured` with zero provider calls without a key; runner-enforced max steps, max tokens, wall-clock and per-tool deadlines; allowlist and schema validation before any tool runs; read-only tools over frozen facts only; server-side call with minimised input and id-only logging (M-37–M-42). |
 | Own decompiler pipeline as a detector plugin (design per `docs/adr-evm-decompiler.md`) | Internal; registration solely at build time from reviewed source in the repo | Frozen bytecode in; structured pseudo-Solidity with exact `[startPc, endPc)` ranges, unresolved-jump count, and token-pattern annotations out under `pluginResults` | Pure, deterministic, bounded stages; resolve-or-record jump accounting; interpreter-checked lifting; weight 0 until the artifact names the plugin; text-only generic rendering (M-43–M-46, M-22). |
-| extdecomp comparison harness (dev/eval only, operator machine) | Operator identity outside the repo; never a runtime entry point | Local hex or file bytecode in via the binary named by `extdecomp_BIN`; decompiled output out for the metrics table | `HOME` set to a temp directory for the run; local input only — no RPC, target-address, or LLM/naming flags; `extdecomp --version` checked against the pinned expected string `0.9.1`, mismatch fails the eval and never installs or upgrades; runtime suite passes with `extdecomp_BIN` unset (M-47). |
+| Internal decompiler eval (dev/eval only, operator machine) | Operator identity outside the repo; never a runtime entry point | Frozen corpus files in; metrics table out | Local corpus files only with no external binary or process on the path (M-47). |
 
 ## 8. Top 5 threats for the public demo
 
@@ -2368,8 +2348,8 @@ by the width of the exposed surface.
 
 | Rank | Threat | Likelihood | Impact | Product | Rationale |
 |---|---|---|---|---|---|
-| 1 | H-01 Decompilation DoS and resource exhaustion | High | High | Highest | Every submitted address reaches extdecomp in the deepening from the first call, and pathological bytecode is free to deploy. A successful exhaustion ahead of the sandbox binds workers, delays the deepening for parallel assessors and hits the demo during its most visible window. The sandbox in M-01 with time, memory and output limits is operation's most important boundary. |
-| 2 | H-04 Draining via expensive analysis paths | High | High | Highest | The demo is public and every uncached analysis costs RPC calls and a extdecomp run. A single actor with address rotation reaches the cost cap or the global rate and degrades response times for the jury. Rate, quota, cap and cache in M-08 and M-09 keep the demo reachable with cached responses. |
+| 1 | H-01 Decompilation DoS and resource exhaustion | High | High | Highest | Every submitted address reaches the internal decompiler in the deepening from the first call, and pathological bytecode is free to deploy. A successful exhaustion binds the run within its caps, delays the deepening for parallel assessors and hits the demo during its most visible window. The engine caps in M-01 with input and output byte caps are operation's most important boundary. |
+| 2 | H-04 Draining via expensive analysis paths | High | High | Highest | The demo is public and every uncached analysis costs RPC calls and an in-process decompilation. A single actor with address rotation reaches the cost cap or the global rate and degrades response times for the jury. Rate, quota, cap and cache in M-08 and M-09 keep the demo reachable with cached responses. |
 | 3 | H-07 Script via contract data in the UI | Medium | High | High | Token names, symbols and strings are attacker-controlled on every token page and in every list row, so a single shown token reaches every visitor's browser. A successful script runs in the product's own view during the assessment and harms trust in every shown figure. Text rendering and strict CSP in M-13 keep the data inert in every view. |
 | 4 | H-09 Manipulated RPC responses and cache poisoning | Medium | High | High | Incorrect bytecode or storage from a node, or a poisoned entry under a valid code hash, gives an incorrect assessment that looks deterministic and is reused for every following caller with the same code. Schema validation, block binding and verified cache entries in M-14 make the deviation visible as an uncertainty flag. |
 | 5 | H-05 Stolen, leaked or guessed API key | Medium | Medium | Medium | A leaked key amplifies H-04 under the key's own quota and is hard to detect afterwards in a public demo with many callers. Hashed storage, header transport, constant-time comparison and revocation from the next call in M-10 and M-11 bound the theft surface and the damage per key. |
@@ -2409,10 +2389,10 @@ section 1:
   either provider. Signal links as per K-304, provider and model
   marking per K-305 and the template text as a comparison keep every claim
   checkable against the evidence.
-- A vulnerability in a pinned dependency or in the extdecomp binary
-  is detected through the vulnerability scanning in M-12 and through alarms in
-  operation. Between publication and scanning the protection rests on
-  the sandbox in M-01 and the limits in M-02.
+- A vulnerability in a pinned dependency is detected through the
+  vulnerability scanning in M-12 and through alarms in operation.
+  Between publication and scanning the protection rests on the engine
+  caps in M-01 and the limits in M-02.
 - Keys in the hands of an authorised operator and the platform's
   own access to the secret store are handled by the platform
   permission model as per I-09.
@@ -2486,7 +2466,7 @@ K-5xx to its threats and countermeasures, is in section 12.2 in
 
 | Countermeasure | Threat | K-5xx | Governing test method |
 |---|---|---|---|
-| M-01 Isolated extdecomp worker | H-01 | K-501 | `k501_pathological_input_isolates_to_its_analysis` (integration) |
+| M-01 Bounded in-process decompiler | H-01 | K-501 | `k501_pathological_input_stays_bounded_in_process` (integration) |
 | M-02 Size limits and typed outcomes | H-01 | K-501 | `k501_mutated_bytecode_yields_signal_or_typed_error` (fuzz) |
 | M-03 Closed typed evidence list | H-02 | K-502 | `k302_prompt_contains_closed_typed_evidence_list` (unit) |
 | M-04 Quoted untrusted data | H-02 | K-502 | `k502_injection_strings_yield_at_most_one_quote` (unit) |

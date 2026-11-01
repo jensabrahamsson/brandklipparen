@@ -32,7 +32,7 @@ flowchart TB
     CORE["domain: types, proxy, signals, risk, evidence, cantTell, template explanations (K-010–K-012, K-017, K-301)"]
     subgraph Driven["Driven adapters (out from the core)"]
         RPC["adapters/rpc (K-001, K-503)"]
-        HEIM["adapters/extdecomp: isolated worker (K-008, K-501)"]
+        INTDEC["adapters/decompiler: internal engine (K-008, K-501)"]
         SEL["adapters/selectors, adapters/clones (K-009, K-017)"]
         STOR["adapters/cache (K-013)"]
         MUSE["adapters/assessment/metaModelApi and adapters/assessment/hostedOpenWeights (K-305, K-309, K-513)"]
@@ -44,7 +44,7 @@ flowchart TB
     APP --> PORTS
     PORTS --> CORE
     RPC -. implements .-> PORTS
-    HEIM -. implements .-> PORTS
+    INTDEC -. implements .-> PORTS
     SEL -. implements .-> PORTS
     STOR -. implements .-> PORTS
     MUSE -. implements .-> PORTS
@@ -187,8 +187,8 @@ interface ConfigPort { config(): DriftConfig; }             // I-08, validated a
 The `ApiKey` and quota check lives in the driving adapters and in
 `application` as a typed step before the analysis (K-024, K-504, K-510);
 the key lifecycle follows K-510 and I-09. Health per dependency (RPC,
-cache, extdecomp and the selected assessment provider per K-309, with
-provider and model id) is exposed through a
+cache, the internal decompiler and the selected assessment provider
+per K-309, with provider and model id) is exposed through a
 `health()` method on each driven adapter and is collected by the composition
 root for the health check in K-104.
 
@@ -527,7 +527,7 @@ stands (K-008). The catalogue is normative:
 | Port | Error union (branches on `kind`) | Domain outcome in `application` |
 |---|---|---|
 | `RpcPort` | `timeout`, `rate-limited`, `node-error`, `invalid-response`, `no-code` | `invalid-response` gives an uncertainty flag (K-511); `no-code` gives the branch `no-contract` in `Assessment` (K-001) |
-| `DecompilerPort` | `timeout`, `resource-limit`, `process-error`, `invalid-output`, `output-too-large` | Each branch gives the signal `hard-to-analyze` in the deepening (K-008, M-02) |
+| `DecompilerPort` | `timeout`, `resource-limit`, `process-error`, `invalid-output`, `output-too-large` | Each reachable branch gives the signal `hard-to-analyze` in the deepening (K-008, M-02); the internal adapter reaches the cap and structural branches from its own limits |
 | `SelectorTablePort` | `unknown-selector` as a status value in the response | An unknown selector is reported with the status unknown (K-009) |
 | `CloneIndexPort` | `index-unavailable`, `index-version-mismatch` | The analysis continues with an uncertainty flag in the response (K-017) |
 | `CachePort` | `miss` as a value, `entry-corrupt`, `store-unavailable` | `entry-corrupt` gives a fresh analysis and a logged deviation (K-511); `miss` gives a fresh analysis (K-013) |
@@ -552,7 +552,7 @@ validates incoming external data with a boundary check in the adapter module
 before the value passes a smart constructor into the core. The boundary check
 shapes the boundary type and the smart constructor generates the domain type,
 so check and type share a definition. Validation covers RPC responses
-(K-511), extdecomp output (K-008), Muse output against the versioned
+(K-511), internal decompiler output (K-008), Muse output against the versioned
 assessment schema (K-305, K-309), REST input (K-023), MCP input against the
 published input schema (K-026), cache entries at read (K-511) and
 the model artifact at load (K-210, K-211). Strings from the contract
@@ -565,9 +565,10 @@ named limit fields in the typed operational configuration (I-08):
 `maxBytesOut` (request or output), `maxConcurrency` (parallel
 calls) and `retryBudget` (retries with backoff cadence). The values for
 the fields are versioned as operational configuration in `docs/infrastructure.md` (I-11,
-I-12, I-14) and are read at startup through `ConfigPort`. extdecomp's time,
-memory and output limits are set per worker from the same
-operational configuration under I-11 and K-008. `AssessmentModelPort`
+I-12, I-14) and are read at startup through `ConfigPort`. The internal
+decompiler needs no operational variables: it runs under the engine's
+own deterministic caps with port-level input and output byte caps
+under K-008. `AssessmentModelPort`
 carries the same fields for both adapters per A-34: deadline, input and
 output size limits, concurrency and the cost limit per K-309 and I-14.
 The risk model's thresholds,
@@ -688,7 +689,7 @@ The contract tests run the same shared suite per port against the port's fake an
 against the port's real adapter over a recorded transport:
 `runRpcPortContract(makePort)` tries contract/EOA/invalid address
 (K-001), `runDecompilerPortContract` tries successful decompilation and
-pathological timeout (K-008), `runAssessmentModelPortContract` tries
+the cap and structural branches (K-008), `runAssessmentModelPortContract` tries
 schema-validated assessment, provider and model labelling, limits and
 fallback against the fake, the Meta Model API adapter and the hosted
 open-weights adapter with equal outcomes (K-305, K-309, K-513),
@@ -739,15 +740,16 @@ and shared types through the whole chain make A-10–A-13 and K-027 verifiable
 at compile time, and the MCP SDK for TypeScript gives typed tool schemas
 for K-025 and K-026 (K-106).
 
-**A-27 extdecomp behind a port in an isolated worker.** Decompilation runs
-through `adapters/extdecomp`, which calls extdecomp as an external process over
-`DecompilerPort`. The adapter starts a dedicated process per decompilation in
-an isolated worker with a time limit, memory limit and output limit from
-the operational configuration under A-17 and I-11, in a sandbox with bytecode
-as the sole input flow and a read-only file system (M-01). The extdecomp binary's
-version and checksum are pinned under I-05 and verified at build time.
-Timeout and resource excess are mapped to the signal `hard-to-analyze`
-under A-15, so the deepening always delivers an outcome (K-008, K-501).
+**A-27 Internal decompiler behind the port.** Decompilation runs
+through `adapters/decompiler`, which runs the deterministic in-process
+pipeline (decompiler v2 with the v1 fallback) over `DecompilerPort`.
+The adapter executes synchronously on the port input under the
+engine's own deterministic caps and port-level input and output byte
+caps, with bytecode as the sole input flow (M-01). No external binary,
+worker process or network exists on this path. Cap breaches and
+structurally incomplete output (unresolved control flow) are mapped to
+the signal `hard-to-analyze` under A-15, so the deepening always
+delivers an outcome (K-008, K-501).
 
 **A-28 Python solely offline for calibration.** Calibration and
 evaluation run offline in `offline/` with Python and export solely
@@ -781,7 +783,7 @@ under I-04.
 | Boundary enforcement | `dependency-cruiser` 17.x | `package.json` + `.dependency-cruiser.cjs` | The rules in A-06 run in CI (I-01) |
 | Mutation (stretch) | `@stryker-mutator/core` 9.x | `package.json` | A-25 as a stretch goal |
 | Logging | `pino` 9.x with redaction | `package.json` | Structured JSON logging with a field allowlist and redaction (I-10, K-509) |
-| Decompiler | extdecomp (`extdecomp-rs`), version and SHA-256 checksum | Manifest under I-05 | Isolated worker behind `DecompilerPort` (A-27, K-008) |
+| Decompiler | Internal deterministic ERC-20 pipeline (decompiler v2 with the v1 fallback), no external binary | Versioned with the source | In-process adapter behind `DecompilerPort` (A-27, K-008) |
 | Offline calibration | Python 3.12 with `scikit-learn` and LightGBM, dependency management with `uv` and lock file | `offline/pyproject.toml` + lock file | The calibration methods and measures in K-205–K-209; exports solely the artifact (A-28) |
 
 Library licences are checked against the allowlist under I-04 before
@@ -805,7 +807,7 @@ src/
                      # modelArtifact.ts, deploymentFeed.ts, clock.ts, config.ts
   adapters/
     rpc/             # RpcPort via viem (K-001, K-503, M-07, M-14)
-    extdecomp/        # DecompilerPort, isolated worker (A-27, K-008, M-01, M-02)
+    decompiler/      # DecompilerPort, internal engine (A-27, K-008)
     selectors/       # SelectorTablePort, local table (K-009)
     clones/          # CloneIndexPort (K-017)
     cache/           # CachePort (K-013, M-14)

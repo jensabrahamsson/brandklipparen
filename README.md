@@ -49,15 +49,13 @@ the environment always wins):
 
 ```sh
 BRANDKLIPPAREN_RPC_URLS="https://eth.drpc.org" npm run demo
-extdecomp_BIN="$HOME/.bifrost/bin/extdecomp" npm run demo
 ```
 
 The default RPC is the key-free `https://ethereum-rpc.publicnode.com`.
 Key-free alternatives include `https://eth.drpc.org`,
 `https://gateway.tenderly.co/public/mainnet` and
-`https://rpc.mevblocker.io`. extdecomp discovery order is `extdecomp_BIN`,
-then `extdecomp` on `PATH`, then `$HOME/.bifrost/bin/extdecomp`; when none
-is found the decompiler stays unset and reports that it cannot tell.
+`https://rpc.mevblocker.io`. Decompilation is internal: the in-process
+engine needs no binary and no setup, so the deepening always runs.
 
 While the demo runs, the start page also shows a live list of new
 tokens: the backend watches Uniswap V2/V3 pair creations on mainnet

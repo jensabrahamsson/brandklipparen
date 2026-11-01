@@ -6,7 +6,7 @@
 // is user environment, then `.env.local`, then demo defaults, then a
 // generated per-run local API key (so the UI can analyse with zero
 // manual steps). Pure helpers (defaults, `.env.local` parsing, secret
-// file indirection, key generation, Node check, extdecomp discovery) are
+// file indirection, key generation and Node check) are
 // exported for the unit test; only runDemo() spawns.
 import { execFileSync, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -36,9 +36,6 @@ export const DEMO_DEFAULTS: Readonly<Record<string, string>> = Object.freeze({
   BRANDKLIPPAREN_MODEL_VERSION: "1.0.1",
   BRANDKLIPPAREN_MODEL_ARTIFACT_PATH: "model/artifact-1.0.1.json",
   BRANDKLIPPAREN_CLONE_INDEX_VERSION: "1.0.0",
-  BRANDKLIPPAREN_extdecomp_DEADLINE_MS: "60000",
-  BRANDKLIPPAREN_extdecomp_MAX_MEMORY_MB: "512",
-  BRANDKLIPPAREN_extdecomp_MAX_OUTPUT_BYTES: "1048576",
   BRANDKLIPPAREN_LOG_LEVEL: "info",
   BRANDKLIPPAREN_HTTP_PORT: DEMO_DEFAULT_REST_PORT,
   BRANDKLIPPAREN_CACHE_DIR: ".cache/brandklipparen",
@@ -51,7 +48,6 @@ export const DEMO_DEFAULTS: Readonly<Record<string, string>> = Object.freeze({
   BRANDKLIPPAREN_RPC_MAX_CONCURRENCY: "8",
   BRANDKLIPPAREN_RPC_RETRY_BUDGET: "2",
   BRANDKLIPPAREN_RPC_MAX_RESPONSE_BYTES: "1048576",
-  BRANDKLIPPAREN_extdecomp_MAX_CONCURRENCY: "2",
   BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE: "300",
   BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY: "1000",
   BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE: "600",
@@ -813,57 +809,6 @@ export function withDemoDefaults(
   return { env: merged, applied: Object.freeze(applied.slice()) };
 }
 
-export type extdecompDiscoveryDeps = {
-  // Value of extdecomp_BIN, when set.
-  readonly extdecompBin: string | undefined;
-  // Value of PATH for the `extdecomp` lookup.
-  readonly pathEnv: string | undefined;
-  // Value of $HOME for the ~/.bifrost/bin/extdecomp lookup.
-  readonly homeDir: string | undefined;
-  readonly existsSync: (path: string) => boolean;
-};
-
-// extdecomp discovery order: extdecomp_BIN first, then `extdecomp` on PATH,
-// then $HOME/.bifrost/bin/extdecomp. Returns undefined when none is found,
-// leaving the binary path unset so the decompiler reports that it cannot
-// tell. Only existence is probed: no config file under ~/.bifrost is read.
-export function discoverextdecompBinary(deps: extdecompDiscoveryDeps): string | undefined {
-  const direct = (deps.extdecompBin ?? "").trim();
-  if (direct.length > 0) {
-    return direct;
-  }
-  const pathValue = deps.pathEnv ?? "";
-  for (const dir of pathValue.split(delimiter)) {
-    if (dir.length === 0) {
-      continue;
-    }
-    const candidate = `${dir}/extdecomp`;
-    let found = false;
-    try {
-      found = deps.existsSync(candidate);
-    } catch {
-      // A failing probe counts as absent; keep looking.
-    }
-    if (found) {
-      return candidate;
-    }
-  }
-  const home = (deps.homeDir ?? "").trim();
-  if (home.length > 0) {
-    const candidate = `${home}/.bifrost/bin/extdecomp`;
-    let found = false;
-    try {
-      found = deps.existsSync(candidate);
-    } catch {
-      // A failing probe counts as absent.
-    }
-    if (found) {
-      return candidate;
-    }
-  }
-  return undefined;
-}
-
 function repoRoot(): string {
   return dirname(dirname(fileURLToPath(import.meta.url)));
 }
@@ -1046,21 +991,8 @@ async function runDemo(): Promise<void> {
   process.stdout.write(`${demoLpFeedStatus(demoEnv)}\n`);
   process.stdout.write(`${demoMarketStatus(demoEnv)}\n`);
   process.stdout.write(`${demoSourceStatus(demoEnv)}\n`);
-  const extdecomp = discoverextdecompBinary({
-    extdecompBin: process.env["extdecomp_BIN"],
-    pathEnv: process.env["PATH"],
-    homeDir: process.env["HOME"],
-    existsSync,
-  });
-  if (extdecomp === undefined) {
-    process.stdout.write(
-      "extdecomp: none found (checked extdecomp_BIN, `extdecomp` on PATH and $HOME/.bifrost/bin/extdecomp); continuing without it.\n",
-    );
-  } else {
-    demoEnv["BRANDKLIPPAREN_extdecomp_BINARY_PATH"] = extdecomp;
-    process.stdout.write(`extdecomp: ${extdecomp}\n`);
-  }
-
+  // The decompiler is internal and in-process: no binary to discover
+  // and nothing to set, so the demo prints no decompiler line.
   const restPort = demoEnv["BRANDKLIPPAREN_HTTP_PORT"] ?? DEMO_DEFAULT_REST_PORT;
   const restBase = `http://127.0.0.1:${restPort}`;
   const webUrl = `http://localhost:${DEMO_WEB_PORT}`;

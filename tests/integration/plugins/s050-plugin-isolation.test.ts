@@ -4,7 +4,7 @@
 // typed `timeout` outcome while parallel analyses continue. Written first
 // (red) per A-21: the worker runner does not exist yet. No network; the
 // fixtures are local detector modules run with the repo's strip-types
-// flag, mirroring the extdecomp fake-worker pattern.
+// flag, mirroring the plugin-worker fixture pattern.
 import { describe, expect, test } from "vitest";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

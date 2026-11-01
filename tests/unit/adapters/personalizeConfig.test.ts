@@ -29,9 +29,6 @@ function baseCiEnv(): EnvInput {
     BRANDKLIPPAREN_MODEL_VERSION: "0.1.0",
     BRANDKLIPPAREN_MODEL_ARTIFACT_PATH: "model/artifact-0.1.0.json",
     BRANDKLIPPAREN_CLONE_INDEX_VERSION: "1.0.0",
-    BRANDKLIPPAREN_extdecomp_DEADLINE_MS: "5000",
-    BRANDKLIPPAREN_extdecomp_MAX_MEMORY_MB: "512",
-    BRANDKLIPPAREN_extdecomp_MAX_OUTPUT_BYTES: "100000",
     BRANDKLIPPAREN_LOG_LEVEL: "info",
   };
 }
@@ -290,9 +287,6 @@ describe("personalize provider configuration", () => {
       modelVersion: mustOk(ModelVersion.parse("0.1.0")),
       modelArtifactPath: "model/artifact-0.1.0.json",
       cloneIndexVersion: mustOk(IndexVersion.parse("1.0.0")),
-      extdecompDeadlineMs: 5000,
-      extdecompMaxMemoryMb: 512,
-      extdecompMaxOutputBytes: 100000,
       logLevel: "info",
       assessmentGenericCompatibleApiKey: new SecretString("fake-compat-key-for-tests-only"),
     };

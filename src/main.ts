@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { loadConfig } from "./adapters/config/loader.ts";
-import { createextdecompAdapterFromConfig } from "./adapters/extdecomp/extdecompAdapter.ts";
+import { InternalDecompilerAdapter } from "./adapters/decompiler/internalDecompilerAdapter.ts";
 import {
   fetchRpcTransport,
   verifyMainnetChainId,
@@ -109,19 +109,15 @@ async function startupPorts(config: AppConfig): Promise<AnalyzeTokenPorts> {
         : `the chain id check failed: ${verified.error.message}`,
     );
   }
-  const extdecomp = createextdecompAdapterFromConfig({
-    extdecompBinaryPath: config.extdecompBinaryPath,
-    extdecompDeadlineMs: config.extdecompDeadlineMs,
-    extdecompMaxOutputBytes: config.extdecompMaxOutputBytes,
-    extdecompMaxMemoryMb: config.extdecompMaxMemoryMb,
-  });
+  // The internal decompiler is always bound: it runs in-process with
+  // no binary to discover and no setup where it stays unset.
   return Object.freeze({
     rpc: rpc.value,
     // The config value names the artifact file (docs/infrastructure.md); the
     // adapter resolves `artifact-<version>.json` inside its directory.
     modelArtifacts: new FileModelArtifactAdapter(dirname(config.modelArtifactPath)),
     clock: systemClock(),
-    decompiler: extdecomp.ok ? extdecomp.value : undefined,
+    decompiler: new InternalDecompilerAdapter(),
     cache: new InMemoryCacheAdapter(),
   });
 }

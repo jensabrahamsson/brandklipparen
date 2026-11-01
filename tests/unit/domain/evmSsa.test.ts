@@ -71,7 +71,6 @@ function fixtureApprove(): string {
 
 const FORBIDDEN_VOCABULARY = [
   "decompil",
-  "extdecomp",
   "opcode",
   "mnemonic",
   "jumpdest",

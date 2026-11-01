@@ -33,9 +33,6 @@ function baseCiEnv(): Record<string, string | undefined> {
     BRANDKLIPPAREN_MODEL_VERSION: "0.1.0",
     BRANDKLIPPAREN_MODEL_ARTIFACT_PATH: "model/artifact-0.1.0.json",
     BRANDKLIPPAREN_CLONE_INDEX_VERSION: "1.0.0",
-    BRANDKLIPPAREN_extdecomp_DEADLINE_MS: "5000",
-    BRANDKLIPPAREN_extdecomp_MAX_MEMORY_MB: "512",
-    BRANDKLIPPAREN_extdecomp_MAX_OUTPUT_BYTES: "100000",
     BRANDKLIPPAREN_LOG_LEVEL: "info",
   };
 }
@@ -47,7 +44,6 @@ function sharedDemoEnv(): Record<string, string | undefined> {
     BRANDKLIPPAREN_HTTP_PORT: "8080",
     BRANDKLIPPAREN_RPC_URLS: "https://rpc.example.invalid",
     BRANDKLIPPAREN_CHAIN_ID: "1",
-    BRANDKLIPPAREN_extdecomp_MAX_CONCURRENCY: "2",
     BRANDKLIPPAREN_RPC_DEADLINE_MS: "4000",
     BRANDKLIPPAREN_RPC_MAX_CONCURRENCY: "8",
     BRANDKLIPPAREN_RPC_RETRY_BUDGET: "2",
@@ -112,9 +108,6 @@ function manualBaseConfig(): AppConfig {
     modelVersion: mustOk(ModelVersion.parse("0.1.0")),
     modelArtifactPath: "model/artifact-0.1.0.json",
     cloneIndexVersion: mustOk(IndexVersion.parse("1.0.0")),
-    extdecompDeadlineMs: 5000,
-    extdecompMaxMemoryMb: 512,
-    extdecompMaxOutputBytes: 100000,
     logLevel: "info",
   };
 }

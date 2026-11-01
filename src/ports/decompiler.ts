@@ -1,13 +1,12 @@
 // DecompilerPort: decompilation of bytecode into functions and snippets
 // (A-05, K-008, K-501). The port is owned by the core: the application
 // calls decompile in the deepening and links each returned function to the
-// signals' evidence by selector. The real extdecomp binary is not installed
-// in this repo and must never be downloaded by the code; the worker adapter
-// behind this port receives the binary path from the configuration and is
-// tested with a small fake worker script under tests/fixtures. Error
-// branches follow the catalogue in A-15; every branch yields the
-// hard-to-analyze signal in the deepening while the fast path's response
-// stands.
+// signals' evidence by selector. The only adapter behind this port is the
+// internal engine (`src/adapters/decompiler/`, decompiler v2
+// with the v1 fallback); no external binary, worker, or download
+// exists on this path. Error branches follow the catalogue in A-15;
+// every branch yields the hard-to-analyze signal in the deepening while
+// the fast path's response stands.
 import type { Result } from "../domain/result.ts";
 import type { CodeSnippet } from "../domain/evidence.ts";
 import type {
@@ -28,7 +27,7 @@ export type CallContext = {
 
 // One decompiled function linked to its dispatcher selector. The snippet
 // text is quoted untrusted data at the boundary; the size cap is enforced
-// by the worker adapter under its port limits, so the core checks shape
+// by the internal adapter under its port limits, so the core checks shape
 // only through CodeSnippet.create.
 export type DecompiledFunction = {
   readonly selector: SelectorType;
@@ -42,11 +41,14 @@ export type DecompiledContract = {
   readonly functions: readonly DecompiledFunction[];
 };
 
-// Error union per A-15. timeout covers the worker exceeding its time limit,
-// resource-limit covers input, memory or size excess, the worker-crash
-// branch covers a worker crash or a failed start, invalid-output covers
-// output that fails the boundary check (K-008, K-511) and output-too-large
-// covers output past the size limit.
+// Error union per A-15. timeout covers a run exceeding its time limit,
+// resource-limit covers input, memory or size excess, process-error
+// covers a failed run, invalid-output covers output that fails the
+// boundary check (K-008, K-511) — including engine output the internal
+// adapter turns away for unresolved control flow — and output-too-large
+// covers output past the size limit. The internal adapter reaches the
+// cap and structural branches only; timeout and process-error stay
+// typed for port stability and are steered by fakes in tests.
 export type DecompilerError =
   | { kind: "timeout"; message: string }
   | { kind: "resource-limit"; message: string }

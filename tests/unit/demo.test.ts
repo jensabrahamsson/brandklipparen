@@ -1,8 +1,8 @@
 // Unit test for the `npm run demo` pure helpers in scripts/demo.ts:
 // default resolution (user env wins), `.env.local` parsing and
-// precedence, secret file indirection, the generated per-run API key,
-// Node version check and extdecomp discovery order with a mocked
-// filesystem. Never starts real servers. All values are fakes.
+// precedence, secret file indirection, the generated per-run API key
+// and the Node version check with a mocked filesystem. Never starts
+// real servers. All values are fakes.
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,7 +40,6 @@ import {
   demoLpFeedStatus,
   demoMarketStatus,
   demoSourceStatus,
-  discoverextdecompBinary,
   displayPathWithHome,
   ensureDemoApiKey,
   findNode22Binary,
@@ -57,11 +56,6 @@ import {
   withDemoPersonalizeDefault,
   withDemoSourceDefault,
 } from "../../scripts/demo.ts";
-
-function existing(paths: readonly string[]): (path: string) => boolean {
-  const found = new Set(paths);
-  return (path: string): boolean => found.has(path);
-}
 
 describe("demo defaults (npm run demo)", () => {
   test("fills every default where the environment is silent", () => {
@@ -779,57 +773,6 @@ describe("demo ETHERSCAN_API_KEY_FILE indirection", () => {
     expect(missing.env[TARGET]).toBe(undefined);
     expect(missing.failed).toEqual([TARGET]);
     expect(demoLpFeedStatus(missing.env)).toBe(DEMO_LP_FEED_OFF_LINE);
-  });
-});
-
-describe("demo extdecomp discovery order", () => {
-  test("extdecomp_BIN wins over everything", () => {
-    const found = discoverextdecompBinary({
-      extdecompBin: "/custom/dir/extdecomp",
-      pathEnv: "/usr/local/bin:/usr/bin",
-      homeDir: "/home/demo",
-      existsSync: existing(["/usr/local/bin/extdecomp", "/home/demo/.bifrost/bin/extdecomp"]),
-    });
-    expect(found).toBe("/custom/dir/extdecomp");
-  });
-
-  test("PATH comes before the home fallback, first hit wins", () => {
-    const found = discoverextdecompBinary({
-      extdecompBin: undefined,
-      pathEnv: "/first/bin:/second/bin",
-      homeDir: "/home/demo",
-      existsSync: existing(["/second/bin/extdecomp", "/home/demo/.bifrost/bin/extdecomp"]),
-    });
-    expect(found).toBe("/second/bin/extdecomp");
-  });
-
-  test("falls back to $HOME/.bifrost/bin/extdecomp", () => {
-    const found = discoverextdecompBinary({
-      extdecompBin: "",
-      pathEnv: "/usr/bin",
-      homeDir: "/home/demo",
-      existsSync: existing(["/home/demo/.bifrost/bin/extdecomp"]),
-    });
-    expect(found).toBe("/home/demo/.bifrost/bin/extdecomp");
-  });
-
-  test("returns undefined when nothing is found", () => {
-    expect(
-      discoverextdecompBinary({
-        extdecompBin: undefined,
-        pathEnv: "/usr/bin",
-        homeDir: "/home/demo",
-        existsSync: existing([]),
-      }),
-    ).toBe(undefined);
-    expect(
-      discoverextdecompBinary({
-        extdecompBin: undefined,
-        pathEnv: undefined,
-        homeDir: undefined,
-        existsSync: existing([]),
-      }),
-    ).toBe(undefined);
   });
 });
 

@@ -62,17 +62,12 @@ export type AppConfig = {
   readonly modelVersion: ModelVersion;
   readonly modelArtifactPath: string;
   readonly cloneIndexVersion: IndexVersion;
-  readonly extdecompDeadlineMs: number;
-  readonly extdecompMaxMemoryMb: number;
-  readonly extdecompMaxOutputBytes: number;
   readonly logLevel: LogLevel;
   readonly httpPort?: number;
   readonly cacheDir?: string;
   readonly apiKeys?: readonly SecretString[];
   readonly chainId?: ChainId;
   readonly rpcUrls?: readonly SecretString[];
-  readonly extdecompMaxConcurrency?: number;
-  readonly extdecompBinaryPath?: string;
   readonly rpcDeadlineMs?: number;
   readonly rpcMaxConcurrency?: number;
   readonly rpcRetryBudget?: number;

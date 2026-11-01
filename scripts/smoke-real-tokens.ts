@@ -5,20 +5,17 @@
 // deterministic offline analysis through the same application service the
 // REST and MCP interfaces use, and writes a Markdown report to the path in
 // BK_SMOKE_OUT. The report names tokens by SYMBOL ONLY: addresses,
-// code hashes and bytecode never reach the report or stdout. If
-// extdecomp_BIN is set, the same bytecode is also run through the existing
-// extdecomp adapter on local bytecode only (HOME set to a fresh temp dir,
-// never -r/RPC/LLM flags) and the decompile outcomes are compared.
-// No network access happens anywhere in this script.
+// code hashes and bytecode never reach the report or stdout. Decompilation
+// figures come solely from the internal pipeline; no external tool runs
+// anywhere in this script. No network access happens anywhere in this
+// script.
 import { Ajv } from "ajv";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   Address,
   BlockNumber,
-  CodeHash,
   IndexVersion,
   ModelVersion,
   RequestId,
@@ -38,12 +35,10 @@ import type { ModelArtifactError } from "../src/ports/modelArtifact.ts";
 import type { LoadedArtifact, ModelArtifactPort } from "../src/ports/modelArtifact.ts";
 import type { ModelVersion as ModelVersionType } from "../src/domain/types.ts";
 import type { CapabilityCatalogue } from "../src/domain/signals.ts";
-import { extdecompAdapter } from "../src/adapters/extdecomp/extdecompAdapter.ts";
 import type { Result } from "../src/domain/result.ts";
 import type {
   BlockReceipt,
   BytecodeResult,
-  CallContext,
   ChainLog,
   RpcError,
   RpcPort,
@@ -52,7 +47,6 @@ import type { CallData as CallDataType, StorageWord as StorageWordType } from ".
 import { Bytecode as BytecodeValue, StorageWord } from "../src/domain/types.ts";
 
 const PER_TOKEN_TIMEOUT_MS = 30000;
-const extdecomp_TIMEOUT_MS = 25000;
 const ZERO_WORD = `0x${"0".repeat(64)}`;
 
 // Frozen model, index and template versions the offline run pins (K-102):
@@ -89,12 +83,6 @@ export type InvalidEntry = {
 
 export type SmokeBand = "Low" | "Elevated" | "High";
 
-export type extdecompOutcome = {
-  readonly success: boolean;
-  readonly functions: number;
-  readonly ownSelectors: number;
-};
-
 export type SmokeOutcome =
   | {
       readonly status: "ok";
@@ -107,7 +95,6 @@ export type SmokeOutcome =
       readonly firedPlugins?: readonly string[] | undefined;
       readonly runtimeMs: number;
       readonly ownSelectors: number;
-      readonly extdecomp?: extdecompOutcome | undefined;
     }
   | {
       readonly status: "timeout" | "crash";
@@ -252,49 +239,16 @@ export function confusionSummary(outcomes: readonly SmokeOutcome[]): ConfusionSu
   return { counts, legitHighRisk: Object.freeze(legitHighRisk), badLowRisk: Object.freeze(badLowRisk), scored };
 }
 
-export type extdecompReport = {
-  readonly enabled: boolean;
-  readonly successRate: number;
-  readonly meanFunctions: number;
-  readonly meanOwnSelectors: number;
-  readonly deltas: readonly { symbol: string; extdecompFunctions: number; ownSelectors: number; success: boolean }[];
-};
-
-function extdecompReportOf(outcomes: readonly SmokeOutcome[]): extdecompReport {
-  const rows = outcomes.filter((outcome) => outcome.status === "ok" && outcome.extdecomp !== undefined);
-  if (rows.length === 0) {
-    return { enabled: false, successRate: 0, meanFunctions: 0, meanOwnSelectors: 0, deltas: [] };
-  }
-  const successes = rows.filter((row) => row.status === "ok" && row.extdecomp?.success === true);
-  const deltas = rows.map((row) => {
-    const extdecomp = row.status === "ok" ? row.extdecomp : undefined;
-    return {
-      symbol: row.symbol,
-      extdecompFunctions: extdecomp?.functions ?? 0,
-      ownSelectors: extdecomp?.ownSelectors ?? 0,
-      success: extdecomp?.success ?? false,
-    };
-  });
-  return {
-    enabled: true,
-    successRate: successes.length / rows.length,
-    meanFunctions: mean(deltas.map((row) => row.extdecompFunctions)),
-    meanOwnSelectors: mean(deltas.map((row) => row.ownSelectors)),
-    deltas: Object.freeze(deltas),
-  };
-}
-
 // Pure report builder: the same Markdown the script writes, testable
-// without files, binaries or the network. Symbols only; every derived
-// line passes through sanitize before it lands in the text.
+// without files or the network. Symbols only; every derived line
+// passes through sanitize before it lands in the text.
 export function buildReport(input: {
   readonly outcomes: readonly SmokeOutcome[];
   readonly invalid: readonly InvalidEntry[];
-  readonly extdecomp: extdecompReport;
   readonly totalMs: number;
   readonly startedAt: string;
 }): string {
-  const { outcomes, invalid, extdecomp, totalMs, startedAt } = input;
+  const { outcomes, invalid, totalMs, startedAt } = input;
   const confusion = confusionSummary(outcomes);
   const ok = outcomes.filter((outcome) => outcome.status === "ok");
   const lines: string[] = [];
@@ -358,21 +312,17 @@ export function buildReport(input: {
     }
   }
   lines.push("");
-  lines.push("## extdecomp comparison");
+  lines.push("## Internal decompilation");
   lines.push("");
-  if (!extdecomp.enabled) {
-    lines.push("extdecomp comparison skipped: extdecomp_BIN is unset.");
-  } else {
-    lines.push(
-      `Decompile success rate: ${(extdecomp.successRate * 100).toFixed(1)}%. Mean functions per token (extdecomp): ${extdecomp.meanFunctions.toFixed(1)}. Mean selectors per token (own pipeline): ${extdecomp.meanOwnSelectors.toFixed(1)}.`,
-    );
-    lines.push("");
-    lines.push("| Symbol | extdecomp functions | Own selectors | Decompiled |");
-    lines.push("|---|---|---|---|");
-    for (const delta of extdecomp.deltas) {
-      lines.push(`| ${sanitize(delta.symbol)} | ${delta.extdecompFunctions} | ${delta.ownSelectors} | ${delta.success ? "yes" : "no"} |`);
-    }
-  }
+  const decompiled = outcomes.filter((outcome) => outcome.status === "ok");
+  const meanSelectors =
+    decompiled.length === 0
+      ? 0
+      : decompiled.reduce((total, outcome) => total + (outcome.status === "ok" ? outcome.ownSelectors : 0), 0) /
+        decompiled.length;
+  lines.push(
+    `Tokens with selector counts from the internal pipeline: ${decompiled.length}/${outcomes.length}. Mean selectors per scored token: ${meanSelectors.toFixed(1)}.`,
+  );
   lines.push("");
   lines.push("## Invalid entries");
   lines.push("");
@@ -388,8 +338,7 @@ export function buildReport(input: {
 }
 
 // Injected runners keep runSmoke testable: tests pass a mock analyze
-// function and a mock decompiler, while main wires the real application
-// service and the real extdecomp adapter.
+// function, while main wires the real application service.
 // Per-label share of scored tokens on which each detector plugin reported
 // at least one finding.
 export function detectorFireRateLines(ok: readonly SmokeOutcome[]): string[] {
@@ -418,11 +367,9 @@ export function detectorFireRateLines(ok: readonly SmokeOutcome[]): string[] {
 }
 
 export type AnalyzeFn = (token: SmokeToken) => Promise<{ score: number; topEvidence: string[]; firedPlugins?: string[] }>;
-export type DecompileFn = (bytecodeHex: string) => Promise<{ success: boolean; functions: number }>;
 
 export type RunSmokeDeps = {
   readonly analyze: AnalyzeFn;
-  readonly decompile?: DecompileFn | undefined;
   readonly timeoutMs?: number | undefined;
   readonly clock?: (() => number) | undefined;
 };
@@ -463,15 +410,6 @@ export async function runSmoke(
           }, timeoutMs);
         }),
       ]);
-      let extdecomp: extdecompOutcome | undefined;
-      if (deps.decompile !== undefined) {
-        try {
-          const decompiled = await deps.decompile(bytecodeHex);
-          extdecomp = { success: decompiled.success, functions: decompiled.functions, ownSelectors };
-        } catch {
-          extdecomp = { success: false, functions: 0, ownSelectors };
-        }
-      }
       const score = Math.min(100, Math.max(0, Math.round(analyzed.score)));
       outcomes.push({
         status: "ok",
@@ -484,7 +422,6 @@ export async function runSmoke(
         firedPlugins: Object.freeze([...(analyzed.firedPlugins ?? [])].map(sanitize)),
         runtimeMs: clock() - tokenStarted,
         ownSelectors,
-        ...(extdecomp === undefined ? {} : { extdecomp }),
       });
     } catch (error) {
       const runtimeMs = clock() - tokenStarted;
@@ -691,42 +628,6 @@ function hashSymbol(symbol: string): number {
   return hash;
 }
 
-// extdecomp on the same bytecode through the existing adapter: local
-// bytecode only, HOME set to a fresh temp dir for the run, never -r, RPC
-// or LLM flags. The binary path arrives from extdecomp_BIN only.
-async function runextdecompOn(bytecodeHex: string, extdecompBin: string): Promise<{ success: boolean; functions: number }> {
-  const bytecode = mustParse(BytecodeValue.parse(bytecodeHex), "token bytecode");
-  const codeHash = mustParse(CodeHash.of(bytecode), "token code hash");
-  const adapter = new extdecompAdapter({ binaryPath: extdecompBin, timeoutMs: extdecomp_TIMEOUT_MS });
-  const requestId = mustParse(RequestId.parse("123e4567-e89b-12d3-a456-426614174000"), "request id");
-  const deadline = mustParse(Timestamp.of(Date.now() + extdecomp_TIMEOUT_MS + 5000), "deadline");
-  const block = mustParse(BlockNumber.of(1), "block");
-  const ctx: CallContext = { requestId, deadline, block };
-  const home = mkdtempSync(join(tmpdir(), "smoke-extdecomp-home-"));
-  const previousHome = process.env["HOME"];
-  process.env["HOME"] = home;
-  try {
-    const decompiled = await adapter.decompile(bytecode, codeHash, ctx);
-    if (!decompiled.ok) {
-      return { success: false, functions: 0 };
-    }
-    return { success: true, functions: decompiled.value.functions.length };
-  } catch {
-    return { success: false, functions: 0 };
-  } finally {
-    if (previousHome === undefined) {
-      delete process.env["HOME"];
-    } else {
-      process.env["HOME"] = previousHome;
-    }
-    try {
-      rmSync(home, { recursive: true, force: true });
-    } catch {
-      // Best effort: a leftover temp dir never fails the report.
-    }
-  }
-}
-
 function fail(message: string, code: number): never {
   process.stderr.write(`smoke-real-tokens: ${message}\n`);
   process.exit(code);
@@ -771,7 +672,6 @@ async function main(): Promise<void> {
     const empty = buildReport({
       outcomes: [],
       invalid,
-      extdecomp: { enabled: false, successRate: 0, meanFunctions: 0, meanOwnSelectors: 0, deltas: [] },
       totalMs: 0,
       startedAt: new Date().toISOString(),
     });
@@ -781,18 +681,12 @@ async function main(): Promise<void> {
   }
   const startedAt = new Date().toISOString();
   const analyze = createOfflineAnalyzer(tokens);
-  const extdecompBin = process.env["extdecomp_BIN"];
-  const decompile: DecompileFn | undefined =
-    extdecompBin === undefined || extdecompBin.length === 0
-      ? undefined
-      : (bytecodeHex: string) => runextdecompOn(bytecodeHex, extdecompBin);
   const started = Date.now();
-  const { outcomes } = await runSmoke(tokens, { analyze, decompile });
+  const { outcomes } = await runSmoke(tokens, { analyze });
   const totalMs = Date.now() - started;
   const markdown = buildReport({
     outcomes,
     invalid,
-    extdecomp: extdecompReportOf(outcomes),
     totalMs,
     startedAt,
   });
@@ -809,7 +703,6 @@ async function main(): Promise<void> {
         return `${label} ${mean(scores).toFixed(1)}`;
       })
       .join(", ")}.`,
-    extdecompBin === undefined ? "extdecomp comparison skipped: extdecomp_BIN is unset." : `extdecomp compared on ${scored.length} tokens.`,
   ];
   process.stdout.write(`${lines.join("\n")}\n`);
 }

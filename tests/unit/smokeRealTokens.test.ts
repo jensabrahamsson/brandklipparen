@@ -3,7 +3,8 @@
 // exist yet. Every fixture here is synthetic: tiny handcrafted bytecode,
 // fake symbols and obviously fake addresses. The report builder and the
 // confusion math are pure and take injected runners, so no test touches
-// the network, the filesystem or a real binary; extdecomp is mocked.
+// the network or the filesystem; decompilation figures come solely from
+// the internal pipeline.
 import { describe, expect, test } from "vitest";
 import {
   bandOf,
@@ -128,13 +129,6 @@ describe("smoke report builder (Task C)", () => {
     const markdown = buildReport({
       outcomes,
       invalid: [{ index: 3, symbol: "BROKEN", errors: ["missing bytecode"] }],
-      extdecomp: {
-        enabled: true,
-        successRate: 1,
-        meanFunctions: 2,
-        meanOwnSelectors: 1,
-        deltas: [{ symbol: "FAKEA", extdecompFunctions: 2, ownSelectors: 1, success: true }],
-      },
       totalMs: 120,
       startedAt: "2026-10-28T12:00:00.000Z",
     });
@@ -143,7 +137,7 @@ describe("smoke report builder (Task C)", () => {
       "Confusion summary",
       "Score by label",
       "Crashes and timeouts",
-      "extdecomp comparison",
+      "Internal decompilation",
     ]) {
       expect(markdown).toContain(section);
     }
@@ -199,7 +193,6 @@ describe("smoke label provenance (labelSource, labelNote, labelBasis)", () => {
     const markdown = buildReport({
       outcomes: [outcomeOf({ symbol: "FAKEA", label: "legit", score: 35, band: "Elevated" })],
       invalid,
-      extdecomp: { enabled: false, successRate: 0, meanFunctions: 0, meanOwnSelectors: 0, deltas: [] },
       totalMs: 5,
       startedAt: "2026-10-28T12:00:00.000Z",
     });
@@ -232,8 +225,7 @@ describe("smoke runner (Task C)", () => {
       }
       return { score: 12, topEvidence: ["signal:0xa9059cbb (selector 0xa9059cbb)"] };
     };
-    const decompile = async (): Promise<{ success: boolean; functions: number }> => ({ success: true, functions: 1 });
-    const { outcomes } = await runSmoke(tokens, { analyze, decompile, timeoutMs: 50 });
+    const { outcomes } = await runSmoke(tokens, { analyze, timeoutMs: 50 });
     expect(outcomes.map((outcome) => outcome.symbol)).toEqual(["FAKEA", "HANG", "BOOM"]);
     expect(outcomes[0]?.status).toBe("ok");
     const hang = outcomes[1];
@@ -244,7 +236,7 @@ describe("smoke runner (Task C)", () => {
     expect(outcomes[2]?.status).toBe("crash");
   });
 
-  test("run_smoke_counts_own_selectors_without_a_decompiler", async () => {
+  test("run_smoke_counts_own_selectors_from_the_internal_pipeline", async () => {
     const { tokens } = validateFixture([tokenOf({ bytecode: BYTECODE_PLAIN })]);
     const seen: string[] = [];
     const analyze = async (): Promise<{ score: number; topEvidence: string[] }> => {
