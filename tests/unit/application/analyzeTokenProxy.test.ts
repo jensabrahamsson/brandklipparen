@@ -7,6 +7,8 @@ import {
   Address,
   ArtifactChecksum,
   BlockNumber,
+  Bytecode,
+  CodeHash,
   IndexVersion,
   ModelVersion,
   RequestId,
@@ -65,6 +67,7 @@ const TEST_CATALOGUE: CapabilityCatalogue = Object.freeze({
 const PROXY = "0x0102030405060708090a0b0c0d0e0f1011121314";
 const IMPL = "0x1112131415161718191a1b1c1d1e1f2021222324";
 const ADMIN = "0x3132333435363738393a3b3c3d3e3f4041424344";
+const BEACON_ADDR = "0x7172737475767778797a7b7c7d7e7f8081828384";
 
 function addressWord(raw: string): string {
   return `0x${"0".repeat(24)}${raw.slice(2).toLowerCase()}`;
@@ -257,5 +260,64 @@ describe("assessment envelope carries proxy information (K-002, K-005)", () => {
       throw new Error("expected an assessed envelope");
     }
     expect(analysed.value.envelope.proxy).toEqual({ kind: "none" });
+  });
+
+  test("c11_beacon_scores_implementation", async () => {
+    const { BEACON_SLOT, IMPLEMENTATION_SLOT, ZOS_IMPLEMENTATION_SLOT } = await import(
+      "../../../src/domain/proxy.ts"
+    );
+    const proxy = mustOk(Address.parse(PROXY));
+    const beaconAddr = mustOk(Address.parse(BEACON_ADDR));
+    const impl = mustOk(Address.parse(IMPL));
+    const block = mustOk(BlockNumber.of(24000000));
+    const implCode = "0x6001600a600b600c600d600e600f55";
+    const codes = new Map<string, string>([
+      [proxy as string, "0x6001600a600b600c600d600e600f55"],
+      [beaconAddr as string, "0x6001600055"],
+      [impl as string, implCode],
+    ]);
+    const storage = new Map<string, Map<string, string>>([
+      [
+        proxy as string,
+        new Map<string, string>([
+          [(IMPLEMENTATION_SLOT as string).toLowerCase(), `0x${"0".repeat(64)}`],
+          [(ZOS_IMPLEMENTATION_SLOT as string).toLowerCase(), `0x${"0".repeat(64)}`],
+          [(BEACON_SLOT as string).toLowerCase(), addressWord(BEACON_ADDR).toLowerCase()],
+        ]),
+      ],
+    ]);
+    const calls = new Map<string, string>([
+      ["0x5c60da1b", addressWord(IMPL).toLowerCase()],
+      ["0x8da5cb5b", addressWord(ADMIN).toLowerCase()],
+    ]);
+    const services = createAppServices({
+      rpc: new FakeRpcAdapter(codes, block, storage, { calls }),
+      modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
+      clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+    },
+  mustDefaultDetectorSet());
+    const analysed = await services.analyzeToken({
+      address: proxy,
+      block,
+      requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174000")),
+      deadline: mustOk(Timestamp.of(1700000005000)),
+      modelVersion: mustOk(ModelVersion.parse("0.1.0")),
+      indexVersion: mustOk(IndexVersion.parse("1.0.0")),
+      templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
+      catalogue: TEST_CATALOGUE,
+    });
+    expect(analysed.ok).toBe(true);
+    if (!analysed.ok || analysed.value.kind !== "assessed") {
+      throw new Error("expected an assessed envelope");
+    }
+    const proxyInfo = analysed.value.envelope.proxy;
+    expect(proxyInfo.kind).toBe("beacon");
+    if (proxyInfo.kind !== "beacon") {
+      return;
+    }
+    expect(proxyInfo.implementation as string).toBe(impl as string);
+    const expectedHash = mustOk(CodeHash.of(mustOk(Bytecode.parse(implCode))));
+    expect(analysed.value.envelope.codeHash as string).toBe(expectedHash as string);
+    expect(proxyInfo.upgradeAuthority.kind).toBe("single-key");
   });
 });

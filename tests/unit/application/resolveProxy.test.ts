@@ -32,6 +32,7 @@ const PROXY = "0x0102030405060708090a0b0c0d0e0f1011121314";
 const IMPL = "0x1112131415161718191a1b1c1d1e1f2021222324";
 const ADMIN = "0x3132333435363738393a3b3c3d3e3f4041424344";
 const OTHER = "0x5152535455565758595a5b5c5d5e5f6061626364";
+const BEACON = "0x7172737475767778797a7b7c7d7e7f8081828384";
 
 const PROXY_BYTECODE = "0x6001600a600b600c600d600e600f55";
 const IMPL_BYTECODE = "0x6001600055";
@@ -64,8 +65,9 @@ async function resolveWith(
   storage: Map<string, Map<string, string>>,
   target: string,
   maxDepth?: number,
+  calls?: ReadonlyMap<string, string>,
 ) {
-  const rpc = new FakeRpcAdapter(codes, headBlock(), storage);
+  const rpc = new FakeRpcAdapter(codes, headBlock(), storage, calls === undefined ? {} : { calls });
   return resolveProxy(
     { rpc },
     {
@@ -222,7 +224,7 @@ describe("proxy resolution through RpcPort (K-002, K-005)", () => {
     expect(authority.kind).toBe("single-key");
   });
 
-  test("k005_locked_upgrade_marked_as_locked", async () => {
+  test("c11_uups_without_admin_reports_implementation_authority", async () => {
     const { proxiableUUIDSelector, IMPLEMENTATION_SLOT, ADMIN_SLOT } = await import(
       "../../../src/domain/proxy.ts"
     );
@@ -241,7 +243,7 @@ describe("proxy resolution through RpcPort (K-002, K-005)", () => {
     if (!result.ok || result.value.resolution.kind !== "uups") {
       throw new Error("expected a uups resolution");
     }
-    expect(result.value.resolution.upgradeAuthority).toEqual({ kind: "locked" });
+    expect(result.value.resolution.upgradeAuthority).toEqual({ kind: "implementation" });
   });
 
   test("proxy_cycles_terminate", async () => {
@@ -381,5 +383,188 @@ describe("proxy resolution through RpcPort (K-002, K-005)", () => {
       return;
     }
     expect(["eip1967", "uups", "none"]).toContain(result.value.resolution.kind);
+  });
+
+  test("c11_beacon_slot_resolves_implementation_via_beacon_call", async () => {
+    const { BEACON_SLOT, IMPLEMENTATION_SLOT, ZOS_IMPLEMENTATION_SLOT } = await import(
+      "../../../src/domain/proxy.ts"
+    );
+    const { CodeHash } = await import("../../../src/domain/types.ts");
+    // implementation() and owner() selectors on the beacon.
+    const calls = new Map<string, string>([
+      ["0x5c60da1b", addressWord(IMPL)],
+      ["0x8da5cb5b", addressWord(ADMIN)],
+    ]);
+    const codes = codesFor([
+      [PROXY, PROXY_BYTECODE],
+      [BEACON, PROXY_BYTECODE],
+      [IMPL, IMPL_BYTECODE],
+    ]);
+    const storage = storageFor([
+      [PROXY, IMPLEMENTATION_SLOT as string, ZERO_WORD],
+      [PROXY, ZOS_IMPLEMENTATION_SLOT as string, ZERO_WORD],
+      [PROXY, BEACON_SLOT as string, addressWord(BEACON)],
+    ]);
+    const result = await resolveWith(codes, storage, PROXY, undefined, calls);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.resolution.kind !== "beacon") {
+      throw new Error("expected a beacon resolution");
+    }
+    const resolution = result.value.resolution;
+    expect(resolution.implementation as string).toBe(mustOk(Address.parse(IMPL)) as string);
+    expect(resolution.beacon as string).toBe(mustOk(Address.parse(BEACON)) as string);
+    expect(resolution.beaconSlot as string).toBe(BEACON_SLOT as string);
+    const expectedHash = mustOk(CodeHash.of(mustOk(Bytecode.parse(IMPL_BYTECODE))));
+    expect(resolution.implementationCodeHash as string).toBe(expectedHash as string);
+    expect(resolution.upgradeAuthority.kind).toBe("single-key");
+    if (resolution.upgradeAuthority.kind !== "single-key") {
+      return;
+    }
+    expect(resolution.upgradeAuthority.holder as string).toBe(
+      mustOk(Address.parse(ADMIN)) as string,
+    );
+  });
+
+  test("c11_beacon_call_failure_is_not_none", async () => {
+    const { BEACON_SLOT } = await import("../../../src/domain/proxy.ts");
+    const codes = codesFor([
+      [PROXY, PROXY_BYTECODE],
+      [BEACON, PROXY_BYTECODE],
+    ]);
+    const { IMPLEMENTATION_SLOT, ZOS_IMPLEMENTATION_SLOT } = await import(
+      "../../../src/domain/proxy.ts"
+    );
+    const storage = storageFor([
+      [PROXY, IMPLEMENTATION_SLOT as string, ZERO_WORD],
+      [PROXY, ZOS_IMPLEMENTATION_SLOT as string, ZERO_WORD],
+      [PROXY, BEACON_SLOT as string, addressWord(BEACON)],
+    ]);
+    // No call stubs: the implementation() call fails, so the resolver must
+    // report the typed error instead of degrading to none.
+    const result = await resolveWith(codes, storage, PROXY);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      expect(result.value.resolution.kind).not.toBe("none");
+    }
+  });
+
+  test("c11_impl_slot_wins_over_beacon_slot", async () => {
+    const { BEACON_SLOT, IMPLEMENTATION_SLOT, ADMIN_SLOT } = await import(
+      "../../../src/domain/proxy.ts"
+    );
+    const codes = codesFor([
+      [PROXY, PROXY_BYTECODE],
+      [IMPL, IMPL_BYTECODE],
+    ]);
+    const storage = storageFor([
+      [PROXY, IMPLEMENTATION_SLOT as string, addressWord(IMPL)],
+      [PROXY, ADMIN_SLOT as string, ZERO_WORD],
+      [PROXY, BEACON_SLOT as string, addressWord(BEACON)],
+    ]);
+    const result = await resolveWith(codes, storage, PROXY);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.resolution.kind !== "eip1967") {
+      throw new Error("expected an eip1967 resolution");
+    }
+    expect(result.value.resolution.implementation as string).toBe(
+      mustOk(Address.parse(IMPL)) as string,
+    );
+  });
+
+  test("c11_solady_push0_clone_resolves_target", async () => {
+    const { parseEip1167Target } = await import("../../../src/domain/proxy.ts");
+    const prefix = "5f5f365f5f37365f73";
+    const suffix = "5af43d5f5f3e6029573d5ffd5b3d5ff3";
+    const code = `0x${prefix}${OTHER.slice(2).toLowerCase()}${suffix}`;
+    // Self-check on the template bytes: the PUSH1 0x29 JUMPI operand at
+    // index 36 targets the 0x5b byte at index 41.
+    const bytes = Buffer.from(code.slice(2), "hex");
+    expect(bytes.length).toBe(45);
+    expect(bytes[36]).toBe(0x29);
+    expect(bytes[41]).toBe(0x5b);
+    const parsed = mustOk(Bytecode.parse(code));
+    expect(parseEip1167Target(parsed) as string).toBe(mustOk(Address.parse(OTHER)) as string);
+    const codes = codesFor([
+      [PROXY, code],
+      [OTHER, IMPL_BYTECODE],
+    ]);
+    const result = await resolveWith(codes, storageFor([]), PROXY);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.resolution.kind !== "eip1167") {
+      throw new Error("expected an eip1167 resolution");
+    }
+    expect(result.value.resolution.target as string).toBe(mustOk(Address.parse(OTHER)) as string);
+    expect(result.value.resolution.mutability).toBe("fixed");
+  });
+
+  test("c11_clone_with_immutable_args_resolves_target", async () => {
+    const stub = `0x363d3d373d3d3d363d73${OTHER.slice(2).toLowerCase()}5af43d82803e903d91602b57fd5bf3`;
+    const code = `${stub}${"ab".repeat(64)}`;
+    const codes = codesFor([
+      [PROXY, code],
+      [OTHER, IMPL_BYTECODE],
+    ]);
+    const result = await resolveWith(codes, storageFor([]), PROXY);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.resolution.kind !== "eip1167") {
+      throw new Error("expected an eip1167 resolution");
+    }
+    expect(result.value.resolution.target as string).toBe(mustOk(Address.parse(OTHER)) as string);
+  });
+
+  test("c11_garbage_admin_word_is_unknown_not_locked", async () => {
+    const { IMPLEMENTATION_SLOT, ADMIN_SLOT } = await import("../../../src/domain/proxy.ts");
+    const codes = codesFor([
+      [PROXY, PROXY_BYTECODE],
+      [IMPL, IMPL_BYTECODE],
+    ]);
+    const storage = storageFor([
+      [PROXY, IMPLEMENTATION_SLOT as string, addressWord(IMPL)],
+      [PROXY, ADMIN_SLOT as string, GARBAGE_WORD],
+    ]);
+    const result = await resolveWith(codes, storage, PROXY);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.resolution.kind !== "eip1967") {
+      throw new Error("expected an eip1967 resolution");
+    }
+    expect(result.value.resolution.admin).toEqual({ kind: "unknown" });
+    expect(result.value.resolution.upgradeAuthority).toEqual({ kind: "unknown" });
+  });
+
+  test("c11_empty_admin_on_transparent_stays_locked", async () => {
+    const { IMPLEMENTATION_SLOT, ADMIN_SLOT } = await import("../../../src/domain/proxy.ts");
+    const codes = codesFor([
+      [PROXY, PROXY_BYTECODE],
+      [IMPL, IMPL_BYTECODE],
+    ]);
+    const storage = storageFor([
+      [PROXY, IMPLEMENTATION_SLOT as string, addressWord(IMPL)],
+      [PROXY, ADMIN_SLOT as string, ZERO_WORD],
+    ]);
+    const result = await resolveWith(codes, storage, PROXY);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.resolution.kind !== "eip1967") {
+      throw new Error("expected an eip1967 resolution");
+    }
+    expect(result.value.resolution.admin).toEqual({ kind: "zero" });
+    expect(result.value.resolution.upgradeAuthority).toEqual({ kind: "locked" });
+  });
+
+  test("c11_unknown_delegatecode_without_template_is_not_none", async () => {
+    const { IMPLEMENTATION_SLOT, ZOS_IMPLEMENTATION_SLOT } = await import(
+      "../../../src/domain/proxy.ts"
+    );
+    // Dispatcher-free stub that still delegates: matches no known template.
+    const code = "0x5b6000355af43d5b";
+    const codes = codesFor([[PROXY, code]]);
+    const storage = storageFor([
+      [PROXY, IMPLEMENTATION_SLOT as string, ZERO_WORD],
+      [PROXY, ZOS_IMPLEMENTATION_SLOT as string, ZERO_WORD],
+    ]);
+    const result = await resolveWith(codes, storage, PROXY);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      expect(result.value.resolution.kind).not.toBe("none");
+    }
   });
 });

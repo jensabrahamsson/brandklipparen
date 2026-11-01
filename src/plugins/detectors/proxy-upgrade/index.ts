@@ -53,7 +53,7 @@ const OUTPUT_SCHEMA = Object.freeze({
           fact: Object.freeze({ const: "proxy-upgrade" }),
           proof: Object.freeze({ const: "extended" }),
           proxyKind: Object.freeze({
-            enum: Object.freeze(["uups", "eip1967", "zos", "eip1167", "eip7702"]),
+            enum: Object.freeze(["uups", "eip1967", "zos", "eip1167", "eip7702", "beacon"]),
           }),
           upgradeSelector: Object.freeze({ type: "string", minLength: 1 }),
           admin: Object.freeze({ type: Object.freeze(["string", "null"]) }),
@@ -239,7 +239,12 @@ function detectFact(input: DetectorInput): readonly PluginFinding[] {
   if (fact === null) {
     return Object.freeze([]);
   }
-  if (fact.proxyKind !== "eip1967" && fact.proxyKind !== "zos" && fact.proxyKind !== "uups") {
+  if (
+    fact.proxyKind !== "eip1967" &&
+    fact.proxyKind !== "zos" &&
+    fact.proxyKind !== "uups" &&
+    fact.proxyKind !== "beacon"
+  ) {
     return Object.freeze([]);
   }
   let evidence: EvidenceType | null = null;

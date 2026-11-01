@@ -153,7 +153,7 @@ describe("S-007 minimal proxy and 7702 delegation (K-004, K-007)", () => {
   test("k004_nonmatching_bytecode_means_no_eip1167_proxy", async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc.array(fc.integer({ min: 0, max: 255 }), { minLength: 0, maxLength: 96 }),
+        fc.array(fc.integer({ min: 0, max: 255 }), { minLength: 0, maxLength: 128 }),
         async (bytes: number[]) => {
           const hex = `0x${bytes.map((byte) => (byte as number).toString(16).padStart(2, "0")).join("")}`;
           const parsed = Bytecode.parse(hex);
@@ -165,10 +165,23 @@ describe("S-007 minimal proxy and 7702 delegation (K-004, K-007)", () => {
           if (found === null) {
             return;
           }
-          // A reported target must come from the exact EIP-1167 shape.
+          // A reported target must come from one of the known templates:
+          // the standard EIP-1167 runtime (with optional trailing immutable
+          // args) or the Solady PUSH0 clone runtime (likewise).
           const raw = (parsed.value as Uint8Array);
-          expect(raw.length).toBe(45);
-          expect(raw[0]).toBe(0x36);
+          const standard =
+            raw.length >= 45 &&
+            raw[0] === 0x36 && raw[1] === 0x3d && raw[2] === 0x3d && raw[3] === 0x37 &&
+            raw[4] === 0x3d && raw[5] === 0x3d && raw[6] === 0x3d && raw[7] === 0x36 &&
+            raw[8] === 0x3d && raw[9] === 0x73 &&
+            raw[30] === 0x5a && raw[44] === 0xf3;
+          const push0 =
+            raw.length >= 45 &&
+            raw[0] === 0x5f && raw[1] === 0x5f && raw[2] === 0x36 && raw[3] === 0x5f &&
+            raw[4] === 0x5f && raw[5] === 0x37 && raw[6] === 0x36 && raw[7] === 0x5f &&
+            raw[8] === 0x73 &&
+            raw[29] === 0x5a && raw[44] === 0xf3;
+          expect(standard || push0).toBe(true);
         },
       ),
       { numRuns: 40 },

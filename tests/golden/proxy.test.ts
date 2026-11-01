@@ -257,7 +257,7 @@ describe("proxy resolution golden paths (K-002, K-005)", () => {
     const expectedHash = mustOk(CodeHash.of(mustOk(Bytecode.parse(proxyBytecode))));
     expect(resolution.implementationCodeHash as string).toBe(expectedHash as string);
     expect(resolution.upgradeFunction as string).toBe(selector as string);
-    expect(resolution.upgradeAuthority.kind).toBe("locked");
+    expect(resolution.upgradeAuthority).toEqual({ kind: "implementation" });
     expect(resolution.block as number).toBe(PINNED_BLOCK);
   });
 

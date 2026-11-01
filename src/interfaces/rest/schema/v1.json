@@ -24,7 +24,7 @@
           "type": "object",
           "required": ["kind"],
           "properties": {
-            "kind": { "enum": ["none", "eip1967", "uups"] }
+            "kind": { "enum": ["none", "eip1967", "uups", "zos", "eip1167", "eip7702", "beacon"] }
           }
         },
         "codeHash": { "type": "string", "minLength": 1 },

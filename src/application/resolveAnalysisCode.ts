@@ -47,11 +47,13 @@ export type ResolveAnalysisCodeError =
   | { readonly kind: "rpc-error"; readonly requestId: RequestIdType; readonly error: RpcError }
   | { readonly kind: "domain-error"; readonly requestId: RequestIdType; readonly error: DomainError };
 
-// Implementation address behind a resolved proxy: the EIP-1967 or UUPS
-// implementation, the EIP-1167 target or the EIP-7702 delegation, or null
-// when the address holds no recognised proxy pointer.
+// Implementation address behind a resolved proxy: the EIP-1967, UUPS or
+// beacon implementation, the EIP-1167 target or the EIP-7702 delegation, or
+// null when the address holds no recognised proxy pointer.
 export function implementationOfProxy(proxy: ProxyResolution): AddressType | null {
   switch (proxy.kind) {
+    case "beacon":
+      return proxy.implementation;
     case "eip1967":
       return proxy.implementation;
     case "zos":

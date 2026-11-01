@@ -150,6 +150,29 @@ describe("proxy-upgrade detector plugin", () => {
     expect((findings[0]?.payload as Record<string, unknown>)["fact"]).toBe("proxy-upgrade");
   });
 
+  test("c11_beacon proxyFact emits a fact finding", () => {
+    const bytecode = tokenBytecode([
+      { selector: TRANSFER, body: [CALLDATALOAD, ...sstoreConstSlot(2, [CALLDATALOAD]), STOP] },
+    ]);
+    const admin = mustOk(Address.parse("0x3132333435363738393a3b3c3d3e3f4041424344"));
+    const impl = mustOk(Address.parse("0x1112131415161718191a1b1c1d1e1f2021222324"));
+    const input: DetectorInput = Object.freeze({
+      bytecode,
+      codeHash: mustOk(CodeHash.of(bytecode)),
+      proxyFact: Object.freeze({
+        proxyKind: "beacon" as const,
+        implementation: impl,
+        admin,
+        adminKind: "eoa" as const,
+        upgradeSelector: null,
+      }),
+    });
+    const findings = proxyUpgradeDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    expect((findings[0]?.payload as Record<string, unknown>)["proxyKind"]).toBe("beacon");
+    expect((findings[0]?.payload as Record<string, unknown>)["fact"]).toBe("proxy-upgrade");
+  });
+
   test("non-proxy emits no fact finding", () => {
     const bytecode = tokenBytecode([
       { selector: TRANSFER, body: [CALLDATALOAD, ...sstoreConstSlot(2, [CALLDATALOAD]), STOP] },

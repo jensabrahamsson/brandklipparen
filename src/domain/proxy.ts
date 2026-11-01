@@ -116,25 +116,45 @@ export function decodeSlotAddress(word: StorageWordType): SlotAddress {
 
 // Who can change the proxy target (A-12). Single key is an EOA holder, a
 // contract holder carries its code hash, and locked means no upgrade path
-// is reachable (zero admin).
+// is reachable (zero admin). Unknown means the admin word carries dirty
+// high bits, so no holder can be proven (C-11, F-27); implementation means
+// upgrades are gated inside the implementation itself (UUPS without an
+// admin word, C-11).
 export type AdminKind =
   | { readonly kind: "eoa"; readonly address: AddressType }
   | { readonly kind: "contract"; readonly address: AddressType; readonly codeHash: CodeHashType }
-  | { readonly kind: "zero" };
+  | { readonly kind: "zero" }
+  | { readonly kind: "unknown" };
 
 export type UpgradeAuthority =
   | { readonly kind: "single-key"; readonly holder: AddressType }
   | { readonly kind: "contract"; readonly holder: AddressType; readonly codeHash: CodeHashType }
-  | { readonly kind: "locked" };
+  | { readonly kind: "implementation" }
+  | { readonly kind: "locked" }
+  | { readonly kind: "unknown" };
 
 // EIP-1167 minimal proxy runtime shape (public EIP-1167 pattern): 45 bytes
 // with a 10-byte prefix, the 20-byte embedded target, and a 15-byte suffix.
+// Clones with immutable args (Solady/OZ) append the args after the final
+// RETURN, so longer code with the same 45-byte head keeps the same target.
 export const EIP1167_BYTE_LENGTH = 45;
 const EIP1167_PREFIX: readonly number[] = Object.freeze([
   0x36, 0x3d, 0x3d, 0x37, 0x3d, 0x3d, 0x3d, 0x36, 0x3d, 0x73,
 ]);
 const EIP1167_SUFFIX: readonly number[] = Object.freeze([
   0x5a, 0xf4, 0x3d, 0x82, 0x80, 0x3e, 0x90, 0x3d, 0x91, 0x60, 0x2b, 0x57, 0xfd, 0x5b, 0xf3,
+]);
+
+// Solady PUSH0 clone runtime shape (LibClone clone_PUSH0): 45 bytes with a
+// 9-byte prefix, the 20-byte embedded target, and a 16-byte suffix. The
+// JUMPI operand 0x29 (= 41) points at the 0x5b byte, which sits at index
+// 41. Clones with immutable args append the args after the final RETURN.
+export const PUSH0_CLONE_BYTE_LENGTH = 45;
+const PUSH0_CLONE_PREFIX: readonly number[] = Object.freeze([
+  0x5f, 0x5f, 0x36, 0x5f, 0x5f, 0x37, 0x36, 0x5f, 0x73,
+]);
+const PUSH0_CLONE_SUFFIX: readonly number[] = Object.freeze([
+  0x5a, 0xf4, 0x3d, 0x5f, 0x5f, 0x3e, 0x60, 0x29, 0x57, 0x3d, 0x5f, 0xfd, 0x5b, 0x3d, 0x5f, 0xf3,
 ]);
 
 // EIP-7702 delegation designator prefix on EOA code: 0xef0100 followed by
@@ -162,25 +182,35 @@ function addressOfSlice(slice: Uint8Array): AddressType | null {
   return parsed.value;
 }
 
-// Embedded EIP-1167 target, or null when the bytecode diverges from the
-// pattern. Total: every bytecode maps to exactly one branch, never throws.
+// Embedded clone target, or null when the bytecode matches no known clone
+// template. Total: every bytecode maps to exactly one branch, never throws.
+// Accepts the standard EIP-1167 runtime (with optional trailing immutable
+// args, which sit after the final RETURN and never execute) and the Solady
+// PUSH0 clone runtime (likewise with optional trailing args).
 export function parseEip1167Target(bytecode: BytecodeType): AddressType | null {
   const raw = bytecode as Uint8Array;
-  if (raw.length !== EIP1167_BYTE_LENGTH) {
-    return null;
-  }
-  for (let i = 0; i < EIP1167_PREFIX.length; i += 1) {
-    if ((raw[i] ?? -1) !== (EIP1167_PREFIX[i] ?? -2)) {
-      return null;
+  if (raw.length >= EIP1167_BYTE_LENGTH && matchesAt(raw, EIP1167_PREFIX, 0)) {
+    const suffixStart = EIP1167_BYTE_LENGTH - EIP1167_SUFFIX.length;
+    if (matchesAt(raw, EIP1167_SUFFIX, suffixStart)) {
+      return addressOfSlice(raw.slice(EIP1167_PREFIX.length, suffixStart));
     }
   }
-  const suffixStart = EIP1167_BYTE_LENGTH - EIP1167_SUFFIX.length;
-  for (let i = 0; i < EIP1167_SUFFIX.length; i += 1) {
-    if ((raw[suffixStart + i] ?? -1) !== (EIP1167_SUFFIX[i] ?? -2)) {
-      return null;
+  if (raw.length >= PUSH0_CLONE_BYTE_LENGTH && matchesAt(raw, PUSH0_CLONE_PREFIX, 0)) {
+    const suffixStart = PUSH0_CLONE_BYTE_LENGTH - PUSH0_CLONE_SUFFIX.length;
+    if (matchesAt(raw, PUSH0_CLONE_SUFFIX, suffixStart)) {
+      return addressOfSlice(raw.slice(PUSH0_CLONE_PREFIX.length, suffixStart));
     }
   }
-  return addressOfSlice(raw.slice(EIP1167_PREFIX.length, suffixStart));
+  return null;
+}
+
+function matchesAt(raw: Uint8Array, pattern: readonly number[], start: number): boolean {
+  for (let i = 0; i < pattern.length; i += 1) {
+    if ((raw[start + i] ?? -1) !== (pattern[i] ?? -2)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // Delegated EIP-7702 target, or null when the code carries another prefix.
@@ -203,10 +233,22 @@ export function parseEip7702Delegation(bytecode: BytecodeType): AddressType | nu
 // the storage slot, the pinned block, and the selector with its PC offset
 // where derivable for EIP-1967/UUPS. The EIP-1167 target is fixed
 // (logic locked) and the EIP-7702 delegation can change by new
-// authorization per K-004 and K-007. Beacon and diamond branches arrive
-// in their own stories and extend this union.
+// authorization per K-004 and K-007. The beacon branch (C-11) names the
+// beacon beside the implementation it reports; the beacon slot wins only
+// when no implementation slot is set. Diamond branches arrive in their own
+// story and extend this union.
 export type ProxyResolution =
   | { readonly kind: "none" }
+  | {
+      readonly kind: "beacon";
+      readonly beacon: AddressType;
+      readonly beaconCodeHash: CodeHashType;
+      readonly implementation: AddressType;
+      readonly implementationCodeHash: CodeHashType;
+      readonly beaconSlot: SlotType;
+      readonly block: BlockNumberType;
+      readonly upgradeAuthority: UpgradeAuthority;
+    }
   | {
       readonly kind: "eip1967";
       readonly implementation: AddressType;
@@ -261,6 +303,17 @@ export function proxyToCanonical(resolution: ProxyResolution): CanonicalValue {
   switch (resolution.kind) {
     case "none":
       return { kind: "none" };
+    case "beacon":
+      return {
+        kind: "beacon",
+        beacon: resolution.beacon as string,
+        beaconCodeHash: resolution.beaconCodeHash as string,
+        implementation: resolution.implementation as string,
+        implementationCodeHash: resolution.implementationCodeHash as string,
+        beaconSlot: resolution.beaconSlot as string,
+        block: resolution.block as number,
+        upgradeAuthority: authorityToCanonical(resolution.upgradeAuthority),
+      };
     case "eip1967":
       return {
         kind: "eip1967",
@@ -326,13 +379,15 @@ function adminToCanonical(admin: AdminKind): CanonicalValue {
       };
     case "zero":
       return { kind: "zero" };
+    case "unknown":
+      return { kind: "unknown" };
   }
 }
 
 // Host fact for detectors: resolved proxy facts the detector cannot
 // derive from bytecode alone (storage reads at the pinned block).
 export type ProxyFact = {
-  readonly proxyKind: "eip1967" | "uups" | "zos" | "eip1167" | "eip7702";
+  readonly proxyKind: "eip1967" | "uups" | "zos" | "eip1167" | "eip7702" | "beacon";
   readonly implementation: AddressType;
   readonly admin: AddressType | null;
   readonly adminKind: "eoa" | "contract" | "zero" | "none";
@@ -343,11 +398,24 @@ export function proxyFactOf(resolution: ProxyResolution): ProxyFact | null {
   switch (resolution.kind) {
     case "none":
       return null;
+    case "beacon": {
+      const auth = resolution.upgradeAuthority;
+      if (auth.kind === "single-key") {
+        return Object.freeze({ proxyKind: "beacon", implementation: resolution.implementation, admin: auth.holder, adminKind: "eoa", upgradeSelector: null });
+      }
+      if (auth.kind === "contract") {
+        return Object.freeze({ proxyKind: "beacon", implementation: resolution.implementation, admin: auth.holder, adminKind: "contract", upgradeSelector: null });
+      }
+      return Object.freeze({ proxyKind: "beacon", implementation: resolution.implementation, admin: null, adminKind: "none", upgradeSelector: null });
+    }
     case "eip1967":
     case "zos": {
       const admin = resolution.admin;
       if (admin.kind === "zero") {
         return Object.freeze({ proxyKind: resolution.kind, implementation: resolution.implementation, admin: null, adminKind: "zero", upgradeSelector: null });
+      }
+      if (admin.kind === "unknown") {
+        return Object.freeze({ proxyKind: resolution.kind, implementation: resolution.implementation, admin: null, adminKind: "none", upgradeSelector: null });
       }
       return Object.freeze({ proxyKind: resolution.kind, implementation: resolution.implementation, admin: admin.address, adminKind: admin.kind, upgradeSelector: null });
     }
@@ -356,7 +424,13 @@ export function proxyFactOf(resolution: ProxyResolution): ProxyFact | null {
       if (auth.kind === "locked") {
         return Object.freeze({ proxyKind: "uups", implementation: resolution.implementation, admin: null, adminKind: "zero", upgradeSelector: resolution.upgradeFunction });
       }
-      return Object.freeze({ proxyKind: "uups", implementation: resolution.implementation, admin: auth.holder, adminKind: auth.kind === "contract" ? "contract" : "eoa", upgradeSelector: resolution.upgradeFunction });
+      if (auth.kind === "single-key") {
+        return Object.freeze({ proxyKind: "uups", implementation: resolution.implementation, admin: auth.holder, adminKind: "eoa", upgradeSelector: resolution.upgradeFunction });
+      }
+      if (auth.kind === "contract") {
+        return Object.freeze({ proxyKind: "uups", implementation: resolution.implementation, admin: auth.holder, adminKind: "contract", upgradeSelector: resolution.upgradeFunction });
+      }
+      return Object.freeze({ proxyKind: "uups", implementation: resolution.implementation, admin: null, adminKind: "none", upgradeSelector: resolution.upgradeFunction });
     }
     case "eip1167":
       return Object.freeze({ proxyKind: "eip1167", implementation: resolution.target, admin: null, adminKind: "none", upgradeSelector: null });
@@ -375,7 +449,11 @@ function authorityToCanonical(authority: UpgradeAuthority): CanonicalValue {
         holder: authority.holder as string,
         codeHash: authority.codeHash as string,
       };
+    case "implementation":
+      return { kind: "implementation" };
     case "locked":
       return { kind: "locked" };
+    case "unknown":
+      return { kind: "unknown" };
   }
 }
