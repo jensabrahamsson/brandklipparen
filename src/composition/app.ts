@@ -52,6 +52,7 @@ import type { PersonalizeTransportOverrides } from "./root.ts";
 import { createInvestigationServiceFromConfig } from "./root.ts";
 import {
   createChatServiceFromConfig,
+  createExplainCodeServiceFromConfig,
   createExplainServiceFromConfig,
   createRugServiceFromConfig,
 } from "./root.ts";
@@ -59,6 +60,7 @@ import type { OverlayTransportOverrides } from "./root.ts";
 import type { AssessmentService } from "../application/assessmentService.ts";
 import type { InvestigationService } from "../application/investigationService.ts";
 import type { ChatService } from "../application/chatService.ts";
+import type { ExplainCodeService } from "../application/explainCodeService.ts";
 import type { ExplainService } from "../application/explainService.ts";
 import type { RugService } from "../application/rugService.ts";
 import { FIRST_PARTY_DETECTOR_IDS } from "../plugins/detector.ts";
@@ -135,6 +137,7 @@ export type BuiltApp = {
   readonly explain: ExplainService | undefined;
   readonly chat: ChatService | undefined;
   readonly rug: RugService | undefined;
+  readonly explainCode: ExplainCodeService | undefined;
   // Live new-tokens service (E-11 follow-up): constructed here so the
   // REST/demo runtime can start it; it runs nothing until start() is
   // called, so tests and CLI one-shots that never start it stay idle.
@@ -318,6 +321,13 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
   if (!rug.ok) {
     return err(rug.error);
   }
+  // Per-function code explanation (VS-B3): the service when its provider
+  // is configured, otherwise undefined so the route answers not-configured
+  // with zero provider calls and the deterministic code view stands.
+  const explainCode = createExplainCodeServiceFromConfig(config, deps.overlayTransports);
+  if (!explainCode.ok) {
+    return err(explainCode.error);
+  }
   const personalizePromptVersion =
     personalize.value === undefined ? undefined : PromptVersion.parse(PERSONALIZE_PROMPT_VERSION);
   if (personalizePromptVersion !== undefined && !personalizePromptVersion.ok) {
@@ -404,6 +414,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     explainService: explain.value,
     chatService: chat.value,
     rugService: rug.value,
+    explainCodeService: explainCode.value,
     personalizeService: personalize.value,
     personalizePromptVersion:
       personalizePromptVersion === undefined ? undefined : personalizePromptVersion.value,
@@ -439,6 +450,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
       explain: explain.value,
       chat: chat.value,
       rug: rug.value,
+      explainCode: explainCode.value,
       liveTokens,
       marketNew,
       rateLimit: rateLimit.value,

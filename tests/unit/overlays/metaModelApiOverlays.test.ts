@@ -6,21 +6,27 @@ import { describe, expect, test } from "vitest";
 import { loadConfig } from "../../../src/adapters/config/loader.ts";
 import {
   createChatServiceFromConfig,
+  createExplainCodeServiceFromConfig,
   createExplainServiceFromConfig,
   createRugServiceFromConfig,
   selectChatBinding,
   selectExplainBinding,
+  selectExplainCodeBinding,
   selectRugBinding,
 } from "../../../src/composition/root.ts";
 import { healthCapabilities } from "../../../src/interfaces/rest/healthCapabilities.ts";
 import type { OverlayTransport } from "../../../src/adapters/overlays/metaModelApiOverlays.ts";
 import { ChatInput } from "../../../src/ports/chatModel.ts";
+import { ExplainCodeInput } from "../../../src/ports/explainCodeModel.ts";
 import { ExplainInput } from "../../../src/ports/explainModel.ts";
 import { RugInput } from "../../../src/ports/rugModel.ts";
 import {
   DEMO_CHAT_META_READY_LINE,
   DEMO_CHAT_META_PROVIDER,
   DEMO_CHAT_OFF_LINE,
+  DEMO_EXPLAIN_CODE_META_PROVIDER,
+  DEMO_EXPLAIN_CODE_META_READY_LINE,
+  DEMO_EXPLAIN_CODE_OFF_LINE,
   DEMO_EXPLAIN_META_READY_LINE,
   DEMO_EXPLAIN_META_PROVIDER,
   DEMO_EXPLAIN_OFF_LINE,
@@ -28,9 +34,11 @@ import {
   DEMO_RUG_META_PROVIDER,
   DEMO_RUG_OFF_LINE,
   demoChatStatus,
+  demoExplainCodeStatus,
   demoExplainStatus,
   demoRugStatus,
   withDemoChatDefault,
+  withDemoExplainCodeDefault,
   withDemoExplainDefault,
   withDemoRugDefault,
 } from "../../../scripts/demo.ts";
@@ -50,7 +58,7 @@ function baseCiEnv(): EnvInput {
   };
 }
 
-function overlayEnv(feature: "EXPLAIN" | "CHAT" | "RUG", overrides: EnvInput = {}): EnvInput {
+function overlayEnv(feature: "EXPLAIN" | "CHAT" | "RUG" | "EXPLAIN_CODE", overrides: EnvInput = {}): EnvInput {
   return {
     ...baseCiEnv(),
     [`BRANDKLIPPAREN_${feature}_PROVIDER`]: "meta-model-api",
@@ -60,7 +68,7 @@ function overlayEnv(feature: "EXPLAIN" | "CHAT" | "RUG", overrides: EnvInput = {
   };
 }
 
-function loadOverlayEnv(feature: "EXPLAIN" | "CHAT" | "RUG", overrides: EnvInput = {}) {
+function loadOverlayEnv(feature: "EXPLAIN" | "CHAT" | "RUG" | "EXPLAIN_CODE", overrides: EnvInput = {}) {
   const loaded = loadConfig(overlayEnv(feature, overrides));
   if (!loaded.ok) {
     throw new Error(`expected valid config: ${loaded.error.variable}`);
@@ -624,6 +632,22 @@ describe("overlay meanings and meta-statement guard", () => {
     expect(meanings[0]).toMatchObject({ id: "signal:synth-owner" });
   });
 
+  test("explain-code notes drop unknown lines and count into droppedClaims", async () => {
+    const { checkExplainCodeCitations } = await import("../../../src/application/explainCodeService.ts");
+    const checked = checkExplainCodeCitations(
+      [{ text: "This function moves tokens.", cites: ["line:2"] }],
+      [
+        { lines: [2], text: "The transfer happens here.", cites: ["line:2"] },
+        { lines: [99], text: "A note cites a line that is not there.", cites: ["line:99"] },
+      ],
+      new Set([1, 2, 3]),
+      new Set(["signal:first"]),
+    );
+    expect(checked.summary).toEqual(["This function moves tokens."]);
+    expect(checked.notes).toEqual([{ lines: [2], text: "The transfer happens here." }]);
+    expect(checked.droppedClaims).toBe(1);
+  });
+
   test("meta-statement sentences drop and count into droppedClaims", async () => {
     const { checkExplainCitations } = await import("../../../src/application/explainService.ts");
     const { checkChatCitations } = await import("../../../src/application/chatService.ts");
@@ -657,5 +681,198 @@ describe("overlay meanings and meta-statement guard", () => {
     );
     expect(rugged.narrative).toEqual(["The owner can block sales."]);
     expect(rugged.droppedClaims).toBe(1);
+  });
+});
+
+describe("explain-code overlay selection", () => {
+  test("an unset provider leaves explain-code disabled with zero calls", () => {
+    const loaded = loadConfig(baseCiEnv());
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) {
+      return;
+    }
+    const binding = selectExplainCodeBinding(loaded.value);
+    expect(binding.ok).toBe(true);
+    if (!binding.ok) {
+      return;
+    }
+    expect(binding.value).toEqual({ kind: "disabled" });
+    const calls: CapturedCall[] = [];
+    const built = createExplainCodeServiceFromConfig(loaded.value, {
+      explainCodeTransport: fakeTransport(calls, "{}"),
+    });
+    expect(built.ok).toBe(true);
+    if (built.ok) {
+      expect(built.value).toBeUndefined();
+    }
+    expect(calls.length).toBe(0);
+    expect(healthCapabilities({})).toMatchObject({ explainCode: { disabled: true } });
+  });
+
+  test("an invalid explain-code provider value is a typed startup error naming the variable", () => {
+    const loaded = loadConfig(
+      overlayEnv("EXPLAIN_CODE", { BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER: "unknown" }),
+    );
+    expect(loaded.ok).toBe(false);
+    if (loaded.ok) {
+      return;
+    }
+    expect(loaded.error.variable).toBe("BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER");
+  });
+
+  test("a selected explain-code provider without its key stays disabled with zero calls", () => {
+    const loaded = loadConfig(
+      overlayEnv("EXPLAIN_CODE", { BRANDKLIPPAREN_EXPLAIN_CODE_META_API_KEY: "" }),
+    );
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) {
+      return;
+    }
+    const calls: CapturedCall[] = [];
+    const built = createExplainCodeServiceFromConfig(loaded.value, {
+      explainCodeTransport: fakeTransport(calls, "{}"),
+    });
+    expect(built.ok).toBe(true);
+    if (built.ok) {
+      expect(built.value).toBeUndefined();
+    }
+    expect(calls.length).toBe(0);
+  });
+});
+
+describe("explain-code Meta answers", () => {
+  function explainCodeInput() {
+    const created = ExplainCodeInput.create({
+      codeHash: "code-hash-for-unit-suite",
+      selector: "0xa9059cbb",
+      view: "decompiled",
+      promptVersion: "explain-code-1",
+      lines: [
+        { lineNumber: 1, text: "function move(address to) {" },
+        { lineNumber: 2, text: "balances[to] += 1;" },
+        { lineNumber: 3, text: "}" },
+      ],
+      evidenceIds: ["signal:first"],
+    });
+    if (created === null) {
+      throw new Error("expected valid explain-code input");
+    }
+    return created;
+  }
+
+  test("a configured explain-code answers with summary and notes, in health", async () => {
+    const config = loadOverlayEnv("EXPLAIN_CODE");
+    const calls: CapturedCall[] = [];
+    const built = createExplainCodeServiceFromConfig(config, {
+      explainCodeTransport: fakeTransport(
+        calls,
+        chatEnvelope({
+          provider: "meta-model-api",
+          modelId: "muse-spark-1.3",
+          summary: [{ text: "This function moves tokens.", cites: ["line:2"] }],
+          notes: [{ lines: [2], text: "The transfer happens here.", cites: ["line:2"] }],
+        }),
+      ),
+    });
+    expect(built.ok).toBe(true);
+    if (!built.ok) {
+      return;
+    }
+    const service = built.value;
+    expect(service !== undefined && service.enabled).toBe(true);
+    if (service === undefined) {
+      return;
+    }
+    expect(service.provider).toBe("meta-model-api");
+    expect(service.modelId).toBe("muse-spark-1.3");
+    expect(healthCapabilities({ explainCodeService: service })).toMatchObject({
+      explainCode: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
+    });
+    const outcome = await service.explainCode(explainCodeInput());
+    expect(calls.length).toBe(1);
+    if (outcome.kind !== "ok") {
+      throw new Error(`expected ok, got ${outcome.kind}`);
+    }
+    expect(outcome.summary).toEqual(["This function moves tokens."]);
+    expect(outcome.notes).toEqual([{ lines: [2], text: "The transfer happens here." }]);
+    expect(outcome.droppedClaims).toBe(0);
+    const body = JSON.parse(calls[0]?.body ?? "{}") as Record<string, unknown>;
+    expect(body["model"]).toBe("muse-spark-1.3");
+    expect(body["max_tokens"]).toBe(8192);
+    expect(body["reasoning_effort"]).toBe("low");
+    expect(calls[0]?.url).toBe("https://meta.example.invalid/chat/completions");
+    const messages = body["messages"] as { role: string; content: string }[];
+    const user = JSON.parse(messages[1]?.content ?? "{}") as Record<string, unknown>;
+    expect(user["selector"]).toBe("0xa9059cbb");
+    expect(user["view"]).toBe("decompiled");
+    expect(user["lines"]).toEqual([
+      { lineNumber: 1, text: "function move(address to) {" },
+      { lineNumber: 2, text: "balances[to] += 1;" },
+      { lineNumber: 3, text: "}" },
+    ]);
+    const system = messages[0]?.content ?? "";
+    expect(system).toContain("line:N");
+    expect(system).toContain("author's claims");
+  });
+
+  test("malformed explain-code output falls back to invalid-output, never a throw", async () => {
+    const calls: CapturedCall[] = [];
+    const built = createExplainCodeServiceFromConfig(loadOverlayEnv("EXPLAIN_CODE"), {
+      explainCodeTransport: fakeTransport(calls, "not json"),
+    });
+    if (!built.ok || built.value === undefined) {
+      throw new Error("expected a configured explain-code service");
+    }
+    expect(await built.value.explainCode(explainCodeInput())).toEqual({ kind: "invalid-output" });
+  });
+});
+
+describe("demo explain-code provider default (meta-model-api)", () => {
+  const ASSESSMENT_KEY_FILE = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE";
+
+  test("an unset provider with the assessment Meta key file defaults to meta-model-api", () => {
+    expect(DEMO_EXPLAIN_CODE_META_PROVIDER).toBe("meta-model-api");
+    const { env: coded, defaulted: applied } = withDemoExplainCodeDefault({
+      [ASSESSMENT_KEY_FILE]: "secrets/meta-key.txt",
+      BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "fake-meta-model-1",
+      BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta.example.invalid",
+    });
+    expect(applied).toBe(true);
+    expect(coded["BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER"]).toBe("meta-model-api");
+    expect(coded["BRANDKLIPPAREN_EXPLAIN_CODE_META_API_KEY_FILE"]).toBe("secrets/meta-key.txt");
+    expect(coded["BRANDKLIPPAREN_EXPLAIN_CODE_META_MODEL_ID"]).toBe("fake-meta-model-1");
+    expect(coded["BRANDKLIPPAREN_EXPLAIN_CODE_META_BASE_URL"]).toBe("https://meta.example.invalid");
+  });
+
+  test("an explicit explain-code provider always wins", () => {
+    for (const explicit of ["off", "meta-model-api"]) {
+      const { env: kept, defaulted: applied } = withDemoExplainCodeDefault({
+        BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER: explicit,
+        [ASSESSMENT_KEY_FILE]: "secrets/meta-key.txt",
+      });
+      expect(applied).toBe(false);
+      expect(kept["BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER"]).toBe(explicit);
+      expect(kept["BRANDKLIPPAREN_EXPLAIN_CODE_META_API_KEY_FILE"]).toBe(undefined);
+    }
+  });
+
+  test("no assessment Meta key file means no explain-code default", () => {
+    expect(withDemoExplainCodeDefault({}).defaulted).toBe(false);
+    expect(withDemoExplainCodeDefault({})).toMatchObject({ env: {} });
+  });
+
+  test("explain-code status lines name the provider only with a loaded key", () => {
+    expect(
+      demoExplainCodeStatus({
+        BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER: "meta-model-api",
+        BRANDKLIPPAREN_EXPLAIN_CODE_META_API_KEY: "fake-key-for-tests-only",
+      }),
+    ).toBe(DEMO_EXPLAIN_CODE_META_READY_LINE);
+    expect(DEMO_EXPLAIN_CODE_META_READY_LINE).toBe("explain-code provider: meta-model-api (key loaded)");
+    expect(demoExplainCodeStatus({})).toBe(DEMO_EXPLAIN_CODE_OFF_LINE);
+    expect(DEMO_EXPLAIN_CODE_OFF_LINE).toBe("explain-code: off");
+    expect(demoExplainCodeStatus({ BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER: "meta-model-api" })).toBe(
+      DEMO_EXPLAIN_CODE_OFF_LINE,
+    );
   });
 });

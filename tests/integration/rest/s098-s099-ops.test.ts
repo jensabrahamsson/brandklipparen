@@ -175,7 +175,7 @@ describe("calibration read view and readiness probe (S-098, S-099)", () => {
       expect(body.status).toBe("ready");
       expect(body.artifactChecksum).toBe("cd".repeat(32));
       const byId = new Map((body.aiPlugins ?? []).map((entry) => [entry.id, entry.configured]));
-      for (const id of ["assessment", "investigation", "personalize", "naming", "explain", "chat", "rug"]) {
+      for (const id of ["assessment", "investigation", "personalize", "naming", "explain", "chat", "rug", "explain-code"]) {
         expect(byId.has(id)).toBe(true);
       }
       // Only the wired explain service reports configured; every other AI

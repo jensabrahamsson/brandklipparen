@@ -173,6 +173,7 @@ export type HealthState = {
   readonly explain?: FeatureCapability | undefined;
   readonly chat?: FeatureCapability | undefined;
   readonly rug?: FeatureCapability | undefined;
+  readonly explainCode?: FeatureCapability | undefined;
   readonly personalize?: FeatureCapability | undefined;
   readonly onchain?: OnchainCapability | undefined;
   readonly market?: MarketCapability | undefined;

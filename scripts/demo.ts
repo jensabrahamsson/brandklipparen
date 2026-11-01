@@ -357,6 +357,7 @@ export function withDemoInvestigateDefault(
 export const DEMO_EXPLAIN_META_PROVIDER = "meta-model-api";
 export const DEMO_CHAT_META_PROVIDER = "meta-model-api";
 export const DEMO_RUG_META_PROVIDER = "meta-model-api";
+export const DEMO_EXPLAIN_CODE_META_PROVIDER = "meta-model-api";
 
 function withDemoOverlayDefault(
   env: Readonly<Record<string, string | undefined>>,
@@ -427,6 +428,18 @@ export function withDemoRugDefault(
   );
 }
 
+export function withDemoExplainCodeDefault(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly env: Record<string, string | undefined>; readonly defaulted: boolean } {
+  return withDemoOverlayDefault(
+    env,
+    "BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER",
+    "BRANDKLIPPAREN_EXPLAIN_CODE_META_API_KEY_FILE",
+    "BRANDKLIPPAREN_EXPLAIN_CODE_META_MODEL_ID",
+    "BRANDKLIPPAREN_EXPLAIN_CODE_META_BASE_URL",
+  );
+}
+
 // Single overlay status lines for the demo log: exactly one line per
 // feature naming the selected provider, never a value or file contents.
 export const DEMO_EXPLAIN_OFF_LINE = "explain: off";
@@ -435,6 +448,8 @@ export const DEMO_CHAT_OFF_LINE = "chat: off";
 export const DEMO_CHAT_META_READY_LINE = "chat provider: meta-model-api (key loaded)";
 export const DEMO_RUG_OFF_LINE = "rug: off";
 export const DEMO_RUG_META_READY_LINE = "rug provider: meta-model-api (key loaded)";
+export const DEMO_EXPLAIN_CODE_OFF_LINE = "explain-code: off";
+export const DEMO_EXPLAIN_CODE_META_READY_LINE = "explain-code provider: meta-model-api (key loaded)";
 
 function demoOverlayStatus(
   env: Readonly<Record<string, string | undefined>>,
@@ -483,6 +498,18 @@ export function demoRugStatus(
     "BRANDKLIPPAREN_RUG_META_API_KEY",
     DEMO_RUG_META_READY_LINE,
     DEMO_RUG_OFF_LINE,
+  );
+}
+
+export function demoExplainCodeStatus(
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  return demoOverlayStatus(
+    env,
+    "BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER",
+    "BRANDKLIPPAREN_EXPLAIN_CODE_META_API_KEY",
+    DEMO_EXPLAIN_CODE_META_READY_LINE,
+    DEMO_EXPLAIN_CODE_OFF_LINE,
   );
 }
 
@@ -983,7 +1010,11 @@ async function runDemo(): Promise<void> {
   if (rugged.defaulted) {
     process.stdout.write("rug provider: defaulted to meta-model-api (key file set)\n");
   }
-  const resolved = resolveSecretFileVars(rugged.env, root, (path) => readFileSync(path, "utf8"));
+  const codeExplained = withDemoExplainCodeDefault(rugged.env);
+  if (codeExplained.defaulted) {
+    process.stdout.write("explain-code provider: defaulted to meta-model-api (key file set)\n");
+  }
+  const resolved = resolveSecretFileVars(codeExplained.env, root, (path) => readFileSync(path, "utf8"));
   for (const name of resolved.failed) {
     process.stdout.write(`warning: unreadable secret file for ${name}; leaving it unset.\n`);
   }
@@ -1011,6 +1042,7 @@ async function runDemo(): Promise<void> {
   process.stdout.write(`${demoExplainStatus(demoEnv)}\n`);
   process.stdout.write(`${demoChatStatus(demoEnv)}\n`);
   process.stdout.write(`${demoRugStatus(demoEnv)}\n`);
+  process.stdout.write(`${demoExplainCodeStatus(demoEnv)}\n`);
   process.stdout.write(`${demoLpFeedStatus(demoEnv)}\n`);
   process.stdout.write(`${demoMarketStatus(demoEnv)}\n`);
   process.stdout.write(`${demoSourceStatus(demoEnv)}\n`);

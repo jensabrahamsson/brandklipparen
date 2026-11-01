@@ -30,7 +30,10 @@ import { requiredFlooredSections, serializePersonalizeOutcome } from "../../appl
 import type { PersonalizeService } from "../../application/personalizeService.ts";
 import { EXPLAIN_PROMPT_VERSION, serializeExplainOutcome } from "../../application/explainService.ts";
 import type { ExplainService } from "../../application/explainService.ts";
+import { EXPLAIN_CODE_PROMPT_VERSION, serializeExplainCodeOutcome } from "../../application/explainCodeService.ts";
+import type { ExplainCodeService } from "../../application/explainCodeService.ts";
 import { envelopeMeanings } from "../../application/modelMeanings.ts";
+import { ExplainCodeInput } from "../../ports/explainCodeModel.ts";
 import { ExplainInput } from "../../ports/explainModel.ts";
 import { snippetForSelector } from "../../application/snippetService.ts";
 import type { SnippetDecompile } from "../../application/snippetService.ts";
@@ -193,6 +196,11 @@ export type RestServerOptions = {
   // answers the not-configured envelope with zero provider calls and the
   // deterministic analysis standing.
   readonly rugService?: RugService | undefined;
+  // Explain-code service for the opt-in per-function code explanation
+  // (VS-B3). Absent service means the overlay stays off: the route answers
+  // the not-configured envelope with zero provider calls and the
+  // deterministic code view standing.
+  readonly explainCodeService?: ExplainCodeService | undefined;
   // Frozen calibration snapshot for the read view (S-098, K-205, K-210):
   // built once at wiring time from the loaded artifact and its checksum.
   // The route serves this snapshot byte for byte and never loads or
@@ -452,6 +460,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
       explainService: options.explainService,
       chatService: options.chatService,
       rugService: options.rugService,
+      explainCodeService: options.explainCodeService,
       personalizeService: options.personalizeService,
       onchain: options.onchain,
       market: options.marketNew === undefined ? undefined : { provider: "dexscreener" },
@@ -526,6 +535,10 @@ export function createRestServer(options: RestServerOptions): RestServer {
       {
         id: "rug",
         configured: options.rugService !== undefined && options.rugService.enabled,
+      },
+      {
+        id: "explain-code",
+        configured: options.explainCodeService !== undefined && options.explainCodeService.enabled,
       },
     ];
     if (pin === undefined) {
@@ -1983,6 +1996,215 @@ export function createRestServer(options: RestServerOptions): RestServer {
     );
   }
 
+  // Per-function code explanation overlay (VS-B3): the same key and
+  // address gate as the analyze routes, then the selector and view shape
+  // checks, then the frozen function lines for that view (decompiled lines
+  // from the local pipeline, or the verified source range), then one
+  // overlay call carrying the selector-filtered evidence meanings. The
+  // route always answers 200 with the outcome envelope: `not-configured`
+  // without a wired service, `invalid-output` for malformed model output,
+  // and the checked summary and notes otherwise. Line cites name 1-based
+  // lines in the sent view; anything citing unknown lines or evidence
+  // drops with a count. Scores, evidence and finding text are untouched:
+  // the analysis runs first and stands beside the overlay in every
+  // branch. An unknown selector, or a source view with no verified source
+  // covering the function, fails as `validation-error` before any
+  // provider call.
+  async function handleExplainCode(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const rawRecord =
+      typeof rawInput === "object" && rawInput !== null && !Array.isArray(rawInput)
+        ? (rawInput as Record<string, unknown>)
+        : {};
+    const rawSelector = rawRecord["selector"];
+    if (typeof rawSelector !== "string" || !/^0x[0-9a-fA-F]{8}$/.test(rawSelector)) {
+      return sendError(
+        reply,
+        validationError("Invalid selector: expected 0x followed by 8 hex characters.", requestId as string),
+      );
+    }
+    const rawView = rawRecord["view"];
+    if (rawView !== "decompiled" && rawView !== "source") {
+      return sendError(
+        reply,
+        validationError('Invalid view: expected "decompiled" or "source".', requestId as string),
+      );
+    }
+    const service = options.explainCodeService;
+    if (service === undefined || !service.enabled) {
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          explainCode: { kind: "not-configured" },
+        }),
+      );
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const rpc = options.snippetRpc;
+    if (rpc === undefined) {
+      return sendError(reply, requestError(500, "internal-error", "Code explanation is not available on this server.", requestId));
+    }
+    const fetched = await rpc.getCode(gated.value.address, {
+      requestId,
+      deadline: deadline.value,
+      block: gated.value.block,
+    });
+    if (!fetched.ok) {
+      if (fetched.error.kind === "no-code") {
+        return sendError(reply, notFound(requestId));
+      }
+      return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
+    }
+    const codeHash = CodeHash.of(fetched.value.bytecode);
+    if (!codeHash.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const codeHashText = codeHash.value as string;
+    const wantedSelector = rawSelector.toLowerCase();
+    let viewLines: { readonly lineNumber: number; readonly text: string }[];
+    let viewFile: string | undefined;
+    if (rawView === "decompiled") {
+      const snippet = snippetForSelector(
+        fetched.value.bytecode,
+        rawSelector,
+        options.snippetDecompile ?? decompilePreferV2,
+      );
+      if (!snippet.ok) {
+        return sendError(
+          reply,
+          validationError("Unknown selector: the contract dispatcher carries no such entry.", requestId as string),
+        );
+      }
+      viewLines = snippet.value.lines.map((line) => ({ lineNumber: line.lineNumber, text: line.text }));
+    } else {
+      const sourceService = options.sourceService;
+      if (sourceService === undefined) {
+        return sendError(
+          reply,
+          validationError("No verified source covers this function: the source lookup is not available on this server.", requestId as string),
+        );
+      }
+      const result = await sourceService.getSource(gated.value.address, {
+        requestId,
+        deadline: deadline.value,
+        block: gated.value.block,
+      });
+      if (!result.ok) {
+        if (result.error === "no-code") {
+          return sendError(reply, notFound(requestId));
+        }
+        return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
+      }
+      if (result.value.source.status !== "verified") {
+        return sendError(
+          reply,
+          validationError("No verified source covers this function: the author published no source code.", requestId as string),
+        );
+      }
+      const located = result.value.source.functions.find(
+        (entry) => entry.selector.toLowerCase() === wantedSelector,
+      );
+      if (located === undefined) {
+        return sendError(
+          reply,
+          validationError("No verified source covers this function.", requestId as string),
+        );
+      }
+      const file = result.value.source.files.find((entry) => entry.path === located.file);
+      if (file === undefined) {
+        return sendError(
+          reply,
+          validationError("No verified source covers this function.", requestId as string),
+        );
+      }
+      const fileLines = file.content.split("\n");
+      const ranged = fileLines.slice(located.startLine - 1, located.endLine);
+      if (ranged.length === 0) {
+        return sendError(
+          reply,
+          validationError("No verified source covers this function.", requestId as string),
+        );
+      }
+      viewLines = ranged.map((text, index) => ({ lineNumber: index + 1, text }));
+      viewFile = located.file;
+    }
+    const counters = createRequestCounters();
+    const analysed = await options.services.analyzeToken(
+      {
+        address: gated.value.address,
+        block: gated.value.block,
+        requestId,
+        deadline: deadline.value,
+        modelVersion: options.modelVersion,
+        indexVersion: options.indexVersion,
+        templateVersion: options.templateVersion,
+        catalogue: options.catalogue,
+      },
+      counters,
+    );
+    if (!analysed.ok) {
+      const mapped = toHttpError(analysed.error);
+      return sendError(
+        reply,
+        requestError(mapped.status, mapped.code, mapped.message, requestId),
+      );
+    }
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(body);
+    }
+    const envelope = analysed.value.envelope;
+    const meanings = envelopeMeanings(envelope).filter((meaning) =>
+      meaning.selectors.some((labelled) => labelled.selector.toLowerCase() === wantedSelector),
+    );
+    const evidenceIds = meanings.map((meaning) => meaning.id);
+    const input = ExplainCodeInput.create({
+      codeHash: codeHashText,
+      selector: rawSelector,
+      view: rawView,
+      promptVersion: EXPLAIN_CODE_PROMPT_VERSION,
+      lines: viewLines,
+      ...(viewFile === undefined ? {} : { file: viewFile }),
+      evidenceIds,
+      meanings,
+    });
+    if (input === null) {
+      return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          codeHash: codeHashText,
+          selector: rawSelector,
+          view: rawView,
+          explainCode: { kind: "invalid-output" },
+        }),
+      );
+    }
+    const outcome = await service.explainCode(input, store.keyId(gated.value.apiKey) ?? "unknown-key");
+    return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
+      JSON.stringify({
+        status: "ok",
+        apiVersion: API_VERSION,
+        codeHash: codeHashText,
+        selector: input.selector,
+        view: rawView,
+        explainCode: JSON.parse(serializeExplainCodeOutcome(outcome)),
+      }),
+    );
+  }
+
   app.get("/v1/snippet", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleSnippet(request, reply, request.query);
   });
@@ -2077,6 +2299,10 @@ export function createRestServer(options: RestServerOptions): RestServer {
 
   app.post("/v1/rug", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleRug(request, reply, request.body);
+  });
+
+  app.post("/v1/explain-code", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleExplainCode(request, reply, request.body);
   });
 
   app.get("/v1/assessment", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {

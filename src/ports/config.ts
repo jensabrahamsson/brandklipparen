@@ -155,11 +155,12 @@ export type AppConfig = {
   readonly investigateToolTimeoutMs?: number;
   readonly investigatePromptVersion?: PromptVersion;
   readonly investigateDailyCapPerKey?: number;
-  // Opt-in overlay providers (explain, chat, rug): unset or "off" leaves
-  // each feature disabled with zero provider calls. A selected provider
-  // binds its Meta Model API adapter when its connection triple below is
-  // complete (the model id defaults to muse-spark-1.3 in the adapter),
-  // otherwise the feature stays disabled instead of failing startup.
+  // Opt-in overlay providers (explain, chat, rug, explain-code): unset or
+  // "off" leaves each feature disabled with zero provider calls. A
+  // selected provider binds its Meta Model API adapter when its
+  // connection triple below is complete (the model id defaults to
+  // muse-spark-1.3 in the adapter), otherwise the feature stays disabled
+  // instead of failing startup.
   readonly explainProvider?: "meta-model-api" | "off";
   readonly explainMetaBaseUrl?: string;
   readonly explainMetaApiKey?: SecretString;
@@ -172,11 +173,16 @@ export type AppConfig = {
   readonly rugMetaBaseUrl?: string;
   readonly rugMetaApiKey?: SecretString;
   readonly rugMetaModelId?: ModelId;
+  readonly explainCodeProvider?: "meta-model-api" | "off";
+  readonly explainCodeMetaBaseUrl?: string;
+  readonly explainCodeMetaApiKey?: SecretString;
+  readonly explainCodeMetaModelId?: ModelId;
   // Daily caps for overlay calls per API key: the composition falls back
   // to its small placeholder default when unset.
   readonly explainDailyCapPerKey?: number;
   readonly chatDailyCapPerKey?: number;
   readonly rugDailyCapPerKey?: number;
+  readonly explainCodeDailyCapPerKey?: number;
   // New-LP-pairs feed on mainnet (S-087, S-088, K-039, K-505): all
   // optional in every setup. An absent Etherscan key or fallback URL
   // leaves the feed answering `not-configured` with zero sends instead

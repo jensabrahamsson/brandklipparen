@@ -5,6 +5,7 @@
 // top-level assessment field.
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import type { ChatService } from "../../application/chatService.ts";
+import type { ExplainCodeService } from "../../application/explainCodeService.ts";
 import type { ExplainService } from "../../application/explainService.ts";
 import type { InvestigationService } from "../../application/investigationService.ts";
 import type { PersonalizeService } from "../../application/personalizeService.ts";
@@ -24,6 +25,7 @@ export type HealthCapabilities = {
   readonly explain: HealthFeature;
   readonly chat: HealthFeature;
   readonly rug: HealthFeature;
+  readonly explainCode: HealthFeature;
   readonly personalize: HealthFeature;
   readonly onchain: HealthOnchain;
   readonly market: HealthMarket;
@@ -36,6 +38,7 @@ export type HealthCapabilityInputs = {
   readonly explainService?: ExplainService | undefined;
   readonly chatService?: ChatService | undefined;
   readonly rugService?: RugService | undefined;
+  readonly explainCodeService?: ExplainCodeService | undefined;
   readonly personalizeService?: PersonalizeService | undefined;
   readonly onchain?: unknown;
   readonly market?: { readonly provider: string } | undefined;
@@ -65,6 +68,7 @@ export function healthCapabilities(inputs: HealthCapabilityInputs): HealthCapabi
     explain: overlayFeature(inputs.explainService),
     chat: overlayFeature(inputs.chatService),
     rug: overlayFeature(inputs.rugService),
+    explainCode: overlayFeature(inputs.explainCodeService),
     personalize:
       personalize === undefined
         ? { disabled: true }

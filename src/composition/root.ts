@@ -52,6 +52,7 @@ import {
   OVERLAY_META_MODEL_ID,
   createMetaModelApiChatAdapterFromConfig,
   createMetaModelApiExplainAdapterFromConfig,
+  createMetaModelApiExplainCodeAdapterFromConfig,
   createMetaModelApiRugAdapterFromConfig,
 } from "../adapters/overlays/metaModelApiOverlays.ts";
 import type { OverlayTransport } from "../adapters/overlays/metaModelApiOverlays.ts";
@@ -61,7 +62,10 @@ import { createExplainService } from "../application/explainService.ts";
 import type { ExplainService } from "../application/explainService.ts";
 import { createRugService } from "../application/rugService.ts";
 import type { RugService } from "../application/rugService.ts";
+import { createExplainCodeService } from "../application/explainCodeService.ts";
+import type { ExplainCodeService } from "../application/explainCodeService.ts";
 import type { ChatModelPort } from "../ports/chatModel.ts";
+import type { ExplainCodeModelPort } from "../ports/explainCodeModel.ts";
 import type { ExplainModelPort } from "../ports/explainModel.ts";
 import type { RugModelPort } from "../ports/rugModel.ts";
 import type { InvestigationModelPort } from "../ports/investigationModel.ts";
@@ -821,11 +825,30 @@ export function selectRugBinding(config: AppConfig): Result<OverlayBinding, Conf
   });
 }
 
+export function selectExplainCodeBinding(config: AppConfig): Result<OverlayBinding, ConfigError> {
+  const provider = config.explainCodeProvider;
+  if (provider === undefined || provider === "off") {
+    return ok({ kind: "disabled" });
+  }
+  if (config.explainCodeMetaApiKey === undefined || config.explainCodeMetaBaseUrl === undefined) {
+    return ok({ kind: "disabled" });
+  }
+  const modelId = config.explainCodeMetaModelId;
+  if (modelId !== undefined && isPlaceholderModelId(modelId as string)) {
+    return ok({ kind: "disabled" });
+  }
+  return ok({
+    kind: "enabled",
+    provider: "meta-model-api",
+    modelId: (modelId ?? defaultOverlayModelId()) as ModelId,
+  });
+}
+
 // Provider and model id for the health response: the service reports its
 // bound adapter, so the UI names the configured provider and model id
 // honestly instead of a hard-coded label.
 export function overlayHealthStatus(
-  service: ExplainService | ChatService | RugService | undefined,
+  service: ExplainService | ChatService | RugService | ExplainCodeService | undefined,
 ): { provider: string; modelId: string } | { disabled: true } {
   if (service === undefined || !service.enabled || service.provider === null || service.modelId === null) {
     return { disabled: true };
@@ -852,6 +875,7 @@ export type OverlayTransportOverrides = {
   readonly explainTransport?: OverlayTransport | undefined;
   readonly chatTransport?: OverlayTransport | undefined;
   readonly rugTransport?: OverlayTransport | undefined;
+  readonly explainCodeTransport?: OverlayTransport | undefined;
 };
 
 // Builds the explain service from the validated configuration: the
@@ -973,6 +997,47 @@ export function createRugServiceFromConfig(
       port,
       new OverlayBudget({
         dailyCapPerKey: config.rugDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
+        today: () => new Date().toISOString().slice(0, 10),
+      }),
+    ),
+  );
+}
+
+// Builds the explain-code service from the validated configuration: the
+// meta-model-api adapter when the provider is configured with its
+// connection pair, otherwise undefined so the route answers not-configured
+// with zero provider calls.
+export function createExplainCodeServiceFromConfig(
+  config: AppConfig,
+  overrides: OverlayTransportOverrides = {},
+): Result<ExplainCodeService | undefined, ConfigError> {
+  const binding = selectExplainCodeBinding(config);
+  if (!binding.ok) {
+    return err(binding.error);
+  }
+  if (binding.value.kind === "disabled") {
+    return ok(undefined);
+  }
+  const built = createMetaModelApiExplainCodeAdapterFromConfig(
+    {
+      explainCodeMetaBaseUrl: config.explainCodeMetaBaseUrl,
+      explainCodeMetaApiKey: config.explainCodeMetaApiKey,
+      explainCodeMetaModelId: config.explainCodeMetaModelId,
+    },
+    overrides.explainCodeTransport,
+  );
+  if (!built.ok) {
+    return err(built.error);
+  }
+  const port: ExplainCodeModelPort | null = built.value;
+  if (port === null) {
+    return ok(undefined);
+  }
+  return ok(
+    createExplainCodeService(
+      port,
+      new OverlayBudget({
+        dailyCapPerKey: config.explainCodeDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
         today: () => new Date().toISOString().slice(0, 10),
       }),
     ),

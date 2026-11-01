@@ -286,6 +286,11 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_RUG_META_API_KEY` | Key for the Meta Model API rug overlay, server-side only under K-505; loads only via its `*_FILE` pointer | Yes | Demo with the rug overlay enabled |
 | `BRANDKLIPPAREN_RUG_META_MODEL_ID` | Model id for the Meta Model API rug overlay: `muse-spark-1.3` per K-036 | No | Demo with the rug overlay enabled |
 | `BRANDKLIPPAREN_RUG_DAILY_CAP_PER_KEY` | Daily cap for rug calls per API key under I-14 | No | Demo with the rug overlay enabled |
+| `BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER` | Selected explain-code overlay provider: `meta-model-api` or `off`; exactly one adapter is bound at startup. The demo defaults to `meta-model-api` when the assessment Meta key file is set unless set explicitly; `off` or a provider without its key leaves the overlay answering not-configured | No | Demo with the explain-code overlay enabled |
+| `BRANDKLIPPAREN_EXPLAIN_CODE_META_BASE_URL` | Allowlisted endpoint for the Meta Model API explain-code overlay, validated at startup under K-503; unset leaves the overlay answering not-configured | No | Demo with the explain-code overlay enabled |
+| `BRANDKLIPPAREN_EXPLAIN_CODE_META_API_KEY` | Key for the Meta Model API explain-code overlay, server-side only under K-505; loads only via its `*_FILE` pointer | Yes | Demo with the explain-code overlay enabled |
+| `BRANDKLIPPAREN_EXPLAIN_CODE_META_MODEL_ID` | Model id for the Meta Model API explain-code overlay: `muse-spark-1.3` per K-036 | No | Demo with the explain-code overlay enabled |
+| `BRANDKLIPPAREN_EXPLAIN_CODE_DAILY_CAP_PER_KEY` | Daily cap for explain-code calls per API key under I-14 | No | Demo with the explain-code overlay enabled |
 | `ETHERSCAN_API_KEY` | Free Etherscan API key for the LP pairs feed logs source, server-side only under K-505 | No | Operator polling with the feed enabled |
 | `BRANDKLIPPAREN_FEED_RPC_URL` | Optional JSON-RPC endpoint for the feed `eth_getLogs` fallback, server-side only under K-505 | No | Operator polling with the fallback enabled |
 | `BK_WETH_ADDRESS` | Canonical WETH address used as the WETH quote side for the feed | No | Operator polling with the feed enabled |

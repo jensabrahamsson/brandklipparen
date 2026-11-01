@@ -329,9 +329,14 @@ const V = {
   rugMetaBaseUrl: "BRANDKLIPPAREN_RUG_META_BASE_URL",
   rugMetaApiKey: "BRANDKLIPPAREN_RUG_META_API_KEY",
   rugMetaModelId: "BRANDKLIPPAREN_RUG_META_MODEL_ID",
+  explainCodeProvider: "BRANDKLIPPAREN_EXPLAIN_CODE_PROVIDER",
+  explainCodeMetaBaseUrl: "BRANDKLIPPAREN_EXPLAIN_CODE_META_BASE_URL",
+  explainCodeMetaApiKey: "BRANDKLIPPAREN_EXPLAIN_CODE_META_API_KEY",
+  explainCodeMetaModelId: "BRANDKLIPPAREN_EXPLAIN_CODE_META_MODEL_ID",
   explainDailyCapPerKey: "BRANDKLIPPAREN_EXPLAIN_DAILY_CAP_PER_KEY",
   chatDailyCapPerKey: "BRANDKLIPPAREN_CHAT_DAILY_CAP_PER_KEY",
   rugDailyCapPerKey: "BRANDKLIPPAREN_RUG_DAILY_CAP_PER_KEY",
+  explainCodeDailyCapPerKey: "BRANDKLIPPAREN_EXPLAIN_CODE_DAILY_CAP_PER_KEY",
   marketProvider: "BRANDKLIPPAREN_MARKET_PROVIDER",
   sourceProvider: "BRANDKLIPPAREN_SOURCE_PROVIDER",
 } as const;
@@ -987,6 +992,34 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!rugMetaModelId.ok) {
     return rugMetaModelId;
   }
+  const explainCodeProvider = optionalField(env, V.explainCodeProvider, (raw) =>
+    parseOverlayProvider(V.explainCodeProvider, raw),
+  );
+  if (!explainCodeProvider.ok) {
+    return explainCodeProvider;
+  }
+  const explainCodeMetaBaseUrl = optionalField(env, V.explainCodeMetaBaseUrl, (raw) =>
+    parseHttpsUrl(V.explainCodeMetaBaseUrl, raw),
+  );
+  if (!explainCodeMetaBaseUrl.ok) {
+    return explainCodeMetaBaseUrl;
+  }
+  const explainCodeMetaApiKey = optionalField(env, V.explainCodeMetaApiKey, (raw) =>
+    parseSecret(V.explainCodeMetaApiKey, raw),
+  );
+  if (!explainCodeMetaApiKey.ok) {
+    return explainCodeMetaApiKey;
+  }
+  const explainCodeMetaModelId = optionalField(env, V.explainCodeMetaModelId, (raw) =>
+    mapDomain(
+      V.explainCodeMetaModelId,
+      "must be a 1-256 character model identifier",
+      ModelId.parse(raw),
+    ),
+  );
+  if (!explainCodeMetaModelId.ok) {
+    return explainCodeMetaModelId;
+  }
   const explainDailyCapPerKey = optionalField(env, V.explainDailyCapPerKey, (raw) =>
     parseInteger(V.explainDailyCapPerKey, raw, 1, 1000000000),
   );
@@ -1004,6 +1037,12 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   );
   if (!rugDailyCapPerKey.ok) {
     return rugDailyCapPerKey;
+  }
+  const explainCodeDailyCapPerKey = optionalField(env, V.explainCodeDailyCapPerKey, (raw) =>
+    parseInteger(V.explainCodeDailyCapPerKey, raw, 1, 1000000000),
+  );
+  if (!explainCodeDailyCapPerKey.ok) {
+    return explainCodeDailyCapPerKey;
   }
   // Market listing provider (DX-B1): optional in every setup, so local
   // and CI runs stay idle with the listing answering `not-configured`.
@@ -1274,6 +1313,18 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(rugMetaBaseUrl.value === undefined ? {} : { rugMetaBaseUrl: rugMetaBaseUrl.value }),
     ...(rugMetaApiKey.value === undefined ? {} : { rugMetaApiKey: rugMetaApiKey.value }),
     ...(rugMetaModelId.value === undefined ? {} : { rugMetaModelId: rugMetaModelId.value }),
+    ...(explainCodeProvider.value === undefined || explainCodeProvider.value === "off"
+      ? {}
+      : { explainCodeProvider: explainCodeProvider.value }),
+    ...(explainCodeMetaBaseUrl.value === undefined
+      ? {}
+      : { explainCodeMetaBaseUrl: explainCodeMetaBaseUrl.value }),
+    ...(explainCodeMetaApiKey.value === undefined
+      ? {}
+      : { explainCodeMetaApiKey: explainCodeMetaApiKey.value }),
+    ...(explainCodeMetaModelId.value === undefined
+      ? {}
+      : { explainCodeMetaModelId: explainCodeMetaModelId.value }),
     ...(explainDailyCapPerKey.value === undefined
       ? {}
       : { explainDailyCapPerKey: explainDailyCapPerKey.value }),
@@ -1283,6 +1334,9 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(rugDailyCapPerKey.value === undefined
       ? {}
       : { rugDailyCapPerKey: rugDailyCapPerKey.value }),
+    ...(explainCodeDailyCapPerKey.value === undefined
+      ? {}
+      : { explainCodeDailyCapPerKey: explainCodeDailyCapPerKey.value }),
     ...(feedEtherscanApiKey.value === undefined
       ? {}
       : { feedEtherscanApiKey: feedEtherscanApiKey.value }),
