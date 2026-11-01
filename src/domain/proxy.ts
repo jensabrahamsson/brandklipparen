@@ -27,6 +27,8 @@ import type { CanonicalValue } from "./serialize.ts";
 export const IMPLEMENTATION_LABEL = "eip1967.proxy.implementation";
 export const ADMIN_LABEL = "eip1967.proxy.admin";
 export const BEACON_LABEL = "eip1967.proxy.beacon";
+export const ZOS_IMPLEMENTATION_LABEL = "org.zeppelinos.proxy.implementation";
+export const ZOS_ADMIN_LABEL = "org.zeppelinos.proxy.admin";
 
 // UUPS (ERC-1822) upgrade entry point signature. The selector is derived
 // from this signature through the shared Keccak implementation.
@@ -45,6 +47,14 @@ export function slotForLabel(label: string): SlotType {
 export const IMPLEMENTATION_SLOT: SlotType = slotForLabel(IMPLEMENTATION_LABEL);
 export const ADMIN_SLOT: SlotType = slotForLabel(ADMIN_LABEL);
 export const BEACON_SLOT: SlotType = slotForLabel(BEACON_LABEL);
+
+// Legacy ZeppelinOS slots are keccak256(label) with no minus-one step.
+export function slotForLabelRaw(label: string): SlotType {
+  return keccak256HexOfUtf8(label) as SlotType;
+}
+
+export const ZOS_IMPLEMENTATION_SLOT: SlotType = slotForLabelRaw(ZOS_IMPLEMENTATION_LABEL);
+export const ZOS_ADMIN_SLOT: SlotType = slotForLabelRaw(ZOS_ADMIN_LABEL);
 
 // First four bytes of keccak256 of the function signature, 0x-prefixed
 // lowercase, so the Selector invariant holds by construction.
@@ -218,6 +228,16 @@ export type ProxyResolution =
       readonly upgradeAuthority: UpgradeAuthority;
     }
   | {
+      readonly kind: "zos";
+      readonly implementation: AddressType;
+      readonly implementationCodeHash: CodeHashType;
+      readonly implementationSlot: SlotType;
+      readonly adminSlot: SlotType;
+      readonly block: BlockNumberType;
+      readonly admin: AdminKind;
+      readonly upgradeAuthority: UpgradeAuthority;
+    }
+  | {
       readonly kind: "eip1167";
       readonly target: AddressType;
       readonly targetCodeHash: CodeHashType;
@@ -266,6 +286,17 @@ export function proxyToCanonical(resolution: ProxyResolution): CanonicalValue {
             : (resolution.upgradeFunctionOffset as number),
         upgradeAuthority: authorityToCanonical(resolution.upgradeAuthority),
       };
+    case "zos":
+      return {
+        kind: "zos",
+        implementation: resolution.implementation as string,
+        implementationCodeHash: resolution.implementationCodeHash as string,
+        implementationSlot: resolution.implementationSlot as string,
+        adminSlot: resolution.adminSlot as string,
+        block: resolution.block as number,
+        admin: adminToCanonical(resolution.admin),
+        upgradeAuthority: authorityToCanonical(resolution.upgradeAuthority),
+      };
     case "eip1167":
       return {
         kind: "eip1167",
@@ -295,6 +326,42 @@ function adminToCanonical(admin: AdminKind): CanonicalValue {
       };
     case "zero":
       return { kind: "zero" };
+  }
+}
+
+// Host fact for detectors: resolved proxy facts the detector cannot
+// derive from bytecode alone (storage reads at the pinned block).
+export type ProxyFact = {
+  readonly proxyKind: "eip1967" | "uups" | "zos" | "eip1167" | "eip7702";
+  readonly implementation: AddressType;
+  readonly admin: AddressType | null;
+  readonly adminKind: "eoa" | "contract" | "zero" | "none";
+  readonly upgradeSelector: SelectorType | null;
+};
+
+export function proxyFactOf(resolution: ProxyResolution): ProxyFact | null {
+  switch (resolution.kind) {
+    case "none":
+      return null;
+    case "eip1967":
+    case "zos": {
+      const admin = resolution.admin;
+      if (admin.kind === "zero") {
+        return Object.freeze({ proxyKind: resolution.kind, implementation: resolution.implementation, admin: null, adminKind: "zero", upgradeSelector: null });
+      }
+      return Object.freeze({ proxyKind: resolution.kind, implementation: resolution.implementation, admin: admin.address, adminKind: admin.kind, upgradeSelector: null });
+    }
+    case "uups": {
+      const auth = resolution.upgradeAuthority;
+      if (auth.kind === "locked") {
+        return Object.freeze({ proxyKind: "uups", implementation: resolution.implementation, admin: null, adminKind: "zero", upgradeSelector: resolution.upgradeFunction });
+      }
+      return Object.freeze({ proxyKind: "uups", implementation: resolution.implementation, admin: auth.holder, adminKind: auth.kind === "contract" ? "contract" : "eoa", upgradeSelector: resolution.upgradeFunction });
+    }
+    case "eip1167":
+      return Object.freeze({ proxyKind: "eip1167", implementation: resolution.target, admin: null, adminKind: "none", upgradeSelector: null });
+    case "eip7702":
+      return Object.freeze({ proxyKind: "eip7702", implementation: resolution.delegation, admin: null, adminKind: "none", upgradeSelector: null });
   }
 }
 

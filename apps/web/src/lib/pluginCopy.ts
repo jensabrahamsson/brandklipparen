@@ -246,6 +246,14 @@ function hooksLine(payloads: readonly unknown[]): string {
 function proxyLine(payloads: readonly unknown[]): string {
   const record = firstPayloadWith(payloads, ["proxyKind"]);
   const kind = record === null ? null : textOf(record, "proxyKind");
+  if (record !== null && (kind === "eip1967" || kind === "zos" || kind === "legacy-zos")) {
+    const admin = textOf(record, "admin");
+    const adminKind = textOf(record, "adminKind");
+    if (admin !== null && adminKind !== null) {
+      return `Upgradeable proxy \u00b7 admin ${admin} (${adminKind}) can replace the code`;
+    }
+    return "Upgradeable proxy can replace the code";
+  }
   if (kind === "uups") {
     return "The code can be upgraded (UUPS proxy).";
   }

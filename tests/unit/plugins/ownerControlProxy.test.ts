@@ -7,7 +7,7 @@
 // while an unguarded upgrade entry alone or a delegatecall proxy with no
 // upgrade entry stays silent.
 import { describe, expect, test } from "vitest";
-import { Bytecode, CodeHash } from "../../../src/domain/types.ts";
+import { Address, Bytecode, CodeHash } from "../../../src/domain/types.ts";
 import type { DetectorInput } from "../../../src/plugins/detector.ts";
 import type { Result } from "../../../src/domain/result.ts";
 import { proxyUpgradeDetectorPlugin } from "../../../src/plugins/detectors/proxy-upgrade/index.ts";
@@ -92,6 +92,99 @@ describe("proxy-upgrade detector plugin", () => {
     ]);
     const input: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
     expect(proxyUpgradeDetectorPlugin.detect(input)).toEqual([]);
+  });
+
+  test("eip1967 proxyFact emits one fact finding with the admin chip when scored path is silent", () => {
+    const bytecode = tokenBytecode([
+      { selector: TRANSFER, body: [CALLDATALOAD, ...sstoreConstSlot(2, [CALLDATALOAD]), STOP] },
+    ]);
+    const admin = mustOk(Address.parse("0x3132333435363738393a3b3c3d3e3f4041424344"));
+    const impl = mustOk(Address.parse("0x1112131415161718191a1b1c1d1e1f2021222324"));
+    const input: DetectorInput = Object.freeze({
+      bytecode,
+      codeHash: mustOk(CodeHash.of(bytecode)),
+      proxyFact: Object.freeze({
+        proxyKind: "eip1967" as const,
+        implementation: impl,
+        admin,
+        adminKind: "contract" as const,
+        upgradeSelector: null,
+      }),
+    });
+    const findings = proxyUpgradeDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.payload).toEqual({
+      fact: "proxy-upgrade",
+      proof: "extended",
+      proxyKind: "eip1967",
+      admin: admin as string,
+      adminKind: "contract",
+      implementation: impl as string,
+    });
+    expect(findings[0]?.title).toContain("Upgradeable proxy");
+    expect(findings[0]?.title).toContain(admin as string);
+    expect(findings[0]?.title).toContain("(contract) can replace the code");
+    expect(findings[0]?.evidence.length).toBeGreaterThan(0);
+  });
+
+  test("zos proxyFact emits a fact finding", () => {
+    const bytecode = tokenBytecode([
+      { selector: TRANSFER, body: [CALLDATALOAD, ...sstoreConstSlot(2, [CALLDATALOAD]), STOP] },
+    ]);
+    const admin = mustOk(Address.parse("0x3132333435363738393a3b3c3d3e3f4041424344"));
+    const impl = mustOk(Address.parse("0x1112131415161718191a1b1c1d1e1f2021222324"));
+    const input: DetectorInput = Object.freeze({
+      bytecode,
+      codeHash: mustOk(CodeHash.of(bytecode)),
+      proxyFact: Object.freeze({
+        proxyKind: "zos" as const,
+        implementation: impl,
+        admin,
+        adminKind: "contract" as const,
+        upgradeSelector: null,
+      }),
+    });
+    const findings = proxyUpgradeDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    expect((findings[0]?.payload as Record<string, unknown>)["proxyKind"]).toBe("zos");
+    expect((findings[0]?.payload as Record<string, unknown>)["fact"]).toBe("proxy-upgrade");
+  });
+
+  test("non-proxy emits no fact finding", () => {
+    const bytecode = tokenBytecode([
+      { selector: TRANSFER, body: [CALLDATALOAD, ...sstoreConstSlot(2, [CALLDATALOAD]), STOP] },
+    ]);
+    const input: DetectorInput = Object.freeze({
+      bytecode,
+      codeHash: mustOk(CodeHash.of(bytecode)),
+      proxyFact: null,
+    });
+    expect(proxyUpgradeDetectorPlugin.detect(input)).toEqual([]);
+    const noFact: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+    expect(proxyUpgradeDetectorPlugin.detect(noFact)).toEqual([]);
+  });
+
+  test("fact finding never uses the feature key, so it cannot convert to a signal", () => {
+    const bytecode = tokenBytecode([
+      { selector: TRANSFER, body: [CALLDATALOAD, ...sstoreConstSlot(2, [CALLDATALOAD]), STOP] },
+    ]);
+    const admin = mustOk(Address.parse("0x3132333435363738393a3b3c3d3e3f4041424344"));
+    const impl = mustOk(Address.parse("0x1112131415161718191a1b1c1d1e1f2021222324"));
+    const input: DetectorInput = Object.freeze({
+      bytecode,
+      codeHash: mustOk(CodeHash.of(bytecode)),
+      proxyFact: Object.freeze({
+        proxyKind: "eip1967" as const,
+        implementation: impl,
+        admin,
+        adminKind: "contract" as const,
+        upgradeSelector: null,
+      }),
+    });
+    const payload = proxyUpgradeDetectorPlugin.detect(input)[0]?.payload as Record<string, unknown>;
+    expect(payload["feature"]).toBeUndefined();
+    expect(payload["fact"]).toBe("proxy-upgrade");
+    expect(payload["proof"]).toBe("extended");
   });
 
   test("bytecode without selectors yields no findings", () => {

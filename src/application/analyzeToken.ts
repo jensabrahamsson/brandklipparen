@@ -13,7 +13,7 @@
 // analysis path here carries zero assessment calls (A-33).
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
-import { noneProxyResolution, proxyToCanonical } from "../domain/proxy.ts";
+import { noneProxyResolution, proxyFactOf, proxyToCanonical } from "../domain/proxy.ts";
 import type { ProxyResolution } from "../domain/proxy.ts";
 import { resolveProxy } from "./resolveProxy.ts";
 import type { ResolveProxyError, ResolveProxyInput, ResolveProxySuccess } from "./resolveProxy.ts";
@@ -399,6 +399,8 @@ async function resolveProxyOrNone(
 function implementationOfProxy(proxy: ProxyResolution): AddressType | null {
   switch (proxy.kind) {
     case "eip1967":
+      return proxy.implementation;
+    case "zos":
       return proxy.implementation;
     case "uups":
       return proxy.implementation;
@@ -1226,6 +1228,7 @@ export async function analyzeToken(
     createDetectorInput(analysisBytecode, codeHash.value, {
       cloneMatch: cloneHit,
       decompilerCause,
+      proxyFact: proxyFactOf(proxy),
     }),
     detectors.execution,
   );

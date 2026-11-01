@@ -36,12 +36,13 @@ export type PluginKind = "detector" | "assessment";
 // cannot derive purely itself. Requesting a name outside this catalogue
 // is unrepresentable in the manifest type; a fact re-enters the catalogue
 // only by ADR amendment.
-export type PluginInputName = "bytecode" | "cloneMatch" | "decompilerCause";
+export type PluginInputName = "bytecode" | "cloneMatch" | "decompilerCause" | "proxyFact";
 
 const PLUGIN_INPUT_NAMES: ReadonlySet<string> = new Set([
   "bytecode",
   "cloneMatch",
   "decompilerCause",
+  "proxyFact",
 ]);
 
 // JSON values carried in the output schema descriptor.

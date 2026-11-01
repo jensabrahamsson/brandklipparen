@@ -13,6 +13,8 @@ import { keccak256HexOfUtf8 } from "../../src/domain/types.ts";
 import {
   ADMIN_SLOT,
   IMPLEMENTATION_SLOT,
+  ZOS_ADMIN_SLOT,
+  ZOS_IMPLEMENTATION_SLOT,
   PROXIABLE_UUID_SIGNATURE,
   bytecodeHasSelector,
   proxiableUUIDSelector,
@@ -122,6 +124,22 @@ function proxyRoutes(overrides: {
     ],
     [
       `eth_getStorageAt:${JSON.stringify([IMPL_WIRE, ADMIN_SLOT as string, block])}`,
+      zeroWord,
+    ],
+    [
+      `eth_getStorageAt:${JSON.stringify([IMPL_WIRE, ZOS_IMPLEMENTATION_SLOT as string, block])}`,
+      zeroWord,
+    ],
+    [
+      `eth_getStorageAt:${JSON.stringify([IMPL_WIRE, ZOS_ADMIN_SLOT as string, block])}`,
+      zeroWord,
+    ],
+    [
+      `eth_getStorageAt:${JSON.stringify([PROXY_WIRE, ZOS_IMPLEMENTATION_SLOT as string, block])}`,
+      zeroWord,
+    ],
+    [
+      `eth_getStorageAt:${JSON.stringify([PROXY_WIRE, ZOS_ADMIN_SLOT as string, block])}`,
       zeroWord,
     ],
   ]);

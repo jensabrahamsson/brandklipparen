@@ -10,6 +10,7 @@
 import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
 import type { CloneHit } from "../domain/clones.ts";
+import type { ProxyFact } from "../domain/proxy.ts";
 import { CodeSnippet, Evidence } from "../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../domain/evidence.ts";
 import type { HardToAnalyzeCause } from "../domain/signals.ts";
@@ -41,6 +42,7 @@ export type DetectorFacts = {
   readonly codeHash: CodeHashType;
   readonly cloneMatch: CloneHit | null;
   readonly decompilerCause: HardToAnalyzeCause | null;
+  readonly proxyFact: ProxyFact | null;
 };
 
 // Projected detector input for v1 (ADR section 3.2): one frozen input per
@@ -53,6 +55,7 @@ export type DetectorInput = {
   readonly codeHash: CodeHashType;
   readonly cloneMatch?: CloneHit | null;
   readonly decompilerCause?: HardToAnalyzeCause | null;
+  readonly proxyFact?: ProxyFact | null;
 };
 
 // One detector finding (ADR section 4.1): the id namespaces the plugin id
@@ -150,6 +153,7 @@ export function createDetectorInput(
   facts?: {
     readonly cloneMatch?: CloneHit | null;
     readonly decompilerCause?: HardToAnalyzeCause | null;
+    readonly proxyFact?: ProxyFact | null;
   },
 ): DetectorFacts {
   return Object.freeze({
@@ -157,6 +161,7 @@ export function createDetectorInput(
     codeHash,
     cloneMatch: facts?.cloneMatch ?? null,
     decompilerCause: facts?.decompilerCause ?? null,
+    proxyFact: facts?.proxyFact ?? null,
   });
 }
 
@@ -175,6 +180,7 @@ export function projectDetectorInput(
     codeHash: CodeHashType;
     cloneMatch?: CloneHit | null;
     decompilerCause?: HardToAnalyzeCause | null;
+    proxyFact?: ProxyFact | null;
   } = {
     bytecode: facts.bytecode,
     codeHash: facts.codeHash,
@@ -184,6 +190,9 @@ export function projectDetectorInput(
   }
   if (declared.has("decompilerCause")) {
     projected.decompilerCause = facts.decompilerCause;
+  }
+  if (declared.has("proxyFact")) {
+    projected.proxyFact = facts.proxyFact;
   }
   return Object.freeze(projected);
 }

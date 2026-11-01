@@ -47,11 +47,20 @@ const OUTPUT_SCHEMA = Object.freeze({
       title: Object.freeze({ type: "string", minLength: 1 }),
       payload: Object.freeze({
         type: "object",
-        required: Object.freeze(["feature", "proxyKind", "upgradeSelector"]),
+        required: Object.freeze([]),
         properties: Object.freeze({
           feature: Object.freeze({ const: "proxy-upgrade" }),
-          proxyKind: Object.freeze({ enum: Object.freeze(["uups", "eip1967"]) }),
+          fact: Object.freeze({ const: "proxy-upgrade" }),
+          proof: Object.freeze({ const: "extended" }),
+          proxyKind: Object.freeze({
+            enum: Object.freeze(["uups", "eip1967", "zos", "eip1167", "eip7702"]),
+          }),
           upgradeSelector: Object.freeze({ type: "string", minLength: 1 }),
+          admin: Object.freeze({ type: Object.freeze(["string", "null"]) }),
+          adminKind: Object.freeze({
+            enum: Object.freeze(["eoa", "contract", "zero", "none"]),
+          }),
+          implementation: Object.freeze({ type: "string", minLength: 1 }),
         }),
         additionalProperties: false,
       }),
@@ -81,7 +90,7 @@ function manifestOf(): DetectorPlugin["manifest"] {
     apiVersion: PLUGIN_API_VERSION,
     displayName: "Proxy-upgrade detector",
     description: "Reports upgradeable proxy shapes: a guarded upgrade entry or a delegatecall proxy with one.",
-    inputs: ["bytecode"],
+    inputs: ["bytecode", "proxyFact"],
     docs: "PLUGIN.md",
     outputSchema: OUTPUT_SCHEMA,
     capabilities: {},
@@ -141,7 +150,7 @@ function evidenceFor(
 // selectors scan in signature order and the first provable shape wins.
 // Bytecode without selectors yields no findings, since a finding without
 // selector evidence is unrepresentable.
-function detect(input: DetectorInput): readonly PluginFinding[] {
+function detectV1(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
     return Object.freeze([]);
@@ -220,6 +229,96 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
     }
   }
   return Object.freeze([]);
+}
+
+// Fact finding from the host proxy fact (P-13, weight-0): only when the
+// scored path is silent. Payload uses `fact` (never `feature`) with
+// `proof: "extended"`, so it never converts to a signal.
+function detectFact(input: DetectorInput): readonly PluginFinding[] {
+  const fact = input.proxyFact ?? null;
+  if (fact === null) {
+    return Object.freeze([]);
+  }
+  if (fact.proxyKind !== "eip1967" && fact.proxyKind !== "zos" && fact.proxyKind !== "uups") {
+    return Object.freeze([]);
+  }
+  let evidence: EvidenceType | null = null;
+  const candidates: SelectorType[] = [];
+  if (fact.upgradeSelector !== null) {
+    candidates.push(fact.upgradeSelector);
+  }
+  for (const sel of upgradeSelectors()) {
+    if (!candidates.includes(sel)) {
+      candidates.push(sel);
+    }
+  }
+  for (const sel of candidates) {
+    if (bytecodeHasSelector(input.bytecode, sel)) {
+      const off = selectorOffsetInBytecode(input.bytecode, sel);
+      if (off !== null) {
+        evidence = evidenceFor(input.bytecode, sel, off as number);
+      }
+      if (evidence === null) {
+        const created = Evidence.create({ selector: sel });
+        evidence = created.ok ? created.value : null;
+      }
+      if (evidence !== null) {
+        break;
+      }
+    }
+  }
+  if (evidence === null) {
+    const entries = extractSelectors(input.bytecode);
+    const first = entries[0];
+    if (first !== undefined) {
+      const created =
+        first.kind === "paired"
+          ? Evidence.create({ selector: first.selector, offset: first.target })
+          : Evidence.create({ selector: first.selector });
+      evidence = created.ok ? created.value : null;
+    }
+  }
+  if (evidence === null) {
+    const fallback = upgradeSelectors()[0];
+    if (fallback === undefined) {
+      return Object.freeze([]);
+    }
+    const created = Evidence.create({ selector: fallback });
+    evidence = created.ok ? created.value : null;
+  }
+  const nonEmpty = evidence === null ? null : toNonEmpty([evidence]);
+  if (nonEmpty === null) {
+    return Object.freeze([]);
+  }
+  const adminText = fact.admin === null ? null : (fact.admin as string);
+  const title =
+    adminText !== null
+      ? `Upgradeable proxy \u00b7 admin ${adminText} (${fact.adminKind}) can replace the code. Found by extended analysis; not counted in the score.`
+      : "Upgradeable proxy can replace the code. Found by extended analysis; not counted in the score.";
+  return Object.freeze([
+    Object.freeze({
+      id: `${PLUGIN_ID}:proxy-upgrade-extended`,
+      pluginId: MANIFEST.id,
+      title,
+      evidence: nonEmpty,
+      payload: Object.freeze({
+        fact: "proxy-upgrade",
+        proof: "extended",
+        proxyKind: fact.proxyKind,
+        admin: adminText,
+        adminKind: fact.adminKind,
+        implementation: fact.implementation as string,
+      }),
+    }),
+  ]);
+}
+
+function detect(input: DetectorInput): readonly PluginFinding[] {
+  const v1 = detectV1(input);
+  if (v1.length > 0) {
+    return v1;
+  }
+  return detectFact(input);
 }
 
 const MANIFEST = manifestOf();

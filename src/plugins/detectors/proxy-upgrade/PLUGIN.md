@@ -54,9 +54,11 @@ bytecode proves the upgrade path.
 
 ## Inputs
 
-Declared inputs: `bytecode` (with its code hash). The plugin derives
-selectors, regions and proxy facts itself through the shared domain
-helpers.
+Declared inputs: `bytecode` (with its code hash) and `proxyFact`. The
+plugin derives selectors and regions itself through the shared domain
+helpers. When the scored path is silent and the proxy fact names an
+EIP-1967, ZeppelinOS or UUPS proxy, it emits one weight-0 fact finding
+that never converts to a signal and is labelled "not in score".
 
 ## Version and changelog
 

@@ -10,6 +10,8 @@
 import {
   ADMIN_SLOT,
   IMPLEMENTATION_SLOT,
+  ZOS_ADMIN_SLOT,
+  ZOS_IMPLEMENTATION_SLOT,
   bytecodeHasSelector,
   decodeSlotAddress,
   parseEip1167Target,
@@ -194,11 +196,23 @@ export async function resolveProxy(
     if (!implWord.ok) {
       return rpcError(input, implWord.error);
     }
-    const decoded = decodeSlotAddress(implWord.value);
+    let decoded = decodeSlotAddress(implWord.value);
+    let implSlot = IMPLEMENTATION_SLOT;
+    let adminSlot = ADMIN_SLOT;
+    let isZos = false;
     if (decoded.kind !== "address") {
-      // Empty and garbage slot values are typed outcomes, not errors:
-      // the address holds no EIP-1967 proxy pointer.
-      return ok({ resolution: last, block });
+      const zosWord = await ports.rpc.getStorageAt(current, ZOS_IMPLEMENTATION_SLOT, ctx);
+      if (!zosWord.ok) {
+        return rpcError(input, zosWord.error);
+      }
+      const zosDecoded = decodeSlotAddress(zosWord.value);
+      if (zosDecoded.kind !== "address") {
+        return ok({ resolution: last, block });
+      }
+      decoded = zosDecoded;
+      implSlot = ZOS_IMPLEMENTATION_SLOT;
+      adminSlot = ZOS_ADMIN_SLOT;
+      isZos = true;
     }
     const implementation = decoded.address;
     const implCode = await readCode(ports, codeCache, implementation, ctx);
@@ -215,7 +229,7 @@ export async function resolveProxy(
     if (!hash.ok) {
       return ok({ resolution: last, block });
     }
-    const adminWord = await ports.rpc.getStorageAt(current, ADMIN_SLOT, ctx);
+    const adminWord = await ports.rpc.getStorageAt(current, adminSlot, ctx);
     if (!adminWord.ok) {
       return rpcError(input, adminWord.error);
     }
@@ -232,7 +246,18 @@ export async function resolveProxy(
     }
     const resolvedAdmin = classified;
     const selector = proxiableUUIDSelector();
-    if (bytecodeHasSelector(proxyCode, selector) || bytecodeHasSelector(implCode, selector)) {
+    if (isZos) {
+      last = Object.freeze({
+        kind: "zos",
+        implementation,
+        implementationCodeHash: hash.value,
+        implementationSlot: implSlot,
+        adminSlot,
+        block,
+        admin: resolvedAdmin.admin,
+        upgradeAuthority: resolvedAdmin.authority,
+      });
+    } else if (bytecodeHasSelector(proxyCode, selector) || bytecodeHasSelector(implCode, selector)) {
       const offset =
         selectorOffsetInBytecode(proxyCode, selector) ??
         selectorOffsetInBytecode(implCode, selector);
@@ -251,8 +276,8 @@ export async function resolveProxy(
         kind: "eip1967",
         implementation,
         implementationCodeHash: hash.value,
-        implementationSlot: IMPLEMENTATION_SLOT,
-        adminSlot: ADMIN_SLOT,
+        implementationSlot: implSlot,
+        adminSlot,
         block,
         admin: resolvedAdmin.admin,
         upgradeAuthority: resolvedAdmin.authority,

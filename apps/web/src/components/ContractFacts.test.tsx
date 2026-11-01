@@ -120,6 +120,15 @@ describe("contract facts rendering", () => {
     expect(textOf(html)).toContain(toChecksumAddress(IMPL));
   });
 
+  test("eip1967 and zos proxy cards name the admin who can replace the code", () => {
+    const admin = "0x3132333435363738393a3b3c3d3e3f4041424344";
+    const eip = htmlOf({ kind: "eip1967", implementation: IMPL, admin: { kind: "contract", address: admin } });
+    expect(textOf(eip)).toContain(`Upgradeable proxy \u00b7 admin ${toChecksumAddress(admin)} (contract) can replace the code`);
+    const zos = htmlOf({ kind: "zos", implementation: IMPL, admin: { kind: "contract", address: admin } });
+    expect(zos).toContain("ZeppelinOS");
+    expect(textOf(zos)).toContain(`Upgradeable proxy \u00b7 admin ${toChecksumAddress(admin)} (contract) can replace the code`);
+  });
+
   test("short values and explanations render verbatim without a deployed sentence", () => {
     const html = htmlOf({ kind: "none" });
     expect(html).toContain("Ethereum mainnet");

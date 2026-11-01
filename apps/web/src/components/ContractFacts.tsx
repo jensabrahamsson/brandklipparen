@@ -55,6 +55,9 @@ function proxyDisplay(kind: string): string {
       return "None";
     case "eip1967":
       return "EIP-1967";
+    case "zos":
+    case "legacy-zos":
+      return "ZeppelinOS";
     case "uups":
       return "UUPS";
     case "eip1167":
@@ -64,6 +67,36 @@ function proxyDisplay(kind: string): string {
     default:
       return kind;
   }
+}
+
+function proxyAdminInfo(proxy: AnalyzeSuccess["proxy"]): { address: string; kind: string } | null {
+  const admin = proxy.admin;
+  if (typeof admin === "string" && admin.length > 0) {
+    return { address: admin, kind: "contract" };
+  }
+  if (admin !== null && typeof admin === "object" && typeof admin.address === "string") {
+    return { address: admin.address, kind: admin.kind };
+  }
+  const auth = proxy.upgradeAuthority;
+  if (auth !== undefined && typeof auth.holder === "string") {
+    return { address: auth.holder, kind: auth.kind === "contract" ? "contract" : "eoa" };
+  }
+  return null;
+}
+
+function proxyWhy(proxy: AnalyzeSuccess["proxy"]): string {
+  if (proxy.kind === "none") {
+    return "No proxy, so this code can't be swapped out.";
+  }
+  if (proxy.kind === "eip1967" || proxy.kind === "zos" || proxy.kind === "legacy-zos") {
+    const info = proxyAdminInfo(proxy);
+    if (info !== null) {
+      const kindWord = info.kind === "eoa" ? "eoa" : info.kind;
+      return `Upgradeable proxy \u00b7 admin ${toChecksumAddress(info.address)} (${kindWord}) can replace the code`;
+    }
+    return "Upgradeable proxy can replace the code";
+  }
+  return "A proxy. Whoever controls it can swap the code.";
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
@@ -326,11 +359,7 @@ export function ContractFacts({
             icon={proxyNone ? "direct" : "proxy"}
             label="Proxy"
             value={proxyDisplay(result.proxy.kind)}
-            why={
-              proxyNone
-                ? "No proxy, so this code can't be swapped out."
-                : "A proxy. Whoever controls it can swap the code."
-            }
+            why={proxyWhy(result.proxy)}
           />
           {implementation === null ? null : (
             <AddressFact

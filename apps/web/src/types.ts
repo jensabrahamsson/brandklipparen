@@ -49,7 +49,13 @@ export type CantTellEntry = {
 export type ProxyInfo = {
   readonly kind: string;
   readonly implementation?: string | undefined;
-  readonly admin?: string | undefined;
+  readonly admin?:
+    | string
+    | { readonly kind: string; readonly address?: string | undefined }
+    | undefined;
+  readonly upgradeAuthority?:
+    | { readonly kind: string; readonly holder?: string | undefined }
+    | undefined;
 };
 
 export type AnalyzeSuccess = {

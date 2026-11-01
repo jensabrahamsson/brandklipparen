@@ -264,6 +264,27 @@ describe("proxy resolution through RpcPort (K-002, K-005)", () => {
     expect(["eip1967", "uups"]).toContain(result.value.resolution.kind);
   });
 
+  test("zos_slot_word_resolves_as_zos_with_implementation", async () => {
+    const { ZOS_IMPLEMENTATION_SLOT, ZOS_ADMIN_SLOT } = await import("../../../src/domain/proxy.ts");
+    const codes = codesFor([
+      [PROXY, PROXY_BYTECODE],
+      [IMPL, IMPL_BYTECODE],
+      [ADMIN, ADMIN_BYTECODE],
+    ]);
+    const storage = storageFor([
+      [PROXY, ZOS_IMPLEMENTATION_SLOT as string, addressWord(IMPL)],
+      [PROXY, ZOS_ADMIN_SLOT as string, addressWord(ADMIN)],
+    ]);
+    const result = await resolveWith(codes, storage, PROXY);
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.resolution.kind !== "zos") {
+      throw new Error(`expected a zos resolution, got ${result.ok ? result.value.resolution.kind : "error"}`);
+    }
+    expect(result.value.resolution.implementation as string).toBe(mustOk(Address.parse(IMPL)) as string);
+    expect(result.value.resolution.admin.kind).toBe("contract");
+    expect(result.value.resolution.implementationSlot as string).toBe(ZOS_IMPLEMENTATION_SLOT as string);
+  });
+
   test("proxy_depth_limit_terminates", async () => {
     const { IMPLEMENTATION_SLOT, ADMIN_SLOT } = await import("../../../src/domain/proxy.ts");
     const addrs = [PROXY, IMPL, ADMIN, OTHER];

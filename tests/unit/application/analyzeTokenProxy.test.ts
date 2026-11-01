@@ -19,7 +19,7 @@ import { parseModelArtifact } from "../../../src/domain/risk.ts";
 import { FakeClockAdapter } from "../../fakes/fakeClock.ts";
 import { FakeModelArtifactAdapter } from "../../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../../fakes/fakeRpc.ts";
-import { IMPLEMENTATION_SLOT, ADMIN_SLOT } from "../../../src/domain/proxy.ts";
+import { IMPLEMENTATION_SLOT, ADMIN_SLOT, ZOS_IMPLEMENTATION_SLOT, ZOS_ADMIN_SLOT } from "../../../src/domain/proxy.ts";
 import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
@@ -180,6 +180,54 @@ describe("assessment envelope carries proxy information (K-002, K-005)", () => {
         (signal) => signal.kind === "capability" && signal.risk === "bot-pump",
       ),
     ).toBe(false);
+  });
+
+  test("envelope_reports_zos_proxy_and_analyses_implementation", async () => {
+    const proxy = mustOk(Address.parse(PROXY));
+    const impl = mustOk(Address.parse(IMPL));
+    const block = mustOk(BlockNumber.of(24000000));
+    const codes = new Map<string, string>([
+      [proxy as string, "0x6001600a600b600c600d600e600f55"],
+      [impl as string, "0x8063a9059cbb1461000c57005bff"],
+      [mustOk(Address.parse(ADMIN)) as string, "0x6002600055"],
+    ]);
+    const storage = new Map<string, Map<string, string>>([
+      [
+        proxy as string,
+        new Map<string, string>([
+          [(ZOS_IMPLEMENTATION_SLOT as string).toLowerCase(), addressWord(IMPL).toLowerCase()],
+          [(ZOS_ADMIN_SLOT as string).toLowerCase(), addressWord(ADMIN).toLowerCase()],
+        ]),
+      ],
+    ]);
+    const services = createAppServices({
+      rpc: new FakeRpcAdapter(codes, block, storage),
+      modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
+      clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+    }, mustDefaultDetectorSet());
+    const analysed = await services.analyzeToken({
+      address: proxy,
+      block,
+      requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174000")),
+      deadline: mustOk(Timestamp.of(1700000005000)),
+      modelVersion: mustOk(ModelVersion.parse("0.1.0")),
+      indexVersion: mustOk(IndexVersion.parse("1.0.0")),
+      templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
+      catalogue: TEST_CATALOGUE,
+    });
+    expect(analysed.ok).toBe(true);
+    if (!analysed.ok || analysed.value.kind !== "assessed") {
+      throw new Error("expected an assessed envelope");
+    }
+    expect(analysed.value.envelope.proxy.kind).toBe("zos");
+    const proxyResults = analysed.value.envelope.pluginResults.filter(
+      (entry) => (entry.pluginId as string) === "dev.brandklipparen.proxy-upgrade",
+    );
+    const factFindings = proxyResults.flatMap((entry) => entry.findings).filter(
+      (finding) => (finding.payload as Record<string, unknown>)["fact"] === "proxy-upgrade",
+    );
+    expect(factFindings).toHaveLength(1);
+    expect((factFindings[0]?.payload as Record<string, unknown>)["proxyKind"]).toBe("zos");
   });
 
   test("envelope_reports_no_proxy_for_plain_contracts", async () => {
