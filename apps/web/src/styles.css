@@ -503,12 +503,6 @@ a {
   box-shadow: var(--alert-glow);
 }
 
-.prompt .cursor {
-  align-self: center;
-  margin-right: 10px;
-  flex: none;
-}
-
 .prompt .field {
   flex: 1;
   display: flex;
@@ -518,11 +512,15 @@ a {
 
 .search-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: stretch;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
   gap: 0;
   flex: 1;
   min-width: 0;
+}
+
+.search-row .prompt-mark {
+  align-self: center;
 }
 
 .search-row .input {
@@ -534,6 +532,7 @@ a {
   box-shadow: var(--shadow-none);
   color: var(--phosphor-hi);
   caret-color: var(--phosphor);
+  text-align: start;
 }
 
 .search-row .input::placeholder {
@@ -544,7 +543,8 @@ a {
 .prompt .btn,
 .prompt .button {
   text-transform: none;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 
 .legend {
@@ -3051,15 +3051,18 @@ a {
 
   .prompt {
     flex-wrap: wrap;
+    padding: 8px;
   }
 
   .search-row {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .prompt .btn,
   .prompt .button {
+    grid-column: 1 / -1;
     width: 100%;
+    margin: 8px 0 0;
     padding: 12px;
   }
 }

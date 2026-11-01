@@ -184,17 +184,14 @@ export function StartPage({
             English.
           </p>
           <form onSubmit={submit} noValidate className="prompt">
-            <span className="prompt-mark" aria-hidden="true">
-              &gt;
-            </span>
             <div className="field">
               <div className="search-row">
                 <label htmlFor="address-search" className="skip-link">
                   Contract address
                 </label>
-                {raw.length === 0 ? (
-                  <span className="cursor" aria-hidden="true" />
-                ) : null}
+                <span className="prompt-mark" aria-hidden="true">
+                  &gt;
+                </span>
                 <input
                   id="address-search"
                   className="input"
@@ -239,7 +236,7 @@ export function StartPage({
         </aside>
       </section>
       <div
-        style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 16, flexWrap: "wrap", alignItems: "center" }}
+        style={{ display: "flex", gap: 16, justifyContent: "flex-start", marginTop: 16, flexWrap: "wrap", alignItems: "center" }}
       >
         <ChainSelector />
         <details className="muted" style={{ fontSize: 14 }}>
