@@ -581,7 +581,7 @@ function AssessedView({
                 {verdictTail} <Explain explainKey="score:combined" label="Combined score" />
               </span>
             </p>
-            <PowersStrip address={address} allIds={heroIds} tiles={heroBoard.ownerTiles} />
+            <PowersStrip address={address} allIds={heroIds} tiles={heroBoard.ownerTiles} plugins={plugins} />
             {mode === "expert" ? (
               <p className="quiet" style={{ margin: "4px 0 0" }}>
                 Calibration report: see the model card. The v1 REST response carries no calibration numbers, so none

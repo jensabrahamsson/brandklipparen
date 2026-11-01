@@ -11,6 +11,7 @@ import { powersSummaryCopy } from "../lib/signals.ts";
 import { useMediaQuery } from "../lib/useMediaQuery.ts";
 import type { BoardTile } from "./plugins/PluginBoard.tsx";
 import type { TileSeverity } from "./plugins/PluginTile.tsx";
+import type { PluginListEntry } from "./PluginsPanel.tsx";
 
 const CHIP_LAMP: Record<"found-scored" | "extended" | "cant-tell", "found" | "extended" | "canttell"> =
   Object.freeze({
@@ -38,18 +39,32 @@ export function PowersStrip({
   address,
   allIds,
   tiles,
+  plugins = [],
 }: {
   readonly address: string;
   readonly allIds: readonly string[];
   readonly tiles: readonly BoardTile[];
+  // Null while `/v1/plugins` is still pending; the board model then
+  // yields no tiles, which is a loading state, not an empty result.
+  readonly plugins?: readonly PluginListEntry[] | null;
 }): JSX.Element | null {
+  // D-2: every hook runs before any early return, so the render that
+  // follows the pending `/v1/plugins` fetch adds no hooks.
+  const compact = useMediaQuery("(max-width: 639px)");
   if (tiles.length === 0) {
+    if (plugins === null) {
+      return (
+        <div className="powers" data-testid="powers-strip">
+          <p className="powers-kicker">Owner powers</p>
+          <p className="powers-loading">Owner powers are loading…</p>
+        </div>
+      );
+    }
     return null;
   }
   // R2-2 (D-2): on phones the strip would tower 7-9 rows and push the
   // dial below the fold. Render only found and extended chips there and
   // collapse every can't-tell chip into one quiet link to the board.
-  const compact = useMediaQuery("(max-width: 639px)");
   const shown = tiles.filter(
     (tile): tile is BoardTile & { readonly state: "found-scored" | "extended" | "cant-tell" } =>
       tile.state === "found-scored" ||

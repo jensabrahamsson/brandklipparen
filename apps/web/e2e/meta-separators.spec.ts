@@ -566,6 +566,11 @@ test("brief40_mobile_separators_found_generically", async ({ page }) => {
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + TOKEN_A);
   await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
+  // The DEX age meta arrives with the live feed, after the analysis
+  // result that unblocks the wait above. The scan below requires that
+  // line (its interior separators are the only hero middots), so wait
+  // for it first; otherwise a slow feed reads as zero separator rows.
+  await expect(page.locator(".token-meta").first()).toContainText("·");
   const analysisScan = await genericScan(page, ['section[aria-label="Combined score"]']);
   // R2-4: the hero address is a separator-free block (label row plus the
   // grouped value, wrapping between groups) and the DEX meta is one

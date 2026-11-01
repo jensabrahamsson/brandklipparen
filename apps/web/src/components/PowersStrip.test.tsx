@@ -117,4 +117,79 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     const html = renderToString(<PowersStrip address={ADDRESS} allIds={[]} tiles={[]} />);
     expect(html).toBe("");
   });
+
+  test("null_plugins_renders_loading_line", () => {
+    const html = renderToString(<PowersStrip address={ADDRESS} allIds={[]} tiles={[]} plugins={null} />);
+    expect(html).toContain("Owner powers are loading…");
+    expect(html).not.toContain("power-chip-");
+  });
+
+  test("empty_then_populated_rerender_does_not_throw", () => {
+    const ids = PLUGINS.map((plugin) => plugin.id);
+    const populated = buildBoardModel(PLUGINS, [
+      ok("dev.brandklipparen.ownership", [
+        {
+          id: "dev.brandklipparen.ownership:ownership",
+          title: "Owned",
+          payload: { feature: "ownership" },
+          evidence: [{ selector: "0x8da5cb5b", offset: 10 }],
+        },
+      ]),
+      ok("dev.brandklipparen.pause", [
+        {
+          id: "dev.brandklipparen.pause:pause",
+          title: "Pausable",
+          payload: { feature: "pause" },
+          evidence: [{ selector: "0x8456cb59", offset: 20 }],
+        },
+      ]),
+      ok("dev.brandklipparen.blacklist", [
+        {
+          id: "dev.brandklipparen.blacklist:blacklist",
+          title: "Blocked wallets",
+          payload: { feature: "blacklist" },
+          evidence: [{ selector: "0x44337ea1", offset: 30 }],
+        },
+      ]),
+      ok("dev.brandklipparen.mint", [
+        {
+          id: "dev.brandklipparen.mint:mint-extended",
+          title: "Mint, extended",
+          payload: { fact: "mint", proof: "extended" },
+          evidence: [{ selector: "0x40c10f19", offset: 40 }],
+        },
+      ]),
+      ok("dev.brandklipparen.transfer-fee", [
+        {
+          id: "dev.brandklipparen.transfer-fee:fee-extended",
+          title: "Transfer fee, extended",
+          payload: { fact: "transfer-fee", proof: "extended" },
+          evidence: [{ selector: "0x44337ea1", offset: 50 }],
+        },
+      ]),
+      ok("dev.brandklipparen.transfer-limits", [
+        {
+          id: "dev.brandklipparen.transfer-limits:limits-extended",
+          title: "Transfer limits, extended",
+          payload: { fact: "transfer-limits", proof: "extended" },
+          evidence: [{ selector: "0x44337ea1", offset: 60 }],
+        },
+      ]),
+    ]);
+    // D-2: the pending-plugins fetch lands after the analysis, so the
+    // strip renders empty first and populated next. Every hook runs
+    // before the early return, so the second render adds no hooks.
+    let first = "";
+    let second = "";
+    expect(() => {
+      first = renderToString(<PowersStrip address={ADDRESS} allIds={ids} tiles={[]} plugins={[]} />);
+      second = renderToString(
+        <PowersStrip address={ADDRESS} allIds={ids} tiles={populated.ownerTiles} plugins={PLUGINS} />,
+      );
+    }).not.toThrow();
+    expect(first).toBe("");
+    for (const slug of ["ownership", "pause", "blacklist", "mint", "transfer-fee", "transfer-limits"]) {
+      expect(second).toContain(`power-chip-${slug}`);
+    }
+  });
 });

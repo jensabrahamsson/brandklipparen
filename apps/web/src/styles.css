@@ -1952,6 +1952,28 @@ a {
   color: var(--dim);
 }
 
+/* D-2: the pending-plugins line. Quiet text, never a chip, so the hero
+   holds its shape while the board model is still empty. */
+.powers-loading {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+/* D-2: the app-level error boundary card. One quiet card, no stack. */
+.error-boundary {
+  margin: 16px auto;
+  max-width: 640px;
+  text-align: center;
+}
+
+.error-boundary-title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--phosphor);
+}
+
 .powers-more-item {
   display: flex;
 }
@@ -1978,22 +2000,48 @@ a {
   outline-offset: 2px;
 }
 
-/* R2-2: compact two-column chip grid on phones, so two chips share one
-   44 px row instead of stacking 7-9 rows. */
+/* D-1: one list row per chip on phones. A two-column grid let a
+   chip's nowrap min-content width overflow its ~147 px track into the
+   next cell and past the card, so pages scrolled sideways at 390 px.
+   Each row reads [lamp] name …… tag like a mini board row; the tag
+   pins right and the name truncates instead of overflowing. */
 @media (max-width: 639px) {
   .powers-chips {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
   }
 
+  .powers-chips li {
+    min-width: 0;
+  }
+
   .power-chip {
+    width: 100%;
+    min-width: 0;
     gap: 6px;
     padding: 6px 10px;
+    border-radius: 12px;
+  }
+
+  .power-chip .power-lamp {
+    flex: none;
+  }
+
+  .power-chip .power-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .power-chip .power-tag {
+    margin-left: auto;
+    flex: none;
   }
 
   .powers-more-item {
     grid-column: 1 / -1;
+    min-width: 0;
   }
 }
 

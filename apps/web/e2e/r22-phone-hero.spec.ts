@@ -144,7 +144,7 @@ function usdtResults(): Record<string, unknown>[] {
     foundResult("dev.brandklipparen.ownership", "ownership"),
     extendedResult("dev.brandklipparen.mint", "mint"),
     extendedResult("dev.brandklipparen.transfer-fee", "transfer-fee"),
-    emptyResult("dev.brandklipparen.transfer-limits"),
+    extendedResult("dev.brandklipparen.transfer-limits", "transfer-limits"),
     emptyResult("dev.brandklipparen.sell-block"),
     emptyResult("dev.brandklipparen.transfer-hooks"),
     emptyResult("dev.brandklipparen.proxy-upgrade"),
@@ -243,6 +243,47 @@ test("r22_gauge_label_and_percent_do_not_overlap", async ({ page }) => {
       expect(pct).not.toBeNull();
       if (lab !== null && pct !== null) {
         expect(intersects(lab, pct)).toBe(false);
+      }
+    }
+  }
+});
+
+test("u1_phone_chips_no_overlap_no_sideways_scroll", async ({ page }) => {
+  // D-1 layout contract: a USDT-shaped strip (3 found + 3 extended,
+  // including Transfer fee and Transfer limits) and a PEPE-shaped strip
+  // stay inside the hero card with no overlapping rows at 320-639 px.
+  for (const [target, score] of [
+    [USDT, 29],
+    [PEPE, 19],
+  ] as const) {
+    for (const width of [320, 390, 480, 639]) {
+      await page.setViewportSize({ width, height: 844 });
+      await openToken(page, target, score);
+      const metrics = await page.evaluate(() => {
+        const rectOf = (element: Element): Box => {
+          const box = element.getBoundingClientRect();
+          return { x: box.x, y: box.y, width: box.width, height: box.height };
+        };
+        const hero = document.querySelector('section[aria-label="Combined score"]');
+        return {
+          scrollWidth: document.documentElement.scrollWidth,
+          clientWidth: document.documentElement.clientWidth,
+          hero: hero === null ? null : rectOf(hero),
+          chips: [...document.querySelectorAll(".power-chip")].map(rectOf),
+        };
+      });
+      expect(metrics.scrollWidth).toBe(metrics.clientWidth);
+      expect(metrics.chips.length).toBeGreaterThan(0);
+      if (metrics.hero === null) {
+        throw new Error("hero card missing");
+      }
+      const hero = metrics.hero;
+      for (const [outer, chip] of metrics.chips.entries()) {
+        expect(chip.x).toBeGreaterThanOrEqual(hero.x - 1);
+        expect(chip.x + chip.width).toBeLessThanOrEqual(hero.x + hero.width + 1);
+        for (const other of metrics.chips.slice(outer + 1)) {
+          expect(intersects(chip, other)).toBe(false);
+        }
       }
     }
   }

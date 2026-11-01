@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type JSX, type MouseEvent } from "rea
 import { parseHash, type Route } from "./lib/route.ts";
 import { initialApiKey } from "./lib/initialApiKey.ts";
 import { Pictogram } from "./components/Pictogram.tsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { StartPage } from "./pages/StartPage.tsx";
 import { TokenPage } from "./pages/TokenPage.tsx";
 
@@ -80,7 +81,9 @@ export function App(): JSX.Element {
         {route.name === "start" ? (
           <StartPage apiKey={apiKey} onApiKeyChange={storeApiKey} onAnalyze={goToken} />
         ) : (
-          <TokenPage address={route.address} view={route.view} apiKey={apiKey} onHome={goHome} />
+          <ErrorBoundary key={route.address}>
+            <TokenPage address={route.address} view={route.view} apiKey={apiKey} onHome={goHome} />
+          </ErrorBoundary>
         )}
       </main>
     </div>
