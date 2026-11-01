@@ -458,6 +458,45 @@ function negatedBool(e: Expr, ctx: Ctx): string {
   return printNot(e, ctx);
 }
 
+// Region exprs from the v2 interpreter store binary operands as
+// [second, top], while this printer reads [first, second] in EVM order
+// (top op second for SUB, DIV, LT, GT and EXP). Swap every two-arg op
+// back except SHL/SHR, whose stored [value, shift] already matches the
+// printer. Symmetric ops are unaffected by the swap.
+function toPrinterOrder(e: Expr): Expr {
+  if (e.kind === "op") {
+    const mapped = e.args.map(toPrinterOrder);
+    const ordered =
+      e.args.length === 2 && e.name !== "SHL" && e.name !== "SHR"
+        ? [mapped[1] ?? UNKNOWN, mapped[0] ?? UNKNOWN]
+        : mapped;
+    return Object.freeze({ kind: "op", name: e.name, args: Object.freeze(ordered) }) as Expr;
+  }
+  if (e.kind === "calldata") {
+    return Object.freeze({ kind: "calldata", offset: toPrinterOrder(e.offset) }) as Expr;
+  }
+  if (e.kind === "sload") {
+    return Object.freeze({ kind: "sload", slot: toPrinterOrder(e.slot) }) as Expr;
+  }
+  if (e.kind === "keccak") {
+    return Object.freeze({ kind: "keccak", words: Object.freeze(e.words.map(toPrinterOrder)) }) as Expr;
+  }
+  return e;
+}
+
+const EMPTY_PRINT_CTX: Ctx = Object.freeze({
+  argTypes: Object.freeze([] as string[]),
+  fieldNames: new Map<string, string>(),
+  fieldIsBool: new Set<string>(),
+  slotNames: new Map<number, string>(),
+  mappingNames: new Map<number, string>(),
+  mappingComments: new Map<number, string>(),
+});
+
+export function printRegionCondition(cond: Expr, ctx: Ctx = EMPTY_PRINT_CTX): string {
+  return printBool(toPrinterOrder(cond), ctx);
+}
+
 // ---- store / effect printing ----
 function packedWrite(slot: Expr, value: Expr, ctx: Ctx): string | null {
   const sc = exprConstValue(slot);
@@ -650,7 +689,7 @@ function synthesizeFromRegion(bytecode: BytecodeType, selector: string, ctx: Ctx
   for (const [pc, cond] of jumpis) {
     if (containsUnknown(cond)) continue;
     if (isValidationCond(cond)) continue;
-    const text = printBool(cond, ctx);
+    const text = printRegionCondition(cond, ctx);
     if (text === "true" || text === "false" || text.includes("unknown")) continue;
     if (/^(.+) == \1$/.test(text)) continue;
     parts.push(Object.freeze({ text: `  ${REQUIRE}(${text});`, pcs: Object.freeze([pc]) }));
@@ -658,8 +697,8 @@ function synthesizeFromRegion(bytecode: BytecodeType, selector: string, ctx: Ctx
   const counter = { next: 0 };
   const stores = [...exprs.stores.entries()].sort((a, b) => a[0] - b[0]);
   for (const [pc, record] of stores) {
-    const slot = substituteUnknowns(record.slot, counter);
-    const value = substituteStoreValue(record.value, counter);
+    const slot = toPrinterOrder(substituteUnknowns(record.slot, counter));
+    const value = toPrinterOrder(substituteStoreValue(record.value, counter));
     parts.push(Object.freeze({ text: `  ${storeLine(slot, value, ctx)}`, pcs: Object.freeze([pc]) }));
   }
   return parts.slice(0, MAX_LINES);

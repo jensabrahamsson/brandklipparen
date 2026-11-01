@@ -187,6 +187,7 @@ describe("reachability v2 return jumps", () => {
     const reach = resolveEntryReachV2(cfg, entryBlock.index);
     expect(reach.resolvedJumpAtPc).toEqual([]);
     expect(reach.unresolvedJumpAtPc).toEqual([fixture.sharedJumpPc]);
+    expect(reach.cappedJumpAtPc).toEqual([]);
   });
 });
 
@@ -242,6 +243,83 @@ function sharedGateFixture(): SharedGateFixture {
   asm.label("ret2").op(0x5b, 0x00);
   return { hex: asm.build(), loadPc, storePc, sharedJumpPc };
 }
+
+// Two sequential internal calls through one helper (F-17): entry calls f
+// and continues at ret1, ret1 calls f again and continues at ret2, and
+// only ret2 holds the gate. The resolver must keep adding late return
+// continuations for the already-resolved return jump, so ret2 and its
+// gate stay reachable from the entry. Synthetic bytecode only.
+function secondCallFixture(): {
+  readonly hex: string;
+  readonly entryPc: number;
+  readonly ret2Pc: number;
+  readonly okPc: number;
+  readonly sharedJumpPc: number;
+  readonly storePc: number;
+} {
+  const asm = new Asm();
+  asm.op(0x80).push4("12345678").op(0x14);
+  asm.pushLabel2("entry").op(0x57);
+  asm.label("fallback");
+  asm.op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("entry");
+  const entryPc = asm.pc;
+  asm.op(0x5b);
+  asm.pushLabel2("ret1");
+  asm.pushLabel2("f");
+  asm.op(0x56);
+  asm.label("ret1");
+  asm.op(0x5b);
+  asm.pushLabel2("ret2");
+  asm.pushLabel2("f");
+  asm.op(0x56);
+  asm.label("ret2");
+  const ret2Pc = asm.pc;
+  asm.op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("ok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("ok");
+  const okPc = asm.pc;
+  asm.op(0x5b);
+  asm.push1(0x01).push1(0x02);
+  const storePc = asm.pc;
+  asm.op(0x55, 0x00);
+  asm.label("f");
+  asm.op(0x5b);
+  asm.push1(0x01).op(0x50);
+  const sharedJumpPc = asm.pc;
+  asm.op(0x56);
+  asm.op(0xfe);
+  return { hex: asm.build(), entryPc, ret2Pc, okPc, sharedJumpPc, storePc };
+}
+
+describe("reachability v2 late continuations", () => {
+  test("c18_second_call_to_same_helper_reaches_continuation", () => {
+    const fixture = secondCallFixture();
+    const code = bytecodeOf(fixture.hex);
+    const cfg = buildCfg(lift(code));
+    const entryBlock = cfg.blocks.find((block) => block.range.startPc === fixture.entryPc);
+    if (entryBlock === undefined) {
+      throw new Error("expected an entry block");
+    }
+    const blockIndexOf = (pc: number): number => {
+      const found = cfg.blocks.find((block) => block.range.startPc === pc);
+      if (found === undefined) {
+        throw new Error(`expected a block at pc ${pc}`);
+      }
+      return found.index;
+    };
+    const reach = resolveEntryReachV2(cfg, entryBlock.index);
+    expect(reach.resolvedJumpAtPc).toEqual([fixture.sharedJumpPc]);
+    expect(reach.unresolvedJumpAtPc).toEqual([]);
+    expect(reach.reachedBlocks.has(blockIndexOf(fixture.ret2Pc))).toBe(true);
+    expect(reach.reachedBlocks.has(blockIndexOf(fixture.okPc))).toBe(true);
+    const selector = mustOk(Selector.parse("0x12345678"));
+    const v2 = attributeFunctions(code, { mode: "v2" });
+    expect(v2.holdersOf(fixture.storePc)).toContain(selector);
+  });
+});
 
 describe("reachability v2 in owner control", () => {
   test("p10_v2_ownerControl_finds_shared_gate", () => {

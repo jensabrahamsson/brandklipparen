@@ -377,41 +377,23 @@ function powMod(base: bigint, exp: bigint): bigint {
 }
 
 function foldConstOp(name: string, args: readonly bigint[]): bigint | null {
+  // Stored order is [second, top]: at(0) is μs[1], at(1) is μs[0].
+  // Non-commutative ops fold in EVM order: SUB, DIV, LT, GT and EXP all
+  // take the top of stack as their first operand. ADD, MUL, AND, OR and
+  // EQ are symmetric, so their order never matters.
   const at = (index: number): bigint => args[index] ?? 0n;
   switch (name) {
     case "ADD":
       return (at(0) + at(1)) & MASK256;
     case "SUB":
-      return (at(0) - at(1)) & MASK256;
+      return (at(1) - at(0)) & MASK256;
     case "MUL":
       return (at(0) * at(1)) & MASK256;
     case "EXP": {
-      // Lenient like the legacy window proof: a {2,k} or {0x0100,k}
-      // pair in either order names the shift 2**k or 256**k, so the
-      // old-solc PUSH 20 PUSH 0x0100 EXP order still folds to 256**20.
-      const left = at(0);
-      const right = at(1);
-      const two = 2n;
-      const base256 = 0x100n;
-      if (left === two && right >= 0n && right < 256n) {
-        return powMod(two, right);
-      }
-      if (right === two && left >= 0n && left < 256n) {
-        return powMod(two, left);
-      }
-      if (left === base256 && right >= 0n && right < 256n) {
-        return powMod(base256, right);
-      }
-      if (right === base256 && left >= 0n && left < 256n) {
-        return powMod(base256, left);
-      }
-      if (right < 0n || right > MASK256) {
-        return 0n;
-      }
-      return powMod(left, right);
+      return powMod(at(1), at(0));
     }
     case "DIV":
-      return at(1) === 0n ? 0n : at(0) / at(1);
+      return at(0) === 0n ? 0n : at(1) / at(0);
     case "AND":
       return at(0) & at(1);
     case "OR":
@@ -423,9 +405,9 @@ function foldConstOp(name: string, args: readonly bigint[]): bigint | null {
     case "EQ":
       return at(0) === at(1) ? 1n : 0n;
     case "LT":
-      return at(0) < at(1) ? 1n : 0n;
+      return at(1) < at(0) ? 1n : 0n;
     case "GT":
-      return at(0) > at(1) ? 1n : 0n;
+      return at(1) > at(0) ? 1n : 0n;
     case "SHL": {
       // Args are [value, shift] (second stack item, then top).
       const value = at(0);
@@ -466,15 +448,13 @@ const FOLDABLE_OPS: ReadonlySet<string> = new Set([
 ]);
 
 // Normalisation for real-compiler shapes (P-10e), applied before
-// constant folding. Old solc 0.4.x leaves the dividend on top through a
-// SWAP1, so DIV appears with the folded EXP result (1) in either seat:
-// DIV(x, 1) folds to x in both orders. The OZ-4 address mask built as
-// PUSH1 1, PUSH1 1, PUSH1 0xa0, SHL, SUB folds to 2^160 - 1 in either SUB
-// order, so the mask compares equal to a pushed PUSH20 mask no matter
-// how it was built. Nested ANDs with the same mask flatten
-// (AND(AND(x, M), M) is AND(x, M)) so a twice-masked caller or slot load
-// still matches. The DIV-by-1 leniency is v2/extended-only and never
-// scores, so the 1/x corner stays out of every scored proof.
+// constant folding. Stored order is [second, top], so DIV's divisor is
+// args[0] and SUB's minuend is args[1]: DIV(x, 1) folds to x only when
+// the divisor is 1, and the OZ-4 address mask built as
+// PUSH1 1, PUSH1 1, PUSH1 0xa0, SHL, SUB folds to 2^160 - 1 only in EVM
+// order, so the mask compares equal to a pushed PUSH20 mask. Nested
+// ANDs with the same mask flatten (AND(AND(x, M), M) is AND(x, M)) so a
+// twice-masked caller or slot load still matches.
 function exprNormalizeOp(name: string, args: readonly Expr[]): Expr | null {
   if (name === "AND" && args.length === 2) {
     const left = args[0] ?? EXPR_UNKNOWN;
@@ -513,21 +493,18 @@ function exprNormalizeOp(name: string, args: readonly Expr[]): Expr | null {
     return rebuilt;
   }
   if (name === "DIV" && args.length === 2) {
-    const dividend = args[0] ?? EXPR_UNKNOWN;
-    const divisor = args[1] ?? EXPR_UNKNOWN;
+    const divisor = args[0] ?? EXPR_UNKNOWN;
+    const dividend = args[1] ?? EXPR_UNKNOWN;
     if (exprConstValue(divisor) === 1n) {
       return dividend;
-    }
-    if (exprConstValue(dividend) === 1n) {
-      return divisor;
     }
     return null;
   }
   if (name === "SUB" && args.length === 2) {
-    const left = exprConstValue(args[0] ?? EXPR_UNKNOWN);
-    const right = exprConstValue(args[1] ?? EXPR_UNKNOWN);
+    const second = exprConstValue(args[0] ?? EXPR_UNKNOWN);
+    const top = exprConstValue(args[1] ?? EXPR_UNKNOWN);
     const two160 = 1n << 160n;
-    if ((left === 1n && right === two160) || (left === two160 && right === 1n)) {
+    if (second === 1n && top === two160) {
       return exprConstOf(MASK160);
     }
     return null;

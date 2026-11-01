@@ -173,7 +173,8 @@ describe("pause extended analysis (P-11)", () => {
   });
 
   test("old-solc EXP-shift packed pause reports an extended fact, never a feature", () => {
-    // The setters shift the bit with `PUSH 0x02 PUSH k EXP` (2**k) and
+    // The setters shift the bit with `PUSH k PUSH 0x02 EXP` (2**k,
+    // exponent first as solc emits it) and
     // the transfer path reads the same slot and bit back through DIV by
     // the same shift, AND with 0xff and a reverting gate. The v1 proof
     // stays silent (no plain flag value sits beside the stores) while

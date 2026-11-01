@@ -375,10 +375,11 @@ export function unprivilegedForeignGateToken(): BytecodeType {
 }
 
 // Old-solc EXP-shift packed pause (precision test e): `pause()` sets
-// the bit with `PUSH 0x02 PUSH k EXP` (2**k) while `unpause()` clears
-// it, and the transfer path reads the same slot and bit back through
-// DIV by the same shift, AND with 0xff and a reverting gate. Synthetic
-// selectors and hand-assembled bytecode only.
+// the bit with `PUSH k PUSH 0x02 EXP` (2**k, exponent first as solc
+// emits it) while `unpause()` clears it, and the transfer path reads
+// the same slot and bit back through DIV by the same shift, AND with
+// 0xff and a reverting gate. Synthetic selectors and hand-assembled
+// bytecode only.
 export const EXP_PAUSE_SET = "0x8456cb59";
 export const EXP_PAUSE_CLEAR = "0x3f4ba83a";
 
@@ -388,8 +389,8 @@ function expSetBody(bit: number): number[] {
     ...push1(0),
     SLOAD,
     ...push1(1),
-    ...push1(2),
     ...push1(bit),
+    ...push1(2),
     EXP,
     MUL,
     OR,
@@ -404,8 +405,8 @@ function expClearBody(bit: number): number[] {
     ...ownerGuard(0, 200),
     ...push1(0),
     SLOAD,
-    ...push1(2),
     ...push1(bit),
+    ...push1(2),
     EXP,
     NOT,
     AND,
@@ -417,8 +418,8 @@ function expClearBody(bit: number): number[] {
 
 export function expGatedTransferBody(bit: number): number[] {
   return [
-    ...push1(2),
     ...push1(bit),
+    ...push1(2),
     EXP,
     ...push1(0),
     SLOAD,
@@ -448,9 +449,10 @@ export function expPackedPauseToken(bit = 8): BytecodeType {
 // computed word, never a constant. `pause()` sets the bit with
 // `OR(AND(SLOAD, NOT(mask)), 1 << k)` and `unpause()` clears it with
 // `AND(OR(SLOAD, mask), NOT(1 << k))`, both shift-built with
-// `PUSH 0x02 PUSH k EXP` (2**k); the transfer path reads the same slot
-// and bit back through DIV by the same shift, AND with 0xff and a
-// reverting gate. The v1 proof stays silent (no plain flag value sits
+// `PUSH k PUSH 0x02 EXP` (2**k, exponent first as solc emits it); the
+// transfer path reads the same slot and bit back through DIV by the
+// same shift, AND with 0xff and a reverting gate. The v1 proof stays
+// silent (no plain flag value sits
 // beside the stores) and the unmasked packed proof stays silent too (the
 // masking hides both shapes), while the extended masked proof pairs the
 // set/unset writers with the gate, so the mode is pause. Synthetic
@@ -471,8 +473,8 @@ export function maskedPauseSetBody(bit: number): number[] {
     NOT,
     AND,
     ...push1(1),
-    ...push1(2),
     ...push1(bit),
+    ...push1(2),
     EXP,
     MUL,
     OR,
@@ -489,8 +491,8 @@ export function maskedPauseClearBody(bit: number): number[] {
     SLOAD,
     ...push1(0x01),
     OR,
-    ...push1(2),
     ...push1(bit),
+    ...push1(2),
     EXP,
     NOT,
     AND,
@@ -562,8 +564,8 @@ function packedMappingGateBody(base: number): number[] {
     AND,
     ...push1(0x01),
     AND,
-    ...push1(2),
     ...push1(8),
+    ...push1(2),
     EXP,
     DIV,
     ...push1(0xff),
@@ -596,7 +598,7 @@ export function packedMappingBlacklistToken(writeBase = 5, gateBase = 5): Byteco
 // SSTORE — i.e. SSTORE(0, OR(AND(SLOAD(0), NOT(0xff*256**20)),
 // ISZERO(ISZERO(1))*256**20)). The shift 256**20 is built with base
 // 0x0100, which the legacy window matcher never names; the expression
-// interpreter folds EXP leniently and proves bit 160.
+// interpreter folds EXP in EVM order and proves bit 160.
 export const OLD_SOLC_PAUSE_SET = "0x0a0b0c0d";
 
 const DUP2 = 0x81;

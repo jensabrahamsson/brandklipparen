@@ -302,6 +302,10 @@ export type EntryReachV2 = {
   readonly reachedBlocks: ReadonlySet<number>;
   readonly resolvedJumpAtPc: readonly number[];
   readonly unresolvedJumpAtPc: readonly number[];
+  // Jumps resolved on an early round whose candidate set later grew past
+  // the cap: their early edges stay, and later candidates never join.
+  // C-26 reads this for `complete: false`.
+  readonly cappedJumpAtPc: readonly number[];
 };
 
 // A dynamic JUMP: the block ends in JUMP with no proven jump edge, so v1
@@ -330,6 +334,7 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
     reachedBlocks: new Set<number>(),
     resolvedJumpAtPc: Object.freeze([]),
     unresolvedJumpAtPc: Object.freeze([]),
+    cappedJumpAtPc: Object.freeze([]),
   });
   if (from < 0 || from >= cfg.blocks.length) {
     return empty;
@@ -343,6 +348,7 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
   }
   const reached = new Set<number>([from]);
   const resolved = new Set<number>();
+  const capped = new Set<number>();
   const givenUp = new Set<number>();
   let changed = true;
   while (changed) {
@@ -419,20 +425,22 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
         }
       }
     }
-    // Resolve dynamic jumps reached from this entry. Past the cap the
-    // jump stays unresolved; with no candidates yet it waits for a later
-    // round (a jump resolved early keeps its edges even if later rounds
-    // push the candidate count past the cap).
+    // Resolve dynamic jumps reached from this entry. With no candidates
+    // yet the jump waits for a later round. Past the cap a never-resolved
+    // jump stays unresolved; a jump resolved on an early round keeps its
+    // early edges and is marked capped, so later candidates — return
+    // addresses pushed by code the entry reaches late — still join the
+    // reached set while the candidate count stays within the cap.
     for (const index of [...reached]) {
       const block = cfg.blocks[index];
-      if (block === undefined || !isDynamicJumpBlock(block) || resolved.has(index) || givenUp.has(index)) {
+      if (block === undefined || !isDynamicJumpBlock(block) || givenUp.has(index)) {
         continue;
       }
       if (candidates.size === 0) {
         continue;
       }
       if (candidates.size > V2_MAX_RETURN_TARGETS) {
-        givenUp.add(index);
+        (resolved.has(index) ? capped : givenUp).add(index);
         continue;
       }
       resolved.add(index);
@@ -452,6 +460,10 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
     .map(jumpPcOf)
     .filter((pc) => pc >= 0)
     .sort((left, right) => left - right);
+  const cappedJumpAtPc = [...capped]
+    .map(jumpPcOf)
+    .filter((pc) => pc >= 0)
+    .sort((left, right) => left - right);
   const pending: number[] = [];
   for (const index of reached) {
     const block = cfg.blocks[index];
@@ -468,5 +480,6 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
     reachedBlocks: reached,
     resolvedJumpAtPc: Object.freeze(resolvedJumpAtPc),
     unresolvedJumpAtPc: Object.freeze(pending),
+    cappedJumpAtPc: Object.freeze(cappedJumpAtPc),
   });
 }
