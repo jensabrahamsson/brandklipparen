@@ -55,9 +55,10 @@ export function MuseNote({
   );
 }
 
-// One interleaved callout (<1600 px): an X-1 height expand on mount,
-// then the E-7 text power-on. Turning notes off unmounts instantly, no
-// exit animation. Static mode renders at rest with no animation.
+// One interleaved callout (<1600 px): it renders at rest height on
+// mount, then the E-7 text power-on (opacity only, never movement).
+// Turning notes off unmounts instantly, no exit animation. Static mode
+// renders at rest with no animation.
 export function InterleavedNote({
   noteId,
   note,
@@ -75,19 +76,7 @@ export function InterleavedNote({
   readonly intro: boolean;
 }): JSX.Element {
   const reduce = useReducedMotion();
-  const [grown, setGrown] = useState(reduce);
   const bodyRef = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    if (reduce) {
-      setGrown(true);
-      return;
-    }
-    const frame = requestAnimationFrame(() => setGrown(true));
-    return () => {
-      cancelAnimationFrame(frame);
-      setGrown(false);
-    };
-  }, [reduce]);
   useEffect(() => {
     if (!intro || reduce || !motionAllowed() || bodyRef.current === null) {
       return;
@@ -99,7 +88,7 @@ export function InterleavedNote({
   }, [intro, reduce]);
   return (
     <li className="code-note-row" aria-label={`Muse note after ${noteRangeLabel(note)}`}>
-      <div className={`code-note-expand${grown ? " is-open" : ""}`}>
+      <div className="code-note-expand is-open">
         <div className="code-note-clip">
           <span
             ref={(element) => {

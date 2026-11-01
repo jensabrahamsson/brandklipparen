@@ -97,7 +97,7 @@
 
 html {
   background: var(--void);
-  /* P1-11: anchor and focus jumps clear the sticky summary strip. */
+  /* P1-11: anchor and focus jumps clear the fixed summary strip. */
   scroll-padding-top: 160px;
 }
 
@@ -1168,15 +1168,7 @@ a {
   border: 1px solid var(--edge);
 }
 
-/* P1-9: the applied AI order reads in phosphor, never quiet grey, so
-   success and fallback never differ by colour alone (the check prefix
-   carries the meaning for non-colour users). `.quiet.ai-ok` beats the
-   later `.quiet` rule; phosphor on glass measures 15.7:1, well above AA. */
-.quiet.ai-ok {
-  color: var(--phosphor);
-}
-
-/* P1-7, P1-8: the Apply button stays focusable while unavailable, so the
+/* P1-7, P1-8: the Ask button stays focusable while unavailable, so the
    tone matches the disabled tone without removing it from the tab order.
    Clicks are ignored in the handler; focus never drops to the body. */
 .button[aria-disabled="true"] {
@@ -2326,18 +2318,18 @@ pre.code {
 }
 
 .compact-strip {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 5;
   display: flex;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
   background: var(--sheen), var(--surface);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-card);
+  border-bottom: 1px solid var(--edge);
   padding: 10px 16px;
-  margin-bottom: 16px;
   box-shadow: var(--elev-3);
 }
 
@@ -2355,210 +2347,6 @@ pre.code {
   color: var(--dim);
 }
 
-.customize {
-  margin: 0 0 20px auto;
-  max-width: 460px;
-}
-
-/* P0-2: the open panel spans the full width in columns so the results
-   below it never start after a 460 px right-aligned block. */
-.customize[open] {
-  max-width: none;
-  margin-left: 0;
-}
-
-.customize-body {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
-  gap: 20px;
-  align-items: start;
-}
-
-.customize-body > * {
-  min-width: 0;
-}
-
-.customize-body fieldset {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.customize-body .input {
-  max-width: 100%;
-}
-
-/* P0-2: Detail and Choose sections sit side by side in the first row;
-   the AI order card spans the full width below so no 400 px gap remains.
-   Single column on narrow screens comes from auto-fit; spanning is a
-   no-op there. DOM order stays Detail, Choose, AI for logical reading. */
-.customize-body > .ai-panel {
-  grid-column: 1 / -1;
-}
-
-.customize-body > .ai-panel > * {
-  max-width: 72ch;
-}
-
-/* P2-16/P2-19: the customize panel groups read as cards with headings
-   like .sec h2, not inline-styled rows. All spacing lives here so the
-   markup carries no style props. */
-.customize-col {
-  display: grid;
-  gap: 20px;
-  align-content: start;
-  min-width: 0;
-}
-
-.customize-h {
-  margin: 0 0 12px;
-  font-size: 13px;
-  letter-spacing: 0.26em;
-  color: var(--phosphor-hi);
-  font-weight: 700;
-  text-transform: none;
-}
-
-.customize-h .cantword {
-  margin-left: 12px;
-}
-
-.customize-row {
-  margin: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.customize-row legend,
-.picker legend {
-  font-size: 13px;
-  letter-spacing: 0.26em;
-  color: var(--phosphor-hi);
-  font-weight: 700;
-  text-transform: none;
-  padding: 0;
-}
-
-.customize-option {
-  display: flex;
-  align-items: center;
-  font-size: 14px;
-  margin-left: -12px;
-}
-
-.customize-option + .customize-option {
-  margin-top: 4px;
-}
-
-.ai-panel {
-  margin: 0;
-  display: grid;
-  gap: 8px;
-  align-content: start;
-}
-
-.customize-check {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  margin-left: -12px;
-}
-
-.ai-preface,
-.ai-status,
-.ai-apply-hint {
-  margin: 4px 0;
-  font-size: 13px;
-}
-
-.ai-apply {
-  display: grid;
-  gap: 8px;
-}
-
-.ai-apply-row {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-#ai-personalize-result {
-  margin: 8px 0 0;
-  font-size: 13px;
-  /* N-11: reserve one line so the empty status never collapses. */
-  min-height: 1.5em;
-}
-
-/* N-11: reserve the hint line and keep the Apply button width stable so
-   mounting the hint, the Mapping label and the Reset button never shift
-   the row. Glow-only motion, no transform. */
-.ai-apply-hint {
-  min-height: 1.5em;
-}
-
-.ai-apply-row [data-testid="ai-personalize-apply"] {
-  min-width: 210px;
-}
-
-.ai-retry {
-  margin-left: 8px;
-}
-
-.ai-jump {
-  margin-top: 8px;
-  justify-self: start;
-}
-
-.priorities {
-  margin: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.priorities-label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.priorities-input {
-  max-width: 560px;
-  width: 100%;
-}
-
-.priorities-row {
-  margin-top: 6px;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.priorities-clear {
-  flex: none;
-  white-space: nowrap;
-}
-
-.priorities-note {
-  font-size: 13px;
-}
-
-.picker {
-  margin: 0;
-}
-
-.picker-note {
-  margin: 0 0 8px;
-}
-
-.picker-option {
-  display: block;
-  margin: 4px 0;
-  font-size: 14px;
-  margin-left: -12px;
-}
-
 .plugins-personalized {
   margin: 0 0 8px;
 }
@@ -2568,134 +2356,16 @@ pre.code {
   font-size: 13px;
 }
 
-@media (max-width: 900px) {
-  .customize {
-    max-width: none;
-  }
-}
-
-/* P0-3: the summary reads as a real control in phosphor, not dim text. */
-/* N-10: display:flex with width:fit-content and margin-left:auto keeps the
-   summary on the right in both states; the ::before marker replaces the
-   native ::marker removed by flex layout. */
-.customize > summary {
-  cursor: pointer;
-  font-size: 14px;
-  color: var(--phosphor);
-  width: fit-content;
-  margin-left: auto;
-  padding: 8px 14px;
-  border: 1px solid var(--edge);
-  border-radius: var(--radius-button);
-  display: flex;
-  align-items: center;
-  list-style: none;
-}
-
-.customize > summary::-webkit-details-marker {
-  display: none;
-}
-
-.customize > summary::before {
-  content: "▸ ";
-  color: var(--phosphor);
-}
-
-.customize[open] > summary::before {
-  content: "▾ ";
-}
-
-/* N-7/P0-1: 44 px targets on all widths for every AI panel control
-   (scoped to the customize panel and the AI bar so meta rows keep
-   their inline flow).
-   Padding stays compact; the floor only grows short controls to 44 px.
-   Buttons and chips center their label with inline-flex. The summary
-   keeps N-10 display:flex so it stays on the same side in both states. */
-.customize .button,
-.customize .button-ghost,
-.ai-bar .chip {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.customize > summary {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.customize-option,
-.picker-option,
-.customize-check,
-.ai-retry,
-.ai-jump,
-.priorities-clear,
-button[data-testid^="ai-expand-"] {
-  min-height: 44px;
-}
-
-.customize-option,
-.picker-option,
-.customize-check {
-  display: flex;
-  align-items: center;
-}
-
-/* P0-3: the always-visible AI bar sits next to the tab list and opens the
-   panel on the priorities field. Padding alone clears 24 px on desktop;
-   the global touch-target rule keeps 44 px on phones. */
-.ai-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  margin: 0 0 12px;
-}
-
-/* R-1: the applied notice wraps inside the bar instead of sitting
-   outside the pill and clipping at the card edge. */
-.ai-bar .ai-compact {
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-/* P0-5: moved sections glow once in place (background and glow only).
-   The wrapper keeps the fade; the visible card carries the arrival glow
-   so it paints on opaque glass instead of behind it. bk-arrive peaks
-   twice over 2.4 s (under 3 flashes per second), glow only, no transform. */
-.fade-sec.ai-moved > .card,
-.fade-sec.ai-moved > .cant-tell {
-  animation: bk-arrive var(--arrive) var(--ease-out) 1;
-}
-
-/* P0-5: emphasized sections keep the phosphor Console language: a
-   phosphor edge and deeper elevation for high, a dashed edge for low.
-   Can't-tell is not a .card, so both rules target it too. */
-div[data-emphasis="high"] > .card,
-div[data-emphasis="high"] > .cant-tell {
-  border-color: var(--phosphor);
-  box-shadow: var(--elev-3);
-}
-
-div[data-emphasis="low"] > .card,
-div[data-emphasis="low"] > .cant-tell {
-  border-style: dashed;
-}
-
 /* Jump target: the focused section wrapper keeps the themed ring. */
 div[data-section]:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 
-.customize > summary:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
+/* N-11: reserve the Ask hint line so toggling it never shifts the row.
+   Glow-only motion, no transform. */
+#ask-hint {
+  min-height: 1.5em;
 }
 
 .recent-row {
@@ -3137,8 +2807,8 @@ a {
   align-items: center;
 }
 
-/* P1-11: the sticky summary strip collapses to a single row on phones
-   so it never covers the customize controls underneath it. */
+/* P1-11: the fixed summary strip collapses to a single row on phones
+   so it never covers the toolbar controls underneath it. */
 @media (max-width: 640px) {
   .compact-strip-hash {
     display: none;
@@ -3485,8 +3155,9 @@ a {
 
 .tile-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
 }
 
 .tile-title {
@@ -3985,10 +3656,9 @@ a {
 
 /* Decompiler function list (UI v2 §5.4 W-6, addendum §A1.4). Collapsed
    per-function rows with a summary, a filter, a segmented control, the
-   spec order, pc-linked pseudo-code and Expert raw. Motion is row
-   stagger (M-5), rail ignite plus one scanline flicker (M-6) and the
-   owner-approved 180 ms height expand (X-1): opacity, colour and glow
-   only, plus grid-template-rows on the disclosure wrapper. The global
+   spec order, pc-linked pseudo-code and Expert raw. Motion is opacity,
+   colour and glow only (no height motion): the body opens at rest
+   height with a rail ignite plus one scanline flicker. The global
    reduced-motion kill keeps everything static. */
 @keyframes bk-flicker {
   0%,
@@ -4183,14 +3853,8 @@ a {
   color: var(--dim);
 }
 
-.decompiler-expand {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 180ms var(--ease-out);
-}
-
 .decompiler-expand.is-open {
-  grid-template-rows: 1fr;
+  display: block;
 }
 
 .decompiler-expand-clip {
@@ -4849,19 +4513,13 @@ span.cite-chip {
 }
 
 /* Line-anchored Muse notes. Interleaved callouts sit between the lines
-   they explain; the X-1 expand below is the only movement. */
+   they explain at rest height; motion is opacity and glow only. */
 .code-note-row {
   list-style: none;
 }
 
-.code-note-expand {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 180ms var(--ease-out);
-}
-
 .code-note-expand.is-open {
-  grid-template-rows: 1fr;
+  display: block;
 }
 
 .code-note-clip {

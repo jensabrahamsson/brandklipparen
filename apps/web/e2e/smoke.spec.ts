@@ -145,9 +145,8 @@ test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await expect(page.getByText("The owner can stop you from selling.").first()).toBeVisible();
   // The template version is Expert-only detail (S-131): plain in Simple.
   await expect(page.getByLabel(/Template explanation/)).not.toContainText("v1.0.0");
-  const customize = page.locator("details.customize");
-  await customize.locator("summary").click();
-  await customize.getByRole("radio", { name: "Expert" }).check();
+  await page.getByTestId("expert-switch").click();
+  await expect(page.getByTestId("expert-switch")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByLabel(/Template explanation/)).toContainText("v1.0.0");
 });
 

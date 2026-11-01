@@ -11,7 +11,6 @@ import { useState, type JSX } from "react";
 import { fetchChat, pickExplainSource } from "../lib/api.ts";
 import type { ChatState, ExplainSource } from "../lib/api.ts";
 import type { AiFeatureAvailability } from "../lib/capabilities.ts";
-import { clearStoredPriorities, readStoredPriorities, writeStoredPriorities } from "../lib/priorities.ts";
 import type {
   AssessmentState,
   HealthState,
@@ -19,6 +18,7 @@ import type {
   ProviderInfo,
   Signal,
 } from "../types.ts";
+import { AskMuse } from "./AskMuse.tsx";
 import { AssessmentPanel } from "./AssessmentPanel.tsx";
 import { ExplainPanel, ExplainSentences } from "./ExplainPanel.tsx";
 import { InvestigationPanel } from "./InvestigationPanel.tsx";
@@ -62,6 +62,9 @@ export function MuseConsole({
   onRunInvestigation,
   signals,
   onSignalLink,
+  question,
+  onQuestionChange,
+  onQuestionClear,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -75,6 +78,9 @@ export function MuseConsole({
   readonly onRunInvestigation: () => void;
   readonly signals: readonly Signal[];
   readonly onSignalLink: (key: string) => void;
+  readonly question: string;
+  readonly onQuestionChange: (text: string) => void;
+  readonly onQuestionClear: () => void;
 }): JSX.Element {
   const explainSource = pickExplainSource(health);
   const showExplain =
@@ -89,7 +95,6 @@ export function MuseConsole({
   const [explainNonce, setExplainNonce] = useState(0);
   const [chat, setChat] = useState<ChatState | null>(null);
   const [chatPending, setChatPending] = useState(false);
-  const [question, setQuestion] = useState<string>(() => readStoredPriorities());
   const modelId = consoleModelId(health);
 
   if (!showExplain && !showInvestigate && !showChat) {
@@ -153,57 +158,14 @@ export function MuseConsole({
         ) : null}
       </div>
       {showChat ? (
-        <form
-          className="muse-ask"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onAsk();
-          }}
-        >
-          <label htmlFor="muse-ask-input">Ask about this token</label>
-          <div className="muse-ask-row">
-            <input
-              id="muse-ask-input"
-              className="input"
-              type="text"
-              value={question}
-              maxLength={500}
-              placeholder="Can the owner stop me selling?"
-              autoComplete="off"
-              onChange={(event) => {
-                setQuestion(event.target.value);
-                writeStoredPriorities(event.target.value);
-              }}
-            />
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Clear question"
-              title="Clear question"
-              onClick={() => {
-                setQuestion("");
-                clearStoredPriorities();
-                document.getElementById("muse-ask-input")?.focus();
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path
-                  d="m7 7 10 10M17 7 7 17"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-            <button type="submit" className="button">
-              Ask
-            </button>
-          </div>
-          <p className="quiet" style={{ margin: "4px 0 0" }}>
-            Sends your question to {chatModelId(health)}. Not the address.
-          </p>
-        </form>
+        <AskMuse
+          question={question}
+          onQuestionChange={onQuestionChange}
+          onQuestionClear={onQuestionClear}
+          onAsk={onAsk}
+          pending={chatPending}
+          modelLabel={chatModelId(health)}
+        />
       ) : null}
       {request === null ? null : (
         <div className="muse-out" aria-live="polite" data-testid="muse-output">

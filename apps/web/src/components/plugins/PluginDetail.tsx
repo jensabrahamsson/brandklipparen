@@ -7,6 +7,7 @@
 // weight, prev/next and Expert raw. No HTML sink anywhere: every
 // contract string renders as React text only.
 import { useEffect, useRef, useState, type JSX } from "react";
+import { ExpertSwitch } from "../ExpertSwitch.tsx";
 import { Pictogram } from "../Pictogram.tsx";
 import { SchemaValue } from "../SchemaValue.tsx";
 import { DecompilerList } from "./DecompilerList.tsx";
@@ -172,20 +173,7 @@ export function PluginDetailView({
         <a className="detail-back" href={pluginsHref(address)}>
           ← All plugins
         </a>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={expert}
-          aria-label="Expert view"
-          data-testid="detail-expert-switch"
-          className="expert-switch"
-          onClick={() => onModeChange(expert ? "simple" : "expert")}
-        >
-          <span aria-hidden="true" className="expert-switch-icon">
-            <Pictogram name="expert" size={20} />
-          </span>
-          Expert view
-        </button>
+        <ExpertSwitch mode={mode} onModeChange={onModeChange} testId="detail-expert-switch" />
       </div>
       <p className="detail-crumb">
         {symbol} › What we checked › {title}

@@ -2,15 +2,14 @@
 // rows with a summary, a filter, a segmented control, the spec order,
 // lazy pseudo-code with pc-level line links (addendum §A1.4), the entry
 // evidence row and Expert raw. The route `<selector>` auto-expands and
-// focuses its row. Motion is row stagger (M-5), rail ignite plus one
-// scanline flicker (M-6) and the approved 180 ms height expand (X-1);
+// focuses its row. Motion is opacity and glow only, one shot per expand;
 // static under prefers-reduced-motion. Sentence case throughout, and
 // the raw cause string never renders outside Expert raw.
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type JSX } from "react";
 import { Pictogram } from "../Pictogram.tsx";
 import { CodeView, type CodeFocusRequest, type ExplainContext, type ExplainEvidenceEntry } from "../code/CodeView.tsx";
 import { fetchSnippet } from "../../lib/api.ts";
-import { useCountUp, useReducedMotion } from "../../lib/motion.ts";
+import { useCountUp } from "../../lib/motion.ts";
 import type { CodePaneView } from "../../lib/route.ts";
 import {
   annotationChipText,
@@ -115,9 +114,9 @@ function FunctionBody({
 
 // One collapsed row plus its expanded body (UI v2 §5.4): the plain
 // sentence, pseudo-code, the entry evidence row and Expert raw. The
-// expand wrapper animates grid-template-rows 0fr to 1fr (X-1); collapse
-// unmounts at once. Expanding never scrolls, so nothing above the row
-// moves.
+// body renders at rest height the moment it opens (no height motion);
+// collapse unmounts at once. Expanding never scrolls, so nothing above
+// the row moves.
 function DecompilerRow({
   address,
   apiKey,
@@ -128,7 +127,6 @@ function DecompilerRow({
   buttonId,
   regionId,
   index,
-  reduce,
   registerButton,
   codeView,
   codePc,
@@ -146,7 +144,6 @@ function DecompilerRow({
   readonly buttonId: string;
   readonly regionId: string;
   readonly index: number;
-  readonly reduce: boolean;
   readonly registerButton: (selector: string, element: HTMLButtonElement | null) => void;
   readonly codeView: CodePaneView | undefined;
   readonly codePc: number | undefined;
@@ -155,19 +152,7 @@ function DecompilerRow({
   readonly onFocusConsumed: () => void;
   readonly onCopyWholeContract: (() => Promise<string>) | undefined;
 }): JSX.Element {
-  const [grown, setGrown] = useState(false);
-  useEffect(() => {
-    if (!open || reduce) {
-      setGrown(false);
-      return;
-    }
-    const frame = requestAnimationFrame(() => setGrown(true));
-    return () => {
-      cancelAnimationFrame(frame);
-      setGrown(false);
-    };
-  }, [open, reduce]);
-  const expanded = open && (reduce || grown);
+  const expanded = open;
   const chips = fn.annotations
     .map((annotation) => annotationChipText(annotation))
     .filter((chip): chip is string => chip !== null);
@@ -338,7 +323,6 @@ export function DecompilerList({
     }
     return all.some((fn) => fn.selector.toLowerCase() === initial) ? new Set([initial]) : new Set();
   });
-  const reduce = useReducedMotion();
   const filterId = useId();
   const listId = useId();
   const buttons = useRef(new Map<string, HTMLButtonElement>());
@@ -480,7 +464,6 @@ export function DecompilerList({
                 buttonId={`${listId}-${fn.selector}-button`}
                 regionId={`${listId}-${fn.selector}-body`}
                 index={index}
-                reduce={reduce}
                 registerButton={registerButton}
                 codeView={initialView}
                 codePc={initialPc}

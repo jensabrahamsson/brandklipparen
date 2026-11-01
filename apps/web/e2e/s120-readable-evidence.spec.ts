@@ -252,9 +252,9 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
 
   // Simple-mode height stays within budget on a wide viewport. The
   // board replaces the raw plugin dumps with 13 tiles, which still reads
-  // taller than the 3400 estimate (measured 4149 at 1440): restore the
-  // pre-W-4 4300 cap until W-8/W-9 remove the customize block, the AI
-  // order bar and the disabled buttons, then re-tighten to 3400.
+  // taller than the 3400 estimate (measured 4149 at 1440): W-8 removed the
+  // customize block and the AI order bar, so keep the 4300 cap only until
+  // W-9 lands the hero strip, then re-tighten to 3400.
   const height = await page.evaluate(() => document.documentElement.scrollHeight);
   expect(height).toBeLessThanOrEqual(4300);
 
@@ -296,11 +296,8 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   await expect(board.getByText("Not found", { exact: true })).toHaveCount(10);
 
   // Expert mode still shows every structured offset.
-  const customize = page.locator("details.customize");
-  if (!(await customize.evaluate((element) => (element as HTMLDetailsElement).open))) {
-    await customize.locator("summary").click();
-  }
-  await page.getByRole("radio", { name: "Expert" }).check();
+  await expect(page.locator("details.customize")).toHaveCount(0);
+  await page.getByTestId("expert-switch").click();
   const selectors = page.getByTestId("expert-selectors");
   await expect(selectors.locator("li")).toHaveCount(15);
   await expect(selectors).toContainText("0x64");

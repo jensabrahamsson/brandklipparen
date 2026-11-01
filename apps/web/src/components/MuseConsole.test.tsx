@@ -48,7 +48,11 @@ const READY_PROVIDER: ProviderInfo = {
 const IDLE_ASSESSMENT: AssessmentState = { status: "idle" };
 const IDLE_INVESTIGATION: InvestigationState = { status: "idle" };
 
-function consoleHtml(health: HealthState, availability: AiFeatureAvailability): string {
+function consoleHtml(
+  health: HealthState,
+  availability: AiFeatureAvailability,
+  question = "",
+): string {
   return renderToString(
     <MuseConsole
       address="0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
@@ -63,6 +67,9 @@ function consoleHtml(health: HealthState, availability: AiFeatureAvailability): 
       onRunInvestigation={() => undefined}
       signals={[]}
       onSignalLink={() => undefined}
+      question={question}
+      onQuestionChange={() => undefined}
+      onQuestionClear={() => undefined}
     />,
   );
 }
@@ -109,6 +116,9 @@ describe("muse console (W-3)", () => {
         onRunInvestigation={() => undefined}
         signals={[]}
         onSignalLink={() => undefined}
+        question=""
+        onQuestionChange={() => undefined}
+        onQuestionClear={() => undefined}
       />,
     );
     expect(html).toContain("Ask about this token");
@@ -116,5 +126,24 @@ describe("muse console (W-3)", () => {
     expect(html).toContain("muse-spark-1.3");
     expect(html).toContain("Not the address.");
     expect(html).toContain('maxLength="500"');
+  });
+
+  test("ask_button_uses_aria_disabled_with_a_hint_while_empty", () => {
+    const empty = consoleHtml(
+      { ...NOTHING_HEALTH, chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" } },
+      { ...NOTHING, chat: "available" },
+      "",
+    );
+    expect(empty).toContain('data-testid="ask-submit"');
+    expect(empty).toContain('aria-disabled="true"');
+    expect(empty).toContain("Type your question above to enable.");
+    expect(empty).not.toContain("<button disabled");
+    const filled = consoleHtml(
+      { ...NOTHING_HEALTH, chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" } },
+      { ...NOTHING, chat: "available" },
+      "Can the owner stop me selling?",
+    );
+    expect(filled).toContain('aria-disabled="false"');
+    expect(filled).toContain('value="Can the owner stop me selling?"');
   });
 });

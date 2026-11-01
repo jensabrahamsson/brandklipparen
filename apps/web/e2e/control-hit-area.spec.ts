@@ -1,7 +1,7 @@
-// Checkbox and radio hit-area pattern: the input keeps a 44x44 tap
-// target while the visible control paints at ~20 px inside it, with a
-// 3:1 boundary, a visible keyboard focus ring, and themed checked and
-// disabled states (no native bright system blue).
+// Switch and ask-button hit-area pattern (W-8): the Expert switch keeps
+// a 44x44 box with a visible keyboard ring and a themed on-state, and
+// the Ask button stays focusable with an off tone while empty (no Motion
+// switch exists yet: it ships in W-10).
 import { expect, test } from "@playwright/test";
 
 const ADDRESS = "0x5ab1e0000000000000000000000000000000f005";
@@ -36,7 +36,7 @@ test("control_hit_area_visual_boundary_and_states", async ({ page }) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      headers: { "x-deepening-status": "pending" },
+      headers: { "x-deepening-status": "ready" },
       body: JSON.stringify(ANALYZE),
     });
   });
@@ -46,70 +46,50 @@ test("control_hit_area_visual_boundary_and_states", async ({ page }) => {
 
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + ADDRESS);
-  const customize = page.locator("details.customize");
-  await expect(customize).toBeVisible();
-  await customize.locator("summary").click();
-  await expect(customize).toHaveAttribute("open", "");
+  await expect(page.getByRole("img", { name: /Combined score 10 of 100/ })).toBeVisible();
 
-  const controls = customize.locator('input[type="radio"], input[type="checkbox"]');
-  expect(await controls.count()).toBeGreaterThan(0);
+  // The Expert switch keeps a real 44x44 box on the toolbar.
+  const expert = page.getByTestId("expert-switch");
+  await expect(expert).toBeVisible();
+  const box = await expert.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
 
-  // 44x44 hit areas with a ~20 px visual control inside.
-  const boxes = await controls.evaluateAll((elements) =>
-    elements.map((element) => {
-      const rect = (element as HTMLElement).getBoundingClientRect();
-      const style = getComputedStyle(element as HTMLElement);
-      return {
-        width: Math.round(rect.width),
-        height: Math.round(rect.height),
-        paddingTop: Number.parseFloat(style.paddingTop),
-        backgroundClip: style.backgroundClip,
-        outlineStyle: style.outlineStyle,
-        outlineWidth: style.outlineWidth,
-      };
-    }),
+  // The on-state wears the theme tone, never native system blue. The
+  // colour change settles over --dur-hover, so poll until it lands.
+  const dim = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--dim").trim(),
   );
-  for (const box of boxes) {
-    expect(box.width).toBeGreaterThanOrEqual(44);
-    expect(box.height).toBeGreaterThanOrEqual(44);
-    // The visible control is the content box: 44 minus padding both sides.
-    expect(box.backgroundClip).toBe("content-box");
-    expect(box.width - 2 * box.paddingTop).toBeLessThanOrEqual(22);
-    expect(box.width - 2 * box.paddingTop).toBeGreaterThanOrEqual(16);
-    // A solid 3:1 boundary ring, not a bare square.
-    expect(box.outlineStyle).toBe("solid");
-    expect(box.outlineWidth).toBe("2px");
-  }
-
-  // The checked radio wears the theme tone, never native system blue. The
-  // fill transitions over --dur-fast, so poll until it settles (instant
-  // under reduced motion, 120 ms otherwise).
-  const expert = customize.getByRole("radio", { name: "Expert" });
-  await expert.check();
-  const brandDeep = await page.evaluate(() =>
-    getComputedStyle(document.documentElement).getPropertyValue("--brand-deep").trim(),
-  );
-  expect(brandDeep).toBe("#1f5a3a");
+  expect(dim).toBe("#4fb27a");
   await expect
-    .poll(() =>
-      expert.evaluate((element) => getComputedStyle(element).backgroundColor),
-    )
-    .toBe("rgb(31, 90, 58)");
-  const checkedBackground = await expert.evaluate((element) => getComputedStyle(element).backgroundColor);
-  expect(checkedBackground).toBe("rgb(31, 90, 58)");
-  expect(checkedBackground).not.toContain("0, 122, 255");
-
-  // The AI personalize box is disabled while no provider is configured.
-  const aiToggle = customize.getByTestId("ai-personalize-toggle");
-  await expect(aiToggle).toBeDisabled();
-  const disabledCursor = await aiToggle.evaluate((element) => getComputedStyle(element).cursor);
-  expect(disabledCursor).toBe("not-allowed");
+    .poll(() => expert.evaluate((element) => getComputedStyle(element).color))
+    .toBe("rgb(79, 178, 122)");
+  await expert.click();
+  await expect(expert).toHaveAttribute("aria-checked", "true");
+  await expect
+    .poll(() => expert.evaluate((element) => getComputedStyle(element).color))
+    .toBe("rgb(214, 255, 230)");
+  const onColor = await expert.evaluate((element) => getComputedStyle(element).color);
+  expect(onColor).not.toContain("0, 122, 255");
 
   // Keyboard focus draws a visible halo around the whole hit area. Tab
-  // from the summary lands on the checked group member (Expert here).
-  await customize.locator("summary").focus();
+  // from Search lands on the switch, and Space flips it back.
+  await page.getByRole("button", { name: "← Search" }).focus();
   await page.keyboard.press("Tab");
   await expect.poll(() => expert.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
-  const halo = await expert.evaluate((element) => getComputedStyle(element).boxShadow);
-  expect(halo).not.toBe("none");
+  const outline = await expert.evaluate((element) => getComputedStyle(element).outlineStyle);
+  expect(outline).toBe("solid");
+  await page.keyboard.press("Space");
+  await expect(expert).toHaveAttribute("aria-checked", "false");
+
+  // The empty Ask button stays in the tab order with an off tone: dashed
+  // border, dim text, not-allowed cursor. Clicking it sends nothing.
+  // Playwright treats aria-disabled like disabled for clicks, so the
+  // click is dispatched directly: the handler still guards it.
+  const ask = page.getByTestId("ask-submit");
+  await expect(ask).toHaveAttribute("aria-disabled", "true");
+  expect(await ask.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("dashed");
+  expect(await ask.evaluate((element) => getComputedStyle(element).cursor)).toBe("not-allowed");
+  await ask.dispatchEvent("click");
+  await expect(page.getByTestId("muse-output")).toHaveCount(0);
 });

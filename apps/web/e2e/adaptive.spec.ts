@@ -1,9 +1,11 @@
-// Playwright for the adaptive UI (S-061, S-066, S-067, S-070): mode
-// toggle, priorities persistence, severity floor and the experimental AI
-// personalize toggle with its deterministic fallback. Every REST response
-// is route-mocked; no test reaches the network.
+// Playwright for the token page toolbar and Ask field (UI v2 §1.4,
+// W-8): the Expert switch persists across reload and reveals raw data,
+// the Ask field persists under the priorities key (K-035), typing
+// highlights matching tiles with zero network, and one Ask press sends
+// one /v1/chat request. Every REST response is route-mocked; no test
+// reaches the network.
 import { expect, test } from "@playwright/test";
-import type { Page, Route } from "@playwright/test";
+import type { Page } from "@playwright/test";
 
 const ADDRESS = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
@@ -13,7 +15,7 @@ const ANALYZE_FIXTURE = {
   block: 18000000,
   proxy: { kind: "none" },
   codeHash: "0xabc",
-  modelVersion: "0.1.0",
+  modelVersion: "1.0.0",
   artifactChecksum: "checksum",
   indexVersion: "1.0.0",
   templateVersion: "1.0.0",
@@ -114,61 +116,20 @@ const HEALTH_DISABLED = {
   costUnits: "placeholder-cost-unit",
 };
 
-const PERSONALIZE_STATUS = {
+const CHAT_OK = {
   status: "ok",
   apiVersion: "v1",
-  personalize: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+  codeHash: "0xabc",
+  chat: {
+    kind: "ok",
+    answers: ["The owner can stop chosen wallets from sending tokens."],
+    droppedClaims: 0,
+    provider: "test-adapter",
+    modelId: "muse-spark-1.3",
+  },
 };
 
-function validSpecBody(): Record<string, unknown> {
-  return {
-    specVersion: 1,
-    pluginRanking: ["dev.brandklipparen.clone-match", "dev.brandklipparen.capability"],
-    placements: [
-      { sectionId: "signals", emphasis: "high" },
-      { sectionId: "summary", emphasis: "normal" },
-      { sectionId: "score", emphasis: "normal" },
-    ],
-  };
-}
-
-function personalizeOk(): Record<string, unknown> {
-  return {
-    status: "ok",
-    apiVersion: "v1",
-    personalize: {
-      kind: "ok",
-      provider: "hosted-open-weights",
-      modelId: "meta-models/muse-spark-open-1026",
-      promptVersion: "1.0.0",
-      cache: "miss",
-      spec: validSpecBody(),
-    },
-  };
-}
-
-function personalizeInvalid(): Record<string, unknown> {
-  const spec = validSpecBody();
-  spec["placements"] = [{ sectionId: "secret-panel", emphasis: "high" }];
-  return {
-    status: "ok",
-    apiVersion: "v1",
-    personalize: {
-      kind: "ok",
-      provider: "hosted-open-weights",
-      modelId: "meta-models/muse-spark-open-1026",
-      promptVersion: "1.0.0",
-      cache: "miss",
-      spec,
-    },
-  };
-}
-
-async function mockRest(
-  page: Page,
-  personalizeScenario: "ok" | "invalid" | null = null,
-  counter: { posts: number; lastBody: string } | null = null,
-): Promise<void> {
+async function mockRest(page: Page, chatPosts: { count: number } | null = null): Promise<void> {
   await page.route("**/health", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
   });
@@ -176,61 +137,51 @@ async function mockRest(
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      headers: { "x-deepening-status": "pending" },
+      headers: { "x-deepening-status": "ready" },
       body: JSON.stringify(ANALYZE_FIXTURE),
     });
   });
   await page.route("**/v1/plugins", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PLUGINS_FIXTURE) });
   });
-  await page.route("**/v1/personalize/status", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PERSONALIZE_STATUS) });
-  });
-  await page.route("**/v1/personalize", async (route: Route, request) => {
-    if (request.method() === "POST" && counter !== null) {
-      counter.posts += 1;
-      counter.lastBody = request.postData() ?? "";
+  await page.route("**/v1/chat", async (route) => {
+    if (chatPosts !== null) {
+      chatPosts.count += 1;
     }
-    if (personalizeScenario === null) {
-      await route.abort("failed");
-      return;
-    }
-    const body = personalizeScenario === "ok" ? personalizeOk() : personalizeInvalid();
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(CHAT_OK) });
   });
 }
 
-async function openCustomize(page: Page): Promise<void> {
-  const customize = page.locator("details.customize");
-  await expect(customize).toBeVisible();
-  if (!(await customize.evaluate((element) => (element as HTMLDetailsElement).open))) {
-    await customize.locator("summary").click();
-  }
-}
-
-test("k034_mode_toggle_persists_across_reload", async ({ page }) => {
+test("k034_expert_switch_persists_across_reload", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  await openCustomize(page);
-  await page.getByRole("radio", { name: "Expert" }).check();
+  // The Customize view is gone: no details.customize anywhere.
+  await expect(page.locator("details.customize")).toHaveCount(0);
+  const expert = page.getByRole("switch", { name: "Expert view" });
+  // The toolbar owns the switch on the main view; the detail view owns
+  // its own copy under a separate test id.
+  await expect(page.getByTestId("expert-switch")).toBeVisible();
+  await expect(page.getByTestId("expert-detail-switch")).toHaveCount(0);
+  await expect(page.getByTestId("expert-detail")).toHaveCount(0);
+  await expert.click();
+  await expect(expert).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("expert-detail")).toBeVisible();
   await page.reload();
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  await openCustomize(page);
-  await expect(page.getByRole("radio", { name: "Expert" })).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Expert view" })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("expert-detail")).toBeVisible();
-  await page.getByRole("radio", { name: "Simple" }).check();
+  expect(await page.evaluate(() => localStorage.getItem("brandklipparen-ui-mode"))).toBe("expert");
+  await page.getByRole("switch", { name: "Expert view" }).click();
   await expect(page.getByTestId("expert-detail")).toHaveCount(0);
 });
 
 test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  await openCustomize(page);
   await expect(page.getByTestId("expert-detail")).toHaveCount(0);
   const simpleScore = await page.locator('section[aria-label="Combined score"]').innerText();
-  await page.getByRole("radio", { name: "Expert" }).check();
+  await page.getByRole("switch", { name: "Expert view" }).click();
   await expect(page.getByTestId("expert-detail")).toContainText("0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF");
   await expect(page.getByTestId("expert-detail")).toContainText("0xabc");
   await expect(page.getByTestId("expert-selectors")).toContainText("0x44337ea1");
@@ -247,207 +198,90 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
   expect(expertScore).toContain("Calibration report");
 });
 
-test("k035_priorities_persist_across_reload_and_clear_removes_them", async ({ page }) => {
+test("k035_ask_field_persists_across_reload_and_clear_removes_it", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  await openCustomize(page);
-  await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
+  const ask = page.getByLabel("Ask about this token");
+  await ask.fill("Can the owner stop me selling?");
   await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches your question");
   await page.reload();
-  await openCustomize(page);
-  await expect(page.getByTestId("priorities-field")).toHaveValue("Can the owner stop me selling?");
+  await expect(page.getByLabel("Ask about this token")).toHaveValue("Can the owner stop me selling?");
   await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches your question");
-  await page.getByTestId("priorities-clear").click();
-  await expect(page.getByTestId("priorities-field")).toHaveValue("");
+  await page.getByTestId("ask-clear").click();
+  await expect(page.getByLabel("Ask about this token")).toHaveValue("");
   await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toHaveCount(0);
   const stored = await page.evaluate(() => localStorage.getItem("brandklipparen-user-priorities:v1"));
   expect(stored).toBe(null);
 });
 
-test("k519_critical_finding_visible_with_unrelated_priorities", async ({ page }) => {
+test("k035_typing_highlights_tiles_without_network", async ({ page }) => {
+  await mockRest(page);
+  const urls: string[] = [];
+  page.on("request", (request) => {
+    urls.push(request.url());
+  });
+  await page.goto(`/#/token/${ADDRESS}`);
+  await expect(page.getByTestId("plugin-board")).toBeVisible();
+  const settled = urls.length;
+  expect(settled).toBeGreaterThan(0);
+  await page.getByLabel("Ask about this token").fill("Can the owner stop me selling?");
+  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches your question");
+  await expect(page.getByTestId("matched-dev.brandklipparen.capability")).toContainText("Matches your question");
+  await page.waitForTimeout(400);
+  // Typing only re-runs the local matcher: no new request leaves the page.
+  expect(urls.length).toBe(settled);
+  expect(urls.some((url) => url.includes("/v1/chat"))).toBe(false);
+});
+
+test("k519_critical_finding_visible_with_unrelated_question", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  await openCustomize(page);
-  await page.getByTestId("priorities-field").fill("What a nice day for a walk");
+  await page.getByLabel("Ask about this token").fill("What a nice day for a walk");
   await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toHaveCount(0);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
   await expect(page.locator('section[aria-label="Signals"]')).toContainText("Owner can block transfers");
   await expect(page.getByTestId("plugin-tile-capability")).toBeVisible();
   await expect(page.getByTestId("plugin-tile-clone-match")).toBeVisible();
-});
-
-test("deterministic match labels the plugin tiles", async ({ page }) => {
-  await mockRest(page);
-  await page.goto(`/#/token/${ADDRESS}`);
-  await openCustomize(page);
-  await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
-  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches your question");
-  await expect(page.getByTestId("matched-dev.brandklipparen.capability")).toContainText("Matches your question");
-});
-
-test("k519_invalid_or_missing_personalize_spec_falls_back_to_deterministic_baseline", async ({ page }) => {
-  await mockRest(page, "invalid");
-  await page.goto(`/#/token/${ADDRESS}`);
-  await openCustomize(page);
-  await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
-  await page.getByTestId("ai-personalize-toggle").check();
-  await page.getByTestId("ai-personalize-apply").click();
-  await expect(page.getByTestId("ai-personalize-result")).toContainText("AI order unavailable right now");
-  await expect(page.getByTestId("ai-emphasis-signals")).toHaveCount(0);
+  // The section order never moves for a question (Option A): the overview
+  // grid keeps the deterministic plan.
   const sections = await page.locator("div.token-grid div[data-section]").evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute("data-section")),
   );
-  // S-133: the risk breakdown ("score") lives in the verdict hero above the
-  // tabs, so the overview grid starts with the next planned section; the
-  // hero still carries the gauges and the combined-score ring.
   expect(sections[0]).toBe("signals");
   expect(sections[1]).toBe("plugin-findings");
-  await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  await expect(page.locator('section[aria-label="Combined score"] .gauges-hero')).toBeVisible();
 });
 
-test("k519_ai_personalize_toggle_off_by_default_and_labelled", async ({ page }) => {
-  await mockRest(page);
+test("k519_ask_sends_one_chat_request_per_press", async ({ page }) => {
+  const chatPosts = { count: 0 };
+  await mockRest(page, chatPosts);
   await page.goto(`/#/token/${ADDRESS}`);
-  await openCustomize(page);
-  await expect(page.getByTestId("ai-personalize-toggle")).not.toBeChecked();
-  await expect(page.getByTestId("ai-personalize-label")).toContainText("hosted-open-weights");
-  await expect(page.getByTestId("ai-personalize-label")).toContainText("meta-models/muse-spark-open-1026");
-  await expect(page.getByTestId("ai-personalize-preface")).toHaveCount(0);
-  await expect(page.locator(".priorities-note")).toContainText("Stored only on this device");
-});
-
-test("k519_ai_personalize_toggle_states_priorities_before_first_call", async ({ page }) => {
-  const counter = { posts: 0, lastBody: "" };
-  await mockRest(page, "ok", counter);
-  await page.goto(`/#/token/${ADDRESS}`);
-  await openCustomize(page);
-  await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
-  await page.getByTestId("ai-personalize-toggle").check();
-  await expect(page.getByTestId("ai-personalize-preface")).toContainText("Sends your priorities text, plugin references");
-  await expect(page.getByTestId("ai-personalize-preface")).toContainText("plugin doc excerpts");
-  await expect(page.getByTestId("ai-personalize-preface")).toContainText("hosted-open-weights");
-  await expect(page.getByTestId("ai-personalize-preface")).toContainText("once per Apply");
-  await expect(page.getByTestId("ai-personalize-preface")).toContainText("The token address is not sent");
-  await expect(page.getByTestId("ai-personalize-preface")).toContainText("public code hash can identify the contract");
-  await expect(page.locator(".priorities-note")).toContainText("Sent to hosted-open-weights");
-  await expect(page.locator(".priorities-note")).toContainText("only when you press Apply AI order");
-  expect(counter.posts).toBe(0);
-  await page.getByTestId("ai-personalize-apply").click();
-  await expect(page.getByTestId("ai-applied-compact")).toContainText("AI order applied");
-  await openCustomize(page);
-  await expect(page.getByTestId("ai-personalize-result")).toContainText("AI order applied");
-  expect(counter.posts).toBe(1);
-  expect(counter.lastBody).toContain("Can the owner stop me selling?");
-  await expect(page.getByTestId("ai-emphasis-signals")).toContainText("AI priority");
-  const sections = await page.locator("div.token-grid div[data-section]").evaluateAll((nodes) =>
-    nodes.map((node) => node.getAttribute("data-section")),
+  const ask = page.getByLabel("Ask about this token");
+  await ask.fill("Can the owner stop me selling?");
+  await page.getByTestId("ask-submit").click();
+  await expect(page.getByTestId("muse-output")).toContainText(
+    "The owner can stop chosen wallets from sending tokens.",
   );
-  expect(sections[0]).toBe("explanation");
-  expect(sections.indexOf("explanation")).toBeLessThan(sections.indexOf("plugin-findings"));
-  const headings = await page.locator("div.token-grid h2").evaluateAll((nodes) =>
-    nodes.map((node) => node.textContent ?? ""),
+  await expect.poll(() => chatPosts.count).toBe(1);
+  await ask.fill("Can fees change?");
+  await page.getByTestId("ask-submit").click();
+  await expect.poll(() => chatPosts.count).toBe(2);
+  await expect(page.getByTestId("muse-output")).toContainText(
+    "The owner can stop chosen wallets from sending tokens.",
   );
-  expect(headings.findIndex((text) => text.includes("Why this score"))).toBeLessThan(
-    headings.findIndex((text) => text.includes("What we checked")),
-  );
+  await expect(page.getByTestId("muse-advisory")).toContainText("Advisory. The score above did not change.");
 });
 
-test("turning AI off mid-request shows no applied order and no jump", async ({ page }) => {
-  await page.route("**/health", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
-  });
-  await page.route("**/v1/analyze*", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      headers: { "x-deepening-status": "pending" },
-      body: JSON.stringify(ANALYZE_FIXTURE),
-    });
-  });
-  await page.route("**/v1/plugins", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PLUGINS_FIXTURE) });
-  });
-  await page.route("**/v1/personalize/status", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PERSONALIZE_STATUS) });
-  });
-  await page.route("**/v1/personalize", async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(personalizeOk()) });
-  });
+test("k519_empty_ask_sends_nothing", async ({ page }) => {
+  const chatPosts = { count: 0 };
+  await mockRest(page, chatPosts);
   await page.goto(`/#/token/${ADDRESS}`);
-  await openCustomize(page);
-  await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
-  await page.getByTestId("ai-personalize-toggle").check();
-  await page.getByTestId("ai-personalize-apply").click();
-  await page.getByTestId("ai-personalize-toggle").uncheck();
-  await page.waitForTimeout(800);
-  await expect(page.getByTestId("ai-personalize-result")).not.toContainText("AI order applied");
-  await expect(page.getByTestId("ai-jump-results")).toHaveCount(0);
-});
-
-test("n12_show_collapsed_section_reveals_it_and_moves_focus", async ({ page }) => {
-  const collapsedBody = (): Record<string, unknown> => ({
-    status: "ok",
-    apiVersion: "v1",
-    personalize: {
-      kind: "ok",
-      provider: "hosted-open-weights",
-      modelId: "meta-models/muse-spark-open-1026",
-      promptVersion: "1.0.0",
-      cache: "miss",
-      spec: {
-        specVersion: 1,
-        pluginRanking: ["dev.brandklipparen.clone-match", "dev.brandklipparen.capability"],
-        placements: [
-          { sectionId: "signals", emphasis: "normal" },
-          { sectionId: "cant-tell", emphasis: "normal", collapsed: true },
-          { sectionId: "score", emphasis: "normal" },
-        ],
-      },
-    },
-  });
-  await page.route("**/health", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
-  });
-  await page.route("**/v1/analyze*", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      headers: { "x-deepening-status": "pending" },
-      body: JSON.stringify(ANALYZE_FIXTURE),
-    });
-  });
-  await page.route("**/v1/plugins", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PLUGINS_FIXTURE) });
-  });
-  await page.route("**/v1/personalize/status", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PERSONALIZE_STATUS) });
-  });
-  await page.route("**/v1/personalize", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(collapsedBody()) });
-  });
-  await page.goto(`/#/token/${ADDRESS}`);
-  await openCustomize(page);
-  await page.getByTestId("priorities-field").fill("Can the owner stop me selling?");
-  await page.getByTestId("ai-personalize-toggle").check();
-  await page.getByTestId("ai-personalize-apply").click();
-  const show = page.getByRole("button", { name: "Show Can't-tell" });
-  await expect(show).toBeVisible();
-  await expect(show).not.toHaveAttribute("aria-expanded");
-  await show.click();
-  const revealed = page.locator('div.token-grid div[data-section="cant-tell"]');
-  await expect(revealed).toBeVisible();
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const active = document.activeElement;
-        if (active === null) {
-          return null;
-        }
-        const wrapper = active.closest('div[data-section="cant-tell"]');
-        return wrapper?.getAttribute("data-section") ?? null;
-      }),
-    )
-    .toBe("cant-tell");
+  const submit = page.getByTestId("ask-submit");
+  await expect(submit).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByTestId("ask-hint")).toContainText("Type your question above to enable.");
+  // Enter in the empty field submits the form, which the empty guard drops.
+  await page.getByLabel("Ask about this token").focus();
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(300);
+  expect(chatPosts.count).toBe(0);
+  await expect(page.getByTestId("muse-output")).toHaveCount(0);
 });

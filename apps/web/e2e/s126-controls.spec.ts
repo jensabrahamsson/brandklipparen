@@ -61,13 +61,6 @@ async function mockRest(page: Page): Promise<void> {
   await page.route("**/v1/plugins", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ plugins: [] }) });
   });
-  await page.route("**/v1/personalize/status", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ status: "ok", apiVersion: "v1", personalize: { disabled: true } }),
-    });
-  });
   await page.route("**/v1/live-tokens", async (route) => {
     await route.fulfill({
       status: 200,
@@ -149,18 +142,20 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
   // Ghost buttons: the empty Clear control reads as off next to enabled ones.
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  const back = page.getByRole("button", { name: "Back to search" });
+  const back = page.getByRole("button", { name: "← Search" });
   expect(await back.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
   expect(await back.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("solid");
-  await page.locator("details.customize > summary").click();
-  // Native checkboxes follow the brand tone instead of system blue.
-  const aiToggle = page.getByTestId("ai-personalize-toggle");
-  expect(await aiToggle.evaluate((element) => getComputedStyle(element).accentColor)).toContain("141, 255, 182");
-  const clear = page.getByTestId("priorities-clear");
-  await expect(clear).toBeDisabled();
-  expect(await clear.evaluate((element) => getComputedStyle(element).opacity)).toBe("0.5");
-  expect(await clear.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("dashed");
-  expect(await clear.evaluate((element) => getComputedStyle(element).cursor)).toBe("not-allowed");
+  // The Expert switch follows the brand tone instead of system blue.
+  const expert = page.getByTestId("expert-switch");
+  expect(await expert.evaluate((element) => getComputedStyle(element).accentColor)).not.toContain("0, 122, 255");
+  // The empty Ask button keeps its off tone while staying focusable.
+  const ask = page.getByTestId("ask-submit");
+  await expect(ask).toHaveAttribute("aria-disabled", "true");
+  expect(await ask.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("dashed");
+  expect(await ask.evaluate((element) => getComputedStyle(element).cursor)).toBe("not-allowed");
+  const clear = page.getByTestId("ask-clear");
+  await expect(clear).toBeVisible();
+  expect(await clear.evaluate((element) => getComputedStyle(element).cursor)).not.toBe("not-allowed");
 
   // The gauge segment track keeps a 3:1 boundary on the card surface:
   // an unlit segment against the gauge card.

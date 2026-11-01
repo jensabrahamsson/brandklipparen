@@ -1,7 +1,7 @@
 // S-118: verdict-first token header. The token page leads with a header
 // card (h1, score ring, truthful headline, probability mini row) and the
-// Detail / AI / section / priority controls live in a collapsed,
-// session-remembered "Customize view" disclosure after the tabs.
+// toolbar row above it holds Search and the Expert switch (W-8: the
+// Customize view is gone).
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -61,13 +61,6 @@ async function mockRest(page: Page): Promise<void> {
   await page.route("**/v1/plugins", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ plugins: [] }) });
   });
-  await page.route("**/v1/personalize/status", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ mapping: { disabled: true } }),
-    });
-  });
   await page.route("**/v1/live-tokens*", async (route) => {
     await route.fulfill({
       status: 200,
@@ -84,7 +77,7 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     // Round-trip through the start page so the token page always mounts
     // fresh (a same-URL goto would keep the previous React tree alive).
     await page.goto("/");
-    await page.evaluate(() => sessionStorage.removeItem("brandklipparen-customize-open"));
+    await page.evaluate(() => localStorage.removeItem("brandklipparen-ui-mode"));
     await page.goto(`/#/token/${ADDRESS}`);
     const header = page.locator('section[aria-label="Combined score"]');
     await expect(header).toBeVisible();
@@ -125,17 +118,14 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
       expect((outline[index] as number) - (outline[index - 1] as number)).toBeLessThanOrEqual(1);
     }
 
-    // Detail, AI personalize, section picker and priorities all live in
-    // the collapsed Customize view.
-    const customize = page.locator("details.customize");
-    await expect(customize).toBeVisible();
-    await expect(customize.locator("summary")).toContainText("Customize view");
-    expect(await customize.evaluate((element) => (element as HTMLDetailsElement).open)).toBe(false);
-    await expect(customize.locator('input[name="ui-mode"]')).toHaveCount(2);
-    await expect(customize.locator('[data-testid="ai-personalize-toggle"]')).toHaveCount(1);
-    await expect(customize.locator("legend", { hasText: "Choose sections" })).toHaveCount(1);
-    await expect(customize.locator("legend", { hasText: "Detail" })).toHaveCount(1);
-    await expect(customize.locator('[data-testid="priorities-field"]')).toHaveCount(1);
+    // The Customize view is gone: no details.customize anywhere. The
+    // toolbar holds one Search button and one Expert switch, and the Ask
+    // field lives in the Muse console under the hero.
+    await expect(page.locator("details.customize")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "← Search" })).toBeVisible();
+    await expect(page.getByRole("switch", { name: "Expert view" })).toBeVisible();
+    await expect(page.getByTestId("expert-switch")).toHaveAttribute("aria-checked", "false");
+    await expect(page.getByLabel("Ask about this token")).toBeVisible();
 
     // S-132: verdict copy sits near the top under the token meta with
     // the dial beside it, never vertically centred in a tall box.
@@ -151,10 +141,11 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
       .evaluate((element) => getComputedStyle(element).color);
     expect(caretColor).toBe("rgb(255, 90, 82)");
 
-    // The score Explain is within 3 Tab stops after Back.
-    await page.getByRole("button", { name: "← Back to search" }).focus();
+    // The score Explain stays keyboard-reachable a few Tab stops after
+    // the toolbar.
+    await page.getByRole("button", { name: "← Search" }).focus();
     let reached = false;
-    for (let stop = 0; stop < 3; stop += 1) {
+    for (let stop = 0; stop < 8; stop += 1) {
       await page.keyboard.press("Tab");
       const testId = await page.evaluate(() => document.activeElement?.getAttribute("data-testid"));
       if (testId === "explain-score:combined") {
@@ -164,17 +155,15 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     }
     expect(reached).toBe(true);
 
-    // The panel remembers its state for the session. The toggle handler
-    // writes a beat after the click resolves, so poll for the write.
-    await customize.locator("summary").click();
-    expect(await customize.evaluate((element) => (element as HTMLDetailsElement).open)).toBe(true);
+    // The Expert switch persists in local storage and restores on reload
+    // (K-034, covered in full by adaptive.spec.ts).
+    await page.getByRole("switch", { name: "Expert view" }).click();
+    await expect(page.getByTestId("expert-detail")).toBeVisible();
     await expect
-      .poll(() => page.evaluate(() => sessionStorage.getItem("brandklipparen-customize-open")))
-      .toBe("1");
+      .poll(() => page.evaluate(() => localStorage.getItem("brandklipparen-ui-mode")))
+      .toBe("expert");
     await page.reload();
-    await expect(page.locator("details.customize")).toBeVisible();
-    expect(await page.locator("details.customize").evaluate((element) => (element as HTMLDetailsElement).open)).toBe(
-      true,
-    );
+    await expect(page.getByTestId("expert-switch")).toHaveAttribute("aria-checked", "true");
+    await expect(page.getByTestId("expert-detail")).toBeVisible();
   }
 });

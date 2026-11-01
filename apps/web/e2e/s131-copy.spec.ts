@@ -167,8 +167,7 @@ test("s131_simple_mode_copy_has_no_dev_strings", async ({ page }) => {
   // The token page in Simple mode: questions, plain snippet, no dev text.
   await mockToken(page);
   await page.goto("/#/token/" + ADDRESS);
-  const customize = page.locator("details.customize");
-  await expect(customize).toBeVisible();
+  await expect(page.locator("details.customize")).toHaveCount(0);
   const cantTell = page.locator("section[aria-label='What bytecode alone cannot tell you']");
   await expect(cantTell).toBeVisible();
   const questions = await cantTell.locator("li > div:first-child").allInnerTexts();
@@ -195,12 +194,10 @@ test("s131_expert_mode_keeps_relocated_detail", async ({ page }) => {
   await mockToken(page);
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + ADDRESS);
-  const customize = page.locator("details.customize");
-  await expect(customize).toBeVisible();
-  // Closed disclosures hide their content from the accessibility tree,
-  // so open it before touching the mode radios.
-  await customize.locator("summary").click();
-  await customize.getByRole("radio", { name: "Expert" }).check();
+  await expect(page.locator("details.customize")).toHaveCount(0);
+  // The Expert switch lives in the toolbar; one press reveals the
+  // relocated detail.
+  await page.getByTestId("expert-switch").click();
 
   // The relocated detail still exists: stream, calibration, bot facts.
   await expect(page.locator("section[aria-label='Stream view']")).toBeVisible();

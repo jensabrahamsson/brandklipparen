@@ -1,6 +1,7 @@
-// Playwright for UI P2 (S-100 field picker + stream view, S-101 explain
-// panel). Every REST response is route-mocked with the fake adapter shape;
-// no test reaches the network.
+// Playwright for UI P2 (S-100 stream view, S-101 explain panel). The
+// field picker is retired in W-8: every section always renders. Every
+// REST response is route-mocked with the fake adapter shape; no test
+// reaches the network.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -68,42 +69,11 @@ async function mockAnalyze(page: Page): Promise<void> {
   });
 }
 
-async function openCustomize(page: Page): Promise<void> {
-  const customize = page.locator("details.customize");
-  await expect(customize).toBeVisible();
-  if (!(await customize.evaluate((element) => (element as HTMLDetailsElement).open))) {
-    await customize.locator("summary").click();
-  }
-}
-
-test("s100_field_picker_limits_sections_without_changing_score", async ({ page }) => {
-  await mockAnalyze(page);
-  await page.goto(`/#/token/${ADDRESS}`);
-  await openCustomize(page);
-  const score = page.locator('section[aria-label="Combined score"]');
-  await expect(score).toContainText("84 High");
-  // Let the one-shot dial count-up settle so the byte-identity capture
-  // below compares final text against final text.
-  await expect(score.locator(".score-dial .num")).toHaveText("84");
-  const before = await score.innerText();
-  // The picked Signals section renders by default.
-  await expect(page.locator('section[aria-label="Signals"]')).toBeVisible();
-  // Clearing Signals hides it while the score stays byte-identical.
-  await page.getByLabel("Show Signals").uncheck();
-  await expect(page.locator('section[aria-label="Signals"]')).toHaveCount(0);
-  expect(await score.innerText()).toBe(before);
-  // Re-picking renders it again with the score still unchanged.
-  await page.getByLabel("Show Signals").check();
-  await expect(page.locator('section[aria-label="Signals"]')).toBeVisible();
-  expect(await score.innerText()).toBe(before);
-});
-
 test("s100_stream_view_shows_analysis_before_deepening_status", async ({ page }) => {
   await mockAnalyze(page);
   await page.goto(`/#/token/${ADDRESS}`);
   // Stream view is Expert-only (S-131); the mechanics below are unchanged.
-  await openCustomize(page);
-  await page.locator("details.customize").getByRole("radio", { name: "Expert" }).check();
+  await page.getByTestId("expert-switch").click();
   await page.getByRole("button", { name: "Stream analysis" }).click();
   const analysis = page.getByTestId("stream-analysis");
   const deepening = page.getByTestId("stream-deepening");

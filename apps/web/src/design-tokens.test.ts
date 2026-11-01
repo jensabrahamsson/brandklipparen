@@ -141,9 +141,6 @@ test("phosphor_transitions_cover_only_opacity_colour_and_shadow", () => {
     "opacity",
     "stroke",
     "filter",
-    // Owner-approved X-1 (UI v2 §5.7): the 180 ms height expand on
-    // in-card disclosures. Duration stays capped at 300 ms below.
-    "grid-template-rows",
   ]);
   const blocks = code.match(/^[ \t]*transition(?!-)[^;]*;/gm) ?? [];
   expect(blocks.length).toBeGreaterThan(0);
@@ -324,10 +321,11 @@ test("s126_disabled_and_invalid_control_styles", () => {
 });
 
 test("r1_r3_r4_touch_targets_wrap_and_separator", () => {
-  // R-1: the AI bar wraps so the applied notice stays inside the bar.
-  const aiBar = code.match(/\.ai-bar\s*\{[^}]*\}/)?.[0] ?? "";
-  expect(aiBar).toContain("flex-wrap: wrap");
-  expect(code).toMatch(/\.ai-bar\s+\.ai-compact\s*\{[^}]*min-width:\s*0/);
+  // R-1 (W-8): the token page toolbar wraps so Search and the Expert
+  // switch stay inside the row on narrow screens.
+  const toolbar = code.match(/\.detail-toolbar\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(toolbar).toContain("flex-wrap: wrap");
+  expect(code).toMatch(/\.expert-switch\s*\{[^}]*min-height:\s*44px/);
   // R-3: tabs, copy buttons and ghost buttons carry a real 44 px desktop
   // floor; the "?" trigger is a real 44 px box with a 20 px visual, so
   // the touch rule never enlarges the glyph.

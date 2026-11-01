@@ -99,24 +99,9 @@ async function mockRest(page: Page, analyzeStatus: number, analyzeBody: unknown)
   await page.route("**/v1/plugins", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ plugins: [] }) });
   });
-  await page.route("**/v1/personalize/status", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ mapping: { disabled: true } }),
-    });
-  });
   await page.route("**/v1/live-tokens*", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LIVE_FIXTURE) });
   });
-}
-
-async function openCustomize(page: Page): Promise<void> {
-  const customize = page.locator("details.customize");
-  await expect(customize).toBeVisible();
-  if (!(await customize.evaluate((element) => (element as HTMLDetailsElement).open))) {
-    await customize.locator("summary").click();
-  }
 }
 
 async function expectFitsViewport(page: Page): Promise<void> {
@@ -213,9 +198,15 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
       await expectTapTargets(page);
     }
 
-    // Expert mode with every section on.
-    await openCustomize(page);
-    await page.getByRole("radio", { name: "Expert" }).check();
+    // Expert mode with every section on. The switch persists across
+    // reloads (W-8 keeps the K-034 key) and this loop reuses one
+    // context, so the second width may start checked: only press when
+    // it is off.
+    const expertSwitch = page.getByTestId("expert-switch");
+    if ((await expertSwitch.getAttribute("aria-checked")) !== "true") {
+      await expertSwitch.click();
+    }
+    await expect(expertSwitch).toHaveAttribute("aria-checked", "true");
     await expect(page.getByTestId("expert-detail")).toBeVisible();
     await expectFitsViewport(page);
     await expectTapTargets(page);

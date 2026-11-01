@@ -30,57 +30,6 @@ function storageOf(): Storage | null {
   }
 }
 
-export const CUSTOMIZE_KEY = "brandklipparen-customize-open";
-
-function sessionStorageOf(): Storage | null {
-  try {
-    if (typeof sessionStorage === "undefined") {
-      return null;
-    }
-    return sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
-// Customize-view disclosure state (S-118): remembered per session only, so
-// a reload keeps the panel as the visitor left it without persisting
-// anything across sessions. An explicitly stored "1" or "0" always wins;
-// when nothing is stored the caller applies the default (open only for an
-// empty AI-on priorities draft). Anything unreadable collapses the panel.
-export function readStoredCustomize(storage: Storage | null = sessionStorageOf()): boolean {
-  if (storage === null) {
-    return false;
-  }
-  try {
-    return storage.getItem(CUSTOMIZE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function hasStoredCustomize(storage: Storage | null = sessionStorageOf()): boolean {
-  if (storage === null) {
-    return false;
-  }
-  try {
-    return storage.getItem(CUSTOMIZE_KEY) !== null;
-  } catch {
-    return false;
-  }
-}
-
-export function writeStoredCustomize(open: boolean, storage: Storage | null = sessionStorageOf()): void {
-  if (storage === null) {
-    return;
-  }
-  try {
-    storage.setItem(CUSTOMIZE_KEY, open ? "1" : "0");
-  } catch {
-    // Local-only preference: the app works without persistence.
-  }
-}
-
 export function readStoredMode(storage: Storage | null = storageOf()): UiMode {
   if (storage === null) {
     return "simple";

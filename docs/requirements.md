@@ -739,31 +739,29 @@ text never change.
   `k519_personalization_leaves_scores_evidence_and_text_unchanged` and
   Playwright test `k519_critical_finding_visible_with_unrelated_priorities`.
 
-### K-519 Experimental AI personalize toggle (MVP)
+### K-519 Ask Muse about the token (MVP)
 
-The token page offers one experimental toggle that maps the visitor's
-priorities through the single `PluginPersonalizeModelPort` (hosted
-open-weights). The toggle is off by default, labelled with provider and
-model id, and states the one-call send before the first mapping; any
-invalid or missing model output falls back to the deterministic baseline
-with scores, evidence and text unchanged. Proposed in
-`docs/adr-plugin-architecture.md` (P-27, P-28); this story enters the ID
-with the implementation. The fake adapter stands in every test: no test
-reaches the network.
+The token page offers one Ask field in the Muse console that answers the
+visitor's question through `/v1/chat` (option A, owner decision on UI v2
+§1.4). The AI ordering (`/v1/personalize`) is retired from the UI: plugin
+order stays deterministic and the deterministic local match (K-035) only
+highlights matching tiles. Scores, evidence and finding text never
+change. Proposed in `docs/adr-plugin-architecture.md` (P-27, P-28); this
+story enters the ID with the implementation. The fake adapter stands in
+every test: no test reaches the network.
 
-- `POST /v1/personalize` runs the frozen analysis, quotes priorities and
-  frontmatter references as data, and answers the outcome envelope with
-  the validated `PersonalizeSpec`; any error kind means the baseline
-  stands. Verification: integration tests on the route (ok, error
-  envelope, not-configured, client error on empty priorities).
-- The web toggle persists locally, sends one explicit mapping request
-  per Apply press, re-validates the response client-side, applies only
-  whitelisted sections and plugin cards with the severity floor clamped
-  first, and never collapses a floored section. Verification: unit tests
-  for the toggle storage and the spec parse/apply, Playwright tests
-  `k519_invalid_or_missing_personalize_spec_falls_back_to_deterministic_baseline`,
-  `k519_ai_personalize_toggle_off_by_default_and_labelled` and
-  `k519_ai_personalize_toggle_states_priorities_before_first_call`.
+- `POST /v1/chat` runs the frozen analysis with the quoted question
+  (500 chars max) and answers the checked-sentence envelope; any error
+  kind means the deterministic explanation stands. Verification:
+  integration tests on the route (ok, error envelope, not-configured,
+  client error on empty or oversize question).
+- The web Ask field persists under the priorities key (K-035), sends one
+  explicit chat request per Ask press and none on Enter while empty, and
+  typing highlights matching tiles through the local matcher with zero
+  network. Verification: unit tests for the Ask field state, Playwright
+  tests `k519_ask_sends_one_chat_request_per_press`,
+  `k519_typing_highlights_tiles_without_network` and
+  `k519_empty_ask_sends_nothing`.
 
 ## 6. Interfaces (K-0xx, continued)
 
@@ -2369,7 +2367,7 @@ the test per acceptance criterion.
 | K-032 | `k517_plugin_md_missing_or_mismatched_fails_deterministic_check` (unit) |
 | K-033 | `k033_plugin_docs_match_registry_in_rest_and_mcp` (integration) |
 | K-035 | `k035_priorities_match_frontmatter_tags_deterministically` (unit, web) |
-| K-519 | `k519_ai_personalize_toggle_off_by_default_and_labelled` (Playwright, web) |
+| K-519 | `k519_ask_sends_one_chat_request_per_press` (Playwright, web) |
 | K-034 | `k034_every_output_schema_shape_renders_via_fixed_library` (unit, web) |
 | K-036 | `k036_investigate_matches_across_rest_and_mcp_for_same_codehash` (integration) |
 | K-517 | `k517_plugin_md_missing_or_mismatched_fails_deterministic_check` (unit) |

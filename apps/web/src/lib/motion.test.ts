@@ -64,21 +64,18 @@ describe("reduced motion keeps added highlights static (P2-20)", () => {
   });
 });
 
-describe("moved section arrival targets the visible card (N-2/P0-5)", () => {
+describe("deterministic order keeps sections static (W-8 option A)", () => {
   const cssDir = dirname(fileURLToPath(import.meta.url));
   const css = readFileSync(join(cssDir, "../styles.css"), "utf8");
   const code = css.replace(/\/\*[\s\S]*?\*\//g, "");
 
-  test("ai_moved_glow_paints_the_card_not_the_wrapper", () => {
-    expect(code).toContain(".fade-sec.ai-moved > .card");
-    expect(code).toContain(".fade-sec.ai-moved > .cant-tell");
-    expect(code).toMatch(/\.fade-sec\.ai-moved\s*>\s*\.card[\s\S]*?bk-arrive/);
+  test("no_ai_reorder_or_emphasis_rules_remain", () => {
+    // W-8 retires AI ordering (option A): no section ever moves and no
+    // emphasis is applied, so the arrival-glow and data-emphasis rules
+    // are gone. The Ask field only highlights tiles in place.
+    expect(code).not.toContain("ai-moved");
+    expect(code).not.toContain("data-emphasis");
     expect(code).not.toMatch(/^\.ai-moved\s*\{/m);
-  });
-
-  test("low_emphasis_reaches_cant_tell", () => {
-    expect(code).toMatch(/div\[data-emphasis="low"\]\s*>\s*\.cant-tell/);
-    expect(code).toMatch(/div\[data-emphasis="high"\]\s*>\s*\.cant-tell/);
   });
 
   test("ai_moved_is_static_under_reduced_motion", () => {
