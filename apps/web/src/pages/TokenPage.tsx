@@ -9,6 +9,7 @@ import { toPluginResultViews } from "../lib/plugins.ts";
 import { isValidAddress } from "../lib/validate.ts";
 import type { TokenView } from "../lib/route.ts";
 import { PluginBoard, buildBoardModel } from "../components/plugins/PluginBoard.tsx";
+import type { BoardTile } from "../components/plugins/PluginBoard.tsx";
 import { PluginDetailView } from "../components/plugins/PluginDetail.tsx";
 import type { ExplainEvidenceEntry } from "../components/code/CodeView.tsx";
 import { copyForPluginId, slugForPluginId } from "../lib/pluginCopy.ts";
@@ -653,7 +654,7 @@ function AssessedView({
               <span className="headline-marker" aria-hidden="true">
                 &gt;{" "}
               </span>
-              <span>{meaningSentence(result)}</span> <Explain explainKey="score:combined" label="Combined score" />
+              <span>{meaningSentence(result, heroBoard.ownerTiles)}</span> <Explain explainKey="score:combined" label="Combined score" />
             </p>
             <PowersStrip address={address} allIds={heroIds} tiles={heroBoard.ownerTiles} />
             {mode === "expert" ? (
@@ -1004,29 +1005,53 @@ function topRisk(result: Extract<AnalyzeResult, { kind: "assessed" }>): RiskKind
   return best;
 }
 
-// Verdict sentence (UI v2 §1.1, W-9): the band word always comes from
-// the score, never from a probability. The clause is the strongest
-// fired signal in plain words, with no percent and no repeated risk
-// name. With no signal at all the sentence says what was checked
-// instead of asserting an unproven claim.
-export function meaningSentence(result: Extract<AnalyzeResult, { kind: "assessed" }>): string {
+// Verdict sentence (UI v2 §1.1, D-4): the band word always comes from
+// the score, never from a probability or a signal title. The
+// clause names owner powers from the board's owner tiles in board
+// order, never a signal: found-scored powers first, then extended
+// findings, then the honest nothing-found line. No percent anywhere;
+// the gauges own percents.
+export function meaningSentence(
+  result: Extract<AnalyzeResult, { kind: "assessed" }>,
+  ownerTiles: readonly BoardTile[] = [],
+): string {
   const word = riskWord(result.score);
-  const [top] = sortByImpact(result.signals);
-  if (top === undefined) {
-    return `${word} risk. No owner power found in the code we could read. That is not the same as safe.`;
+  const found = ownerTiles.filter((tile) => tile.state === "found-scored");
+  if (found.length > 0) {
+    const named = found.filter((tile) => tile.copy.slug !== "ownership");
+    const source = named.length > 0 ? named : found;
+    const names = source.slice(0, 2).map((tile) => tile.copy.title.toLowerCase());
+    const including = names.length === 2 ? `${names[0]} and ${names[1]}` : `${names[0]}`;
+    const count = privilegedFunctionCount(found);
+    if (count !== null) {
+      const noun = count === 1 ? "function" : "functions";
+      return `${word} risk. The owner controls ${count} ${noun}, including ${including}.`;
+    }
+    return `${word} risk. The owner controls ${including}.`;
   }
-  const clause = withFullStop(stripSeverityWord(plainReason(top)));
-  return `${word} risk. ${clause}`;
+  const extended = ownerTiles.filter((tile) => tile.state === "extended");
+  if (extended.length > 0) {
+    const names = extended.map((tile) => tile.copy.title.toLowerCase()).join(", ");
+    return `${word} risk. No scored owner power. Extended analysis found ${extended.length} more (not in score): ${names}.`;
+  }
+  return `${word} risk. No owner power found in the code we could read. That is not the same as safe.`;
 }
 
-// Pattern-titled findings carry their severity in parens ("Honeypot
-// pattern (high)"): the verdict band already names the band, so the
-// clause drops it instead of stuttering.
-function stripSeverityWord(clause: string): string {
-  return clause.replace(/\s*\((low|medium|high)\)\s*\.?$/i, "");
-}
-
-function withFullStop(clause: string): string {
-  const trimmed = clause.trim();
-  return trimmed.endsWith(".") ? trimmed : `${trimmed}.`;
+// Privileged-function count for the found clause (UI v2 §1.1 example
+// "controls 11 functions"): the ownership detector reports it as
+// `privilegedFunctions` in a found payload. Unknown when no found
+// payload carries a finite number.
+function privilegedFunctionCount(tiles: readonly BoardTile[]): number | null {
+  for (const tile of tiles) {
+    for (const payload of tile.payloads) {
+      if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+        continue;
+      }
+      const value = (payload as Record<string, unknown>)["privilegedFunctions"];
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+        return Math.trunc(value);
+      }
+    }
+  }
+  return null;
 }
