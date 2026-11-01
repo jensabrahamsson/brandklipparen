@@ -51,6 +51,7 @@ function extendedTile(slug: string, title: string): BoardTile {
       group: "owner",
       foundLine: () => title,
       limits: "Test limit.",
+      cantTellLine: "Test can't tell line.",
     },
     state: "extended",
     severity: "medium",

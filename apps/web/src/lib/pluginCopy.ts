@@ -25,6 +25,9 @@ export type PluginCopyEntry = {
   // plain words, paraphrased from the detector PLUGIN.md. Sentence case,
   // never the mechanism twice.
   readonly limits: string;
+  // Can't-tell tile body (R3 D-9): one sentence per detector, so a wall
+  // of can't-tell tiles never repeats the same line. Sentence case.
+  readonly cantTellLine: string;
 };
 
 // Canonical registry order: 9 owner powers, then 4 analysis tools.
@@ -261,6 +264,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "owner",
     foundLine: ownershipLine,
     limits: "The code proves a stored owner and the functions it guards. Who holds the seat right now is read separately, and only at a pinned block.",
+    cantTellLine: "We found no stored owner the code compares with the caller.",
   },
   pause: {
     slug: "pause",
@@ -270,6 +274,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "owner",
     foundLine: pauseLine,
     limits: "The code proves the freeze mechanism, not whether the switch is on right now or still callable.",
+    cantTellLine: "We found no switch in the code that freezes transfers.",
   },
   blacklist: {
     slug: "blacklist",
@@ -279,6 +284,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "owner",
     foundLine: () => blacklistLine(),
     limits: "The code proves the blocking mechanism, not whether it is a block list or an allow list, and not which wallets are listed.",
+    cantTellLine: "We found no list in the code that blocks chosen wallets.",
   },
   mint: {
     slug: "mint",
@@ -288,6 +294,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "owner",
     foundLine: mintLine,
     limits: "The code proves new tokens can be created. Whether the function is still callable is not in the code.",
+    cantTellLine: "The creation path was only partly readable, so minting stays unclear.",
   },
   "transfer-fee": {
     slug: "transfer-fee",
@@ -297,6 +304,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "owner",
     foundLine: feeLine,
     limits: "The code proves the fee can change. The highest it can go is unknown when the setter has no cap.",
+    cantTellLine: "The fee path was only partly readable, so fee changes stay unclear.",
   },
   "transfer-limits": {
     slug: "transfer-limits",
@@ -306,6 +314,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "owner",
     foundLine: limitsLine,
     limits: "The code proves limits can change, not the live numbers sitting in storage.",
+    cantTellLine: "We found no limit value in the code that caps wallets or transfers.",
   },
   "sell-block": {
     slug: "sell-block",
@@ -315,6 +324,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "owner",
     foundLine: sellBlockLine,
     limits: "The code proves a recipient-based block, not which direction counts as the sell.",
+    cantTellLine: "The pool check was only partly readable, so selling may or may not block.",
   },
   "transfer-hooks": {
     slug: "transfer-hooks",
@@ -324,6 +334,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "owner",
     foundLine: hooksLine,
     limits: "The code proves each transfer can call another contract, not what that contract does.",
+    cantTellLine: "The call out of each transfer was only partly readable.",
   },
   "proxy-upgrade": {
     slug: "proxy-upgrade",
@@ -333,6 +344,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "owner",
     foundLine: proxyLine,
     limits: "The code proves it can be replaced. Who can trigger the upgrade lives outside the code.",
+    cantTellLine: "The upgrade path was only partly readable, so replacement stays unclear.",
   },
   capability: {
     slug: "capability",
@@ -342,6 +354,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "tools",
     foundLine: capabilityLine,
     limits: "Presence is not reachability: a listed power may sit in dead code the token never runs.",
+    cantTellLine: "The capability scan was only partly readable.",
   },
   decompiler: {
     slug: "decompiler",
@@ -351,6 +364,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "tools",
     foundLine: decompilerLine,
     limits: "A readable reconstruction, not the original source. Names are display only.",
+    cantTellLine: "The function list was only partly readable.",
   },
   "clone-match": {
     slug: "clone-match",
@@ -360,6 +374,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "tools",
     foundLine: cloneMatchLine,
     limits: "A similar template is a warning, not a verdict: the details can still differ.",
+    cantTellLine: "The template comparison was only partly readable.",
   },
   "hard-to-analyze": {
     slug: "hard-to-analyze",
@@ -369,6 +384,7 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     group: "tools",
     foundLine: hardToAnalyzeLine,
     limits: "Marks a coverage gap, not a risk. Treat it as a reason to be careful.",
+    cantTellLine: "The readability check itself was only partly readable.",
   },
 });
 

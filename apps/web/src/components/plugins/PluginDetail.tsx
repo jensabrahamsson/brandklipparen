@@ -353,7 +353,7 @@ export function PluginDetailView({
       ? (entry?.description ?? "No description for this check.")
       : tile.state === "found-scored" || tile.state === "extended" || tile.state === "ran"
         ? tile.copy.foundLine(tile.payloads)
-        : tileQuietBody(tile.state);
+        : tileQuietBody(tile.copy, tile.state);
   const typed = useTypewriter(sentence);
   const expert = mode === "expert";
   // A deep-linked function row keeps focus: scrolling to top and
@@ -527,7 +527,7 @@ export function PluginDetailView({
   );
 }
 
-function tileQuietBody(state: BoardTile["state"]): string {
+function tileQuietBody(copy: BoardTile["copy"], state: BoardTile["state"]): string {
   if (state === "error") {
     return "This check could not finish. Other results are not affected.";
   }
@@ -535,7 +535,7 @@ function tileQuietBody(state: BoardTile["state"]): string {
     return "Needs a tool this server does not have.";
   }
   if (state === "cant-tell") {
-    return "The code that matters here could not be fully read.";
+    return copy.cantTellLine;
   }
   return "Not found in the code we could read.";
 }

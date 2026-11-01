@@ -46,6 +46,7 @@ export function PluginTile({
   evidenceCount,
   matched,
   index,
+  compact = false,
 }: {
   readonly address: string;
   readonly pluginId: string;
@@ -57,16 +58,24 @@ export function PluginTile({
   readonly evidenceCount: number;
   readonly matched: boolean;
   readonly index: number;
+  // R2-10 phone compaction: quiet and neutral tiles collapse to one
+  // 48 px row below 480 px. Found, extended and error tiles always keep
+  // the full card so no finding loses its sentence.
+  readonly compact?: boolean;
 }): JSX.Element {
   const found = state === "found-scored" || state === "extended" || state === "ran";
   const counted = useCountUp(evidenceCount, 600);
-  const body = found ? copy.foundLine(payloads) : tileQuietBody(state);
+  const body = found ? copy.foundLine(payloads) : tileQuietBody(copy, state);
+  // R2-10: the extended tile names "Not in score" in its status line,
+  // so the dropped "Extended analysis" pill loses no meaning.
   const statusWord =
     state === "found-scored"
       ? `Found · ${severityWord(severity)}`
-      : state === "ran"
-        ? ranStatusWord(copy, payloads.length)
-        : PLUGIN_STATE_WORD[state];
+      : state === "extended"
+        ? "Found · Not in score"
+        : state === "ran"
+          ? ranStatusWord(copy, payloads.length)
+          : PLUGIN_STATE_WORD[state];
   const lampGlyph = state === "ran" ? copy.pictogram : LAMP_GLYPH[state];
   const lampClass =
     state === "found-scored"
@@ -76,6 +85,33 @@ export function PluginTile({
         : state === "ran"
           ? "lamp is-ran"
           : "lamp";
+  if (compact) {
+    return (
+      <a
+        className={`tile is-compact state-${state} sev-${severity}`}
+        href={pluginHref(address, pluginId, allIds)}
+        aria-label={`${copy.title}: ${statusPhrase(state, severity)}. ${copy.question} Open details.`}
+        data-testid={`plugin-tile-${copy.slug}`}
+        data-tile-slug={copy.slug}
+        style={{ "--i": Math.min(index, 12) } as CSSProperties}
+      >
+        <span className={lampClass} aria-hidden="true">
+          <Pictogram name={lampGlyph} size={20} />
+        </span>
+        <span className="tile-compact-label">
+          {copy.title} · {statusWord}
+        </span>
+        {matched ? (
+          <span className="tile-match" data-testid={`matched-${pluginId}`}>
+            Matches your question
+          </span>
+        ) : null}
+        <span className="tile-chev" aria-hidden="true">
+          <Pictogram name="chevron-right" size={20} />
+        </span>
+      </a>
+    );
+  }
   return (
     <a
       className={`tile state-${state} sev-${severity}`}
@@ -108,9 +144,6 @@ export function PluginTile({
       </span>
       <span className="tile-question">{copy.question}</span>
       <span className="tile-body">{body}</span>
-      {state === "extended" ? (
-        <span className="tile-extended-tag">Extended analysis</span>
-      ) : null}
       {copy.slug === "decompiler" || evidenceCount === 0 ? null : (
         <span className="tile-count numeric">
           {counted} {counted === 1 ? "place" : "places"} in code
@@ -124,7 +157,7 @@ export function severityWord(severity: TileSeverity): string {
   return severity === "high" ? "High" : severity === "medium" ? "Medium" : "Low";
 }
 
-function tileQuietBody(state: PluginState): string {
+function tileQuietBody(copy: PluginCopyEntry, state: PluginState): string {
   if (state === "error") {
     return "This check could not finish. Other results are not affected.";
   }
@@ -132,7 +165,7 @@ function tileQuietBody(state: PluginState): string {
     return "Needs a tool this server does not have.";
   }
   if (state === "cant-tell") {
-    return "The code that matters here could not be fully read.";
+    return copy.cantTellLine;
   }
   return "Not found in the code we could read.";
 }

@@ -67,6 +67,17 @@ describe("decompiler tile, header and list summary (R3 D-8)", () => {
     expect(tileLine).toBe("33 functions · 22 named · 14 partly read (55 jumps not followed)");
   });
 
+  test("u8_every_detector_has_its_own_cant_tell_sentence", () => {
+    const lines = Object.values(PLUGIN_COPY).map((entry) => entry.cantTellLine);
+    expect(new Set(lines).size).toBe(lines.length);
+    expect(PLUGIN_COPY["ownership"]?.cantTellLine).toBe(
+      "We found no stored owner the code compares with the caller.",
+    );
+    for (const line of lines) {
+      expect(line).not.toBe("The code that matters here could not be fully read.");
+    }
+  });
+
   test("the tool status word names the decompiler function count", () => {
     const decompiler = PLUGIN_COPY["decompiler"];
     const capability = PLUGIN_COPY["capability"];

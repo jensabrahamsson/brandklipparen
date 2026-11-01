@@ -3,7 +3,9 @@
 // spec; third-party ids keep rendering in the PluginsPanel fallback.
 // Motion is power-on, lamp ignite, count-up and hover glow only
 // (M-1, M-2, M-3, M-9); static under prefers-reduced-motion.
-import type { JSX } from "react";
+import { useState, type JSX } from "react";
+import { Pictogram } from "../Pictogram.tsx";
+import { useMediaQuery } from "../../lib/useMediaQuery.ts";
 import { PluginTile } from "./PluginTile.tsx";
 import type { TileSeverity } from "./PluginTile.tsx";
 import {
@@ -153,7 +155,12 @@ function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.E
   if (tiles.length === 0) {
     return null;
   }
-  const parts = [`${countedFound} found`];
+  // R2-10: zero counts read as noise ("0 not found" wrapping to an
+  // orphan line), so only nonzero states are named.
+  const parts: string[] = [];
+  if (found > 0) {
+    parts.push(`${countedFound} found`);
+  }
   if (extended > 0) {
     parts.push(`${countedExtended} found by extended analysis (not in score)`);
   }
@@ -166,11 +173,87 @@ function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.E
   if (notRun > 0) {
     parts.push(`${notRun} not run`);
   }
-  parts.push(`${countedNotFound} not found`);
+  if (notFound > 0) {
+    parts.push(`${countedNotFound} not found`);
+  }
   return (
     <p className="board-summary numeric" data-testid="plugin-board-summary">
       {tiles.length} owner powers checked: {parts.join(" · ")}
     </p>
+  );
+}
+
+// Phone compaction (R2-10): below 480 px every tile without a finding
+// renders as a one-line 48 px row. Found, extended and error tiles keep
+// the full card so no finding and no failure message loses its sentence.
+// Ran tools read compact because, post D-8, they are neutral rows with
+// one-line bodies; the detail view still holds their full copy.
+export function shouldCompactTile(state: PluginState): boolean {
+  return state === "cant-tell" || state === "not-found" || state === "not-run" || state === "ran";
+}
+
+// The can't-tell wall (R3 D-9): with 3 or more can't-tell owner tiles
+// they collapse behind one disclosure row, "Can't tell (7)". It opens
+// with the approved X-1 180 ms grid-template-rows expand and rests on
+// the same lamp language as the tiles. Fewer than 3 render inline.
+const CANT_TELL_GROUP_AT = 3;
+
+function CantTellGroup({
+  address,
+  allIds,
+  tiles,
+  offset,
+  matchedTags,
+  narrow,
+}: {
+  readonly address: string;
+  readonly allIds: readonly string[];
+  readonly tiles: readonly BoardTile[];
+  readonly offset: number;
+  readonly matchedTags?: ReadonlyMap<string, readonly string[]> | undefined;
+  readonly narrow: boolean;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="canttell-group">
+      <button
+        type="button"
+        className="canttell-toggle"
+        aria-expanded={open}
+        aria-controls="cant-tell-tiles"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="lamp" aria-hidden="true">
+          <Pictogram name="canttell" size={20} />
+        </span>
+        <span className="canttell-label">Can&apos;t tell ({tiles.length})</span>
+        <span className="canttell-chev" aria-hidden="true">
+          <Pictogram name={open ? "chevron-down" : "chevron-right"} size={20} />
+        </span>
+      </button>
+      <div id="cant-tell-tiles" className={open ? "canttell-expand is-open" : "canttell-expand"}>
+        <div className="canttell-expand-clip">
+          <div className="plugin-grid">
+            {tiles.map((tile, index) => (
+              <PluginTile
+                key={tile.pluginId}
+                address={address}
+                pluginId={tile.pluginId}
+                allIds={allIds}
+                copy={tile.copy}
+                state={tile.state}
+                severity={tile.severity}
+                payloads={tile.payloads}
+                evidenceCount={tile.evidenceCount}
+                matched={(matchedTags?.get(tile.pluginId) ?? []).length > 0}
+                index={offset + index}
+                compact={narrow && shouldCompactTile(tile.state)}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -190,6 +273,9 @@ export function PluginBoard({
     return null;
   }
   const allIds = (plugins ?? []).map((entry) => entry.id);
+  // R2-10 compaction follows the viewport, not the board container, so
+  // it stays in step with every other <480 rule on the page.
+  const narrow = useMediaQuery("(max-width: 479px)");
   const renderTiles = (tiles: readonly BoardTile[], offset: number): JSX.Element[] =>
     tiles.map((tile, index) => (
       <PluginTile
@@ -204,16 +290,30 @@ export function PluginBoard({
         evidenceCount={tile.evidenceCount}
         matched={(matchedTags?.get(tile.pluginId) ?? []).length > 0}
         index={offset + index}
+        compact={narrow && shouldCompactTile(tile.state)}
       />
     ));
+  const cantTellOwner = model.ownerTiles.filter((tile) => tile.state === "cant-tell");
+  const openOwner = model.ownerTiles.filter((tile) => tile.state !== "cant-tell");
+  const grouped = cantTellOwner.length >= CANT_TELL_GROUP_AT;
   return (
-    <section aria-label="What we checked" data-testid="plugin-board" className="plugin-board">
+    <section aria-label="What we checked" data-testid="plugin-board" className="plugin-board card">
       <h2 id="plugin-board" tabIndex={-1}>
         What we checked
       </h2>
       <SummaryLine tiles={model.ownerTiles} />
       <h3 className="board-group">Owner powers</h3>
-      <div className="plugin-grid">{renderTiles(model.ownerTiles, 0)}</div>
+      <div className="plugin-grid">{renderTiles(grouped ? openOwner : model.ownerTiles, 0)}</div>
+      {grouped ? (
+        <CantTellGroup
+          address={address}
+          allIds={allIds}
+          tiles={cantTellOwner}
+          offset={openOwner.length}
+          matchedTags={matchedTags}
+          narrow={narrow}
+        />
+      ) : null}
       {model.toolTiles.length === 0 ? null : (
         <>
           <h3 className="board-group">Analysis tools</h3>

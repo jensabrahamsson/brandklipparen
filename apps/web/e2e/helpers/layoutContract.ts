@@ -96,6 +96,13 @@ export async function assertLayout(
         if (rect.width <= 0 || rect.height <= 0) {
           continue;
         }
+        // Deliberate single-line truncation (U-8 compact tile rows):
+        // ellipsis with the full text in the parent link's accessible
+        // name is not accidental clipping.
+        const truncation = getComputedStyle(node);
+        if (truncation.textOverflow === "ellipsis" && truncation.overflow !== "visible") {
+          continue;
+        }
         if (node.scrollWidth > node.clientWidth + 1) {
           hits.push(`${node.tagName.toLowerCase()}.${(node.className as string).toString().split(" ").join(".")}`);
         }

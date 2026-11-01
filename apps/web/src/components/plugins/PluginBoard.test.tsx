@@ -3,7 +3,7 @@
 // Behavior based: rendered text and order only, with synthetic fixtures.
 import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
-import { PluginBoard } from "./PluginBoard.tsx";
+import { PluginBoard, shouldCompactTile } from "./PluginBoard.tsx";
 import { syntheticAddress } from "../../lib/syntheticAddresses.ts";
 import type { PluginListEntry, PluginResultView } from "../PluginsPanel.tsx";
 
@@ -98,7 +98,10 @@ describe("plugin board (UI v2 §5.1)", () => {
     for (const word of ["Found · High", "Found", "Error", "Not run", "Not found"]) {
       expect(html).toContain(word);
     }
-    expect(html).toContain("Extended analysis");
+    // R2-10: no "Extended analysis" pill; the status line and the
+    // summary carry "not in score" instead.
+    expect(html).not.toContain("Extended analysis");
+    expect(html).toContain("extended analysis");
   });
 
   test("a hard read turns quiet tiles into can't tell", () => {
@@ -172,6 +175,80 @@ describe("plugin board (UI v2 §5.1)", () => {
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={results} />);
     expect(html).not.toContain("Can&#x27;t tell");
     expect(html).toContain("Ran · 1 function");
+  });
+
+  test("u8_no_extended_pill_and_zero_counts_omitted_from_summary", () => {
+    const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={RESULTS} />);
+    // The "Extended analysis" pill is gone; the status line carries it.
+    expect(html).not.toContain("tile-extended-tag");
+    expect(html).toContain("Found · Not in score");
+    // RESULTS has zero can't-tell tiles, so the summary names no
+    // can't-tell part at all (SSR count-ups read 0, so assert on the
+    // part labels, which follow the raw counts).
+    expect(html).not.toContain("can&#x27;t tell");
+  });
+
+  test("u8_all_quiet_board_summarizes_without_zero_parts", () => {
+    const quiet = PLUGINS.map((entry) => ok(entry.id));
+    const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={quiet} />);
+    expect(html).toContain("owner powers checked");
+    expect(html).not.toContain("errors");
+    expect(html).not.toContain("not run");
+    expect(html).not.toContain("can&#x27;t tell");
+  });
+
+  test("u8_three_or_more_cant_tell_tiles_group_behind_a_disclosure", () => {
+    const hard = RESULTS.map((result) =>
+      result.pluginId === "dev.brandklipparen.hard-to-analyze"
+        ? ok("dev.brandklipparen.hard-to-analyze", [
+            {
+              id: "dev.brandklipparen.hard-to-analyze:timeout",
+              title: "Slow read",
+              payload: { cause: "timeout" },
+              evidence: [{ selector: "0x12345678", offset: null }],
+            },
+          ])
+        : result,
+    );
+    const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={hard} />);
+    expect(html).toContain("Can&#x27;t tell (<!-- -->5<!-- -->)");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-controls="cant-tell-tiles"');
+    // Grouped tiles stay in the DOM inside the collapsed body.
+    expect(html).toContain("plugin-tile-pause");
+  });
+
+  test("u8_only_tiles_without_findings_compact_on_phones", () => {
+    for (const state of ["cant-tell", "not-found", "not-run", "ran"] as const) {
+      expect(shouldCompactTile(state)).toBe(true);
+    }
+    for (const state of ["found-scored", "extended", "error"] as const) {
+      expect(shouldCompactTile(state)).toBe(false);
+    }
+  });
+
+  test("u8_fewer_than_three_cant_tell_tiles_render_inline", () => {
+    const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={RESULTS} />);
+    expect(html).not.toContain("canttell-toggle");
+  });
+
+  test("u8_cant_tell_tiles_carry_per_detector_sentences", () => {
+    const hard = RESULTS.map((result) =>
+      result.pluginId === "dev.brandklipparen.hard-to-analyze"
+        ? ok("dev.brandklipparen.hard-to-analyze", [
+            {
+              id: "dev.brandklipparen.hard-to-analyze:timeout",
+              title: "Slow read",
+              payload: { cause: "timeout" },
+              evidence: [{ selector: "0x12345678", offset: null }],
+            },
+          ])
+        : result,
+    );
+    const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={hard} />);
+    expect(html).toContain("We found no switch in the code that freezes transfers.");
+    expect(html).toContain("We found no limit value in the code that caps wallets or transfers.");
+    expect(html).not.toContain("The code that matters here could not be fully read.");
   });
 
   test("r3_only_unexpected_control_flow_on_transfer_reads_partly", () => {

@@ -54,6 +54,7 @@ function ownerTile(
       group: "owner",
       foundLine: () => title,
       limits: "Test limit.",
+      cantTellLine: "Test can't tell line.",
     },
     state,
     severity: "medium",
