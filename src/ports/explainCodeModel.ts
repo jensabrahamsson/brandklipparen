@@ -28,7 +28,8 @@ export type ExplainCodeSummarySentence = {
 };
 
 export type ExplainCodeNote = {
-  // 1-based line numbers in the sent view, in ascending order.
+  // Line numbers in the sent view, in ascending order: snippet-relative
+  // (from 1) for the decompiled view, absolute file numbers for source.
   readonly lines: readonly number[];
   readonly text: string;
   readonly cites: readonly ExplainCodeCite[];
@@ -40,7 +41,8 @@ export type ExplainCodeInput = {
   readonly view: ExplainCodeView;
   readonly promptVersion: string;
   // The function's own lines in the requested view (decompiled lines carry
-  // the snippet text; source lines carry the verified range text).
+  // the snippet text numbered from 1; source lines carry the verified
+  // range text under absolute file numbers).
   readonly lines: readonly ExplainCodeLine[];
   // Verified file path for the source view; absent for decompiled.
   readonly file?: string | undefined;
@@ -71,9 +73,12 @@ export const ExplainCodeInput = {
     if (input.lines.length === 0 || input.lines.length > 512) {
       return null;
     }
-    let previous = 0;
+    let previous: number | null = null;
     for (const line of input.lines) {
-      if (!Number.isInteger(line.lineNumber) || line.lineNumber !== previous + 1) {
+      if (!Number.isInteger(line.lineNumber) || line.lineNumber < 1) {
+        return null;
+      }
+      if (previous !== null && line.lineNumber !== previous + 1) {
         return null;
       }
       previous = line.lineNumber;

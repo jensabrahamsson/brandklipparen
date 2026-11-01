@@ -499,6 +499,35 @@ describe("explain code overlay", () => {
     }
   });
 
+  test("source view keeps absolute file line numbers in notes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (): Promise<Response> =>
+        jsonResponse(200, {
+          explainCode: {
+            kind: "ok",
+            summary: [{ text: "Only the owner can call this.", cites: ["line:121"] }],
+            notes: [{ lines: [121, 122], text: "The owner check happens here.", cites: ["line:121"] }],
+            droppedClaims: 0,
+            provider: "meta-model-api",
+            modelId: "muse-spark-1.3",
+          },
+        }),
+      ),
+    );
+    try {
+      const state = await fetchExplainCode(ADDRESS, SELECTOR, "source", null);
+      expect(state.status).toBe("ready");
+      if (state.status !== "ready") {
+        return;
+      }
+      expect(state.notes.map((note) => [note.from, note.to])).toEqual([[121, 122]]);
+      expect(state.notes[0]?.cites).toEqual([{ kind: "line", selector: SELECTOR, view: "source", line: 121 }]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("the session cache prevents a second request but not a second view", async () => {
     const fetchMock = vi.fn(async (): Promise<Response> => jsonResponse(200, okBody()));
     vi.stubGlobal("fetch", fetchMock);

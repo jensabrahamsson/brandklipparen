@@ -2143,7 +2143,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
           validationError("No verified source covers this function.", requestId as string),
         );
       }
-      viewLines = ranged.map((text, index) => ({ lineNumber: index + 1, text }));
+      viewLines = ranged.map((text, index) => ({ lineNumber: located.startLine + index, text }));
       viewFile = located.file;
     }
     const counters = createRequestCounters();

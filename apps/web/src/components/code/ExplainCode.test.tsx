@@ -5,7 +5,7 @@
 // roles and accessible names.
 import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
-import { ExplainCodeButton, ExplainViewResults, type ExplainRuntime, type TypedEntry } from "./ExplainCode.tsx";
+import { entryChips, ExplainCodeButton, ExplainViewResults, type ExplainRuntime, type TypedEntry } from "./ExplainCode.tsx";
 
 function noop(): void {}
 
@@ -150,6 +150,60 @@ describe("explain code panel", () => {
     );
     expect(failed).toContain("Muse didn&#x27;t answer. The code and evidence are unchanged.");
     expect(failed).toContain("Try again");
+  });
+
+  test("a source note at absolute file lines chips its absolute range", () => {
+    const maps = {
+      lines: new Set([120, 121, 122]),
+      functions: new Map<string, string>(),
+      evidence: new Map<string, string>(),
+    };
+    const handlers = { onLine: noop, onFunction: noop, onEvidence: noop };
+    const html = renderToString(
+      <>
+        {entryChips(
+          {
+            kind: "note",
+            cites: [],
+            note: { lines: [121, 122], from: 121, to: 122, text: "The owner check happens here.", cites: [] },
+            lines: [121, 122],
+          },
+          { selector: "0xa9059cbb", view: "source" },
+          maps,
+          handlers,
+        )}
+      </>,
+    );
+    expect(html).toContain("L121–122");
+    expect(html).toContain('aria-label="Muse note for line 121"');
+    expect(html).toContain("<button");
+  });
+
+  test("a stale relative line in an absolute pane renders as plain text", () => {
+    const maps = {
+      lines: new Set([120, 121, 122]),
+      functions: new Map<string, string>(),
+      evidence: new Map<string, string>(),
+    };
+    const handlers = { onLine: noop, onFunction: noop, onEvidence: noop };
+    const html = renderToString(
+      <>
+        {entryChips(
+          {
+            kind: "note",
+            cites: [],
+            note: { lines: [2, 3], from: 2, to: 3, text: "The owner check happens here.", cites: [] },
+            lines: [2, 3],
+          },
+          { selector: "0xa9059cbb", view: "source" },
+          maps,
+          handlers,
+        )}
+      </>,
+    );
+    expect(html).toContain("L2–3");
+    expect(html).toContain('class="cite-chip is-unknown"');
+    expect(html).not.toContain("<button");
   });
 
   test("the pending line names the function being read", () => {

@@ -21,6 +21,11 @@ import type { AppServices } from "../../../src/application/analyzeToken.ts";
 import { createExplainCodeService } from "../../../src/application/explainCodeService.ts";
 import type { ExplainCodeService } from "../../../src/application/explainCodeService.ts";
 import type { VerifiedSourceService } from "../../../src/application/verifiedSource.ts";
+import type {
+  ExplainCodeInput,
+  ExplainCodeModelOutcome,
+  ExplainCodeModelPort,
+} from "../../../src/ports/explainCodeModel.ts";
 import { SecretString } from "../../../src/ports/config.ts";
 import { FakeClockAdapter } from "../../fakes/fakeClock.ts";
 import { FakeExplainCodeModelAdapter } from "../../fakes/fakeExplainCodeModel.ts";
@@ -121,6 +126,37 @@ function stubSourceService(): VerifiedSourceService {
       },
     }),
   };
+}
+
+// F-7 helper: a model stub that cites absolute file line numbers, the
+// way a model answers when the sent source view carries them.
+class AbsoluteCiteAdapter implements ExplainCodeModelPort {
+  readonly calls: ExplainCodeInput[] = [];
+
+  provider(): string {
+    return "test-adapter";
+  }
+
+  modelId(): string {
+    return "test-explain-code-absolute";
+  }
+
+  async explainCode(input: ExplainCodeInput): Promise<ExplainCodeModelOutcome> {
+    this.calls.push(input);
+    return Object.freeze({
+      kind: "ok",
+      summary: Object.freeze([
+        Object.freeze({ text: "Only the owner can call this.", cites: Object.freeze(["line:121"]) }),
+      ]),
+      notes: Object.freeze([
+        Object.freeze({
+          lines: Object.freeze([121, 122]),
+          text: "The owner check happens here.",
+          cites: Object.freeze(["line:121"]),
+        }),
+      ]),
+    });
+  }
 }
 
 function testServer(
@@ -248,6 +284,7 @@ describe("explain-code plugin over REST (VS-B3)", () => {
       const sent = fake.calls[0];
       expect(sent?.view).toBe("source");
       expect(sent?.file).toBe(FIXTURE_FILE);
+      expect(sent?.lines.map((line) => line.lineNumber)).toEqual([2, 3, 4]);
       expect(sent?.lines.map((line) => line.text)).toEqual([
         "function transfer(address to, uint256 amount) {",
         "balances[to] += amount;",
@@ -256,6 +293,71 @@ describe("explain-code plugin over REST (VS-B3)", () => {
       const body = posted.body as { view: string; explainCode: { kind: string } };
       expect(body.view).toBe("source");
       expect(body.explainCode.kind).toBe("ok");
+    } finally {
+      await server.close();
+    }
+  });
+
+  // F-7: a function deep in its file keeps absolute file line numbers
+  // in the sent view, so model cites land on the function's own lines
+  // instead of the pragma and imports.
+  test("vsb3_explain_code_source_uses_absolute_file_line_numbers", async () => {
+    const startLine = 120;
+    const file = "contracts/OffsetToken.sol";
+    const content = [
+      ...Array.from({ length: startLine - 1 }, (_, index) => `// synthetic filler line ${index + 1}`),
+      "function transfer(address to, uint256 amount) {",
+      "balances[to] += amount;",
+      "}",
+    ].join("\n");
+    const sourceService: VerifiedSourceService = {
+      getSource: async () => ({
+        ok: true as const,
+        value: {
+          codeHash: "code-hash-for-unit-suite",
+          source: {
+            status: "verified" as const,
+            provider: "sourcify" as const,
+            match: "full" as const,
+            compiler: "0.8.20+commit.a1b79de6",
+            files: [{ path: file, content }],
+            functions: [
+              {
+                selector: TEST_SELECTOR,
+                file,
+                startLine,
+                endLine: startLine + 2,
+                name: "transfer",
+                signature: "transfer(address,uint256)",
+              },
+            ],
+          },
+        },
+      }),
+    };
+    const adapter = new AbsoluteCiteAdapter();
+    const { server } = testServer(createExplainCodeService(adapter), sourceService);
+    try {
+      const posted = await postExplainCode(server, {
+        address: TEST_ADDRESS,
+        selector: TEST_SELECTOR,
+        view: "source",
+      });
+      expect(posted.statusCode).toBe(200);
+      expect(adapter.calls.length).toBe(1);
+      const sent = adapter.calls[0];
+      expect(sent?.lines.map((line) => line.lineNumber)).toEqual([120, 121, 122]);
+      expect(sent?.lines.map((line) => line.text)).toEqual([
+        "function transfer(address to, uint256 amount) {",
+        "balances[to] += amount;",
+        "}",
+      ]);
+      const body = posted.body as {
+        explainCode: { kind: string; notes: { lines: number[]; text: string }[]; droppedClaims: number };
+      };
+      expect(body.explainCode.kind).toBe("ok");
+      expect(body.explainCode.notes).toEqual([{ lines: [121, 122], text: "The owner check happens here." }]);
+      expect(body.explainCode.droppedClaims).toBe(0);
     } finally {
       await server.close();
     }
