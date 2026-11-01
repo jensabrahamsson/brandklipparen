@@ -898,8 +898,19 @@ async function markNext(page: Page, seen: readonly string[]): Promise<string | n
 // (external links and downloads are never followed), tabs, switches and
 // disclosure summaries. After each click the page must stay quiet and
 // hold the layout contract; a click that navigates goes back afterwards.
+//
+// A captured handle can go stale after it was captured but before the
+// click lands: the ring-visibility strip unmounts on its async observer
+// callback and count-ups replace nodes. Only that detached family reads
+// as stale below; anything else still fails the sweep with the key named.
+function isStaleElementError(message: string): boolean {
+  return /not attached to the DOM|has been detached|detached from the DOM/i.test(message);
+}
+
 export async function sweepControls(page: Page, bucket: ErrorBucket, width: number, label: string): Promise<number> {
   const seen = new Set<string>();
+  const staleHits = new Map<string, number>();
+  const STALE_RETRIES = 3;
   let clicks = 0;
   for (let step = 0; step < 80; step += 1) {
     const before = new URL(page.url()).hash;
@@ -951,9 +962,24 @@ export async function sweepControls(page: Page, bucket: ErrorBucket, width: numb
         await handle.click({ timeout: 10000 });
       }
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // A stale mark is retried while the control stays visible: the key
+      // stays unseen so the next pass re-marks it once the remount has
+      // settled, and the click, quiet and layout checks still run then.
+      // After a few stale hits the key is parked as seen so one
+      // never-settling control cannot starve the step budget for the
+      // controls behind it.
+      if (isStaleElementError(message)) {
+        const hits = (staleHits.get(key) ?? 0) + 1;
+        staleHits.set(key, hits);
+        if (hits > STALE_RETRIES) {
+          seen.add(key);
+        }
+        continue;
+      }
       // Name the control: without the key the timeout names only the
       // [data-sweep] selector and the stall cannot be attributed.
-      throw new Error(`sweep click failed on ${key}: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`sweep click failed on ${key}: ${message}`);
     } finally {
       await handle.dispose().catch(() => undefined);
     }

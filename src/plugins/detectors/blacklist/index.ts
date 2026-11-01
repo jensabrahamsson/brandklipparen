@@ -6,7 +6,9 @@
 // load and the gate, so a plain balance check `balance >= amount` or an
 // allowance check never counts) with a conditional jump that can revert,
 // and a privileged region (a caller guard) that writes a mapping slot.
-// The two may share one merged function. A gated read with no privileged
+// The written mapping and the gated mapping must hash the same base
+// slot, so a setter for one mapping beside a gate on another never
+// counts. The two may share one merged function. A gated read with no privileged
 // writer, or a privileged mapping write the transfer path never gates on,
 // stays silent: the proof is incomplete, so no positive finding is
 // reported. When the v1 proof finds nothing, the same proof re-runs on
@@ -158,7 +160,10 @@ function gatedMappingRead(region: RegionFacts): number | null {
 // bytecode yields a finding list, never an exception. Deterministic:
 // regions scan in selector order and the single finding names the first
 // provable pair. Bytecode without selectors yields no findings, since a
-// finding without selector evidence is unrepresentable.
+// finding without selector evidence is unrepresentable. The written
+// mapping and the gated mapping must hash the same base slot (unknown on
+// either side stays silent), so a privileged setter for one mapping
+// paired with a gate on another never proves a list.
 function detectV1(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -166,6 +171,7 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
   }
   const attribution = attributeFunctions(input.bytecode);
   const view = analyzeOwnerControl(input.bytecode);
+  const code = disassemble(input.bytecode);
   const privilegedSet = new Set(view.privileged);
   const transferSet = new Set(view.transfers);
   for (const region of view.regions) {
@@ -176,6 +182,8 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
     if (write === undefined) {
       continue;
     }
+    const writeMember = (pc: number): boolean =>
+      attribution.holdersOf(pc).includes(region.selector);
     const orderedTransfers = [...transferSet].sort();
     orderedTransfers.sort((left, right) => {
       const leftSame = left === region.selector ? 1 : 0;
@@ -198,6 +206,12 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
       }
       const gatePc = gatedMappingRead(transfer);
       if (gatePc === null) {
+        continue;
+      }
+      const gateMember = (pc: number): boolean => attribution.holdersOf(pc).includes(transferSelector);
+      const writeBase = mappingBaseNearAccess(code, writeMember, write.pc);
+      const gateBase = mappingBaseNearAccess(code, gateMember, gatePc);
+      if (writeBase === null || gateBase === null || writeBase !== gateBase) {
         continue;
       }
       const holder = attribution.holderOf(write.pc);

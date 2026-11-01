@@ -15,11 +15,12 @@ Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 External calls reachable in the transfer path. One finding carries every
 external CALL site in a transfer region as selector evidence with PC
 offsets, with the best-effort target source of the first site: an
-address loaded from storage, an argument from calldata, or unknown when
-the window shows neither. Only the `call` kind to a non-constant,
-non-caller target counts: static calls to precompiles (such as ecrecover
-in permit) or balance lookups, delegatecalls, calls to hardcoded
-constant addresses, and payouts to msg.sender never prove a hook.
+address loaded from storage or an argument from calldata. Only the
+`call` kind to a stored or caller-chosen target counts: static calls to
+precompiles (such as ecrecover in permit) or balance lookups,
+delegatecalls, calls to hardcoded constant addresses, calls whose
+target the window cannot resolve, and payouts to msg.sender never prove
+a hook.
 
 ## Why it matters to you
 
@@ -42,7 +43,7 @@ A list with at most one finding with the namespaced id
 selector evidence with the PC offset wherever derivable, and the payload
 holding `feature`, `callKind` and `target`. The payload carries three
 fields, `feature`, `callKind` (always "call") and `target` (one of
-"storage", "argument" or "unknown"), and every finding carries at least
+"storage" or "argument"), and every finding carries at least
 one `evidence` entry with a `selector`.
 As a first-party detector, its findings convert to calibrated signals
 through the versioned model artifact, and the artifact sets their
@@ -50,10 +51,11 @@ effective weight, which the plugin list exposes per plugin.
 
 ## Limitations / false positives
 
-The target source is resolved structurally over a short window: msg.sender
-(CALLER) in the window reads as a payout first, then a load from storage,
-then a pushed constant and calldata, and anything else stays unknown. A
-call through a computed jump target stays unknown. A finding never says
+The target source is resolved structurally: msg.sender (CALLER)
+anywhere back to the enclosing block start reads as a payout first, then
+a load from storage, then a pushed constant and calldata within a short
+window. A call through a computed jump target stays unresolvable and
+never proves a hook. A finding never says
 the call was made, only that the bytecode proves the transfer path
 reaches it. Evidence names the function whose control-flow walk reaches
 the site; sites no unique function reaches are skipped, never guessed to
@@ -72,3 +74,9 @@ Version 1.0.0. Initial release.
 Specificity update: only external CALLs to non-constant targets prove
 a hook; static calls, delegatecalls and constant-target calls stay
 silent, and at most one finding is reported.
+
+False-positive update: only CALLs to a stored or caller-chosen target
+prove a hook. Calls whose target the window cannot resolve stay silent,
+a payout reads CALLER back to the enclosing block start, and transfer
+paths need a calldata-keyed mapping write, so a withdraw-style payout
+never proves a hook.

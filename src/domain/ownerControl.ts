@@ -1433,16 +1433,31 @@ function resolveStoreValue(insns: readonly Instruction[], index: number): {
   return { valueIsZero: false, valueConst: null };
 }
 
-// Best-effort call-target source for one CALL-family instruction: the
-// window behind the call names msg.sender (CALLER) first, since a payout
-// to msg.sender beside balance bookkeeping still pays out rather than
-// calling a stored hook. Shared with the capability sweep, so a
-// send-to-caller CALL never proves an outside-contract power or a hook.
+// Best-effort call-target source for one CALL-family instruction: any
+// msg.sender (CALLER) back to the enclosing block start names a payout
+// first, since a payout to msg.sender beside balance bookkeeping still
+// pays out rather than calling a stored hook (a short window would miss
+// the caller pushed before the bookkeeping). Shared with the capability
+// sweep, so a send-to-caller CALL never proves an outside-contract power
+// or a hook.
 export function callTargetOfInstruction(
   insns: readonly Instruction[],
   index: number,
 ): ExternalCallOp["target"] {
   let sawCaller = false;
+  for (let back = index - 1; back >= 0; back -= 1) {
+    const candidate = insns[back];
+    if (candidate === undefined) {
+      break;
+    }
+    if (candidate.opcode === 0x5b) {
+      break;
+    }
+    if (candidate.opcode === 0x33) {
+      sawCaller = true;
+      break;
+    }
+  }
   let sawSload = false;
   let sawCalldata = false;
   let sawPushAddress = false;
@@ -1451,9 +1466,6 @@ export function callTargetOfInstruction(
     const candidate = insns[back];
     if (candidate === undefined) {
       break;
-    }
-    if (candidate.opcode === 0x33) {
-      sawCaller = true;
     }
     if (candidate.opcode === 0x54) {
       sawSload = true;
@@ -4027,7 +4039,14 @@ export function analyzeOwnerControl(bytecode: BytecodeType, options?: OwnerContr
     }
   }
 
-  const transfers = transferPaths(regions);
+  const transfers = transferPaths(
+    regions,
+    code,
+    (selector, pc) =>
+      reach === "v2"
+        ? (holdersByPc.get(pc)?.includes(selector) ?? false)
+        : holderByPc.get(pc) === (selector as string),
+  );
   const privileged = [...privilegedSet].sort();
   return Object.freeze({
     regions: Object.freeze(regions),
@@ -4037,19 +4056,85 @@ export function analyzeOwnerControl(bytecode: BytecodeType, options?: OwnerContr
   });
 }
 
-function transferPaths(regions: readonly RegionFacts[]): readonly SelectorType[] {
+// A mapping store keyed by a calldata address: the mapping hash sits in
+// the short window behind the store, and a member CALLDATALOAD (the key
+// from calldata) sits in the base window behind the hash. A member
+// CALLER in that window vetoes the proof: a caller-keyed write is a
+// withdraw-style payout path, not a transfer path, even when the body
+// also loads calldata for an amount.
+function mappingStoreKeyedByCalldata(
+  insns: readonly Instruction[],
+  storePc: number,
+  isMember: (pc: number) => boolean,
+): boolean {
+  let storeIndex = -1;
+  for (let at = 0; at < insns.length; at += 1) {
+    if (insns[at]?.pc === storePc) {
+      storeIndex = at;
+      break;
+    }
+  }
+  if (storeIndex < 0) {
+    return false;
+  }
+  let keccakIndex = -1;
+  let steps = 0;
+  for (let back = storeIndex - 1; back >= 0 && steps < LOOKBACK; back -= 1, steps += 1) {
+    const candidate = insns[back];
+    if (candidate === undefined) {
+      break;
+    }
+    if (candidate.opcode === 0x20 && isMember(candidate.pc)) {
+      keccakIndex = back;
+      break;
+    }
+  }
+  if (keccakIndex < 0) {
+    return false;
+  }
+  let sawCalldata = false;
+  steps = 0;
+  for (let back = keccakIndex - 1; back >= 0 && steps < MAPPING_BASE_LOOKBACK; back -= 1, steps += 1) {
+    const candidate = insns[back];
+    if (candidate === undefined) {
+      break;
+    }
+    if (!isMember(candidate.pc)) {
+      continue;
+    }
+    if (candidate.opcode === 0x33) {
+      return false;
+    }
+    if (candidate.opcode === 0x35) {
+      sawCalldata = true;
+    }
+  }
+  return sawCalldata;
+}
+
+function transferPaths(
+  regions: readonly RegionFacts[],
+  insns: readonly Instruction[],
+  isMember: (selector: SelectorType, pc: number) => boolean,
+): readonly SelectorType[] {
   // Union of the ERC-20 transfer entries and heuristic transfer-shaped
-  // regions (storage read plus storage write around calldata): hooked
+  // regions (a storage read plus a calldata-keyed mapping write): hooked
   // tokens route value through other functions too, so a named transfer
-  // entry never hides the heuristic paths.
+  // entry never hides the heuristic paths. A plain read-plus-write
+  // without a calldata-keyed mapping (such as a withdraw paying out to
+  // msg.sender) never counts.
   const out = new Set<SelectorType>();
   for (const region of regions) {
     if (region.selector === TRANSFER_SELECTOR || region.selector === TRANSFER_FROM_SELECTOR) {
       out.add(region.selector);
     } else if (
       region.loads.length > 0 &&
-      region.stores.length > 0 &&
-      region.hasCalldataLoad
+      region.hasCalldataLoad &&
+      region.stores.some(
+        (store) =>
+          store.slot.kind === "mapping" &&
+          mappingStoreKeyedByCalldata(insns, store.pc, (pc) => isMember(region.selector, pc)),
+      )
     ) {
       out.add(region.selector);
     }

@@ -5,7 +5,7 @@
 // ERC20 with Ownable; blacklist and sell-block additionally stay silent
 // on permit-style, votes-style and allowance patterns while a USDC-style
 // blacklist still fires; transfer-hooks fires only on external CALLs to
-// non-constant targets.
+// stored or caller-chosen targets.
 import { describe, expect, test } from "vitest";
 import { CodeHash } from "../../../src/domain/types.ts";
 import type { DetectorInput } from "../../../src/plugins/detector.ts";
@@ -26,6 +26,7 @@ import {
   JUMPI,
   KECCAK,
   LT,
+  MSTORE,
   MUL,
   REVERT,
   SLOAD,
@@ -58,15 +59,40 @@ const PERMIT = "0xd505accf";
 const SETTER = "0x0a9c6c1e";
 const CHECKPOINTS = "0xdeadbeef";
 
-// One mapping store with a caller-chosen key: key material, then the slot
-// number, hashed, stored. The adjacent KECCAK marks mapping access.
+// One mapping store with a caller-chosen key through the explicit
+// `keccak(key . baseSlot)` memory pattern (key at 0x00, base at 0x20),
+// so the written base slot is provable. The adjacent KECCAK marks
+// mapping access.
 function sstoreMapping(slot: number, keyPrefix: readonly number[]): number[] {
-  return [...keyPrefix, ...push1(slot), KECCAK, SSTORE];
+  return [
+    ...keyPrefix,
+    ...push1(0),
+    MSTORE,
+    ...push1(slot),
+    ...push1(0x20),
+    MSTORE,
+    ...push1(0x40),
+    ...push1(0x00),
+    KECCAK,
+    SSTORE,
+  ];
 }
 
-// One mapping load: slot number hashed then loaded.
+// One mapping load through the same memory pattern, so the read base
+// slot is provable.
 function sloadMapping(slot: number, keyPrefix: readonly number[]): number[] {
-  return [...keyPrefix, ...push1(slot), KECCAK, SLOAD];
+  return [
+    ...keyPrefix,
+    ...push1(0),
+    MSTORE,
+    ...push1(slot),
+    ...push1(0x20),
+    MSTORE,
+    ...push1(0x40),
+    ...push1(0x00),
+    KECCAK,
+    SLOAD,
+  ];
 }
 
 // A balance sufficiency gate: mapping load, amount compare, revert.
@@ -405,7 +431,7 @@ describe("detector specificity: transfer-hooks", () => {
     expect(fireCount(transferHooksDetectorPlugin, bytecode)).toBe(0);
   });
 
-  test("call to an unresolvable target proves a hook", () => {
+  test("call to an unresolvable target stays silent", () => {
     const bytecode = tokenBytecode([
       {
         selector: TRANSFER,
@@ -431,9 +457,7 @@ describe("detector specificity: transfer-hooks", () => {
         ],
       },
     ]);
-    const findings = transferHooksDetectorPlugin.detect(toInput(bytecode));
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.payload).toEqual({ feature: "transfer-hooks", callKind: "call", target: "unknown" });
+    expect(transferHooksDetectorPlugin.detect(toInput(bytecode))).toEqual([]);
   });
 
   test("call to a stored target proves a hook", () => {

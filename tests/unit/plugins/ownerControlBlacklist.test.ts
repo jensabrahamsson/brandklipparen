@@ -17,6 +17,7 @@ import {
   CALLDATALOAD,
   ISZERO,
   KECCAK,
+  MSTORE,
   PACKED_MAPPING_SET,
   REVERT,
   SHARED_BLACKLIST_SET,
@@ -45,10 +46,17 @@ const SET_STATUS = "0x0a9c6c1e";
 const TRANSFER = "0xa9059cbb";
 
 function gatedTransferBody(): number[] {
-  // Transfer path reads a mapping entry and reverts when it is set.
+  // Transfer path reads mapping base 3 through the explicit keccak(key .
+  // baseSlot) memory pattern and reverts when the entry is set.
   return [
     CALLDATALOAD,
+    ...push1(0),
+    MSTORE,
     ...push1(3),
+    ...push1(0x20),
+    MSTORE,
+    ...push1(0x40),
+    ...push1(0x00),
     KECCAK,
     SLOAD,
     ISZERO,
@@ -64,12 +72,19 @@ function gatedTransferBody(): number[] {
 }
 
 function setterBody(): number[] {
-  // Privileged mapping write to the same hashed slot family.
+  // Privileged mapping write to base 3 through the same memory pattern,
+  // so the written base matches the gate base.
   return [
     ...ownerGuard(0, 200),
     CALLDATALOAD,
-    ...push1(1),
+    CALLDATALOAD,
+    ...push1(0),
+    MSTORE,
     ...push1(3),
+    ...push1(0x20),
+    MSTORE,
+    ...push1(0x40),
+    ...push1(0x00),
     KECCAK,
     SSTORE,
     STOP,
@@ -280,5 +295,73 @@ describe("blacklist packed bool-in-mapping (P-11 follow-up)", () => {
     // The guarded setter packs base 7 while the packed gate reads base
     // 8: different mappings, so the packed gate never pairs.
     expect(blacklistDetectorPlugin.detect(packedInput(7, 8))).toEqual([]);
+  });
+});
+
+describe("blacklist scored precision (C-7)", () => {
+  function setterOnBase(base: number): number[] {
+    // Privileged registry-style write to one mapping base through the
+    // explicit keccak(key . baseSlot) memory pattern.
+    return [
+      ...ownerGuard(0, 200),
+      CALLDATALOAD,
+      CALLDATALOAD,
+      ...push1(0),
+      MSTORE,
+      ...push1(base),
+      ...push1(0x20),
+      MSTORE,
+      ...push1(0x40),
+      ...push1(0x00),
+      KECCAK,
+      SSTORE,
+      STOP,
+    ];
+  }
+
+  function gateOnBase(base: number): number[] {
+    // Transfer path gating on one mapping base through the same memory
+    // pattern, reverting while the entry reads set.
+    return [
+      CALLDATALOAD,
+      ...push1(0),
+      MSTORE,
+      ...push1(base),
+      ...push1(0x20),
+      MSTORE,
+      ...push1(0x40),
+      ...push1(0x00),
+      KECCAK,
+      SLOAD,
+      ISZERO,
+      ...branchOk(),
+      ...push1(0),
+      0x80,
+      REVERT,
+      0x5b,
+      ...push1(2),
+      SSTORE,
+      STOP,
+    ];
+  }
+
+  function scoredInput(writeBase: number, gateBase: number): DetectorInput {
+    const bytecode = tokenBytecode([
+      { selector: SET_STATUS, body: setterOnBase(writeBase) },
+      { selector: TRANSFER, body: gateOnBase(gateBase) },
+    ]);
+    return Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+  }
+
+  test("privileged setter on one mapping with the gate on another stays silent", () => {
+    // Registry-style shape: the guarded setter writes base 1 while the
+    // transfer gate reads base 2, so no single mapping is proven.
+    expect(blacklistDetectorPlugin.detect(scoredInput(1, 2))).toEqual([]);
+  });
+
+  test("privileged setter with the gate on the same base still reports", () => {
+    const findings = blacklistDetectorPlugin.detect(scoredInput(3, 3));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.payload).toEqual({ feature: "blacklist" });
   });
 });

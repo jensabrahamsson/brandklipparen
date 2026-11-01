@@ -21,6 +21,7 @@ import {
   ISZERO,
   JUMPI,
   KECCAK,
+  MSTORE,
   MUL,
   LT,
   PUSH0,
@@ -173,18 +174,33 @@ describe("step 0 recall: limits in merged transfer", () => {
 
 describe("step 0 recall: blacklist in merged transfer", () => {
   test("guarded mapping write gating the same function reports blacklist", () => {
+    // The write and the gate hash the same base slot through the
+    // explicit keccak(key . baseSlot) memory pattern, so the pair
+    // proves one mapping.
     const bytecode = tokenBytecode([
       {
         selector: TRANSFER,
         body: [
           ...ownerGuard(0, 200),
           CALLDATALOAD,
-          ...push1(1),
+          CALLDATALOAD,
+          ...push1(0),
+          MSTORE,
           ...push1(3),
+          ...push1(0x20),
+          MSTORE,
+          ...push1(0x40),
+          ...push1(0x00),
           KECCAK,
           SSTORE,
           CALLDATALOAD,
+          ...push1(0),
+          MSTORE,
           ...push1(3),
+          ...push1(0x20),
+          MSTORE,
+          ...push1(0x40),
+          ...push1(0x00),
           KECCAK,
           SLOAD,
           ISZERO,

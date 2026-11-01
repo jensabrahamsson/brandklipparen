@@ -3,13 +3,14 @@
 // external calls reachable in the transfer path from code paths. One
 // finding carries every external CALL site in a transfer region as
 // selector evidence with PC offsets, with the best-effort target source
-// of the first site. Only the `call` kind to a non-constant,
-// non-caller target counts: static calls to precompiles (such as ecrecover
-// in permit) or balance lookups and delegatecalls never prove a hook, and
-// neither does a call to a hardcoded constant address or a payout to
-// msg.sender (a withdraw sending ether back to the caller). A call whose
-// target the window cannot resolve still counts: an unprovable target is
-// not a constant one. A transfer path with no such call stays silent.
+// of the first site. Only the `call` kind to a stored or caller-chosen
+// target (storage or argument) counts: static calls to precompiles (such
+// as ecrecover in permit) or balance lookups and delegatecalls never
+// prove a hook, and neither does a call to a hardcoded constant address
+// or a payout to msg.sender (a withdraw sending ether back to the
+// caller). A call whose target the window cannot resolve stays silent:
+// an unprovable target proves no hook. A transfer path with no such call
+// stays silent.
 // Pure and synchronous: this module imports solely the plugin API and
 // domain types and pure functions (P-03).
 import { Evidence } from "../../../domain/evidence.ts";
@@ -44,7 +45,7 @@ const OUTPUT_SCHEMA = Object.freeze({
           feature: Object.freeze({ const: "transfer-hooks" }),
           callKind: Object.freeze({ const: "call" }),
           target: Object.freeze({
-            enum: Object.freeze(["storage", "argument", "unknown"]),
+            enum: Object.freeze(["storage", "argument"]),
           }),
         }),
         additionalProperties: false,
@@ -115,12 +116,13 @@ function evidenceFor(
 // yields a finding list, never an exception. Deterministic: hook sites
 // scan in PC order and one finding at most carries them all. Bytecode
 // without selectors yields no findings, since a finding without selector
-// evidence is unrepresentable. Only `call` to a non-constant target
-// proves a hook: static calls (precompiles, balance views), delegatecalls
-// and constant-target calls stay silent, and so does a payout to
-// msg.sender: a withdraw that sends ether back to the caller is not a hook
-// to a stored or caller-chosen target. Sites no unique function reaches
-// are skipped, never guessed to a neighbouring function.
+// evidence is unrepresentable. Only `call` to a stored or caller-chosen
+// target (storage or argument) proves a hook: static calls (precompiles,
+// balance views), delegatecalls, constant-target calls and payouts to
+// msg.sender stay silent, and so does a call whose target the window
+// cannot resolve: a withdraw that sends ether back to the caller is not
+// a hook, and neither is an unprovable target. Sites no unique function
+// reaches are skipped, never guessed to a neighbouring function.
 function detect(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -138,7 +140,7 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       if (call.kind !== "call") {
         continue;
       }
-      if (call.target === "constant" || call.target === "caller") {
+      if (call.target !== "storage" && call.target !== "argument") {
         continue;
       }
       sites.push({ pc: call.pc, target: call.target, region: region.selector });
