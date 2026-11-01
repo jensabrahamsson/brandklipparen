@@ -17,6 +17,7 @@ import { noneProxyResolution, proxyFactOf, proxyToCanonical } from "../domain/pr
 import type { ProxyResolution } from "../domain/proxy.ts";
 import { resolveProxy } from "./resolveProxy.ts";
 import type { ResolveProxyError, ResolveProxyInput, ResolveProxySuccess } from "./resolveProxy.ts";
+import { resolveAnalysisCode } from "./resolveAnalysisCode.ts";
 import { standardCantTell } from "../domain/cantTell.ts";
 import type { CantTellItem } from "../domain/cantTell.ts";
 import { explanationToCanonical, originEntryKey, renderExplanation } from "../domain/explain.ts";
@@ -25,7 +26,7 @@ import { score } from "../domain/risk.ts";
 import type { PluginFeatureMapping } from "../domain/risk.ts";
 import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
-import { Address, CacheKey, CallData, CodeHash, Slot } from "../domain/types.ts";
+import { Address, CacheKey, CallData, Slot } from "../domain/types.ts";
 import { isZeroOrDead } from "../domain/onchain/topics.ts";
 import { decodeTokenText } from "../domain/tokenMetadata.ts";
 import type {
@@ -393,25 +394,8 @@ async function resolveProxyOrNone(
   return resolved.ok ? resolved.value.resolution : noneProxyResolution();
 }
 
-// Implementation address behind a resolved proxy (K-002, K-003): the EIP-1967
-// or UUPS implementation, the EIP-1167 target or the EIP-7702 delegation, or
-// null when the address holds no recognised proxy pointer.
-function implementationOfProxy(proxy: ProxyResolution): AddressType | null {
-  switch (proxy.kind) {
-    case "eip1967":
-      return proxy.implementation;
-    case "zos":
-      return proxy.implementation;
-    case "uups":
-      return proxy.implementation;
-    case "eip1167":
-      return proxy.target;
-    case "eip7702":
-      return proxy.delegation;
-    case "none":
-      return null;
-  }
-}
+// implementationOfProxy is shared with the code routes through
+// resolveAnalysisCode (C-4, F-6): one resolution path for the scored code.
 
 // Display-only ERC-20 metadata (symbol()/name()) at the pinned block:
 // one eth_call per selector through the existing RpcPort, decoded
@@ -1109,40 +1093,29 @@ export async function analyzeToken(
       addressIndex.delete(memoKey);
     }
   }
-  const ctx: CallContext = { requestId: input.requestId, deadline: input.deadline, block: input.block };
-  const resolvedBlock = await resolveBlock(rpc, input, ctx);
-  if (!resolvedBlock.ok) {
-    return resolvedBlock;
+  // Resolved analysis code shared with the code routes (C-4, F-6):
+  // the entry code, the proxy on the pinned block, then the
+  // implementation code when resolution yields one, so a rug token behind
+  // a proxy is scored on the logic that actually runs. An unreadable
+  // implementation degrades to the entry bytecode.
+  const resolvedCode = await resolveAnalysisCode(countedPorts, {
+    address: input.address,
+    block: input.block,
+    requestId: input.requestId,
+    deadline: input.deadline,
+    ...(input.proxyMaxDepth === undefined ? {} : { maxDepth: input.proxyMaxDepth }),
+  });
+  if (!resolvedCode.ok) {
+    if (resolvedCode.error.kind === "no-contract") {
+      return ok({ kind: "no-contract", target: resolvedCode.error.target, block: resolvedCode.error.block });
+    }
+    return err(resolvedCode.error);
   }
-  const block = resolvedBlock.value;
+  const block = resolvedCode.value.block;
   const blockCtx: CallContext = { requestId: input.requestId, deadline: input.deadline, block };
-  const fetched = await rpc.getCode(input.address, blockCtx);
-  if (!fetched.ok) {
-    if (fetched.error.kind === "no-code") {
-      return ok({ kind: "no-contract", target: input.address, block });
-    }
-    return err({ kind: "rpc-error", requestId: input.requestId, error: fetched.error });
-  }
-  // Proxy resolution runs on the pinned block through RpcPort; a typed
-  // port failure degrades to no proxy info so the deterministic analysis
-  // still delivers its result (K-002, K-005).
-  const proxy = await resolveProxyOrNone(countedPorts, proxyInputFor(block));
-  // Implementation bytecode (K-002, K-003): when resolution yields an
-  // implementation, detectors run on its code, keyed by its code hash, so
-  // a rug token behind a proxy is scored on the logic that actually runs.
-  // An unreadable implementation degrades to the proxy's own bytecode.
-  const implementation = implementationOfProxy(proxy);
-  let analysisBytecode = fetched.value.bytecode;
-  if (implementation !== null) {
-    const implFetched = await rpc.getCode(implementation, blockCtx);
-    if (implFetched.ok) {
-      analysisBytecode = implFetched.value.bytecode;
-    }
-  }
-  const codeHash = CodeHash.of(analysisBytecode);
-  if (!codeHash.ok) {
-    return err({ kind: "domain-error", requestId: input.requestId, error: codeHash.error });
-  }
+  const proxy = resolvedCode.value.proxy;
+  const analysisBytecode = resolvedCode.value.bytecode;
+  const codeHash = { ok: true as const, value: resolvedCode.value.codeHash };
   const cacheKey = CacheKey.of(codeHash.value, input.modelVersion);
   if (!cacheKey.ok) {
     return err({ kind: "domain-error", requestId: input.requestId, error: cacheKey.error });
@@ -1327,21 +1300,6 @@ export async function analyzeToken(
   // analysis, the envelope simply carries no symbol or name.
   const metadata = await readTokenMetadata(countedPorts.rpc, input.address, blockCtx);
   return ok({ kind: "assessed", envelope: withTokenMetadata(envelope, metadata) });
-}
-
-async function resolveBlock(
-  rpc: RpcPort,
-  input: AnalyzeTokenInput,
-  ctx: CallContext,
-): Promise<Result<BlockNumberType, ApplicationError>> {
-  if (input.block !== "latest") {
-    return ok(input.block);
-  }
-  const head = await rpc.getBlockNumber(ctx);
-  if (!head.ok) {
-    return err({ kind: "rpc-error", requestId: input.requestId, error: head.error });
-  }
-  return ok(head.value);
 }
 
 // Canonical mapping of the envelope for comparison and hashing (A-32 point

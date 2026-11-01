@@ -35,6 +35,7 @@ import type { ExplainCodeService } from "../../application/explainCodeService.ts
 import { envelopeMeanings } from "../../application/modelMeanings.ts";
 import { ExplainCodeInput } from "../../ports/explainCodeModel.ts";
 import { ExplainInput } from "../../ports/explainModel.ts";
+import { resolveAnalysisCode } from "../../application/resolveAnalysisCode.ts";
 import { snippetForSelector } from "../../application/snippetService.ts";
 import type { SnippetDecompile } from "../../application/snippetService.ts";
 import type { ProofService } from "../../application/proofService.ts";
@@ -57,7 +58,7 @@ import {
   PLACEHOLDER_COST_UNIT,
   createRequestCounters,
 } from "../../application/observability.ts";
-import { Address, BlockNumber, CodeHash, RequestId, Timestamp } from "../../domain/types.ts";
+import { Address, BlockNumber, RequestId, Timestamp } from "../../domain/types.ts";
 import type {
   Address as AddressType,
   BlockNumber as BlockNumberType,
@@ -1674,23 +1675,26 @@ export function createRestServer(options: RestServerOptions): RestServer {
     if (!deadline.ok) {
       return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
     }
-    const fetched = await rpc.getCode(gated.value.address, {
+    // Resolved analysis code (C-4, F-6): the snippet comes from the
+    // implementation behind a proxy, matching the scored analysis.
+    const resolved = await resolveAnalysisCode({ rpc }, {
+      address: gated.value.address,
+      block: gated.value.block,
       requestId,
       deadline: deadline.value,
-      block: gated.value.block,
     });
-    if (!fetched.ok) {
-      if (fetched.error.kind === "no-code") {
+    if (!resolved.ok) {
+      if (resolved.error.kind === "no-contract") {
         return sendError(reply, notFound(requestId));
       }
-      return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
-    }
-    const codeHash = CodeHash.of(fetched.value.bytecode);
-    if (!codeHash.ok) {
+      if (resolved.error.kind === "rpc-error") {
+        return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
+      }
       return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
     }
+    const codeHash = resolved.value.codeHash;
     const snippet = snippetForSelector(
-      fetched.value.bytecode,
+      resolved.value.bytecode,
       rawSelector,
       options.snippetDecompile ?? decompilePreferV2,
     );
@@ -1708,7 +1712,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         JSON.stringify({
           status: "ok",
           apiVersion: API_VERSION,
-          codeHash: codeHash.value as string,
+          codeHash: codeHash as string,
           snippet: {
             selector: snippet.value.selector,
             entryPc: snippet.value.entryPc,
@@ -1742,26 +1746,29 @@ export function createRestServer(options: RestServerOptions): RestServer {
     if (!deadline.ok) {
       return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
     }
-    const fetched = await rpc.getCode(gated.value.address, {
+    // Resolved analysis code (C-4, F-6): the proof walks the
+    // implementation behind a proxy, matching the scored analysis.
+    const resolved = await resolveAnalysisCode({ rpc }, {
+      address: gated.value.address,
+      block: gated.value.block,
       requestId,
       deadline: deadline.value,
-      block: gated.value.block,
     });
-    if (!fetched.ok) {
-      if (fetched.error.kind === "no-code") {
+    if (!resolved.ok) {
+      if (resolved.error.kind === "no-contract") {
         return sendError(reply, notFound(requestId));
       }
-      return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
-    }
-    const codeHash = CodeHash.of(fetched.value.bytecode);
-    if (!codeHash.ok) {
+      if (resolved.error.kind === "rpc-error") {
+        return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
+      }
       return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
     }
+    const codeHash = resolved.value.codeHash;
     const proofService = options.proofService;
     if (proofService === undefined) {
       return sendError(reply, requestError(500, "internal-error", "Proof diagnostics are not available on this server.", requestId));
     }
-    const proofs = proofService.proofsFor(fetched.value.bytecode, codeHash.value as string);
+    const proofs = proofService.proofsFor(resolved.value.bytecode, codeHash as string);
     return reply
       .code(200)
       .header(REQUEST_ID_HEADER, requestId)
@@ -1770,7 +1777,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
         JSON.stringify({
           status: "ok",
           apiVersion: API_VERSION,
-          codeHash: codeHash.value as string,
+          codeHash: codeHash as string,
           proofs: proofs.map((report) => ({
             detector: report.detector,
             steps: report.steps.map((entry) => ({ ...entry })),
@@ -2052,28 +2059,31 @@ export function createRestServer(options: RestServerOptions): RestServer {
     if (rpc === undefined) {
       return sendError(reply, requestError(500, "internal-error", "Code explanation is not available on this server.", requestId));
     }
-    const fetched = await rpc.getCode(gated.value.address, {
+    // Resolved analysis code (C-4, F-6): the explanation covers the
+    // implementation behind a proxy, matching the scored analysis.
+    const resolved = await resolveAnalysisCode({ rpc }, {
+      address: gated.value.address,
+      block: gated.value.block,
       requestId,
       deadline: deadline.value,
-      block: gated.value.block,
     });
-    if (!fetched.ok) {
-      if (fetched.error.kind === "no-code") {
+    if (!resolved.ok) {
+      if (resolved.error.kind === "no-contract") {
         return sendError(reply, notFound(requestId));
       }
-      return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
-    }
-    const codeHash = CodeHash.of(fetched.value.bytecode);
-    if (!codeHash.ok) {
+      if (resolved.error.kind === "rpc-error") {
+        return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
+      }
       return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
     }
-    const codeHashText = codeHash.value as string;
+    const codeHashText = resolved.value.codeHash as string;
+    const codeAddress = resolved.value.codeAddress;
     const wantedSelector = rawSelector.toLowerCase();
     let viewLines: { readonly lineNumber: number; readonly text: string }[];
     let viewFile: string | undefined;
     if (rawView === "decompiled") {
       const snippet = snippetForSelector(
-        fetched.value.bytecode,
+        resolved.value.bytecode,
         rawSelector,
         options.snippetDecompile ?? decompilePreferV2,
       );
@@ -2092,7 +2102,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
           validationError("No verified source covers this function: the source lookup is not available on this server.", requestId as string),
         );
       }
-      const result = await sourceService.getSource(gated.value.address, {
+      const result = await sourceService.getSource(codeAddress, {
         requestId,
         deadline: deadline.value,
         block: gated.value.block,
@@ -2256,7 +2266,29 @@ export function createRestServer(options: RestServerOptions): RestServer {
     if (!deadline.ok) {
       return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
     }
-    const result = await service.getSource(gated.value.address, {
+    // Resolved analysis code (C-4, F-6): the source pane shows the
+    // implementation behind a proxy, matching the scored analysis.
+    let codeAddress = gated.value.address;
+    const codeRpc = options.snippetRpc;
+    if (codeRpc !== undefined) {
+      const resolved = await resolveAnalysisCode({ rpc: codeRpc }, {
+        address: gated.value.address,
+        block: gated.value.block,
+        requestId,
+        deadline: deadline.value,
+      });
+      if (!resolved.ok) {
+        if (resolved.error.kind === "no-contract") {
+          return sendError(reply, notFound(requestId));
+        }
+        if (resolved.error.kind === "rpc-error") {
+          return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
+        }
+        return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+      }
+      codeAddress = resolved.value.codeAddress;
+    }
+    const result = await service.getSource(codeAddress, {
       requestId,
       deadline: deadline.value,
       block: gated.value.block,
