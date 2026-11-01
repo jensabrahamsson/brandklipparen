@@ -147,7 +147,6 @@ function renderOverview(question: string, mode: "simple" | "expert" = "simple"):
   return renderToString(
     <OverviewSections
       result={result}
-      heroBreakdown={false}
       plugins={PLUGINS}
       address={syntheticAddress(7)}
       mode={mode}
@@ -170,13 +169,15 @@ function sectionOrder(html: string): string[] {
 
 function expectedPlan(): readonly string[] {
   const result = assessedResult();
+  // R2-2: the hero always owns the gauges, so the overview never renders
+  // the score section even though the deterministic plan still emits it.
   return planLayout({
     score: result.score,
     signalCount: result.signals.length,
     severeSignalCount: result.signals.filter((signal) => signal.severity === "high").length,
     pluginFindingCount: 2,
     cantTellCount: result.cantTell.length,
-  });
+  }).filter((sectionId) => sectionId !== "score");
 }
 
 describe("deterministic section order (W-8 option A)", () => {

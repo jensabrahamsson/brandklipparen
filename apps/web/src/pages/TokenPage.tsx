@@ -41,7 +41,6 @@ import { ExplanationList } from "../components/ExplanationList.tsx";
 import { Gauge } from "../components/Gauge.tsx";
 import { ScoreRing } from "../components/ScoreRing.tsx";
 import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
-import { useMediaQuery } from "../lib/useMediaQuery.ts";
 import { ContractFacts } from "../components/ContractFacts.tsx";
 import { SignalList } from "../components/SignalList.tsx";
 import { Explain } from "../components/Explain.tsx";
@@ -576,11 +575,10 @@ function AssessedView({
   const stripProbs = RISKS.map(
     (risk) => `${RISK_SHORT[risk]} ${Math.round(result.probabilities[risk] * 100)}%`,
   ).join(" · ");
-  // S-133: the verdict hero owns the risk breakdown only on wide screens,
-  // where the gauges sit beside the dial and fill the column. Narrow
-  // screens keep the previous stacked layout untouched, so the dial stays
-  // beside the verdict copy and fully visible without scrolling.
-  const heroBreakdown = useMediaQuery("(min-width: 1100px)");
+  // R2-2 (D-6): the verdict hero owns the risk breakdown at every width.
+  // The gauges always render inside the hero, so the DOM order stays
+  // hero → gauges → Muse console and no separate overview score card
+  // can appear after the console on narrow screens.
   // Owner-powers strip (UI v2 §1.1, W-9): the same board model as the
   // plugin board below, so the hero chips and the tiles never disagree.
   const heroPluginViews = result.pluginResults === undefined ? [] : toPluginResultViews(result.pluginResults);
@@ -664,26 +662,24 @@ function AssessedView({
                 are shown here.
               </p>
             ) : null}
-            {heroBreakdown ? (
-              <>
-                <h2 style={{ margin: "12px 0 10px", fontSize: 20 }}>Risk breakdown</h2>
-                <div className="gauges gauges-hero">
-                  {RISKS.map((risk) => {
-                    const top = strongestSignal(result.signals, risk);
-                    const count = result.signals.filter((signal) => signal.risk === risk).length;
-                    return (
-                      <Gauge
-                        key={risk}
-                        kind={risk}
-                        probability={result.probabilities[risk]}
-                        signalCount={count}
-                        reason={top === undefined ? emptyGaugeReason(heroHasSignals) : plainReason(top)}
-                      />
-                    );
-                  })}
-                </div>
-              </>
-            ) : null}
+            <div className="hero-gauges">
+              <h2 style={{ margin: "12px 0 10px", fontSize: 20 }}>Risk breakdown</h2>
+              <div className="gauges gauges-hero">
+                {RISKS.map((risk) => {
+                  const top = strongestSignal(result.signals, risk);
+                  const count = result.signals.filter((signal) => signal.risk === risk).length;
+                  return (
+                    <Gauge
+                      key={risk}
+                      kind={risk}
+                      probability={result.probabilities[risk]}
+                      signalCount={count}
+                      reason={top === undefined ? emptyGaugeReason(heroHasSignals) : plainReason(top)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
           </div>
           <ScoreRing score={result.score} />
         </div>
@@ -721,7 +717,6 @@ function AssessedView({
       ) : null}
       <OverviewSections
         result={result}
-        heroBreakdown={heroBreakdown}
         plugins={plugins}
         address={address}
         mode={mode}
@@ -748,7 +743,6 @@ function AssessedView({
 // evidence and finding text never move.
 export function OverviewSections({
   result,
-  heroBreakdown,
   plugins,
   address,
   mode,
@@ -763,7 +757,6 @@ export function OverviewSections({
   liveEntry,
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
-  readonly heroBreakdown: boolean;
   readonly plugins: readonly PluginListEntry[] | null;
   readonly address: string;
   readonly mode: UiMode;
@@ -815,37 +808,13 @@ export function OverviewSections({
       severityMax: plugin.frontmatter.severity.max as "low" | "medium" | "high",
     }));
   const match = matchPriorities(question, frontmatterViews);
-  // W-8 (Option A): sections always render in the deterministic plan
-  // order; only "score" skips the grid on wide screens (S-133: the hero
-  // owns it there). The local match only highlights tiles and orders the
-  // third-party fallback; it never reorders the overview.
-  const shownSections = plan.filter((sectionId) => sectionId !== "score" || !heroBreakdown);
+  // R2-2 (D-6): the hero always owns the gauges, so the overview never
+  // renders a separate score section. The local match only highlights
+  // tiles and orders the third-party fallback; it never reorders the
+  // overview.
+  const shownSections = plan.filter((sectionId) => sectionId !== "score");
   const personalized = !showStandard && match.orderedIds.length > 0;
   const blocks: Record<string, JSX.Element> = {
-    // The score ring, headline and risk gauges live in the verdict hero
-    // above the tabs on wide screens (S-118, S-133). Narrow screens have
-    // no room beside the dial, so the overview keeps the gauges card there
-    // under their own h2 and the heading outline never skips (h1 → h2 → h3).
-    score: (
-      <section className="card" aria-label="Risk breakdown" style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: "0 0 12px", fontSize: 20 }}>Risk breakdown</h2>
-        <div className="gauges">
-          {RISKS.map((risk) => {
-            const top = strongestSignal(result.signals, risk);
-            const count = result.signals.filter((signal) => signal.risk === risk).length;
-            return (
-              <Gauge
-                key={risk}
-                kind={risk}
-                probability={result.probabilities[risk]}
-                signalCount={count}
-                reason={top === undefined ? emptyGaugeReason(result.signals.length > 0) : plainReason(top)}
-              />
-            );
-          })}
-        </div>
-      </section>
-    ),
     explanation: (
       <ExplanationList
         claims={result.explanation.claims}

@@ -8,6 +8,7 @@ import type { JSX } from "react";
 import { Pictogram } from "./Pictogram.tsx";
 import { pluginHref } from "../lib/pluginCopy.ts";
 import { powersSummaryCopy } from "../lib/signals.ts";
+import { useMediaQuery } from "../lib/useMediaQuery.ts";
 import type { BoardTile } from "./plugins/PluginBoard.tsx";
 import type { TileSeverity } from "./plugins/PluginTile.tsx";
 
@@ -45,18 +46,26 @@ export function PowersStrip({
   if (tiles.length === 0) {
     return null;
   }
+  // R2-2 (D-2): on phones the strip would tower 7-9 rows and push the
+  // dial below the fold. Render only found and extended chips there and
+  // collapse every can't-tell chip into one quiet link to the board.
+  const compact = useMediaQuery("(max-width: 639px)");
   const shown = tiles.filter(
     (tile): tile is BoardTile & { readonly state: "found-scored" | "extended" | "cant-tell" } =>
-      tile.state === "found-scored" || tile.state === "extended" || tile.state === "cant-tell",
+      tile.state === "found-scored" ||
+      tile.state === "extended" ||
+      (tile.state === "cant-tell" && !compact),
   );
   const found = tiles.filter((tile) => tile.state === "found-scored").length;
   const extended = tiles.filter((tile) => tile.state === "extended").length;
   const cantTell = tiles.filter((tile) => tile.state === "cant-tell").length;
   const summary = powersSummaryCopy({ found, extended, cantTell });
+  const boardHref = `#/token/${encodeURIComponent(address)}/plugins`;
+  const cantTellLabel = cantTell === 1 ? "1 more can't tell ›" : `${cantTell} more can't tell ›`;
   return (
     <div className="powers" data-testid="powers-strip">
       <p className="powers-kicker">Owner powers</p>
-      {shown.length === 0 ? null : (
+      {shown.length === 0 && !(compact && cantTell > 0) ? null : (
         <ul className="powers-chips">
           {shown.map((tile) => (
             <li key={tile.pluginId}>
@@ -77,6 +86,13 @@ export function PowersStrip({
               </a>
             </li>
           ))}
+          {compact && cantTell > 0 ? (
+            <li key="__cant-tell-more" className="powers-more-item">
+              <a className="powers-more" href={boardHref}>
+                {cantTellLabel}
+              </a>
+            </li>
+          ) : null}
         </ul>
       )}
       <p className="powers-summary">{summary}</p>

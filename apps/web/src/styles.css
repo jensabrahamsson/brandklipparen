@@ -1740,12 +1740,14 @@ a {
   text-shadow: 0 0 14px var(--glow);
 }
 
-/* W-9 compact gauge rows (<640 px): title, percent, bar and band share
-   one text line; the reason and signal count rest (the card keeps them
-   on wider screens). Opacity, colour and glow only, never movement. */
+/* R2-2 compact gauge rows (<640 px): title, percent, bar and band share
+   one text line as a fixed grid, so the label can never slide under the
+   percent. The reason and signal count rest (the card keeps them on wider
+   screens). Opacity, colour and glow only, never movement. */
 @media (max-width: 639px) {
   .gauge {
-    display: flex;
+    display: grid;
+    grid-template-columns: 8.5ch 4ch minmax(40px, 1fr) auto 44px;
     align-items: center;
     column-gap: 10px;
     padding: 10px 12px;
@@ -1757,36 +1759,60 @@ a {
 
   .gauge .lab {
     order: 1;
+    flex: none;
+    min-width: 8.5ch;
+    max-width: 8.5ch;
+    overflow: hidden;
   }
 
   .gauge .t {
+    display: block;
     font-size: 13px;
     color: var(--text);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .gauge .pct {
     order: 2;
+    flex: none;
+    min-width: 4ch;
     margin: 0;
     font-size: 17px;
+    text-align: right;
   }
 
   .gauge .bar20 {
     order: 3;
-    flex: 1 1 auto;
-    min-width: 0;
+    flex: none;
+    min-width: 40px;
   }
 
   .gauge .band {
     order: 4;
+    flex: none;
   }
 
   .gauge-top .explain {
     order: 5;
+    flex: none;
   }
 
   .gauge .why,
   .gauge .cnt {
+    display: none;
+  }
+}
+
+/* At the narrowest phones the band word duplicates the bar colour, so
+   the row keeps label, percent, bar and the help trigger only. */
+@media (max-width: 359px) {
+  .gauge {
+    grid-template-columns: 8.5ch 4ch minmax(24px, 1fr) 44px;
+  }
+
+  .gauge .band {
     display: none;
   }
 }
@@ -1880,6 +1906,51 @@ a {
   margin: 0;
   font-size: 13px;
   color: var(--dim);
+}
+
+.powers-more-item {
+  display: flex;
+}
+
+/* R2-2: the collapsed can't-tell link on phones. Quiet dim text, still
+   a 44 px target, never a chip. */
+.powers-more {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 10px;
+  color: var(--dim);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.powers-more:hover {
+  color: var(--phosphor-hi);
+}
+
+.powers-more:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* R2-2: compact two-column chip grid on phones, so two chips share one
+   44 px row instead of stacking 7-9 rows. */
+@media (max-width: 639px) {
+  .powers-chips {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .power-chip {
+    gap: 6px;
+    padding: 6px 10px;
+  }
+
+  .powers-more-item {
+    grid-column: 1 / -1;
+  }
 }
 
 /* Signals: inverted severity tags, evidence as terminal lines. */
@@ -3160,6 +3231,49 @@ a {
 
   .score-dial .bandtag {
     font-size: 12px;
+  }
+}
+
+/* R2-2 phone hero fold (D-2, D-6): identity → verdict → dial → strip → gauges
+   in one column, with the dial capped so the band tag stays above the fold.
+   The copy wrapper goes display:contents so the dial can sit between the
+   verdict and the strip; DOM order stays hero → gauges → Muse. */
+@media (max-width: 639px) {
+  .score-ring-wrap {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .score-ring-wrap > .hero-copy {
+    display: contents;
+  }
+
+  .score-ring-wrap .risk-meaning {
+    order: 1;
+  }
+
+  .score-ring-wrap > .score-dial {
+    order: 2;
+    align-self: center;
+    width: min(208px, 60vw);
+  }
+
+  .score-ring-wrap .powers {
+    order: 3;
+    margin-top: 0;
+  }
+
+  .score-ring-wrap .hero-gauges {
+    order: 4;
+  }
+
+  .hero-gauges h2 {
+    margin: 8px 0;
+  }
+
+  .verdict .gauges-hero {
+    gap: 12px;
   }
 }
 
