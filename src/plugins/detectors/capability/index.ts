@@ -7,7 +7,7 @@
 // scores stay bit-identical until calibration names the findings (P-05).
 // Pure and synchronous: this module imports solely the plugin API and
 // domain types and pure functions (P-03).
-import { Evidence } from "../../../domain/evidence.ts";
+import { Evidence, sortEvidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
 import { callTargetOfInstruction } from "../../../domain/ownerControl.ts";
@@ -169,7 +169,11 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
         evidence.push(created.value);
       }
     }
-    const nonEmpty = toNonEmpty(evidence);
+    // Padding truth (C-26, F-26): a key with more than 128 sites keeps
+    // the first 128 in canonical order instead of invalidating the whole
+    // plugin, so DELEGATECALL and SELFDESTRUCT signals survive padding.
+    const capped = sortEvidence(evidence).slice(0, 128);
+    const nonEmpty = toNonEmpty([...capped]);
     if (nonEmpty === null) {
       continue;
     }

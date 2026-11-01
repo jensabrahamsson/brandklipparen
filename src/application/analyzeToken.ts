@@ -41,6 +41,7 @@ import type {
   ModelVersion as ModelVersionType,
   RequestId as RequestIdType,
   RiskScore as RiskScoreType,
+  Selector as SelectorType,
   Slot as SlotType,
   StorageWord as StorageWordType,
   TemplateVersion as TemplateVersionType,
@@ -579,6 +580,7 @@ function signalsFromPluginResults(
   pluginWeights: Readonly<Record<string, number>>,
   featureCatalogue: Readonly<Record<string, PluginFeatureMapping>>,
   detectorHeadWeights?: Readonly<Record<string, Readonly<Record<string, number>>>> | undefined,
+  firstSelector?: SelectorType | null | undefined,
 ): readonly Signal[] {
   // Scoring reads findings solely from allowlisted plugins (P-05): every
   // other entry stays in `pluginResults` at weight 0 and never converts.
@@ -729,7 +731,47 @@ function signalsFromPluginResults(
       }
     }
   }
+  // Failed scored plugins (C-26, F-26): an allowlisted plugin whose
+  // outcome is `invalid-output` or `threw` proves the analysis did not
+  // fully cover the code, so it contributes exactly one deterministic
+  // `obfuscated-structure` hard-to-analyze signal per analysis instead
+  // of reading as "nothing found". The evidence is the first dispatcher
+  // selector, mirroring the decompiler fallback signal entry for entry.
+  // `timeout` and `input-unavailable` stay transient: they depend on host
+  // load and RPC latency, so they never score and the run is not cached.
+  const failedScored = results
+    .filter(
+      (entry) =>
+        (entry.outcome === "invalid-output" || entry.outcome === "threw") &&
+        pluginAllowedForScoring(entry.pluginId as string, pluginWeights),
+    )
+    .map((entry) => entry.pluginId as string)
+    .sort();
+  if (failedScored.length > 0 && firstSelector !== undefined && firstSelector !== null) {
+    const evidence = Evidence.create({ selector: firstSelector });
+    if (evidence.ok) {
+      const signal = Signal.createHardToAnalyze({
+        codeHash,
+        risk: FALLBACK_HARD_TO_ANALYZE_RISK,
+        cause: "obfuscated-structure",
+        evidence: [evidence.value],
+      });
+      if (signal.ok) {
+        hard.push(signal.value);
+      }
+    }
+  }
   return Object.freeze([...capability, ...clones, ...hard]);
+}
+
+// Wall-clock plugin outcomes (C-26, F-26): `timeout` and
+// `input-unavailable` depend on host load and RPC latency, so a run
+// carrying either never enters the code-hash cache, like a transient
+// decompiler failure.
+function hasTransientPluginOutcome(results: readonly PluginResultEntry[]): boolean {
+  return results.some(
+    (entry) => entry.outcome === "timeout" || entry.outcome === "input-unavailable",
+  );
 }
 
 // Live owner value through RpcPort (S-115, K-016): the ownership detector
@@ -1318,6 +1360,13 @@ export async function analyzeToken(
     }),
     detectors.execution,
   );
+  // First dispatcher selector for the failed-plugin fallback signal
+  // (C-26, F-26): the single hard-to-analyze signal a throwing or
+  // over-limit scored plugin contributes carries the entry selector,
+  // exactly like the decompiler fallback signal.
+  const firstSelectorEntry = extractSelectors(analysisBytecode)[0];
+  const firstSelector =
+    firstSelectorEntry === undefined ? null : (firstSelectorEntry.selector as SelectorType);
   let signals: readonly Signal[] = signalsFromPluginResults(
     pluginResults,
     codeHash.value,
@@ -1327,6 +1376,7 @@ export async function analyzeToken(
     loaded.value.artifact.pluginWeights,
     loaded.value.artifact.pluginFeatureCatalogue,
     loaded.value.artifact.detectorHeadWeights,
+    firstSelector,
   );
   // Owner state through RpcPort (S-115, K-016): enriches the converted
   // owner-slot signal with the live value where the proof and the
@@ -1393,9 +1443,14 @@ export async function analyzeToken(
   // paths ignore proxied entries (C-20, F-21). A new model version keys
   // new entries, so older entries stay unused beside the new one.
   const proxied = proxyFactOf(proxy) !== null;
+  // A wall-clock plugin outcome (`timeout`, `input-unavailable`) marks
+  // the run transient, so its envelope never poisons the shared entry
+  // (C-26, F-26), like a transient decompiler failure.
+  const transientPluginFailure = hasTransientPluginOutcome(pluginResults);
   if (
     ports.cache !== undefined &&
     !transientDecompilerFailure &&
+    !transientPluginFailure &&
     !ownerState.enriched &&
     !ownerState.readFailed &&
     !proxied

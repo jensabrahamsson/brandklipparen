@@ -616,12 +616,16 @@ test("brief40_desktop_separators_stay_visible_between_items", async ({ page }) =
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + TOKEN_A);
   await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
+  // The DEX age meta arrives with the live feed, after the analysis
+  // result that unblocks the wait above: wait for it first, otherwise a
+  // slow feed reads as zero separator rows (same race the mobile test
+  // guards against).
+  await expect(page.locator(".token-meta").first()).toContainText("·");
   // R2-4: the hero meta is a single DEX unit (the name rides the h1 and
   // the address is a separator-free block), so no between-item
   // separators remain; the interior separators stay visible on one line.
   const heroItems = await itemCount(page, ".token-meta", 0);
   expect(heroItems).toBe(1);
-  await expect(page.locator(".token-meta").first()).toContainText("·");
 
   // Accessible names are unchanged: copy controls keep their labels.
   await expect(page.locator('[data-testid="copy-contract-address"]').first()).toHaveAttribute(

@@ -159,6 +159,11 @@ export type OwnerControlView = {
   // otherwise regions that read and write storage around calldata.
   // Sorted canonically.
   readonly transfers: readonly SelectorType[];
+  // Selectors whose v2 interpreter walk was incomplete (visit budget,
+  // capped reach or a throw), so their detectors' "no pattern" really
+  // means "not fully followed" (C-26, F-26). Empty on the scored v1
+  // path, which never builds the interpreter state. Sorted canonically.
+  readonly incompleteSelectors: readonly SelectorType[];
 };
 
 const MAX_SLOT_PUSH_BYTES = 4;
@@ -267,6 +272,11 @@ export type RegionExprs = {
   readonly stores: ReadonlyMap<number, ExprStoreRecord>;
   readonly loads: ReadonlyMap<number, Expr>;
   readonly jumpis: ReadonlyMap<number, Expr>;
+  // Coverage truth (C-26, F-26): false when the walk stopped at the
+  // visit budget with blocks still queued, the entry reach gave up or
+  // froze at the cap, or a throw cut the walk short. Detectors must
+  // never read a partial map as "no pattern found".
+  readonly complete: boolean;
 };
 
 type V2State = {
@@ -1140,6 +1150,13 @@ function interpretRegionExprsUncached(bytecode: BytecodeType, selector: Selector
   const stores = new Map<number, ExprStoreRecord>();
   const loads = new Map<number, Expr>();
   const jumpis = new Map<number, Expr>();
+  const partial = (
+    complete: boolean,
+  ): RegionExprs => ({ stores, loads, jumpis, complete });
+  // Hoisted past the try so the catch and the budget check below can
+  // report them: a throw leaves the queue non-empty by construction.
+  const queue: number[] = [];
+  let complete = true;
   try {
     const cfg = cfgOf(bytecode);
     let entryTarget: number | null = null;
@@ -1150,15 +1167,17 @@ function interpretRegionExprsUncached(bytecode: BytecodeType, selector: Selector
       }
     }
     if (entryTarget === null) {
-      return { stores, loads, jumpis };
+      return partial(true);
     }
     const entryBlock = blockStartingAt(bytecode, entryTarget);
     if (entryBlock < 0 || entryBlock >= cfg.blocks.length) {
-      return { stores, loads, jumpis };
+      return partial(true);
     }
     const attribution = attributeFunctions(bytecode, { mode: "v2" });
     const isMember = (pc: number): boolean => attribution.holdersOf(pc).includes(selector);
-    const reached = resolveEntryReachV2(cfg, entryBlock).reachedBlocks;
+    const entryReach = resolveEntryReachV2(cfg, entryBlock);
+    const reached = entryReach.reachedBlocks;
+    complete = entryReach.complete;
     const isWalkable = (index: number): boolean => {
       if (!reached.has(index)) {
         return false;
@@ -1186,7 +1205,7 @@ function interpretRegionExprsUncached(bytecode: BytecodeType, selector: Selector
       mem32: EXPR_UNKNOWN,
     });
     entries.set(entryBlock, empty);
-    const queue: number[] = [entryBlock];
+    queue.push(entryBlock);
     let visits = 0;
     while (queue.length > 0 && visits < V2_SLOT_MAX_VISITS) {
       const index = queue.pop() ?? -1;
@@ -1278,9 +1297,17 @@ function interpretRegionExprsUncached(bytecode: BytecodeType, selector: Selector
       }
     }
   } catch {
-    // Bounded by construction; partial maps still beat no maps.
+    // Bounded by construction; partial maps still beat no maps, but a
+    // throw cut the walk short, so the result is marked incomplete
+    // instead of reading as "nothing found" (C-26, F-26).
+    return partial(false);
   }
-  return { stores, loads, jumpis };
+  // The visit budget is the backstop on hostile shapes: blocks still
+  // queued means code the interpreter never followed.
+  if (queue.length > 0) {
+    complete = false;
+  }
+  return partial(complete);
 }
 
 // Slot lookup derived from the expression walk, so the legacy SlotRef
@@ -4109,16 +4136,22 @@ function analyzeOwnerControlUncached(bytecode: BytecodeType, reach: ReachMode): 
   // the slot lookup plus the JUMPI conditions the expression owner
   // check runs on. The scored v1 path never builds it.
   const v2Lookups: Array<{ readonly slotOf: SlotLookup; readonly jumpis: ReadonlyMap<number, Expr> } | null> = [];
+  const incomplete = new Set<SelectorType>();
   for (const entry of byTarget) {
     const start = entry.target as number;
     const wanted = entry.selector;
     if (reach === "v2") {
       // The v2 stack interpreter resolves slots through DUP/SWAP
       // chains and proves mapping bases; the scored v1 path below never
-      // sees it.
+      // sees it. An incomplete walk marks the selector, so a later "no
+      // pattern" reads as "not fully followed" (C-26, F-26).
       const interpreted = interpretRegionSlots(bytecode, entry.selector);
       const slotOf: SlotLookup = (pc) => interpreted.get(pc);
-      v2Lookups.push({ slotOf, jumpis: interpretRegionExprs(bytecode, entry.selector).jumpis });
+      const exprs = interpretRegionExprs(bytecode, entry.selector);
+      if (!exprs.complete) {
+        incomplete.add(entry.selector);
+      }
+      v2Lookups.push({ slotOf, jumpis: exprs.jumpis });
       regions.push(
         regionOf(entry.selector, start, code, (pc) => holdersByPc.get(pc)?.includes(wanted) ?? false, true, slotOf),
       );
@@ -4184,11 +4217,13 @@ function analyzeOwnerControlUncached(bytecode: BytecodeType, reach: ReachMode): 
         : holderByPc.get(pc) === (selector as string),
   );
   const privileged = [...privilegedSet].sort();
+  const incompleteSelectors = [...incomplete].sort();
   return Object.freeze({
     regions: Object.freeze(regions),
     ownerSlot,
     privileged: Object.freeze(privileged),
     transfers: Object.freeze(transfers),
+    incompleteSelectors: Object.freeze(incompleteSelectors),
   });
 }
 
@@ -4281,6 +4316,19 @@ function transferPaths(
 // Regions of the view keyed by selector for one lookup per detector.
 export function regionBySelector(view: OwnerControlView, selector: SelectorType): RegionFacts | undefined {
   return view.regions.find((region) => region.selector === selector);
+}
+
+// Interpreter coverage for later display (C-26, display-only): how many
+// of the paired dispatcher selectors the v2 interpreter fully followed.
+// `total` counts every paired selector; `followed` subtracts the
+// incomplete ones, so a coverage sentence can say "N of M functions it
+// could follow" instead of "nothing found". Frozen and total like every
+// other view in this module. C-19's coverage sentence reads this.
+export function coverageOf(bytecode: BytecodeType): { readonly followed: number; readonly total: number } {
+  const view = analyzeOwnerControl(bytecode, { reach: "v2" });
+  const total = view.regions.length;
+  const followed = total - view.incompleteSelectors.length;
+  return Object.freeze({ followed, total });
 }
 
 // Reachability diagnostics for later display (P-10, display-only): the

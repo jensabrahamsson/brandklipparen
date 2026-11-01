@@ -1316,10 +1316,32 @@ function explainMint(bytecode: BytecodeType): ExtendedProof {
 // found fact always reports every step ok.
 export function explainExtendedProof(bytecode: BytecodeType): readonly ExtendedProof[] {
   return Object.freeze([
-    explainPause(bytecode),
-    explainBlacklist(bytecode),
-    explainFee(bytecode),
-    explainLimits(bytecode),
-    explainMint(bytecode),
+    withBudgetStep(bytecode, explainPause(bytecode)),
+    withBudgetStep(bytecode, explainBlacklist(bytecode)),
+    withBudgetStep(bytecode, explainFee(bytecode)),
+    withBudgetStep(bytecode, explainLimits(bytecode)),
+    withBudgetStep(bytecode, explainMint(bytecode)),
   ]);
+}
+
+// Budget truth (C-26, F-26): a failing proof whose region the v2
+// interpreter did not fully follow gains a trailing `analysis-budget`
+// step (ok: false, "stopped at the visit budget"), so the report never
+// reads a truncated walk as a proven absence. Proofs with every step ok
+// and analyses with no incomplete selector pass through untouched.
+function withBudgetStep(bytecode: BytecodeType, proof: ExtendedProof): ExtendedProof {
+  if (proof.steps.every((entry) => entry.ok)) {
+    return proof;
+  }
+  const incomplete = analyzeOwnerControl(bytecode, { reach: "v2" }).incompleteSelectors;
+  if (incomplete.length === 0) {
+    return proof;
+  }
+  return Object.freeze({
+    detector: proof.detector,
+    steps: Object.freeze([
+      ...proof.steps,
+      step("analysis-budget", false, "stopped at the visit budget"),
+    ]),
+  });
 }

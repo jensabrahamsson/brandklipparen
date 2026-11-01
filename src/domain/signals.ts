@@ -325,7 +325,11 @@ export function detectCapabilities(
         evidence.push(created.value);
       }
     }
-    if (evidence.length === 0) {
+    // Padding truth (C-26, F-26): mirror the registry detector — a key
+    // with more than 128 sites keeps the first 128 in canonical order
+    // instead of dropping the signal, so parity holds entry for entry.
+    const capped = sortEvidence(evidence).slice(0, 128);
+    if (capped.length === 0) {
       continue;
     }
     const signal = Signal.createCapability({
@@ -334,7 +338,7 @@ export function detectCapabilities(
       direction: mapping.direction,
       severity: mapping.severity,
       temporality,
-      evidence,
+      evidence: capped,
     });
     if (signal.ok) {
       out.push(signal.value);

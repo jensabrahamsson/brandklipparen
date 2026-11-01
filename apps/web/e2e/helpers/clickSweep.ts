@@ -990,6 +990,16 @@ export async function sweepControls(page: Page, bucket: ErrorBucket, width: numb
     if (new URL(page.url()).hash !== before) {
       await checkQuiet(page, bucket, `${label} after navigation (${key})`);
       await page.goBack();
+      // Wait for the history return to commit before the next markNext
+      // evaluate: the detail re-fetches on hashchange, and evaluating
+      // while that navigation is in flight stalls the sweep (batch B
+      // hung here after the brand-link return on transfer-hooks).
+      await page.waitForFunction(
+        (expected: string) => new URL(window.location.href).hash === expected,
+        before,
+        { timeout: 10_000 },
+      );
+      await checkQuiet(page, bucket, `${label} after back (${key})`);
     }
   }
   return clicks;

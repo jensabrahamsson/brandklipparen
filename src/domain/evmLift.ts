@@ -306,6 +306,10 @@ export type EntryReachV2 = {
   // the cap: their early edges stay, and later candidates never join.
   // C-26 reads this for `complete: false`.
   readonly cappedJumpAtPc: readonly number[];
+  // Coverage truth (C-26, F-26): false when any dynamic jump gave up
+  // (no candidates) or froze at the cap, so callers never read a
+  // silently truncated reach as "nothing found".
+  readonly complete: boolean;
 };
 
 // A dynamic JUMP: the block ends in JUMP with no proven jump edge, so v1
@@ -335,6 +339,7 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
     resolvedJumpAtPc: Object.freeze([]),
     unresolvedJumpAtPc: Object.freeze([]),
     cappedJumpAtPc: Object.freeze([]),
+    complete: true,
   });
   if (from < 0 || from >= cfg.blocks.length) {
     return empty;
@@ -481,5 +486,6 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
     resolvedJumpAtPc: Object.freeze(resolvedJumpAtPc),
     unresolvedJumpAtPc: Object.freeze(pending),
     cappedJumpAtPc: Object.freeze(cappedJumpAtPc),
+    complete: givenUp.size === 0 && capped.size === 0,
   });
 }

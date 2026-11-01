@@ -183,11 +183,9 @@ test("plugin detail pages batch A sweep at 390 and 1440", async ({ page }) => {
   await sweepDetails(page, bucket, hrefs.slice(0, Math.ceil(hrefs.length / 2)), "batch A");
 });
 
-test.fixme("plugin detail pages batch B sweep at 390 and 1440", async ({ page }) => {
-  // fixme: sweep stalls after the first BK-brand navigation return on the
-  // transfer-hooks detail (second markNext never resolves within the 180 s
-  // budget even though click 1, quiet, layout and goBack all succeed); needs
-  // driver-level diagnosis of cross-page history return before re-enabling.
+test("plugin detail pages batch B sweep at 390 and 1440", async ({ page }) => {
+  // Two full detail sweeps stay under the shared budget per batch; the
+  // history return now waits for the hash to commit (see clickSweep).
   test.setTimeout(180_000);
   const bucket = collectErrors(page);
   await installClickMocks(page, "many");
