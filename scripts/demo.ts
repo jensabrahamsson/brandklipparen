@@ -235,6 +235,23 @@ export function ensureDemoApiKey(
   };
 }
 
+// Child environment for the REST child (DEMOFIX-1): the config loader
+// rejects a config where both `<NAME>` and `<NAME>_FILE` are set, so a
+// pointer the demo already resolved must not travel to the child.
+// Removes `<TARGET>_FILE` for every successfully resolved target; failed
+// or unrelated pointers are left untouched so a real operator error still
+// surfaces in the child. Pure: reads names only, never values.
+export function withoutResolvedSecretFilePointers(
+  env: Readonly<Record<string, string | undefined>>,
+  loaded: readonly string[],
+): Record<string, string | undefined> {
+  const child: Record<string, string | undefined> = { ...env };
+  for (const target of loaded) {
+    delete child[`${target}_FILE`];
+  }
+  return child;
+}
+
 // Minimal environment for the Vite dev-server child (C-28, F-29): only
 // PATH, HOME, NODE_ENV and VITE_* entries travel, plus the two values
 // the web app needs (VITE_REST_ORIGIN and VITE_DEMO_API_KEY).
@@ -1039,9 +1056,13 @@ async function runDemo(): Promise<void> {
   // Same Node binary for both children, so the checked version above is
   // the one that runs them.
   const nodeBin = process.execPath;
+  // The loader rejects both `<NAME>` and `<NAME>_FILE` set (C-28), so the
+  // REST child receives the resolved keys without the pointers the demo
+  // already consumed. Status lines above keep reading demoEnv.
+  const restEnv = withoutResolvedSecretFilePointers(demoEnv, resolved.loaded);
   const rest = spawn(nodeBin, ["--experimental-strip-types", join(root, "src", "main.ts"), "rest"], {
     cwd: root,
-    env: demoEnv,
+    env: restEnv,
     stdio: "inherit",
   });
   const webBin = join(root, "apps", "web", "node_modules", "vite", "bin", "vite.js");

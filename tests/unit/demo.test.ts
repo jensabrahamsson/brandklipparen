@@ -13,6 +13,7 @@ import {
   buildNode22LoopMessage,
   buildNode22MissingMessage,
   buildViteChildEnv,
+  withoutResolvedSecretFilePointers,
   checkNodeVersion,
   decideNode22Startup,
   DEMO_ASSESSMENT_hosted_READY_LINE,
@@ -902,5 +903,65 @@ describe("demo source provider default (sourcify)", () => {
     const { env: defaulted } = withDemoSourceDefault(env);
     expect(defaulted[PROVIDER]).toBe("sourcify");
     expect(loadConfig(defaulted).ok).toBe(true);
+  });
+});
+
+describe("demo REST child environment (DEMOFIX-1)", () => {
+  const META_KEY = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY";
+  const META_KEY_FILE = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE";
+  const ETHERSCAN_KEY = "ETHERSCAN_API_KEY";
+  const FAKE_KEY = "fake-meta-key-for-tests-only";
+  const FAKE_ETHERSCAN_KEY = "fake-etherscan-key-for-tests-only";
+
+  function tempRoot(): string {
+    const dir = mkdtempSync(join(tmpdir(), "demo-rest-child-"));
+    mkdirSync(join(dir, "secrets"), { recursive: true });
+    return dir;
+  }
+
+  test("a resolved pointer is stripped so the child never sees both key and _FILE", () => {
+    const dir = tempRoot();
+    writeFileSync(join(dir, "secrets", "fake-meta.txt"), `  ${FAKE_KEY}\n`, "utf8");
+    writeFileSync(join(dir, "secrets", "fake-etherscan.txt"), `  ${FAKE_ETHERSCAN_KEY}\n`, "utf8");
+    const { env: defaults } = withDemoDefaults({
+      [META_KEY_FILE]: join("secrets", "fake-meta.txt"),
+      BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "fake-meta-model-1",
+      BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta.example.invalid",
+      [`${ETHERSCAN_KEY}_FILE`]: join("secrets", "fake-etherscan.txt"),
+    });
+    const { env: assessed } = withDemoAssessmentDefault(defaults);
+    const resolved = resolveSecretFileVars(assessed, dir, (path) => readFileSync(path, "utf8"));
+    expect(resolved.env[META_KEY]).toBe(FAKE_KEY);
+    expect(resolved.env[ETHERSCAN_KEY]).toBe(FAKE_ETHERSCAN_KEY);
+    // The demo log still sees the resolved keys.
+    expect(demoLpFeedStatus(resolved.env)).toBe(DEMO_LP_FEED_READY_LINE);
+    expect(demoAssessmentStatus({ ...resolved.env, BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "meta-model-api" })).toBe(
+      DEMO_ASSESSMENT_META_READY_LINE,
+    );
+    const child = withoutResolvedSecretFilePointers(resolved.env, resolved.loaded);
+    expect(child[META_KEY]).toBe(FAKE_KEY);
+    expect(child[ETHERSCAN_KEY]).toBe(FAKE_ETHERSCAN_KEY);
+    expect(child[META_KEY_FILE]).toBe(undefined);
+    expect(child[`${ETHERSCAN_KEY}_FILE`]).toBe(undefined);
+    for (const target of resolved.loaded) {
+      expect(child[target] ?? "").not.toBe("");
+      expect(child[`${target}_FILE`]).toBe(undefined);
+    }
+    // The stripped child passes loader validation while the unstripped demo env does not.
+    expect(loadConfig(child).ok).toBe(true);
+    const bothSet = loadConfig(resolved.env);
+    expect(bothSet.ok).toBe(false);
+  });
+
+  test("an operator that sets both key and pointer still fails validation", () => {
+    const direct = withDemoDefaults({ [META_KEY]: FAKE_KEY, [META_KEY_FILE]: "secrets/meta-key.txt" });
+    const resolved = resolveSecretFileVars(direct.env, tempRoot(), () => {
+      throw new Error("must not read when the direct key wins");
+    });
+    expect(resolved.loaded).toEqual([]);
+    const child = withoutResolvedSecretFilePointers(resolved.env, resolved.loaded);
+    expect(child[META_KEY]).toBe(FAKE_KEY);
+    expect(child[META_KEY_FILE]).toBe("secrets/meta-key.txt");
+    expect(loadConfig(child).ok).toBe(false);
   });
 });
