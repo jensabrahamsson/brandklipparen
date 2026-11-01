@@ -159,4 +159,47 @@ describe("proof route through the composed app (B-3)", () => {
       await server.close();
     }
   });
+
+  test("b03_proof_leaves_the_analyze_envelope_byte_identical", async () => {
+    const codes = new Map<string, string>([[mustOk(Address.parse(TEST_ADDRESS)) as string, TEST_BYTECODE]]);
+    const rpcFake = new FakeRpcAdapter(codes, mustOk(BlockNumber.of(TEST_BLOCK)));
+    const built = buildApp(baseConfig(), {
+      ports: Object.freeze({
+        rpc: rpcFake,
+        modelArtifacts: placeholderArtifact(),
+        clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+      }),
+      detectors: mustDefaultDetectorSet(),
+    });
+    if (!built.ok) {
+      throw new Error(`expected the composed app to build, got ${built.error.kind}`);
+    }
+    const server = createRestServer(built.value.rest);
+    try {
+      const before = await server.inject({
+        method: "GET",
+        url: `/v1/analyze?address=${TEST_ADDRESS}`,
+        headers: { "x-api-key": TEST_API_KEY },
+      });
+      expect(before.statusCode).toBe(200);
+      const proof = await server.inject({
+        method: "GET",
+        url: `/v1/proof?address=${TEST_ADDRESS}`,
+        headers: { "x-api-key": TEST_API_KEY },
+      });
+      expect(proof.statusCode).toBe(200);
+      const after = await server.inject({
+        method: "GET",
+        url: `/v1/analyze?address=${TEST_ADDRESS}`,
+        headers: { "x-api-key": TEST_API_KEY },
+      });
+      expect(after.statusCode).toBe(200);
+      // The proof walk is never part of the analysis: the envelope is
+      // byte-identical before and after, and carries no proof reports.
+      expect(after.body).toBe(before.body);
+      expect(JSON.parse(after.body) as Record<string, unknown>).not.toHaveProperty("proofs");
+    } finally {
+      await server.close();
+    }
+  });
 });

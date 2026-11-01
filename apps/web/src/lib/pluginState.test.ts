@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { pluginState } from "./pluginState.ts";
+import { pluginState, proofHeadline } from "./pluginState.ts";
 import type { CantTellContext } from "./pluginState.ts";
 
 const QUIET: CantTellContext = { hardToAnalyzeFired: false, partialTransfer: false };
@@ -70,5 +70,29 @@ describe("plugin board states (UI v2 §5.1)", () => {
 
   test("junk payloads with findings are not found, not scored", () => {
     expect(pluginState(scoredView({ note: "heavy" }), QUIET)).toBe("not-found");
+  });
+});
+
+describe("proof headline (UI v2 §5.5)", () => {
+  test("every step ok reads all steps proven", () => {
+    expect(proofHeadline([{ ok: true }, { ok: true }])).toBe("All steps proven");
+  });
+
+  test("a failing transfer gate names the stopped step", () => {
+    expect(
+      proofHeadline([
+        { ok: true },
+        { ok: true },
+        { ok: true },
+        { ok: false },
+        { ok: false },
+        { ok: false },
+        { ok: false },
+      ]),
+    ).toBe("We stopped at step 4 of 7");
+  });
+
+  test("an empty trace never names a step", () => {
+    expect(proofHeadline([])).toBe("No proof steps reported.");
   });
 });

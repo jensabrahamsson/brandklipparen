@@ -13,6 +13,8 @@ import { SchemaValue } from "../SchemaValue.tsx";
 import { DecompilerList } from "./DecompilerList.tsx";
 import { EvidenceRow } from "./EvidenceRow.tsx";
 import { OwnerChip } from "./OwnerChip.tsx";
+import { ProofTrace } from "./ProofTrace.tsx";
+import { fetchProof, type ProofStep } from "../../lib/api.ts";
 import type { BoardTile } from "./PluginBoard.tsx";
 import { severityWord } from "./PluginTile.tsx";
 import type { ExplainEvidenceEntry } from "../code/CodeView.tsx";
@@ -52,6 +54,77 @@ export function detailProvenance(
 }
 
 const EVIDENCE_LIMIT = 5;
+
+// Slugs with an extended-proof report (UI v2 §5.5): only these five
+// detectors walk the proof steps, so only their detail views fetch
+// GET /v1/proof and render "How we checked".
+const PROOF_SLUGS: ReadonlySet<string> = new Set([
+  "pause",
+  "blacklist",
+  "transfer-fee",
+  "transfer-limits",
+  "mint",
+]);
+
+function ProofSection({
+  address,
+  apiKey,
+  pluginId,
+  slug,
+  expert,
+}: {
+  readonly address: string;
+  readonly apiKey: string;
+  readonly pluginId: string;
+  readonly slug: string;
+  readonly expert: boolean;
+}): JSX.Element | null {
+  const [report, setReport] = useState<readonly ProofStep[] | null | undefined>(undefined);
+  useEffect(() => {
+    if (!PROOF_SLUGS.has(slug)) {
+      return;
+    }
+    let cancelled = false;
+    fetchProof(address, apiKey.length === 0 ? null : apiKey).then(
+      (state) => {
+        if (cancelled) {
+          return;
+        }
+        if (state.status !== "ready") {
+          setReport(null);
+          return;
+        }
+        const match = state.proofs.find((entry) => entry.detector === pluginId);
+        setReport(match === undefined ? null : match.steps);
+      },
+      () => {
+        if (!cancelled) {
+          setReport(null);
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [address, apiKey, pluginId, slug]);
+  if (!PROOF_SLUGS.has(slug)) {
+    return null;
+  }
+  if (report === undefined) {
+    return (
+      <section className="card detail-proof" aria-label="How we checked">
+        <h2>How we checked</h2>
+        <p role="status" className="proof-loading">
+          Loading proof trace…
+        </p>
+      </section>
+    );
+  }
+  if (report === null || report.length === 0) {
+    return null;
+  }
+  return <ProofTrace steps={report} expert={expert} />;
+}
 
 function EvidenceSection({
   address,
@@ -248,6 +321,15 @@ export function PluginDetailView({
         />
       ) : (
         <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} />
+      )}
+      {tile === null ? null : (
+        <ProofSection
+          address={address}
+          apiKey={apiKey}
+          pluginId={tile.pluginId}
+          slug={slug}
+          expert={expert}
+        />
       )}
       {tile === null ? null : (
         <section className="card detail-limits" aria-label="What this check can't tell you">

@@ -4,10 +4,12 @@ import {
   PERSONALIZE_TIMEOUT_MS,
   analyzeToken,
   clearExplainCodeCache,
+  clearProofCache,
   fetchAssessment,
   fetchChat,
   fetchExplainCode,
   fetchHealth,
+  fetchProof,
   fetchRug,
   peekExplainCode,
   pickExplainSource,
@@ -305,6 +307,81 @@ describe("muse console overlays", () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(200, { rug: { kind: "not-configured" } })));
     try {
       expect(await fetchRug(ADDRESS, null)).toEqual({ status: "not-configured" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("proof_returns_reports_with_step_ids_and_caches_by_address", async () => {
+    const body = {
+      status: "ok",
+      apiVersion: "v1",
+      codeHash: "0xabc",
+      proofs: [
+        {
+          detector: "dev.brandklipparen.pause",
+          steps: [
+            { step: "owner-slot", ok: true, detail: "owner slot 1 proven beside a caller guard" },
+            { step: "writer-regions", ok: true, detail: "guarded writer regions: 0x12345678 (via expr)" },
+            { step: "candidate-slots", ok: true, detail: "candidate flag slots: 0" },
+            { step: "transfer-gate", ok: false, detail: "no gate reading slot 0 on transfer 0xa9059cbb" },
+            { step: "same-slot-and-bit", ok: false, detail: "not evaluated: no gate on transfer 0xa9059cbb" },
+            { step: "reverting-jumpi", ok: false, detail: "not evaluated: no gate on transfer 0xa9059cbb" },
+          ],
+        },
+      ],
+    };
+    let calls = 0;
+    let seenUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit): Promise<Response> => {
+        calls += 1;
+        seenUrl = String(url);
+        expect((init?.headers as Record<string, string> | undefined)?.["x-api-key"]).toBe("demo-key");
+        return jsonResponse(200, body);
+      }),
+    );
+    try {
+      clearProofCache();
+      const state = await fetchProof(ADDRESS, "demo-key");
+      expect(seenUrl).toContain(`/v1/proof?address=${encodeURIComponent(ADDRESS)}`);
+      expect(state.status).toBe("ready");
+      if (state.status !== "ready") {
+        return;
+      }
+      expect(state.codeHash).toBe("0xabc");
+      expect(state.proofs).toHaveLength(1);
+      expect(state.proofs[0]?.steps.map((entry) => entry.step)).toEqual([
+        "owner-slot",
+        "writer-regions",
+        "candidate-slots",
+        "transfer-gate",
+        "same-slot-and-bit",
+        "reverting-jumpi",
+      ]);
+      await fetchProof(ADDRESS, "demo-key");
+      expect(calls).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("proof_failures_read_as_failed_and_retry", async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (): Promise<Response> => {
+        calls += 1;
+        return calls === 1 ? jsonResponse(500, { code: "internal-error", message: "Down." }) : jsonResponse(200, { codeHash: "0xabc", proofs: [] });
+      }),
+    );
+    try {
+      clearProofCache();
+      expect(await fetchProof(ADDRESS, null)).toEqual({ status: "failed" });
+      const retry = await fetchProof(ADDRESS, null);
+      expect(retry.status).toBe("ready");
+      expect(calls).toBe(2);
     } finally {
       vi.unstubAllGlobals();
     }

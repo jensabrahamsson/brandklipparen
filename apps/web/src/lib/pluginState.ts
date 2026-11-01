@@ -76,6 +76,26 @@ export function pluginState(
   return "not-found";
 }
 
+export type ProofStepLike = {
+  readonly ok: boolean;
+};
+
+// Headline for the proof trace (UI v2 §5.5, W-11): the wording behind
+// the not-found vs can't-tell detail copy. Every step proven reads
+// found; otherwise the trace names the step where it stopped, so the
+// detail never guesses between "not found" and "can't tell" without
+// showing its work.
+export function proofHeadline(steps: readonly ProofStepLike[]): string {
+  if (steps.length === 0) {
+    return "No proof steps reported.";
+  }
+  const firstFailed = steps.findIndex((entry) => !entry.ok);
+  if (firstFailed === -1) {
+    return "All steps proven";
+  }
+  return `We stopped at step ${firstFailed + 1} of ${steps.length}`;
+}
+
 export const PLUGIN_STATE_WORD: Record<PluginState, string> = Object.freeze({
   error: "Error",
   "not-run": "Not run",

@@ -1059,6 +1059,104 @@ export function peekExplainCode(
   return explainCodeSettled.get(explainCodeKey(address, selector, view)) ?? null;
 }
 
+// Extended-proof diagnostics (UI v2 §5.5, W-11): one GET per address
+// beside the analysis, cached for the session so re-opening a detail
+// costs nothing. Display data only; scores, signals and evidence are
+// untouched, and the response never enters the analyze envelope.
+export type ProofStep = {
+  readonly step: string;
+  readonly ok: boolean;
+  readonly detail: string;
+  readonly selector?: string | undefined;
+  readonly pc?: number | undefined;
+};
+
+export type ProofReport = {
+  readonly detector: string;
+  readonly steps: readonly ProofStep[];
+};
+
+export type ProofState = { readonly status: "ready"; readonly codeHash: string; readonly proofs: readonly ProofReport[] } | { readonly status: "failed" };
+
+function toProofStep(entry: unknown): ProofStep | null {
+  if (typeof entry !== "object" || entry === null) {
+    return null;
+  }
+  const record = entry as Record<string, unknown>;
+  if (typeof record["step"] !== "string" || typeof record["ok"] !== "boolean" || typeof record["detail"] !== "string") {
+    return null;
+  }
+  let step: ProofStep = { step: record["step"], ok: record["ok"], detail: record["detail"] };
+  if (typeof record["selector"] === "string" && /^0x[0-9a-fA-F]{8}$/.test(record["selector"])) {
+    step = { ...step, selector: record["selector"] };
+  }
+  if (typeof record["pc"] === "number" && Number.isSafeInteger(record["pc"])) {
+    step = { ...step, pc: record["pc"] };
+  }
+  return step;
+}
+
+function toProofState(body: unknown): ProofState {
+  const record = body as { codeHash?: unknown; proofs?: unknown };
+  if (typeof record.codeHash !== "string" || !Array.isArray(record.proofs)) {
+    return { status: "failed" };
+  }
+  const proofs: ProofReport[] = [];
+  for (const entry of record.proofs) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const report = entry as { detector?: unknown; steps?: unknown };
+    if (typeof report.detector !== "string" || !Array.isArray(report.steps)) {
+      continue;
+    }
+    const steps = report.steps.map(toProofStep).filter((step): step is ProofStep => step !== null);
+    proofs.push({ detector: report.detector, steps });
+  }
+  return { status: "ready", codeHash: record.codeHash, proofs };
+}
+
+const proofCache = new Map<string, Promise<ProofState>>();
+
+export function clearProofCache(): void {
+  proofCache.clear();
+}
+
+async function loadProof(address: string, apiKey: string | null): Promise<ProofState> {
+  let response: Response;
+  try {
+    response = await fetch(`/v1/proof?address=${encodeURIComponent(address)}`, { headers: apiHeaders(apiKey) });
+  } catch {
+    return { status: "failed" };
+  }
+  if (!response.ok) {
+    return { status: "failed" };
+  }
+  try {
+    return toProofState(await response.json());
+  } catch {
+    return { status: "failed" };
+  }
+}
+
+export function fetchProof(address: string, apiKey: string | null): Promise<ProofState> {
+  const key = address.toLowerCase();
+  const cached = proofCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const pending = loadProof(address, apiKey);
+  proofCache.set(key, pending);
+  // A failed proof must not poison the cache: the next expand retries
+  // the request instead of replaying the failure.
+  void pending.then((state) => {
+    if (state.status === "failed" && proofCache.get(key) === pending) {
+      proofCache.delete(key);
+    }
+  });
+  return pending;
+}
+
 export function pickExplainSource(health: HealthState | null): ExplainSource | null {
   if (health === null) {
     return "explain";

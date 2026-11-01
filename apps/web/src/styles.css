@@ -3781,6 +3781,114 @@ a {
   font-size: 15px;
 }
 
+/* Proof trace ("How we checked", UI v2 §5.5, W-11). A terminal
+   checklist beside the evidence: the mark column carries the status
+   word for screen readers, the first failing step carries the amber
+   "stopped here" marker, later steps read "not checked", and the
+   server detail shows in Expert only. Motion is the M-7 proof walk:
+   opacity one-shots staggered per step plus one amber ignite on the
+   failed mark; the global reduced-motion kill keeps it static. Glow
+   comes from the elevation tokens only. Sentence case throughout. */
+.proof-headline {
+  margin: 4px 0 8px;
+  font-size: 15px;
+  color: var(--phosphor-hi);
+}
+
+.proof-steps {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.proof-step {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: start;
+  padding-block: 8px;
+  border-bottom: 1px dashed var(--rule);
+  animation: bk-fade 120ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+
+.proof-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--dim);
+}
+
+.proof-step.is-passed .proof-mark {
+  color: var(--phosphor);
+}
+
+.proof-step.is-failed .proof-mark {
+  color: var(--amber);
+  border-radius: 50%;
+  box-shadow: var(--glow-seg);
+  animation: bk-ignite 700ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 120ms);
+}
+
+.proof-step.is-skipped .proof-mark {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.proof-body {
+  min-width: 0;
+}
+
+.proof-topline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 0;
+}
+
+.proof-label {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.proof-stopped {
+  font-size: 13px;
+  color: var(--amber);
+  white-space: nowrap;
+}
+
+.proof-failure {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.proof-skipped {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.proof-detail {
+  margin: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.proof-loading {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--dim);
+}
+
 .detail-raw-finding {
   margin-top: 12px;
   padding-top: 12px;
