@@ -562,6 +562,41 @@ export function demoMarketStatus(
   return DEMO_MARKET_OFF_LINE;
 }
 
+// Demo default for verified contract sources (VS-B2): when the provider
+// is unset or empty, the demo defaults it to sourcify so the live demo
+// serves the source route with zero manual steps. An explicit value
+// (including "off") always wins. Pure: reads the provider name only,
+// never key values.
+export const DEMO_SOURCE_PROVIDER = "sourcify";
+
+export function withDemoSourceDefault(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly env: Record<string, string | undefined>; readonly defaulted: boolean } {
+  const current = env["BRANDKLIPPAREN_SOURCE_PROVIDER"] ?? "";
+  if (current !== "") {
+    return { env: { ...env }, defaulted: false };
+  }
+  return {
+    env: { ...env, BRANDKLIPPAREN_SOURCE_PROVIDER: DEMO_SOURCE_PROVIDER },
+    defaulted: true,
+  };
+}
+
+// Single verified-source status line for the demo log: exactly one line
+// naming the selected provider, never values or response bodies.
+export const DEMO_SOURCE_OFF_LINE = "source: off (set BRANDKLIPPAREN_SOURCE_PROVIDER to sourcify)";
+export const DEMO_SOURCE_READY_LINE = "source provider: sourcify";
+
+export function demoSourceStatus(
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const provider = env["BRANDKLIPPAREN_SOURCE_PROVIDER"] ?? "";
+  if (provider === DEMO_SOURCE_PROVIDER) {
+    return DEMO_SOURCE_READY_LINE;
+  }
+  return DEMO_SOURCE_OFF_LINE;
+}
+
 export type NodeCheck = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 // The demo needs Node 22.x. Anything else fails with the portable hint.
@@ -960,7 +995,11 @@ async function runDemo(): Promise<void> {
   if (marketed.defaulted) {
     process.stdout.write("market provider: defaulted to dexscreener\n");
   }
-  const keyed = ensureDemoApiKey(marketed.env, () => `demo-local-${randomBytes(16).toString("hex")}`);
+  const sourced = withDemoSourceDefault(marketed.env);
+  if (sourced.defaulted) {
+    process.stdout.write("source provider: defaulted to sourcify\n");
+  }
+  const keyed = ensureDemoApiKey(sourced.env, () => `demo-local-${randomBytes(16).toString("hex")}`);
   const demoEnv = keyed.env;
   if (keyed.generated) {
     process.stdout.write(`demo api key: generated per-run local key ${keyed.preview} (full key never printed).\n`);
@@ -974,6 +1013,7 @@ async function runDemo(): Promise<void> {
   process.stdout.write(`${demoRugStatus(demoEnv)}\n`);
   process.stdout.write(`${demoLpFeedStatus(demoEnv)}\n`);
   process.stdout.write(`${demoMarketStatus(demoEnv)}\n`);
+  process.stdout.write(`${demoSourceStatus(demoEnv)}\n`);
   const extdecomp = discoverextdecompBinary({
     extdecompBin: process.env["extdecomp_BIN"],
     pathEnv: process.env["PATH"],

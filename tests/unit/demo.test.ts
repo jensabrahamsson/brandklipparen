@@ -30,12 +30,16 @@ import {
   DEMO_MARKET_OFF_LINE,
   DEMO_MARKET_PROVIDER,
   DEMO_MARKET_READY_LINE,
+  DEMO_SOURCE_OFF_LINE,
+  DEMO_SOURCE_PROVIDER,
+  DEMO_SOURCE_READY_LINE,
   DEMO_PERSONALIZE_META_PROVIDER,
   DEMO_REEXEC_MARKER,
   demoAssessmentStatus,
   demoInvestigateStatus,
   demoLpFeedStatus,
   demoMarketStatus,
+  demoSourceStatus,
   discoverextdecompBinary,
   displayPathWithHome,
   ensureDemoApiKey,
@@ -51,6 +55,7 @@ import {
   withDemoInvestigateDefault,
   withDemoMarketDefault,
   withDemoPersonalizeDefault,
+  withDemoSourceDefault,
 } from "../../scripts/demo.ts";
 
 function existing(paths: readonly string[]): (path: string) => boolean {
@@ -860,6 +865,42 @@ describe("demo market provider default (dexscreener)", () => {
     const { env } = withDemoDefaults({});
     const { env: defaulted } = withDemoMarketDefault(env);
     expect(defaulted[PROVIDER]).toBe("dexscreener");
+    expect(loadConfig(defaulted).ok).toBe(true);
+  });
+});
+
+describe("demo source provider default (sourcify)", () => {
+  const PROVIDER = "BRANDKLIPPAREN_SOURCE_PROVIDER";
+
+  test("an unset or empty provider defaults to sourcify", () => {
+    expect(DEMO_SOURCE_PROVIDER).toBe("sourcify");
+    const { env: defaulted, defaulted: applied } = withDemoSourceDefault({});
+    expect(applied).toBe(true);
+    expect(defaulted[PROVIDER]).toBe("sourcify");
+    const { env: emptyDefaulted } = withDemoSourceDefault({ [PROVIDER]: "" });
+    expect(emptyDefaulted[PROVIDER]).toBe("sourcify");
+  });
+
+  test("an explicit provider value always wins", () => {
+    for (const explicit of ["off", "sourcify"]) {
+      const { env: kept, defaulted: applied } = withDemoSourceDefault({ [PROVIDER]: explicit });
+      expect(applied).toBe(false);
+      expect(kept[PROVIDER]).toBe(explicit);
+    }
+  });
+
+  test("the source status line names the provider truthfully", () => {
+    expect(demoSourceStatus({ [PROVIDER]: "sourcify" })).toBe(DEMO_SOURCE_READY_LINE);
+    expect(DEMO_SOURCE_READY_LINE).toBe("source provider: sourcify");
+    expect(demoSourceStatus({})).toBe(DEMO_SOURCE_OFF_LINE);
+    expect(demoSourceStatus({ [PROVIDER]: "off" })).toBe(DEMO_SOURCE_OFF_LINE);
+    expect(demoSourceStatus({ [PROVIDER]: "" })).toBe(DEMO_SOURCE_OFF_LINE);
+  });
+
+  test("a defaulted provider passes config validation", () => {
+    const { env } = withDemoDefaults({});
+    const { env: defaulted } = withDemoSourceDefault(env);
+    expect(defaulted[PROVIDER]).toBe("sourcify");
     expect(loadConfig(defaulted).ok).toBe(true);
   });
 });

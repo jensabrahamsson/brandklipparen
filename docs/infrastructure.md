@@ -290,6 +290,7 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_FEED_RPC_URL` | Optional JSON-RPC endpoint for the feed `eth_getLogs` fallback, server-side only under K-505 | No | Operator polling with the fallback enabled |
 | `BK_WETH_ADDRESS` | Canonical WETH address used as the WETH quote side for the feed | No | Operator polling with the feed enabled |
 | `BRANDKLIPPAREN_MARKET_PROVIDER` | Selected market listing provider: `dexscreener` or `off`; exactly one listing adapter is bound at startup. The demo defaults to `dexscreener` unless set explicitly; `off` or unset leaves the listing answering not-configured with zero sends | No | Demo with the market listing enabled |
+| `BRANDKLIPPAREN_SOURCE_PROVIDER` | Selected verified-source provider: `sourcify` or `off`; the open source-verification API is primary with the block explorer source endpoint as fallback (only when `ETHERSCAN_API_KEY` is set). The demo defaults to `sourcify` unless set explicitly; `off` or unset leaves the source route answering unavailable with zero sends. Never in the score | No | Demo with verified sources enabled |
 
 The selected provider's variables are required in the demo per the
 table; the other provider's key stays in the secret store for a

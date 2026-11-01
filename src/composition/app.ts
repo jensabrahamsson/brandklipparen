@@ -21,6 +21,12 @@ import { createRpcLogsAdapter } from "../adapters/lpFeed/rpcLogsAdapter.ts";
 import { createMarketFeedAdapter } from "../adapters/market/dexscreenerAdapter.ts";
 import { createMarketService } from "../application/marketService.ts";
 import { createProofService } from "../application/proofService.ts";
+import { createSourcifySourceAdapter } from "../adapters/source/sourcifyAdapter.ts";
+import type { SourcifyTransport } from "../adapters/source/sourcifyAdapter.ts";
+import { ExplorerSourceAdapter } from "../adapters/source/explorerSourceAdapter.ts";
+import type { ExplorerSourceTransport } from "../adapters/source/explorerSourceAdapter.ts";
+import { createVerifiedSourceService } from "../application/verifiedSource.ts";
+import type { VerifiedSourceService } from "../application/verifiedSource.ts";
 import type { MarketNewReader } from "../ports/marketFeed.ts";
 import { loadLiveTokensFile, saveLiveTokensFile } from "../adapters/liveTokens/liveTokensFile.ts";
 import { systemLiveTokensTimers } from "../adapters/liveTokens/systemTimers.ts";
@@ -111,6 +117,14 @@ export type BuildAppDeps = {
   // adapters; tests replay fixtures through these and never touch the
   // network.
   readonly overlayTransports?: OverlayTransportOverrides | undefined;
+  // Recorded transports for the verified-source adapters (VS-B2); tests
+  // replay synthetic fixtures through these and never touch the network.
+  readonly sourceTransports?:
+    | {
+        readonly sourcify?: SourcifyTransport | undefined;
+        readonly explorer?: ExplorerSourceTransport | undefined;
+      }
+    | undefined;
 };
 
 export type BuiltApp = {
@@ -354,6 +368,27 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     marketProvider === undefined || marketProvider === "off"
       ? undefined
       : createMarketService({ feed: createMarketFeedAdapter(marketProvider), now: () => Date.now() });
+  // Verified sources (VS-B2): the demo selects the open
+  // source-verification API unless the operator set the provider
+  // explicitly; other setups stay off when unset. The explorer fallback
+  // binds only when its key is configured, so a keyless server checks
+  // the primary alone. The service never enters scoring or evidence.
+  const sourceProvider =
+    config.sourceProvider ?? (config.env === "demo" ? ("sourcify" as const) : undefined);
+  const sourceService: VerifiedSourceService | undefined =
+    sourceProvider === undefined || sourceProvider === "off"
+      ? undefined
+      : createVerifiedSourceService({
+          primary: createSourcifySourceAdapter({ transport: deps.sourceTransports?.sourcify }),
+          fallback:
+            config.feedEtherscanApiKey === undefined
+              ? undefined
+              : new ExplorerSourceAdapter({
+                  apiKey: config.feedEtherscanApiKey,
+                  transport: deps.sourceTransports?.explorer,
+                }),
+          rpc: deps.ports.rpc,
+        });
   const rest: RestServerOptions = Object.freeze({
     services,
     apiKeys,
@@ -374,6 +409,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
       personalizePromptVersion === undefined ? undefined : personalizePromptVersion.value,
     snippetRpc,
     proofService,
+    sourceService,
     onchain,
     rateLimit: rateLimit.value,
     liveTokens,

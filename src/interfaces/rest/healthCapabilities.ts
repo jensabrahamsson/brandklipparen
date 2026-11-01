@@ -16,6 +16,8 @@ export type HealthOnchain = { readonly disabled: true } | { readonly available: 
 
 export type HealthMarket = { readonly disabled: true } | { readonly provider: string };
 
+export type HealthSource = { readonly disabled: true } | { readonly provider: string };
+
 export type HealthCapabilities = {
   readonly assessment: HealthFeature;
   readonly investigation: HealthFeature;
@@ -25,6 +27,7 @@ export type HealthCapabilities = {
   readonly personalize: HealthFeature;
   readonly onchain: HealthOnchain;
   readonly market: HealthMarket;
+  readonly source: HealthSource;
 };
 
 export type HealthCapabilityInputs = {
@@ -36,6 +39,7 @@ export type HealthCapabilityInputs = {
   readonly personalizeService?: PersonalizeService | undefined;
   readonly onchain?: unknown;
   readonly market?: { readonly provider: string } | undefined;
+  readonly source?: { readonly provider: string } | undefined;
 };
 
 function overlayFeature(service: { readonly enabled: boolean; readonly provider: string | null; readonly modelId: string | null } | undefined): HealthFeature {
@@ -67,5 +71,6 @@ export function healthCapabilities(inputs: HealthCapabilityInputs): HealthCapabi
         : { provider: personalize.provider, modelId: personalize.modelId },
     onchain: inputs.onchain === undefined ? { disabled: true } : { available: true },
     market: inputs.market === undefined ? { disabled: true } : { provider: inputs.market.provider },
+    source: inputs.source === undefined ? { disabled: true } : { provider: inputs.source.provider },
   };
 }

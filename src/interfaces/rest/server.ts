@@ -35,6 +35,7 @@ import { ExplainInput } from "../../ports/explainModel.ts";
 import { snippetForSelector } from "../../application/snippetService.ts";
 import type { SnippetDecompile } from "../../application/snippetService.ts";
 import type { ProofService } from "../../application/proofService.ts";
+import type { VerifiedSourceService } from "../../application/verifiedSource.ts";
 import { decompilePreferV2 } from "../../domain/decompileV2.ts";
 import { CHAT_PROMPT_VERSION, serializeChatOutcome } from "../../application/chatService.ts";
 import type { ChatService } from "../../application/chatService.ts";
@@ -176,6 +177,12 @@ export type RestServerOptions = {
   // per-code-hash memo. Absent service means proof diagnostics are not
   // available on this server (the route answers 500).
   readonly proofService?: ProofService | undefined;
+  // Verified sources (VS-B2): the application source service built in
+  // the composition root, carrying the bounded per-code-hash memo.
+  // Absent service means the provider selection is off: the route
+  // answers `unavailable` with zero provider calls. Never part of
+  // /v1/analyze; never in the score.
+  readonly sourceService?: VerifiedSourceService | undefined;
   // Chat service for opt-in follow-up questions over the frozen analysis
   // (S-096, K-302). Absent service means the overlay stays off: the route
   // answers the not-configured envelope with zero provider calls and the
@@ -448,6 +455,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
       personalizeService: options.personalizeService,
       onchain: options.onchain,
       market: options.marketNew === undefined ? undefined : { provider: "dexscreener" },
+      source: options.sourceService === undefined ? undefined : { provider: "sourcify" },
     });
     return reply
       .code(200)
@@ -1985,6 +1993,74 @@ export function createRestServer(options: RestServerOptions): RestServer {
 
   app.get("/v1/proof", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleProof(request, reply, request.query);
+  });
+
+  // Verified contract sources (VS-B2): the same key and address gate as
+  // the analyze routes, then one bytecode fetch for the code-hash cache
+  // key, then the primary source-verification origin with the explorer
+  // fallback. The route always answers 200 with the source envelope:
+  // `verified` with files and located ABI functions, `none` when every
+  // attempted provider was reached and holds nothing, or `unavailable`
+  // when the check could not run. Never part of /v1/analyze; never in
+  // the score. Cached by code hash.
+  async function handleSource(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const service = options.sourceService;
+    if (service === undefined) {
+      return reply
+        .code(200)
+        .header(REQUEST_ID_HEADER, requestId)
+        .type("application/json")
+        .send(
+          JSON.stringify({
+            status: "ok",
+            apiVersion: API_VERSION,
+            source: {
+              status: "unavailable",
+              provider: null,
+              match: null,
+              compiler: null,
+              files: [],
+              functions: [],
+            },
+          }),
+        );
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const result = await service.getSource(gated.value.address, {
+      requestId,
+      deadline: deadline.value,
+      block: gated.value.block,
+    });
+    if (!result.ok) {
+      if (result.error === "no-code") {
+        return sendError(reply, notFound(requestId));
+      }
+      return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
+    }
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          codeHash: result.value.codeHash,
+          source: result.value.source,
+        }),
+      );
+  }
+
+  app.get("/v1/source", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleSource(request, reply, request.query);
   });
 
   app.get("/v1/chat", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {

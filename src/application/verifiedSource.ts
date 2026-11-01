@@ -1,0 +1,547 @@
+// Verified-source application service behind GET /v1/source (VS-B2).
+// Composes the primary and fallback VerifiedSourcePort adapters over one
+// bytecode fetch: the route fetches the contract code through the bound
+// chain port, keys the bounded memo by code hash, and serves the mapped
+// shape. Scoring, signals, evidence and the analyze envelope stay
+// untouched: this service feeds a separate read route only. `none`
+// (checked, nothing published) is distinct from `unavailable` (could not
+// check): only a reached provider answering empty is `none`.
+import { keccak256HexOfUtf8 } from "../domain/types.ts";
+import { CodeHash } from "../domain/types.ts";
+import type {
+  Address as AddressType,
+  BlockNumber as BlockNumberType,
+  Bytecode as BytecodeType,
+  RequestId as RequestIdType,
+  Timestamp as TimestampType,
+} from "../domain/types.ts";
+import type { RpcPort } from "../ports/rpc.ts";
+import type {
+  VerifiedSourceMatch,
+  VerifiedSourcePort,
+  VerifiedSourceProvider,
+  VerifiedSourceRaw,
+} from "../ports/verifiedSource.ts";
+
+// Served source file: the provider path plus the published text with
+// hidden characters shown as visible markers (VS-B2 addendum). Files
+// past the total byte cap keep their path with empty content, so the
+// file list stays complete while the body stays bounded.
+export type VerifiedSourceFile = {
+  readonly path: string;
+  readonly content: string;
+};
+
+// One ABI function located in the published sources: the selector from
+// the canonical ABI signature plus the source range (1-based lines) from
+// the declaration tokenizer. ABI entries with no located declaration
+// stay out, so the UI only shows matching functions.
+export type VerifiedSourceFunction = {
+  readonly selector: string;
+  readonly file: string;
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly name: string;
+  readonly signature: string;
+};
+
+export type VerifiedSourceOutcome = {
+  readonly status: "verified" | "none" | "unavailable";
+  readonly provider: VerifiedSourceProvider | null;
+  readonly match: VerifiedSourceMatch | null;
+  readonly compiler: string | null;
+  readonly files: readonly VerifiedSourceFile[];
+  readonly functions: readonly VerifiedSourceFunction[];
+};
+
+export type VerifiedSourceResult = {
+  readonly codeHash: string;
+  readonly source: VerifiedSourceOutcome;
+};
+
+export type VerifiedSourceGetError = "no-code" | "rpc-error";
+
+export type VerifiedSourceService = {
+  readonly getSource: (
+    address: AddressType,
+    ctx: { readonly requestId: RequestIdType; readonly deadline: TimestampType; readonly block: BlockNumberType | "latest" },
+  ) => Promise<{ ok: true; value: VerifiedSourceResult } | { ok: false; error: VerifiedSourceGetError }>;
+};
+
+export type VerifiedSourceServiceOptions = {
+  readonly primary: VerifiedSourcePort;
+  readonly fallback?: VerifiedSourcePort | undefined;
+  readonly rpc: RpcPort;
+};
+
+// Total served source bytes across all files (VS-B2): sources can be
+// large, so the body is capped while the file list stays complete.
+export const MAX_VERIFIED_SOURCE_TOTAL_BYTES = 1048576;
+// Bounded per-code-hash memo (VS-B2): a long-lived server cannot grow
+// without bound. Entries are immutable once stored: a cached code hash
+// never recomputes while it stays cached.
+const SOURCE_CACHE_CAP = 256;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+// Line-ending normalisation (VS-B2 follow-up 2): CRLF and lone CR are
+// normal, so they fold to LF before any other processing. A single
+// leading BOM is stripped; any other U+FEFF is a hidden character.
+export function normalizeSourceContent(content: string): string {
+  let text = content;
+  if (text.charCodeAt(0) === 0xfeff) {
+    text = text.slice(1);
+  }
+  text = text.replace(/\r\n/g, "\n");
+  text = text.replace(/\r/g, "\n");
+  return text;
+}
+
+// Dangerous invisible characters as visible markers (VS-B2 follow-up
+// 2): only bidi controls, zero-width characters and the remaining
+// C0/C1 controls render as their code point in double brackets.
+// Plain line/paragraph separators and soft hyphens are ordinary text
+// and pass through; newlines and tabs stay structural.
+const HIDDEN_CODE_POINTS: ReadonlySet<number> = (() => {
+  const points = new Set<number>();
+  for (let code = 0x00; code <= 0x1f; code += 1) {
+    if (code !== 0x0a && code !== 0x09) {
+      points.add(code);
+    }
+  }
+  for (let code = 0x7f; code <= 0x9f; code += 1) {
+    points.add(code);
+  }
+  for (const code of [
+    0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x202a,
+    0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069, 0xfeff,
+  ]) {
+    points.add(code);
+  }
+  return points;
+})();
+
+function markerFor(code: number): string {
+  return `[[U+${code.toString(16).toUpperCase().padStart(4, "0")}]]`;
+}
+
+export function markHiddenSourceChars(content: string): string {
+  let out = "";
+  for (const char of content) {
+    const code = char.codePointAt(0) ?? 0;
+    out += HIDDEN_CODE_POINTS.has(code) ? markerFor(code) : char;
+  }
+  return out;
+}
+
+function utf8Length(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+// Total byte cap (VS-B2): files keep their order and every path stays
+// listed; content past the cap is empty instead of truncated mid-file,
+// so no served file ends in a half-written line.
+export function applySourceSizeCap(
+  files: readonly { readonly path: string; readonly content: string }[],
+  maxBytes: number = MAX_VERIFIED_SOURCE_TOTAL_BYTES,
+): VerifiedSourceFile[] {
+  const capped: VerifiedSourceFile[] = [];
+  let used = 0;
+  for (const file of files) {
+    const size = utf8Length(file.content);
+    if (used + size <= maxBytes) {
+      used += size;
+      capped.push({ path: file.path, content: file.content });
+    } else {
+      capped.push({ path: file.path, content: "" });
+    }
+  }
+  return capped;
+}
+
+type SourceDeclaration = {
+  readonly name: string;
+  readonly paramsText: string;
+  readonly startLine: number;
+  readonly endLine: number;
+};
+
+// Masking pass for one source text: comments and string literals become
+// spaces (newlines kept), so the declaration scan never matches a
+// `function` word inside a comment or a string. Handles `//` line
+// comments, `/* */` blocks and `'...'` / `"..."` literals with escapes.
+// Indexes UTF-16 code units (never code points), so the masked text
+// aligns with the regex and slice offsets used by the declaration
+// scan even when the source holds characters outside the BMP.
+function maskSourceText(content: string): string {
+  const masked = content.split("");
+  const blank = (index: number): void => {
+    if (masked[index] !== "\n") {
+      masked[index] = " ";
+    }
+  };
+  let index = 0;
+  while (index < masked.length) {
+    const char = masked[index];
+    const next = index + 1 < masked.length ? masked[index + 1] : "";
+    if (char === "/" && next === "/") {
+      blank(index);
+      blank(index + 1);
+      index += 2;
+      while (index < masked.length && masked[index] !== "\n") {
+        blank(index);
+        index += 1;
+      }
+      continue;
+    }
+    if (char === "/" && next === "*") {
+      blank(index);
+      blank(index + 1);
+      index += 2;
+      while (index < masked.length && !(masked[index] === "*" && masked[index + 1] === "/")) {
+        blank(index);
+        index += 1;
+      }
+      if (index < masked.length) {
+        blank(index);
+        blank(index + 1);
+        index += 2;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      const quote = char;
+      blank(index);
+      index += 1;
+      while (index < masked.length && masked[index] !== "\n" && masked[index] !== quote) {
+        if (masked[index] === "\\" && index + 1 < masked.length && masked[index + 1] !== "\n") {
+          blank(index);
+          blank(index + 1);
+          index += 2;
+          continue;
+        }
+        blank(index);
+        index += 1;
+      }
+      if (index < masked.length && masked[index] === quote) {
+        blank(index);
+        index += 1;
+      }
+      continue;
+    }
+    index += 1;
+  }
+  return masked.join("");
+}
+
+function lineOf(offsets: readonly number[], index: number): number {
+  let line = 1;
+  for (const offset of offsets) {
+    if (offset <= index) {
+      line += 1;
+    } else {
+      break;
+    }
+  }
+  return line;
+}
+
+// Function declarations per file (VS-B2): `function name(params)` with
+// the range from the `function` keyword to the matching close brace, or
+// to the `;` for bodyless declarations. No compiler: parens and braces
+// are counted over the masked text, so comments and strings cannot
+// unbalance the scan.
+export function extractSourceDeclarations(
+  content: string,
+): SourceDeclaration[] {
+  const normalized = normalizeSourceContent(content);
+  const masked = maskSourceText(normalized);
+  const newlineOffsets: number[] = [];
+  for (let index = 0; index < masked.length; index += 1) {
+    if (masked[index] === "\n") {
+      newlineOffsets.push(index);
+    }
+  }
+  const found: SourceDeclaration[] = [];
+  const pattern = /\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(masked)) !== null) {
+    const name = match[1] ?? "";
+    let depth = 1;
+    let cursor = match.index + match[0].length;
+    while (cursor < masked.length && depth > 0) {
+      if (masked[cursor] === "(") {
+        depth += 1;
+      } else if (masked[cursor] === ")") {
+        depth -= 1;
+      }
+      cursor += 1;
+    }
+    if (depth !== 0) {
+      continue;
+    }
+    const paramsText = normalized.slice(match.index + match[0].length, cursor - 1);
+    let endLine: number | null = null;
+    let scan = cursor;
+    while (scan < masked.length) {
+      const char = masked[scan];
+      if (char === ";") {
+        endLine = lineOf(newlineOffsets, scan);
+        break;
+      }
+      if (char === "{") {
+        let braceDepth = 1;
+        scan += 1;
+        while (scan < masked.length && braceDepth > 0) {
+          if (masked[scan] === "{") {
+            braceDepth += 1;
+          } else if (masked[scan] === "}") {
+            braceDepth -= 1;
+          }
+          scan += 1;
+        }
+        if (braceDepth === 0) {
+          endLine = lineOf(newlineOffsets, scan - 1);
+        }
+        break;
+      }
+      scan += 1;
+    }
+    if (endLine === null) {
+      continue;
+    }
+    found.push({
+      name,
+      paramsText,
+      startLine: lineOf(newlineOffsets, match.index),
+      endLine,
+    });
+  }
+  return found;
+}
+
+function splitTopLevel(text: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const char of text) {
+    if (char === "(" || char === "[" || char === "<") {
+      depth += 1;
+    } else if (char === ")" || char === "]" || char === ">") {
+      depth = Math.max(0, depth - 1);
+    }
+    if (char === "," && depth === 0) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts.map((part) => part.trim()).filter((part) => part.length > 0);
+}
+
+function canonicalInputType(input: Record<string, unknown>): string | null {
+  const type = input["type"];
+  if (typeof type !== "string" || type === "") {
+    return null;
+  }
+  if (type.startsWith("tuple")) {
+    const components = input["components"];
+    if (!Array.isArray(components)) {
+      return null;
+    }
+    const inner: string[] = [];
+    for (const component of components) {
+      if (!isRecord(component)) {
+        return null;
+      }
+      const nested = canonicalInputType(component);
+      if (nested === null) {
+        return null;
+      }
+      inner.push(nested);
+    }
+    return `tuple(${inner.join(",")})${type.slice("tuple".length)}`;
+  }
+  return type;
+}
+
+type AbiFunction = {
+  readonly name: string;
+  readonly signature: string;
+  readonly selector: string;
+  readonly arity: number;
+};
+
+function abiFunctionsOf(abi: readonly unknown[]): AbiFunction[] {
+  const functions: AbiFunction[] = [];
+  for (const entry of abi) {
+    if (!isRecord(entry) || entry["type"] !== "function" || typeof entry["name"] !== "string") {
+      continue;
+    }
+    const inputs = entry["inputs"];
+    if (!Array.isArray(inputs)) {
+      continue;
+    }
+    const types: string[] = [];
+    let valid = true;
+    for (const input of inputs) {
+      if (!isRecord(input)) {
+        valid = false;
+        break;
+      }
+      const canonical = canonicalInputType(input);
+      if (canonical === null) {
+        valid = false;
+        break;
+      }
+      types.push(canonical);
+    }
+    if (!valid) {
+      continue;
+    }
+    const signature = `${entry["name"] as string}(${types.join(",")})`;
+    functions.push({
+      name: entry["name"] as string,
+      signature,
+      selector: keccak256HexOfUtf8(signature).slice(0, 10),
+      arity: types.length,
+    });
+  }
+  return functions;
+}
+
+// ABI functions located in the published sources (VS-B2): matched by
+// name, then by parameter count for overloads, in declaration order.
+// Each declaration maps at most one ABI entry, so overloads pair up
+// instead of collapsing onto the first declaration.
+export function mapSourceFunctions(
+  abi: readonly unknown[],
+  declarations: readonly (SourceDeclaration & { readonly file: string })[],
+): VerifiedSourceFunction[] {
+  const wanted = abiFunctionsOf(abi);
+  const used = new Array<boolean>(declarations.length).fill(false);
+  const mapped: VerifiedSourceFunction[] = [];
+  for (const fn of wanted) {
+    const candidates: number[] = [];
+    for (let index = 0; index < declarations.length; index += 1) {
+      const declaration = declarations[index];
+      if (declaration !== undefined && !used[index] && declaration.name === fn.name) {
+        candidates.push(index);
+      }
+    }
+    if (candidates.length === 0) {
+      continue;
+    }
+    const arityMatch = candidates.filter((index) => {
+      const declaration = declarations[index];
+      if (declaration === undefined) {
+        return false;
+      }
+      return splitTopLevel(declaration.paramsText).length === fn.arity;
+    });
+    const picked = (arityMatch.length > 0 ? arityMatch : candidates)[0];
+    if (picked === undefined) {
+      continue;
+    }
+    used[picked] = true;
+    const declaration = declarations[picked];
+    if (declaration === undefined) {
+      continue;
+    }
+    mapped.push({
+      selector: fn.selector,
+      file: declaration.file,
+      startLine: declaration.startLine,
+      endLine: declaration.endLine,
+      name: fn.name,
+      signature: fn.signature,
+    });
+  }
+  mapped.sort((left, right) => (left.selector < right.selector ? -1 : left.selector > right.selector ? 1 : 0));
+  return mapped;
+}
+
+function buildOutcome(raw: VerifiedSourceRaw): VerifiedSourceOutcome {
+  const normalized = raw.files.map((file) => ({ path: file.path, content: normalizeSourceContent(file.content) }));
+  const sanitized = normalized.map((file) => ({ path: file.path, content: markHiddenSourceChars(file.content) }));
+  const files = applySourceSizeCap(sanitized);
+  const declarations: (SourceDeclaration & { readonly file: string })[] = [];
+  for (const file of normalized) {
+    for (const declaration of extractSourceDeclarations(file.content)) {
+      declarations.push({ ...declaration, file: file.path });
+    }
+  }
+  const outcome: VerifiedSourceOutcome = {
+    status: "verified",
+    provider: raw.provider,
+    match: raw.match,
+    compiler: raw.compiler,
+    files,
+    functions: mapSourceFunctions(raw.abi, declarations),
+  };
+  return outcome;
+}
+
+function noneOutcome(provider: VerifiedSourceProvider): VerifiedSourceOutcome {
+  return { status: "none", provider, match: null, compiler: null, files: [], functions: [] };
+}
+
+function unavailableOutcome(): VerifiedSourceOutcome {
+  return { status: "unavailable", provider: null, match: null, compiler: null, files: [], functions: [] };
+}
+
+export function createVerifiedSourceService(options: VerifiedSourceServiceOptions): VerifiedSourceService {
+  const cache = new Map<string, VerifiedSourceOutcome>();
+  const getSource: VerifiedSourceService["getSource"] = async (address, ctx) => {
+    const fetched = await options.rpc.getCode(address, {
+      requestId: ctx.requestId,
+      deadline: ctx.deadline,
+      block: ctx.block,
+    });
+    if (!fetched.ok) {
+      return { ok: false as const, error: fetched.error.kind === "no-code" ? ("no-code" as const) : ("rpc-error" as const) };
+    }
+    const codeHash = CodeHash.of(fetched.value.bytecode as BytecodeType);
+    if (!codeHash.ok) {
+      return { ok: false as const, error: "rpc-error" as const };
+    }
+    const hashText = codeHash.value as string;
+    const hit = cache.get(hashText);
+    if (hit !== undefined) {
+      return { ok: true as const, value: { codeHash: hashText, source: hit } };
+    }
+    const store = (outcome: VerifiedSourceOutcome): { ok: true; value: VerifiedSourceResult } => {
+      if (cache.size >= SOURCE_CACHE_CAP) {
+        const oldest = cache.keys().next().value;
+        if (oldest !== undefined) {
+          cache.delete(oldest);
+        }
+      }
+      cache.set(hashText, outcome);
+      return { ok: true as const, value: { codeHash: hashText, source: outcome } };
+    };
+    const addressText = address as string;
+    const primary = await options.primary.fetchVerifiedSource(addressText);
+    if (primary.ok && primary.value.status === "verified") {
+      return store(buildOutcome(primary.value));
+    }
+    if (options.fallback === undefined) {
+      return store(primary.ok ? noneOutcome(primary.value.provider) : unavailableOutcome());
+    }
+    const fallback = await options.fallback.fetchVerifiedSource(addressText);
+    if (fallback.ok && fallback.value.status === "verified") {
+      return store(buildOutcome(fallback.value));
+    }
+    // `none` only when every attempted provider was reached and holds
+    // nothing: any error leaves the check incomplete (`unavailable`).
+    if (primary.ok && fallback.ok) {
+      return store(noneOutcome(fallback.value.provider));
+    }
+    return store(unavailableOutcome());
+  };
+  return Object.freeze({ getSource });
+}

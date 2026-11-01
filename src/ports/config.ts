@@ -194,6 +194,13 @@ export type AppConfig = {
   // public listing adapter, which needs no key. The demo selects
   // dexscreener unless set explicitly; other setups stay off when unset.
   readonly marketProvider?: "dexscreener" | "off";
+  // Verified-source provider (VS-B2): unset or "off" leaves the source
+  // route answering unavailable with zero sends. "sourcify" binds the
+  // open source-verification API as primary with the block explorer
+  // source endpoint as fallback (only when the explorer key is
+  // configured). The demo selects sourcify unless set explicitly;
+  // other setups stay off when unset. Never in the score.
+  readonly sourceProvider?: "sourcify" | "off";
 };
 
 // Kept for traceability: docs/architecture.md (A-05) names this value DriftConfig.

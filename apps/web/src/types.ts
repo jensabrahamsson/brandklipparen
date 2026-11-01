@@ -165,6 +165,8 @@ export type OnchainCapability = { readonly disabled: true } | { readonly availab
 
 export type MarketCapability = { readonly disabled: true } | { readonly provider: string };
 
+export type SourceCapability = { readonly disabled: true } | { readonly provider: string };
+
 export type HealthState = {
   readonly assessment: FeatureCapability;
   readonly investigation?: FeatureCapability | undefined;
@@ -174,4 +176,5 @@ export type HealthState = {
   readonly personalize?: FeatureCapability | undefined;
   readonly onchain?: OnchainCapability | undefined;
   readonly market?: MarketCapability | undefined;
+  readonly source?: SourceCapability | undefined;
 };

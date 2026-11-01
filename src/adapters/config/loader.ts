@@ -333,6 +333,7 @@ const V = {
   chatDailyCapPerKey: "BRANDKLIPPAREN_CHAT_DAILY_CAP_PER_KEY",
   rugDailyCapPerKey: "BRANDKLIPPAREN_RUG_DAILY_CAP_PER_KEY",
   marketProvider: "BRANDKLIPPAREN_MARKET_PROVIDER",
+  sourceProvider: "BRANDKLIPPAREN_SOURCE_PROVIDER",
 } as const;
 
 const parseEnvName = (raw: string): Result<EnvironmentName, ConfigError> =>
@@ -1019,6 +1020,21 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!marketProvider.ok) {
     return marketProvider;
   }
+  // Verified-source provider (VS-B2): optional in every setup, so
+  // local and CI runs stay idle with the source route answering
+  // `unavailable`. Unset or "off" means disabled; "sourcify" binds the
+  // open source-verification API with the explorer fallback. Anything
+  // else is a typed startup error naming the variable.
+  const sourceProvider = optionalField(env, V.sourceProvider, (raw) =>
+    parseEnum<"sourcify" | "off">(
+      V.sourceProvider,
+      ["sourcify", "off"],
+      "sourcify or off",
+    )(raw),
+  );
+  if (!sourceProvider.ok) {
+    return sourceProvider;
+  }
   // New-LP-pairs feed keys (S-087, S-088, K-039, K-505): optional in
   // every setup, so local and CI runs stay key-free with the feed
   // answering `not-configured`. The WETH quote arrives from operator
@@ -1276,6 +1292,9 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     // "off" stays in the config like the investigate toggle: the
     // composition must see it and stay disabled.
     ...(marketProvider.value === undefined ? {} : { marketProvider: marketProvider.value }),
+    // "off" stays in the config like the market toggle: the
+    // composition must see it and stay disabled.
+    ...(sourceProvider.value === undefined ? {} : { sourceProvider: sourceProvider.value }),
   };
 
   if (config.rpcUrls !== undefined) {
