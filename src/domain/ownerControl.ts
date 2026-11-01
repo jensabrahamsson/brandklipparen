@@ -15,6 +15,7 @@
 // finding rather than a guessed one.
 import { attributeFunctions, findFunctionEntries } from "./evmFlow.ts";
 import { V2_MAX_RETURN_TARGETS, buildCfg, lift, resolveEntryReachV2 } from "./evmLift.ts";
+import { stackEffectOf } from "./opcodes.ts";
 import type { CfgBlock } from "./evmLift.ts";
 import { nameForSelector } from "./evmNames.ts";
 import { disassemble, extractSelectors } from "./selectors.ts";
@@ -730,106 +731,16 @@ function exprMergeSlot(left: SlotRef, right: SlotRef): SlotRef {
 }
 
 // Generic stack effect (pops, pushes) for opcodes the interpreter does
-// not model precisely; null ends the block (halting opcodes). Counts
-// mirror the stack-depth table in `./evmFlow.ts`; results are always
-// unknown, so drift here only costs precision, never soundness of a
-// proven slot.
+// not model precisely; null ends the block (halting or undefined
+// opcodes). Counts come from the shared Cancun table in `./opcodes.ts`;
+// results are always unknown, so drift here only costs precision, never
+// soundness of a proven slot.
 function v2EffectOf(opcode: number): { readonly pops: number; readonly pushes: number } | null {
-  switch (opcode) {
-    case 0x00:
-    case 0xfe:
-    case 0xff:
-    case 0xf3:
-    case 0xfd:
-      return null;
-    case 0x01:
-    case 0x02:
-    case 0x03:
-    case 0x04:
-    case 0x05:
-    case 0x06:
-    case 0x07:
-    case 0x0b:
-    case 0x0c:
-    case 0x0d:
-    case 0x10:
-    case 0x11:
-    case 0x12:
-    case 0x13:
-    case 0x14:
-    case 0x16:
-    case 0x17:
-    case 0x18:
-    case 0x1a:
-    case 0x1b:
-    case 0x1c:
-    case 0x1d:
-      return { pops: 2, pushes: 1 };
-    case 0x08:
-    case 0x09:
-      return { pops: 3, pushes: 1 };
-    case 0x0a:
-      return { pops: 2, pushes: 1 };
-    case 0x15:
-    case 0x19:
-      return { pops: 1, pushes: 1 };
-    case 0x31:
-    case 0x35:
-    case 0x3b:
-    case 0x3f:
-    case 0x40:
-    case 0x42:
-    case 0x49:
-    case 0x5c:
-      return { pops: 1, pushes: 1 };
-    case 0x30:
-    case 0x32:
-    case 0x33:
-    case 0x34:
-    case 0x36:
-    case 0x38:
-    case 0x3a:
-    case 0x3d:
-    case 0x41:
-    case 0x43:
-    case 0x44:
-    case 0x45:
-    case 0x46:
-    case 0x47:
-    case 0x48:
-    case 0x4a:
-    case 0x58:
-    case 0x59:
-    case 0x5a:
-      return { pops: 0, pushes: 1 };
-    case 0x37:
-    case 0x39:
-    case 0x3e:
-    case 0x5e:
-      return { pops: 3, pushes: 0 };
-    case 0x3c:
-      return { pops: 4, pushes: 0 };
-    case 0x5d:
-      return { pops: 2, pushes: 0 };
-    case 0xa0:
-    case 0xa1:
-    case 0xa2:
-    case 0xa3:
-    case 0xa4:
-      return { pops: 2 + (opcode - 0xa0), pushes: 0 };
-    case 0xf0:
-      return { pops: 3, pushes: 1 };
-    case 0xf1:
-    case 0xf2:
-      return { pops: 7, pushes: 1 };
-    case 0xf4:
-    case 0xfa:
-      return { pops: 6, pushes: 1 };
-    case 0xf5:
-      return { pops: 4, pushes: 1 };
-    default:
-      return { pops: 0, pushes: 0 };
+  const effect = stackEffectOf(opcode);
+  if (effect === null || effect.halts) {
+    return null;
   }
+  return { pops: effect.pops, pushes: effect.pushes };
 }
 
 type V2Sim = {

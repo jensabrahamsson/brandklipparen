@@ -8,6 +8,7 @@
 // output, never an exception.
 import type { Bytecode as BytecodeType } from "./types.ts";
 import { buildCfg, lift } from "./evmLift.ts";
+import { stackEffectOf } from "./opcodes.ts";
 import type { CfgBlock, ControlFlowGraph } from "./evmLift.ts";
 import { dispatcherTopology, findFunctionEntries } from "./evmFlow.ts";
 import type { FunctionEntry } from "./evmFlow.ts";
@@ -141,28 +142,23 @@ type Sim = { stack: Expr[]; mem: Map<bigint, Expr>; lastStore: Expr | null };
 type BlockResult = { exit: Sim; effects: Effect[]; term: Term; loads: Expr[] };
 
 const BINOPS: Readonly<Record<number, string>> = {
-  0x01: "ADD", 0x02: "MUL", 0x03: "SUB", 0x04: "DIV", 0x06: "MOD", 0x0a: "EXP",
-  0x10: "LT", 0x11: "GT", 0x14: "EQ", 0x16: "AND", 0x17: "OR", 0x18: "XOR", 0x1b: "SHL", 0x1c: "SHR",
+  0x01: "ADD", 0x02: "MUL", 0x03: "SUB", 0x04: "DIV", 0x05: "SDIV", 0x06: "MOD", 0x07: "SMOD",
+  0x0a: "EXP", 0x0b: "SIGNEXTEND",
+  0x10: "LT", 0x11: "GT", 0x12: "SLT", 0x13: "SGT", 0x14: "EQ",
+  0x16: "AND", 0x17: "OR", 0x18: "XOR", 0x1a: "BYTE",
+  0x1b: "SHL", 0x1c: "SHR", 0x1d: "SAR",
 };
 const ENV0: Readonly<Record<number, string>> = {
-  0x30: "address(this)", 0x3a: "gasprice", 0x41: "block.coinbase",
+  0x30: "address(this)", 0x32: "tx.origin", 0x36: "msg.data.length", 0x38: "codesize",
+  0x3a: "gasprice", 0x3d: "returndatasize", 0x41: "block.coinbase",
   0x42: "block.timestamp", 0x43: "block.number", 0x44: "block.prevrandao", 0x45: "block.gaslimit",
-  0x46: "block.chainid", 0x48: "block.basefee", 0x5a: "gasleft()",
+  0x46: "block.chainid", 0x47: "address(this).balance", 0x48: "block.basefee",
+  0x4a: "block.blobbasefee", 0x58: "pc", 0x59: "msize", 0x5a: "gasleft()",
 };
 function genericEffect(opcode: number): { pops: number; pushes: number } | null {
-  if ([0x00, 0xf3, 0xfd, 0xfe, 0xff].includes(opcode)) return null;
-  if (opcode >= 0xa0 && opcode <= 0xa4) return { pops: 2 + (opcode - 0xa0), pushes: 0 };
-  if (opcode === 0xf1 || opcode === 0xf2) return { pops: 7, pushes: 1 };
-  if (opcode === 0xf4 || opcode === 0xfa) return { pops: 6, pushes: 1 };
-  if (opcode === 0xf0) return { pops: 3, pushes: 1 };
-  if (opcode === 0xf5) return { pops: 4, pushes: 1 };
-  if ([0x37, 0x39, 0x3e, 0x5e].includes(opcode)) return { pops: 3, pushes: 0 };
-  if (opcode === 0x3c) return { pops: 4, pushes: 0 };
-  if ([0x51, 0x35, 0x31, 0x3b, 0x3f, 0x40, 0x5c].includes(opcode)) return { pops: 1, pushes: 1 };
-  if ([0x52, 0x53, 0x55, 0x5d].includes(opcode)) return { pops: 2, pushes: 0 };
-  if ([0x08, 0x09].includes(opcode)) return { pops: 3, pushes: 1 };
-  if (opcode === 0x15 || opcode === 0x19 || opcode === 0x1a) return { pops: 1, pushes: 1 };
-  return { pops: 0, pushes: 0 };
+  const effect = stackEffectOf(opcode);
+  if (effect === null || effect.halts) return null;
+  return { pops: effect.pops, pushes: effect.pushes };
 }
 
 function simulateBlock(block: CfgBlock, entry: Sim): BlockResult {
@@ -188,7 +184,7 @@ function simulateBlock(block: CfgBlock, entry: Sim): BlockResult {
       const top = pop(); const second = pop();
       // EVM order: the top of stack is the first operand for SUB, DIV,
       // LT, GT and EXP; for SHL and SHR the top is the shift amount.
-      const args = bin === "SHL" || bin === "SHR" ? [second, top] : [top, second];
+      const args = bin === "SHL" || bin === "SHR" || bin === "SAR" ? [second, top] : [top, second];
       push(op(bin, args)); continue;
     }
     if (oc === 0x15) { push(op("ISZERO", [pop()])); continue; }
@@ -197,6 +193,7 @@ function simulateBlock(block: CfgBlock, entry: Sim): BlockResult {
     if (oc === 0x34) { push(CALLVALUE); continue; }
     if (oc === 0x35) { push(calldataExpr(pop())); continue; }
     if (ENV0[oc] !== undefined) { push(Object.freeze({ kind: "op", name: ENV0[oc] ?? "", args: Object.freeze([]) }) as Expr); continue; }
+    if (oc === 0x49) { push(op("blobhash", [pop()])); continue; }
     if (oc === 0x51) { const a = pop(); const k = exprConstValue(a); push(k !== null ? (sim.mem.get(k) ?? UNKNOWN) : UNKNOWN); continue; }
     if (oc === 0x52 || oc === 0x53) { const off = pop(); const val = pop(); const k = exprConstValue(off); if (oc === 0x52) { sim.lastStore = val; if (k !== null) sim.mem.set(k, val); } continue; }
     if (oc === 0x54) { const slot = pop(); loads.push(slot); push(sloadExpr(slot)); continue; }
@@ -861,11 +858,9 @@ function decompileV2Inner(bytecode: BytecodeType): DecompiledContract {
       cause: hasReturn ? null : ("no-plain-return" as const),
     }));
   }
-  const text = functions.map((fn, i) => {
-    const entry = named[i];
+  const text = functions.map((fn) => {
     const header = `function ${fn.name}(${paramsOf(fn.signature)}) /* selector ${fn.selector} */ {`;
     const body = (fn.statements as readonly SsaStatement[]).map((s) => renderStmt(s)).join("\n");
-    void entry;
     return body.length > 0 ? `${header}\n${body}\n}` : `${header}\n}`;
   }).join("\n\n");
   return Object.freeze({ functions: Object.freeze(functions), unresolvedJumps: cfg.unresolvedJumps, fallbackCount: 0, text });

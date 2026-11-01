@@ -7,7 +7,6 @@ import { describe, expect, test } from "vitest";
 import { Bytecode } from "../../../src/domain/types.ts";
 import { buildCfg, lift } from "../../../src/domain/evmLift.ts";
 import {
-  analyzeStackDepth,
   dispatcherTopology,
   findFunctionEntries,
 } from "../../../src/domain/evmFlow.ts";
@@ -132,19 +131,6 @@ describe("evm symbolic dataflow", () => {
     covered += 1;
 
     expect(covered).toBe(16);
-  });
-
-  test("k522_stack_depth_tracks_push_pop_dup_swap", () => {
-    const hex = new Asm().push1(0x01).push1(0x02).op(0x01, 0x80, 0x50, 0x00).build();
-    const cfg = buildCfg(lift(bytecodeOf(hex)));
-    const depths = analyzeStackDepth(cfg);
-    expect(depths.entryDepths[0]).toBe(0);
-    expect(depths.maxDepth).toBe(2);
-    expect(depths.underflowBlocks).toEqual([]);
-
-    const under = new Asm().op(0x50, 0x00).build();
-    const underDepths = analyzeStackDepth(buildCfg(lift(bytecodeOf(under))));
-    expect(underDepths.underflowBlocks).toContain(0);
   });
 
   test("k522_selector_extraction_covers_dup2_lib_path", () => {

@@ -17,8 +17,8 @@ plain return with its cause instead of inventing one.
 ```solidity
 function transfer(address arg0, uint256 arg1) /* selector 0xa9059cbb */ {
   // token-pattern: guarded-state-update
-  require((calldata[0x00] == msg.sender));
-  storage[0x01] = (storage[0x01] + calldata[0x02]);
+  require((msg.sender == calldata[0x00]));
+  storage[0x01] = (calldata[0x02] + storage[0x01]);
   // cause: no-plain-return (body carries no plain return info)
 }
 ```

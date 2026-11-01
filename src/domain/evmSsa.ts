@@ -10,6 +10,7 @@
 // vocabulary appears in any output.
 import type { Bytecode as BytecodeType } from "./types.ts";
 import { buildCfg, lift } from "./evmLift.ts";
+import { stackEffectOf } from "./opcodes.ts";
 import type { BlockEdge, ByteRange, CfgBlock, ControlFlowGraph } from "./evmLift.ts";
 import { dispatcherTopology, findFunctionEntries } from "./evmFlow.ts";
 import type { FunctionEntry } from "./evmFlow.ts";
@@ -65,12 +66,13 @@ function formatPush(immediate: readonly number[]): string {
 }
 
 function binaryExpr(op: string, stack: SymbolicStack): string | null {
-  const right = stack.pop();
-  const left = stack.pop();
-  if (left === undefined || right === undefined) {
+  // Stack top is the EVM first operand (μs[0]); print (top op second).
+  const top = stack.pop();
+  const second = stack.pop();
+  if (top === undefined || second === undefined) {
     return null;
   }
-  const expr = `(${left} ${op} ${right})`;
+  const expr = `(${top} ${op} ${second})`;
   stack.push(expr);
   return expr;
 }
@@ -259,6 +261,16 @@ function liftBlock(
         statements.push({ kind: "effect", text: "selfdestruct(recipient);", range, pcs: Object.freeze([entry.pc]) });
         return { kind: "halted", returned: false };
       default: {
+        const effect = stackEffectOf(entry.opcode);
+        if (effect === null || effect.halts) {
+          return { kind: "halted", returned: false };
+        }
+        for (let at = 0; at < effect.pops; at += 1) {
+          stack.pop();
+        }
+        if (effect.pushes === 0) {
+          break;
+        }
         const name = `v${counter.next++}`;
         statements.push({ kind: "assign", target: name, expr: `op_${entry.opcode.toString(16)}()`, range, pcs: Object.freeze([entry.pc]) });
         pushValue(name);
@@ -405,7 +417,6 @@ export function decompileContract(bytecode: BytecodeType): DecompiledContract {
     const stack: SymbolicStack = [];
     const statements: SsaStatement[] = [];
     const visited = new Set<number>();
-    const startPc = entry.entryPc;
     let endPc = entry.entryPc;
     let cause: FunctionCause | null = null;
     let cursor: number | null = entry.entryBlock;
@@ -469,7 +480,6 @@ export function decompileContract(bytecode: BytecodeType): DecompiledContract {
     if (!returned && cause === null) {
       cause = "no-plain-return";
     }
-    void startPc;
     const annotations = patternAnnotations(statements);
     const body = { range: Object.freeze({ startPc: entry.entryPc, endPc }), statements: Object.freeze(statements), annotations, cause };
     functions.push(
