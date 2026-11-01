@@ -401,6 +401,7 @@ export function createPersonalizeServiceFromConfig(
       adapter,
       budget: new OverlayBudget({
         dailyCapPerKey: config.personalizeDailyCapPerKey ?? DEFAULT_PERSONALIZE_DAILY_CAP_PER_KEY,
+        globalDailyCap: aiGlobalDailyCap(config),
         today: () => new Date().toISOString().slice(0, 10),
       }),
     }),
@@ -541,6 +542,7 @@ export function createAssessmentServiceFromConfig(
       adapter: adapter.value,
       promptVersion: promptVersion.value,
       dailyCapPerKey,
+      globalDailyCap: aiGlobalDailyCap(config),
     }),
   );
 }
@@ -863,6 +865,14 @@ export function overlayHealthStatus(
 // versioned per-key cap when the feature is on.
 const DEFAULT_OVERLAY_DAILY_CAP_PER_KEY = 5;
 
+// SEC-1 S-8: conservative global daily cap for Meta Model API calls
+// when the operator sets no value. Per-key caps still apply first.
+export const DEFAULT_AI_GLOBAL_DAILY_CALLS = 1000;
+
+function aiGlobalDailyCap(config: AppConfig): number {
+  return config.aiGlobalDailyCalls ?? DEFAULT_AI_GLOBAL_DAILY_CALLS;
+}
+
 function defaultOverlayModelId(): ModelId {
   const parsed = ModelId.parse(OVERLAY_META_MODEL_ID);
   if (!parsed.ok) {
@@ -915,6 +925,7 @@ export function createExplainServiceFromConfig(
       port,
       new OverlayBudget({
         dailyCapPerKey: config.explainDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
+        globalDailyCap: aiGlobalDailyCap(config),
         today: () => new Date().toISOString().slice(0, 10),
       }),
     ),
@@ -956,6 +967,7 @@ export function createChatServiceFromConfig(
       port,
       new OverlayBudget({
         dailyCapPerKey: config.chatDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
+        globalDailyCap: aiGlobalDailyCap(config),
         today: () => new Date().toISOString().slice(0, 10),
       }),
     ),
@@ -997,6 +1009,7 @@ export function createRugServiceFromConfig(
       port,
       new OverlayBudget({
         dailyCapPerKey: config.rugDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
+        globalDailyCap: aiGlobalDailyCap(config),
         today: () => new Date().toISOString().slice(0, 10),
       }),
     ),
@@ -1038,6 +1051,7 @@ export function createExplainCodeServiceFromConfig(
       port,
       new OverlayBudget({
         dailyCapPerKey: config.explainCodeDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
+        globalDailyCap: aiGlobalDailyCap(config),
         today: () => new Date().toISOString().slice(0, 10),
       }),
     ),

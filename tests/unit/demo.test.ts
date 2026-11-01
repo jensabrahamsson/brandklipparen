@@ -314,6 +314,19 @@ describe("demo secret file indirection", () => {
     expect(blank.failed).toEqual([KEY]);
   });
 
+  test("sec1_s4_api_keys_file_is_expanded_by_the_demo", () => {
+    const dir = tempRoot();
+    writeFileSync(join(dir, "secrets", "api-keys.txt"), "fake-demo-key-a, fake-demo-key-b\n", "utf8");
+    const { env, loaded, failed } = resolveSecretFileVars(
+      { BRANDKLIPPAREN_API_KEYS_FILE: join("secrets", "api-keys.txt") },
+      dir,
+      (path) => readFileSync(path, "utf8"),
+    );
+    expect(env["BRANDKLIPPAREN_API_KEYS"]).toBe("fake-demo-key-a, fake-demo-key-b");
+    expect(loaded).toEqual(["BRANDKLIPPAREN_API_KEYS"]);
+    expect(failed).toEqual([]);
+  });
+
   test("c28_unknown_FILE_vars_not_expanded", () => {
     let reads = 0;
     const input = {

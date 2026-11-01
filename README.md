@@ -136,6 +136,17 @@ Replace the synthetic address with any ERC-20 contract address on Ethereum mainn
 query string; `POST /v1/analyze` takes the same fields as a JSON body.
 `GET /health` is public and keyless.
 
+The REST keys may instead be supplied with
+`BRANDKLIPPAREN_API_KEYS_FILE` (an absolute path, or one relative to
+the repo root), with the same rules as the other `*_FILE` keys: set
+only one of `BRANDKLIPPAREN_API_KEYS` and its `*_FILE` pointer.
+Rate limiting is per key and global; one key may use at most
+`BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_GLOBAL_SHARE_PERCENT` percent
+(default 50) of the global minute window
+(`BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE`), so a single key cannot
+exhaust the global budget for the other keys, while the per-key
+minute and daily limits still apply.
+
 ## MCP server
 
 ```sh
@@ -146,6 +157,16 @@ The MCP server speaks minimal JSON-RPC 2.0 over stdio
 (newline-delimited frames on stdin, one response frame per line on
 stdout). Point an MCP client at the command above as a stdio server; no
 port is opened.
+
+Tool calls carry the API key in the JSON-RPC `auth` field of each
+frame. MCP hosts may log JSON-RPC frames, so a logged frame can expose
+that key: use a host that does not persist frames (or that redacts the
+`auth` field), and rotate the key if frames were logged. The server
+itself receives its accepted keys only through the environment at
+startup (`BRANDKLIPPAREN_API_KEYS`, or `BRANDKLIPPAREN_API_KEYS_FILE`
+pointing at a file holding them), never through a file in the repo;
+prefer that environment injection over putting a key in a client
+configuration file that is checked in or shared.
 
 ## Tests and gates
 

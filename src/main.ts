@@ -11,6 +11,7 @@ import { dirname } from "node:path";
 import { loadConfig } from "./adapters/config/loader.ts";
 import { InternalDecompilerAdapter } from "./adapters/decompiler/internalDecompilerAdapter.ts";
 import {
+  DEFAULT_CHAIN_RECHECK_INTERVAL_MS,
   fetchRpcTransport,
   verifyMainnetChainId,
 } from "./adapters/rpc/jsonRpcAdapter.ts";
@@ -92,6 +93,8 @@ async function startupPorts(config: AppConfig): Promise<AnalyzeTokenPorts> {
     rpcUrls: config.rpcUrls,
     rpcDeadlineMs: config.rpcDeadlineMs,
     rpcMaxResponseBytes: config.rpcMaxResponseBytes,
+    // SEC-1 S-3: re-check mainnet at most once every 10 minutes.
+    chainRecheckIntervalMs: DEFAULT_CHAIN_RECHECK_INTERVAL_MS,
   });
   if (!rpc.ok) {
     fail(formatConfigError(rpc.error));

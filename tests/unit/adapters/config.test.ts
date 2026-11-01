@@ -679,4 +679,53 @@ describe("secret file pointers (C-28, F-29)", () => {
     }
     expect(loaded.value.assessmentMetaApiKey).toBeUndefined();
   });
+
+  test("sec1_s4_api_keys_load_from_file_with_the_same_rules", () => {
+    const dir = tempDir();
+    const path = join(dir, "api-keys.txt");
+    writeFileSync(path, "fake-key-a, fake-key-b\n", "utf8");
+    const loaded = loadConfig(
+      { ...baseCiEnv(), BRANDKLIPPAREN_API_KEYS_FILE: path },
+      { readSecretFile: readFile },
+    );
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) {
+      return;
+    }
+    expect(loaded.value.apiKeys?.map((key) => key.reveal())).toEqual(["fake-key-a", "fake-key-b"]);
+    expect(JSON.stringify(loaded.value).includes("fake-key-a")).toBe(false);
+    const both = loadConfig(
+      { ...baseCiEnv(), BRANDKLIPPAREN_API_KEYS: "fake-direct", BRANDKLIPPAREN_API_KEYS_FILE: path },
+      { readSecretFile: readFile },
+    );
+    expect(both.ok).toBe(false);
+    if (!both.ok) {
+      expect(both.error.variable).toBe("BRANDKLIPPAREN_API_KEYS");
+    }
+  });
+
+  test("sec1_s2_s8_new_limits_are_validated_when_set", () => {
+    const loaded = loadConfig({
+      ...baseCiEnv(),
+      BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_GLOBAL_SHARE_PERCENT: "25",
+      BRANDKLIPPAREN_AI_GLOBAL_DAILY_CALLS: "250",
+    });
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) {
+      expect(loaded.value.rateLimitPerKeyGlobalSharePercent).toBe(25);
+      expect(loaded.value.aiGlobalDailyCalls).toBe(250);
+    }
+    for (const [name, value] of [
+      ["BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_GLOBAL_SHARE_PERCENT", "0"],
+      ["BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_GLOBAL_SHARE_PERCENT", "101"],
+      ["BRANDKLIPPAREN_AI_GLOBAL_DAILY_CALLS", "0"],
+      ["BRANDKLIPPAREN_AI_GLOBAL_DAILY_CALLS", "not-a-number"],
+    ] as const) {
+      const bad = loadConfig({ ...baseCiEnv(), [name]: value });
+      expect(bad.ok).toBe(false);
+      if (!bad.ok) {
+        expect(bad.error.variable).toBe(name);
+      }
+    }
+  });
 });

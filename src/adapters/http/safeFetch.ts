@@ -33,6 +33,14 @@ export type SafeFetchResponse = {
   readonly bodyText: string;
 };
 
+// SEC-1 S-7: replaces the value of an `apikey` query parameter in a
+// URL or message with a fixed marker, so an explorer key can never ride
+// into a log line, an error message or telemetry. Other parameters and
+// plain text pass through unchanged.
+export function redactApikeyParam(text: string): string {
+  return text.replace(/([?&]apikey=)[^&\s]*/gi, "$1[REDACTED]");
+}
+
 const DEFAULT_ALLOWED_PROTOCOLS: readonly string[] = ["https:"];
 
 // Strict digits only: a folded or suffixed value ("100, 100", "100MB")

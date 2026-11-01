@@ -237,6 +237,8 @@ const V = {
   rateLimitPerKeyPerMinute: "BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE",
   quotaPerKeyPerDay: "BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY",
   globalRatePerMinute: "BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE",
+  rateLimitPerKeyGlobalSharePercent: "BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_GLOBAL_SHARE_PERCENT",
+  aiGlobalDailyCalls: "BRANDKLIPPAREN_AI_GLOBAL_DAILY_CALLS",
   budgetPerKeyDailyCapAssessmentCalls: "BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS",
   logLevel: "BRANDKLIPPAREN_LOG_LEVEL",
   assessmentProvider: "BRANDKLIPPAREN_ASSESSMENT_PROVIDER",
@@ -352,6 +354,7 @@ export const CONFIG_VARIABLE_NAMES: readonly string[] = Object.freeze(Object.val
 // environment (for example a cloud credential file) never flows into the
 // typed config. Exported so the demo launcher expands the same set.
 export const SECRET_FILE_ALLOWLIST: readonly string[] = Object.freeze([
+  V.apiKeys,
   V.apiKeyPepper,
   V.rpcUrls,
   V.assessmentMetaApiKey,
@@ -573,6 +576,21 @@ export function loadConfig(env: EnvInput, options?: LoadConfigOptions): Result<A
   );
   if (!globalRatePerMinute.ok) {
     return globalRatePerMinute;
+  }
+  // SEC-1 S-2/S-8: optional in every setup; present values are bounded.
+  const rateLimitPerKeyGlobalSharePercent = optionalField(
+    env,
+    V.rateLimitPerKeyGlobalSharePercent,
+    (raw) => parseInteger(V.rateLimitPerKeyGlobalSharePercent, raw, 1, 100),
+  );
+  if (!rateLimitPerKeyGlobalSharePercent.ok) {
+    return rateLimitPerKeyGlobalSharePercent;
+  }
+  const aiGlobalDailyCalls = optionalField(env, V.aiGlobalDailyCalls, (raw) =>
+    parseInteger(V.aiGlobalDailyCalls, raw, 1, 1000000),
+  );
+  if (!aiGlobalDailyCalls.ok) {
+    return aiGlobalDailyCalls;
   }
   const budgetPerKeyDailyCapAssessmentCalls = requiredWhen(
     env,
@@ -1070,6 +1088,10 @@ export function loadConfig(env: EnvInput, options?: LoadConfigOptions): Result<A
     ...(globalRatePerMinute.value === undefined
       ? {}
       : { globalRatePerMinute: globalRatePerMinute.value }),
+    ...(rateLimitPerKeyGlobalSharePercent.value === undefined
+      ? {}
+      : { rateLimitPerKeyGlobalSharePercent: rateLimitPerKeyGlobalSharePercent.value }),
+    ...(aiGlobalDailyCalls.value === undefined ? {} : { aiGlobalDailyCalls: aiGlobalDailyCalls.value }),
     ...(budgetPerKeyDailyCapAssessmentCalls.value === undefined
       ? {}
       : { budgetPerKeyDailyCapAssessmentCalls: budgetPerKeyDailyCapAssessmentCalls.value }),

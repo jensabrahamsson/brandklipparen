@@ -194,6 +194,9 @@ function requireRateLimit(config: AppConfig): Result<RateLimitConfig, ConfigErro
       perKeyPerMinute: config.rateLimitPerKeyPerMinute,
       perKeyPerDay: config.quotaPerKeyPerDay,
       globalPerMinute: config.globalRatePerMinute,
+      ...(config.rateLimitPerKeyGlobalSharePercent === undefined
+        ? {}
+        : { perKeyGlobalSharePercent: config.rateLimitPerKeyGlobalSharePercent }),
     }),
   );
 }

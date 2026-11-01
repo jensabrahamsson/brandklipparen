@@ -22,7 +22,7 @@ import type {
   LpFeedPort,
 } from "../../ports/lpFeed.ts";
 import { FeedPollInput as FeedPollInputCtor } from "../../ports/lpFeed.ts";
-import { safeFetchText } from "../http/safeFetch.ts";
+import { redactApikeyParam, safeFetchText } from "../http/safeFetch.ts";
 
 export const ETHERSCAN_LOGS_BASE_URL = "https://api.etherscan.io/v2/api";
 export const ETHERSCAN_LOGS_CHAIN_ID = 1;
@@ -252,7 +252,10 @@ export class EtherscanLogsAdapter implements LpFeedPort {
         this.bucket.backoffMs = this.backoffBaseMs;
         return ok(Object.freeze([]));
       }
-      return err({ kind: "invalid-response", message: `feed log source refused the request: ${resultText}` });
+      return err({
+        kind: "invalid-response",
+        message: `feed log source refused the request: ${redactApikeyParam(resultText)}`,
+      });
     }
     const result = body["result"];
     if (!Array.isArray(result)) {

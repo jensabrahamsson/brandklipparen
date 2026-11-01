@@ -222,6 +222,8 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE` | Rate limit per API key under I-12 | No | Demo |
 | `BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY` | Daily quota per API key under I-12 | No | Demo |
 | `BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE` | Global rate limit for the demo under I-12 | No | Demo |
+| `BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_GLOBAL_SHARE_PERCENT` | Largest share of the global minute window one API key may use, in percent (1 to 100, default 50 when unset) under I-12 | No | Optional in every setup |
+| `BRANDKLIPPAREN_AI_GLOBAL_DAILY_CALLS` | Global daily cap for Meta Model API calls across all API keys (positive integer, default 1000 when unset) under I-14 | No | Optional in every setup |
 | `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` | Daily cap for assessment calls per API key under I-14, for both providers | No | Demo |
 | `BRANDKLIPPAREN_LOG_LEVEL` | Log level: `debug`, `info`, `warn` or `error` under I-10 | No | All |
 | `BRANDKLIPPAREN_ASSESSMENT_PROVIDER` | Selected assessment provider under K-309: `meta-model-api` (recommended), `hosted-open-weights` or `generic-compatible` (local development only); exactly one adapter is bound at startup per A-34. The demo defaults to `meta-model-api` when a Meta key is configured unless set explicitly | No | Demo |
@@ -502,6 +504,7 @@ same rate limits and continue within the per-key daily caps under I-14.
 | Rate per key per minute | `BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE` | Each API key | Machine-readable error with retry time |
 | Daily quota per key | `BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY` | Each API key | Machine-readable error with retry time; expensive steps close for the key |
 | Global rate per minute | `BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE` | The whole demo environment | New analyses are rejected temporarily; cache hits keep responding |
+| Per-key share of the global minute window | `BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_GLOBAL_SHARE_PERCENT` (default 50) | Each API key, as a share of the global window | Machine-readable error with retry time; the remaining global budget stays available to other keys |
 
 Acceptance: The integration test
 `k504_over_limit_returns_retryable_machine_error` requires a
@@ -596,10 +599,14 @@ assessment text, so a
 cache hit consumes zero RPC calls and zero assessment calls. The only
 enforced ceilings are per-key, per-feature daily caps: when a key
 reaches its cap, that key's calls for that feature close and the
-deterministic template text keeps responding. There is no global
-per-provider daily cap, no cost cap and no alarm level: provider spend
-is bounded by the per-key caps below together with the rate, quota and
-global rate limits under I-12. The caps hold for the demo
+deterministic template text keeps responding. One global daily cap
+for Meta Model API calls (`BRANDKLIPPAREN_AI_GLOBAL_DAILY_CALLS`,
+default 1000 when unset) now bounds total provider spend across all
+keys: past the cap the AI features return their existing unavailable
+or capped state with zero new provider calls, and scores and evidence
+are unaffected. Provider spend is otherwise bounded by the per-key
+caps below together with the rate, quota and global rate limits
+under I-12. The caps hold for the demo
 environment; local development and CI run against fixtures and consume
 zero paid calls under I-07. (K-013, K-107, K-504, K-513, M-08, M-09)
 
@@ -608,6 +615,7 @@ zero paid calls under I-07. (K-013, K-107, K-504, K-513, M-08, M-09)
 | At most one assessment call per uncached request | Fixed rule in the assessment path per K-305 | Each assessment request, both providers | Caching per code hash, prompt version, provider and model id under K-013 and K-309, with call counting per request in the log under I-10 |
 | Zero external calls on a cache hit | `CacheKey` under A-10 | Each cache hit | Cache lookup before RPC, decompilation and assessment in the request path |
 | Daily cap for assessment calls per key | `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` | Each API key, both providers | Per-key, per-day meter in the assessment service; the key's assessment steps close at the cap and the template text under K-301 keeps responding |
+| Global daily cap for Meta Model API calls | `BRANDKLIPPAREN_AI_GLOBAL_DAILY_CALLS` (default 1000 when unset) | All API keys together, per day | Global per-day meter in the assessment service and the overlay budgets; past the cap the AI features return their unavailable or capped state with zero provider calls, and scores and evidence stand |
 | At most one investigation per uncached request | Fixed rule in the investigation path per K-036 | Each investigation request | Caching per code hash, prompt version, provider and model id, with the trace replayed from the recorded-trace library |
 | Daily cap for investigations per key | `BRANDKLIPPAREN_INVESTIGATE_DAILY_CAP_PER_KEY` | Each API key | Consumption measurement per key and day; the key's investigation steps close at the cap with a typed `budget-exhausted` outcome and the deterministic analysis standing |
 | Daily cap for personalize calls per key | `BRANDKLIPPAREN_PERSONALIZE_DAILY_CAP_PER_KEY` | Each API key | Per-key, per-day meter in the personalize service; the deterministic baseline stands at the cap |

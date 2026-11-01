@@ -83,7 +83,15 @@ export type JsonRpcAdapterOptions = {
   readonly timeoutMs?: number | undefined;
   readonly maxResponseBytes?: number | undefined;
   readonly transport?: RpcTransport | undefined;
+  // SEC-1 S-3: when set to a positive interval, eth_chainId is
+  // re-checked lazily at most once per interval before a call and a
+  // non-mainnet answer fails the call closed. Unset disables the
+  // periodic re-check (the startup check in main still runs).
+  readonly chainRecheckIntervalMs?: number | undefined;
+  readonly nowMs?: (() => number) | undefined;
 };
+
+export const DEFAULT_CHAIN_RECHECK_INTERVAL_MS = 10 * 60_000;
 
 const RPC_URLS_VARIABLE = "BRANDKLIPPAREN_RPC_URLS";
 
@@ -94,6 +102,8 @@ export type RpcAdapterConfig = {
   readonly rpcUrls: readonly SecretString[] | undefined;
   readonly rpcDeadlineMs: number | undefined;
   readonly rpcMaxResponseBytes: number | undefined;
+  readonly chainRecheckIntervalMs?: number | undefined;
+  readonly nowMs?: (() => number) | undefined;
 };
 
 // The RPC endpoint comes solely from the validated configuration (K-503,
@@ -167,6 +177,8 @@ export function createRpcAdapterFromConfig(
       timeoutMs: config.rpcDeadlineMs,
       maxResponseBytes: config.rpcMaxResponseBytes,
       transport,
+      chainRecheckIntervalMs: config.chainRecheckIntervalMs,
+      nowMs: config.nowMs,
     }),
   );
 }
@@ -302,6 +314,9 @@ export class JsonRpcAdapter implements RpcPort {
   private readonly timeoutMs: number;
   private readonly maxResponseBytes: number;
   private readonly transport: RpcTransport;
+  private readonly chainRecheckIntervalMs: number;
+  private readonly nowMs: () => number;
+  private lastChainVerifiedAtMs: number | null = null;
   private nextId = 1;
 
   constructor(options: JsonRpcAdapterOptions) {
@@ -309,6 +324,46 @@ export class JsonRpcAdapter implements RpcPort {
     this.timeoutMs = resolveRpcTimeoutMs(options.timeoutMs);
     this.maxResponseBytes = resolveRpcMaxResponseBytes(options.maxResponseBytes);
     this.transport = options.transport ?? fetchRpcTransport;
+    this.chainRecheckIntervalMs =
+      options.chainRecheckIntervalMs !== undefined &&
+      Number.isSafeInteger(options.chainRecheckIntervalMs) &&
+      options.chainRecheckIntervalMs > 0
+        ? options.chainRecheckIntervalMs
+        : 0;
+    this.nowMs = options.nowMs ?? Date.now;
+  }
+
+  // Periodic mainnet re-check (S-3): at most one eth_chainId round
+  // trip per interval, cached between calls. A failed or non-mainnet
+  // answer fails closed with a typed error and no call is sent.
+  private async ensureMainnet(method: string): Promise<Result<null, RpcError>> {
+    if (this.chainRecheckIntervalMs <= 0) {
+      return ok(null);
+    }
+    const now = this.nowMs();
+    if (
+      this.lastChainVerifiedAtMs !== null &&
+      now - this.lastChainVerifiedAtMs < this.chainRecheckIntervalMs
+    ) {
+      return ok(null);
+    }
+    const allowed = this.allowlistedUrl(method);
+    if (!allowed.ok) {
+      return allowed;
+    }
+    const verified = await verifyMainnetChainId(allowed.value, this.transport, this.timeoutMs);
+    if (!verified.ok) {
+      this.lastChainVerifiedAtMs = null;
+      return err({
+        kind: "node-error",
+        message:
+          verified.error.kind === "chain-mismatch"
+            ? `rpc call ${method} blocked: the endpoint is not Ethereum mainnet`
+            : `rpc call ${method} blocked: the chain id re-check could not reach the endpoint`,
+      });
+    }
+    this.lastChainVerifiedAtMs = this.nowMs();
+    return ok(null);
   }
 
   limits(): RpcLimits {
@@ -578,6 +633,12 @@ export class JsonRpcAdapter implements RpcPort {
     params: readonly unknown[],
     ctx: CallContext,
   ): Promise<Result<{ id: number; response: RpcTransportResponse }, RpcError>> {
+    if (method !== "eth_chainId") {
+      const chain = await this.ensureMainnet(method);
+      if (!chain.ok) {
+        return chain;
+      }
+    }
     const timeout = this.effectiveTimeoutMs(ctx);
     if (!timeout.ok) {
       return timeout;

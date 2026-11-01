@@ -82,6 +82,10 @@ export type AppConfig = {
   readonly rateLimitPerKeyPerMinute?: number;
   readonly quotaPerKeyPerDay?: number;
   readonly globalRatePerMinute?: number;
+  // SEC-1 S-2: per-key share of the global minute window, in percent.
+  readonly rateLimitPerKeyGlobalSharePercent?: number;
+  // SEC-1 S-8: global daily cap for Meta Model API calls across keys.
+  readonly aiGlobalDailyCalls?: number;
   // Daily cap for assessment calls per API key: the only enforced
   // provider-adjacent cap. There is no global per-provider daily cap.
   readonly budgetPerKeyDailyCapAssessmentCalls?: number;

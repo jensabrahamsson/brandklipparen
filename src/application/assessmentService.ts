@@ -133,6 +133,10 @@ export type AssessmentServiceDeps = {
   // the validated configuration carries no per-key cap (I-08, I-14); the
   // demo configuration always sets the versioned value.
   readonly dailyCapPerKey: number;
+  // SEC-1 S-8: global daily cap across all keys for provider calls.
+  // Absent means no global cap; the composition passes the validated
+  // value or its conservative default. Cache hits never spend it.
+  readonly globalDailyCap?: number | undefined;
   readonly cache?: AssessmentCacheStore | undefined;
   readonly meter?: AssessmentCostMeter | undefined;
 };
@@ -293,6 +297,24 @@ export function toAssessmentTab(outcome: TokenAssessmentOutcome): AssessmentTabS
 export function createAssessmentService(deps: AssessmentServiceDeps): AssessmentService {
   const cache = deps.cache ?? createInMemoryAssessmentCache();
   const meter = deps.meter ?? createInMemoryAssessmentCostMeter();
+  const globalSpent = new Map<string, number>();
+  function globalExhausted(day: string): boolean {
+    if (deps.globalDailyCap === undefined) {
+      return false;
+    }
+    for (const spentDay of globalSpent.keys()) {
+      if (spentDay !== day) {
+        globalSpent.delete(spentDay);
+      }
+    }
+    return (globalSpent.get(day) ?? 0) >= deps.globalDailyCap;
+  }
+  function recordGlobal(day: string): void {
+    if (deps.globalDailyCap === undefined) {
+      return;
+    }
+    globalSpent.set(day, (globalSpent.get(day) ?? 0) + 1);
+  }
   const provider = deps.adapter?.provider() ?? null;
   const modelId = deps.adapter === undefined ? null : (deps.adapter.modelId() as string);
 
@@ -380,6 +402,18 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
     // At most one assessment call per uncached request (I-14): the meter
     // closes the provider path at the daily per-key cap and the template
     // text stands.
+    // Global provider-spend cap (S-8): checked before any meter spends,
+    // so an exhausted day returns the unavailable fallback with zero
+    // provider calls and the deterministic score and evidence standing.
+    if (globalExhausted(input.day)) {
+      return ok({
+        kind: "assessed",
+        envelope,
+        assessment: null,
+        fallback: { errorKind: "unavailable", reason: reasonFor("unavailable") },
+        fromCache: false,
+      });
+    }
     const allowance = meter.checkAndRecord(input.apiKeyId, adapter.provider(), input.day, deps.dailyCapPerKey);
     if (!allowance.allowed) {
       return ok({
@@ -393,6 +427,7 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
         fromCache: false,
       });
     }
+    recordGlobal(input.day);
     const ctx: CallContext = { requestId: input.requestId, deadline: input.deadline, block: input.block };
     counters?.recordAssessmentCalls(1);
     const assessed = await adapter.assess(evidence.value, deps.promptVersion, ctx);

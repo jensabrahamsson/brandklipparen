@@ -334,6 +334,56 @@ describe("rate limiter over REST in isolation (K-504)", () => {
     await server.close();
   });
 
+  test("sec1_s2_one_key_cannot_exhaust_the_global_window_for_other_keys", () => {
+    const now = 1_700_000_000_000;
+    const limiter = createRateLimiter(
+      { perKeyPerMinute: 100, perKeyPerDay: 1000, globalPerMinute: 10, perKeyGlobalSharePercent: 50 },
+      () => now,
+    );
+    let admittedA = 0;
+    for (let i = 0; i < 20; i += 1) {
+      if (limiter.check("key-a").allowed) admittedA += 1;
+    }
+    expect(admittedA).toBe(5);
+    // The second key still has its reserved share of the global window.
+    expect(limiter.check("key-b").allowed).toBe(true);
+    let admittedB = 1;
+    for (let i = 0; i < 20; i += 1) {
+      if (limiter.check("key-b").allowed) admittedB += 1;
+    }
+    expect(admittedB).toBe(5);
+    // Together they fill, and only then does the global limit close.
+    expect(limiter.check("key-c").allowed).toBe(false);
+  });
+
+  test("sec1_s2_default_share_is_half_the_global_window", () => {
+    const now = 1_700_000_000_000;
+    const limiter = createRateLimiter(
+      { perKeyPerMinute: 100, perKeyPerDay: 1000, globalPerMinute: 4 },
+      () => now,
+    );
+    expect(limiter.check("key-a").allowed).toBe(true);
+    expect(limiter.check("key-a").allowed).toBe(true);
+    expect(limiter.check("key-a").allowed).toBe(false);
+    expect(limiter.check("key-b").allowed).toBe(true);
+  });
+
+  test("sec1_s6_past_day_meters_are_pruned", () => {
+    let now = Date.UTC(2030, 0, 1, 12, 0, 0);
+    const limiter = createRateLimiter(
+      { perKeyPerMinute: 100, perKeyPerDay: 1000, globalPerMinute: 1000 },
+      () => now,
+    );
+    limiter.check("key-a");
+    limiter.check("key-b");
+    expect(limiter.dailyMeterCount()).toBe(2);
+    now = Date.UTC(2030, 0, 2, 12, 0, 0);
+    expect(limiter.check("key-a").allowed).toBe(true);
+    expect(limiter.dailyMeterCount()).toBe(1);
+    // The new day's quota is fresh for the returning key.
+    expect(limiter.check("key-a").allowed).toBe(true);
+  });
+
   test("k504_rest_error_shape_stays_machine_readable", async () => {
     const response = await fetch(`${baseUrl}/v1/analyze?address=not-an-address`, {
       headers: { "x-api-key": TEST_API_KEY },

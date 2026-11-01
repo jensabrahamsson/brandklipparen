@@ -9,6 +9,9 @@ export const MAX_OVERLAY_CACHE_ENTRIES = 500;
 
 export type OverlayBudgetOptions = {
   readonly dailyCapPerKey: number;
+  // SEC-1 S-8: global daily cap across all keys. Absent means no
+  // global cap; past it every key reads as capped for the day.
+  readonly globalDailyCap?: number | undefined;
   // UTC day reader (S-106): injected so tests steer the day boundary; the
   // application layer owns no clock, so callers pass wall time explicitly.
   readonly today: () => string;
@@ -16,12 +19,15 @@ export type OverlayBudgetOptions = {
 
 export class OverlayBudget {
   private readonly dailyCapPerKey: number;
+  private readonly globalDailyCap: number | undefined;
   private readonly today: () => string;
   private readonly spent = new Map<string, number>();
+  private readonly globalSpent = new Map<string, number>();
   private readonly cached = new Map<string, unknown>();
 
   constructor(options: OverlayBudgetOptions) {
     this.dailyCapPerKey = options.dailyCapPerKey;
+    this.globalDailyCap = options.globalDailyCap;
     this.today = options.today;
   }
 
@@ -52,10 +58,23 @@ export class OverlayBudget {
   // provider call; false leaves the meter untouched and the caller serves
   // the capped branch with zero provider calls.
   trySpend(keyId: string): boolean {
-    const meterKey = `${keyId}|${this.today()}`;
+    const today = this.today();
+    const meterKey = `${keyId}|${today}`;
     const used = this.spent.get(meterKey) ?? 0;
     if (used >= this.dailyCapPerKey) {
       return false;
+    }
+    if (this.globalDailyCap !== undefined) {
+      for (const spentDay of this.globalSpent.keys()) {
+        if (spentDay !== today) {
+          this.globalSpent.delete(spentDay);
+        }
+      }
+      const globalUsed = this.globalSpent.get(today) ?? 0;
+      if (globalUsed >= this.globalDailyCap) {
+        return false;
+      }
+      this.globalSpent.set(today, globalUsed + 1);
     }
     this.spent.set(meterKey, used + 1);
     return true;

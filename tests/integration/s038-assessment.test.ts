@@ -295,6 +295,62 @@ describe("S-038 assessment service over fakes (K-305, K-309)", () => {
     }
   });
 
+  test("sec1_s8_global_daily_cap_returns_unavailable_with_score_standing", async () => {
+    const { services } = buildStack();
+    const adapter = fakeAdapter("meta-model-api");
+    const assessment = createAssessmentService({
+      analyze: services.analyzeToken,
+      adapter,
+      promptVersion: prompt10(),
+      dailyCapPerKey: 100,
+      globalDailyCap: 1,
+      cache: createInMemoryAssessmentCache(),
+      meter: createInMemoryAssessmentCostMeter(),
+    });
+    const plain = await services.analyzeToken(analyzeInputFor(ADDRESS_A));
+    expect(plain.ok).toBe(true);
+    const first = await assessment.requestForToken({
+      ...analyzeInputFor(ADDRESS_A),
+      apiKeyId: "key-1",
+      day: TEST_DAY,
+    });
+    expect(first.ok).toBe(true);
+    expect(adapter.callCount).toBe(1);
+    // A second key on a different token hits the global cap: zero new
+    // provider calls, the unavailable fallback, and the same score and
+    // evidence as the plain deterministic analysis.
+    const capped = await assessment.requestForToken({
+      ...analyzeInputFor(ADDRESS_B),
+      apiKeyId: "key-2",
+      day: TEST_DAY,
+    });
+    expect(capped.ok).toBe(true);
+    if (!capped.ok || capped.value.kind !== "assessed" || !plain.ok || plain.value.kind !== "assessed") {
+      throw new Error("expected assessed outcomes");
+    }
+    expect(adapter.callCount).toBe(1);
+    expect(capped.value.assessment).toBeNull();
+    expect(capped.value.fallback?.errorKind).toBe("unavailable");
+    const plainB = await services.analyzeToken(analyzeInputFor(ADDRESS_B));
+    if (!plainB.ok || plainB.value.kind !== "assessed") {
+      throw new Error("expected a plain assessed outcome");
+    }
+    expect(capped.value.envelope.score).toBe(plainB.value.envelope.score);
+    expect(capped.value.envelope.signals).toEqual(plainB.value.envelope.signals);
+    // Cache hits still serve on an exhausted day with zero calls.
+    const cached = await assessment.requestForToken({
+      ...analyzeInputFor(ADDRESS_A),
+      apiKeyId: "key-2",
+      day: TEST_DAY,
+    });
+    expect(cached.ok).toBe(true);
+    if (cached.ok && cached.value.kind === "assessed") {
+      expect(cached.value.fromCache).toBe(true);
+      expect(cached.value.assessment).not.toBeNull();
+    }
+    expect(adapter.callCount).toBe(1);
+  });
+
   test("k305_refined_text_cached_per_codehash_and_template_version", async () => {
     for (const provider of PROVIDERS) {
       const { services } = buildStack();

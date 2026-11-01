@@ -37,6 +37,36 @@ describe("overlay cost caps and cache (S-106)", () => {
     expect(fake.calls.length).toBe(1);
   });
 
+  test("sec1_s8_global_daily_cap_caps_every_key_for_the_day", async () => {
+    const fake = new FakeExplainModelAdapter("ok");
+    let today = "2030-01-01";
+    const budget = new OverlayBudget({
+      dailyCapPerKey: 10,
+      globalDailyCap: 1,
+      today: () => today,
+    });
+    const service = createExplainService(fake, budget);
+    const first = await service.explain(explainInput(), "key-1");
+    expect(first.kind).toBe("ok");
+    expect(fake.calls.length).toBe(1);
+    // A different key with a fresh per-key cap is still capped globally,
+    // with zero new provider calls (a distinct input, so no cache hit).
+    const other = ExplainInput.create({
+      codeHash: "ef".repeat(32),
+      evidenceIds: ["signal:deadbeef"],
+      promptVersion: EXPLAIN_PROMPT_VERSION,
+    });
+    if (other === null) throw new Error("fixture explain input must build");
+    const capped = await service.explain(other, "key-2");
+    expect(capped).toEqual({ kind: "capped" });
+    expect(fake.calls.length).toBe(1);
+    // The next day the global budget is fresh again.
+    today = "2030-01-02";
+    const nextDay = await service.explain(other, "key-2");
+    expect(nextDay.kind).toBe("ok");
+    expect(fake.calls.length).toBe(2);
+  });
+
   test("s106_overlay_capped_key_spends_nothing", async () => {
     const fake = new FakeExplainModelAdapter("ok");
     const budget = new OverlayBudget({ dailyCapPerKey: 0, today: () => "2030-01-01" });

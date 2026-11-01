@@ -68,6 +68,14 @@ describe("redacted logging (K-509, M-16)", () => {
     ).toBe(false);
   });
 
+  test("sec1_s7_apikey_query_param_is_redacted_in_log_output", () => {
+    const printed = JSON.stringify(
+      redactForLog("https://api.etherscan.io/v2/api?chainid=1&apikey=synthetic-key-123&module=logs"),
+    );
+    expect(printed).not.toContain("synthetic-key-123");
+    expect(printed).toContain("[REDACTED]");
+  });
+
   test("k509_key_like_strings_redacted_in_output", () => {
     for (const vector of VECTORS) {
       const redacted = redactForLog(vector.input);

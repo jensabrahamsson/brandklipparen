@@ -161,6 +161,49 @@ describe("etherscan logs source", () => {
     expect(sends).toBe(2);
   });
 
+  test("sec1_s7_explorer_key_never_appears_in_error_messages", async () => {
+    const secret = "synthetic-explorer-key-for-tests";
+    const echoingBody = JSON.stringify({
+      status: "0",
+      message: "NOTOK",
+      result: `Invalid API Key for https://api.etherscan.io/v2/api?chainid=1&module=logs&apikey=${secret}&address=0x0`,
+    });
+    const adapter = createEtherscanLogsAdapter({
+      apiKey: new SecretString(secret),
+      transport: async () => ({ status: 200, bodyText: echoingBody }),
+      now: manualClock().now,
+      callsPerSecond: 100,
+      dailyCap: 100000,
+    });
+    const result = await adapter.pollLogs(
+      { factory: FACTORY_V2, fromBlock: 21600000, toBlock: 21600002 },
+      { requestId: "req-1", deadlineMs: Number.MAX_SAFE_INTEGER },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).not.toContain(secret);
+      expect(result.error.message).toContain("apikey=[REDACTED]");
+    }
+    // A throwing transport also surfaces only the fixed message.
+    const throwing = createEtherscanLogsAdapter({
+      apiKey: new SecretString(secret),
+      transport: async (url: string) => {
+        throw new Error(`fetch failed for ${url}`);
+      },
+      now: manualClock().now,
+      callsPerSecond: 100,
+      dailyCap: 100000,
+    });
+    const failed = await throwing.pollLogs(
+      { factory: FACTORY_V2, fromBlock: 21600000, toBlock: 21600002 },
+      { requestId: "req-1", deadlineMs: Number.MAX_SAFE_INTEGER },
+    );
+    expect(failed.ok).toBe(false);
+    if (!failed.ok) {
+      expect(failed.error.message).not.toContain(secret);
+    }
+  });
+
   test("k039_etherscan_empty_range_returns_empty_list", async () => {
     // A quiet range answers status "0" with an empty result array (or the
     // "No records found" text): both are an empty log list, never an
