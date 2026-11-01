@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX 
 import { ApiError, analyzeToken, fetchAssessment, fetchHealth, fetchPlugins, requestInvestigation } from "../lib/api.ts";
 import { ExpertDetail } from "../components/ExpertDetail.tsx";
 import { ExpertSwitch } from "../components/ExpertSwitch.tsx";
+import { MotionSwitch } from "../components/MotionSwitch.tsx";
 import { PluginsPanel } from "../components/PluginsPanel.tsx";
 import type { PluginListEntry } from "../components/PluginsPanel.tsx";
 import { toPluginResultViews } from "../lib/plugins.ts";
@@ -474,6 +475,12 @@ export function TokenPage({
           apiKey={apiKey}
         />
       ) : null}
+      <footer className="page-foot">
+        <MotionSwitch />
+        {result !== null && result.kind === "assessed" ? (
+          <span className="foot-model">Model {result.modelVersion}</span>
+        ) : null}
+      </footer>
     </div>
   );
 }
@@ -931,6 +938,11 @@ function LoadingNotice(): JSX.Element {
       <p className="muted" style={{ margin: 0 }}>
         Analyzing… the deterministic result appears here when ready.
       </p>
+      <div aria-hidden="true">
+        <span className="skel" />
+        <span className="skel" />
+        <span className="skel" />
+      </div>
     </div>
   );
 }

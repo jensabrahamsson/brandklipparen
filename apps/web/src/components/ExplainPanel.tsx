@@ -8,6 +8,7 @@
 // explanation. Scores and evidence are untouched: the block reads the
 // overlay endpoint only.
 import { useEffect, useState, type JSX } from "react";
+import { ScanStatus } from "./ScanStatus.tsx";
 import { fetchExplain, fetchRug } from "../lib/api.ts";
 import type { ExplainSource, ExplainState, RugState } from "../lib/api.ts";
 import type { Signal } from "../types.ts";
@@ -126,11 +127,7 @@ export function ExplainPanel({
   }, [address, apiKey, source]);
 
   if (state === null) {
-    return (
-      <p className="muted" role="status" style={{ margin: 0 }}>
-        Reading the frozen result…
-      </p>
-    );
+    return <ScanStatus text="Reading the frozen result…" />;
   }
   if (state.status === "not-configured") {
     return <p style={{ margin: 0 }}>Explanations are not configured on this server.</p>;

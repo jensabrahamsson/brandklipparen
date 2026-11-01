@@ -5,6 +5,7 @@ import { evidenceSignalKey, splitNarrative } from "../lib/investigation.ts";
 import { providerDisplayName } from "../lib/providers.ts";
 import { Explain } from "./Explain.tsx";
 import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
+import { ScanStatus } from "./ScanStatus.tsx";
 
 // Investigation loop in its own tab: the opt-in runtime agent loop over
 // the frozen deterministic result. The panel never receives score,
@@ -157,9 +158,7 @@ export function InvestigationPanel({
       ) : null}
       {state.status === "loading" ? (
         <div>
-          <p className="muted" role="status">
-            Investigating… steps stream in below.
-          </p>
+          <ScanStatus text="Investigating… steps stream in below." />
           <StepGraph steps={state.steps} signals={signals} onSignalLink={onSignalLink} />
         </div>
       ) : null}

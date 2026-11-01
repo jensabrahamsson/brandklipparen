@@ -72,7 +72,7 @@ export function ProofTrace({
             <li
               key={`${entry.step}:${String(index)}`}
               className={`proof-step is-${status}`}
-              style={{ "--i": index } as CSSProperties}
+              style={{ "--i": Math.min(index, 8) } as CSSProperties}
             >
               <Mark status={status} />
               <span className="sr-only">{SR_WORD[status]}</span>

@@ -62,6 +62,19 @@ describe("reduced motion keeps added highlights static (P2-20)", () => {
     stubMatchMedia(false);
     expect(reducedMotionRequested()).toBe(false);
   });
+
+  test("the motion switch off counts as reduced motion", () => {
+    stubMatchMedia(false);
+    const dataset: Record<string, string | undefined> = { motion: "off" };
+    vi.stubGlobal("document", { documentElement: { dataset } });
+    try {
+      expect(reducedMotionRequested()).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      stubMatchMedia(false);
+    }
+    expect(reducedMotionRequested()).toBe(false);
+  });
 });
 
 describe("deterministic order keeps sections static (W-8 option A)", () => {

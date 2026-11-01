@@ -20,6 +20,7 @@ import type {
 } from "../types.ts";
 import { AskMuse } from "./AskMuse.tsx";
 import { AssessmentPanel } from "./AssessmentPanel.tsx";
+import { ScanStatus } from "./ScanStatus.tsx";
 import { ExplainPanel, ExplainSentences } from "./ExplainPanel.tsx";
 import { InvestigationPanel } from "./InvestigationPanel.tsx";
 
@@ -229,18 +230,10 @@ function ChatOutput({
   readonly onRetry: () => void;
 }): JSX.Element {
   if (pending && chat === null) {
-    return (
-      <p className="muted" role="status" style={{ margin: 0 }}>
-        Asking Muse…
-      </p>
-    );
+    return <ScanStatus text="Asking Muse…" />;
   }
   if (chat === null) {
-    return (
-      <p className="muted" role="status" style={{ margin: 0 }}>
-        Asking Muse…
-      </p>
-    );
+    return <ScanStatus text="Asking Muse…" />;
   }
   if (chat.status === "not-configured") {
     return <p style={{ margin: 0 }}>Ask is not configured on this server.</p>;

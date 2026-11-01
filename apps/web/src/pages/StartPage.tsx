@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type JSX } from "react";
 import { ChainSelector } from "../components/ChainSelector.tsx";
+import { MotionSwitch } from "../components/MotionSwitch.tsx";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { CopyButton } from "../components/CopyButton.tsx";
 import { LiveTokens } from "../components/LiveTokens.tsx";
@@ -360,6 +361,10 @@ export function StartPage({
           <span>Deterministic score · optional Muse assessment</span>
         </div>
       </section>
+      <footer className="page-foot">
+        <MotionSwitch />
+        <span className="foot-model">Follows your system setting until switched off.</span>
+      </footer>
     </div>
   );
 }

@@ -265,3 +265,136 @@ test("phosphor_live_list_updates_move_nothing_but_plain_insertion", async ({ pag
     expect(distinctY.size, `row ${key} kept moving`).toBeLessThanOrEqual(2);
   }
 });
+
+// W-10: loops are capped, so a loaded token page settles with no infinite
+// animation. High lamps breathe 2 cycles, cursors rest, the tube shimmer
+// settles after 2 breaths; only finite one-shots remain.
+test("phosphor_loaded_token_page_has_no_infinite_animation", async ({ page }) => {
+  await mockRest(page, () => [liveEntry("aa", "AAA")]);
+  await page.goto(`/#/token/${ADDRESS}`);
+  await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
+  await page.waitForTimeout(5000);
+  const infinite = await page.evaluate(() =>
+    document.getAnimations().filter((animation) => {
+      const effect = animation.effect;
+      if (effect === null || typeof effect !== "object" || !("getKeyframes" in effect)) {
+        return false;
+      }
+      return (effect as KeyframeEffect).getTiming().iterations === Infinity;
+    }),
+  );
+  expect(infinite).toEqual([]);
+});
+
+// W-10: the footer Motion switch pins data-motion="off", and the whole
+// page goes static with the choice persisting across reload.
+test("phosphor_motion_switch_off_gives_zero_animations", async ({ page }) => {
+  await mockRest(page, () => [liveEntry("aa", "AAA")]);
+  await page.goto(`/#/token/${ADDRESS}`);
+  await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
+  const motion = page.getByTestId("motion-switch");
+  await expect(motion).toBeVisible();
+  await expect(motion).toHaveAttribute("aria-checked", "true");
+  await motion.click();
+  await expect(motion).toHaveAttribute("aria-checked", "false");
+  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBe("off");
+  // Full interaction script while off: hover, tooltip focus, signal
+  // expand, console open. Nothing may animate or transition.
+  await page.locator(".card").first().hover();
+  await page.locator('[data-testid="explain-score:combined"]').focus();
+  await page.locator('section[aria-label="Signals"] article > button[aria-expanded]').first().click();
+  await page.getByRole("button", { name: "Explain this result" }).click();
+  await page.waitForTimeout(600);
+  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+  // The choice persists across reload and stays static from the start.
+  await page.reload();
+  await expect(page.getByTestId("motion-switch")).toHaveAttribute("aria-checked", "false");
+  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+});
+
+function registryEntry(id: string, weight: number): Record<string, unknown> {
+  const short = id.split(".").pop() ?? id;
+  return {
+    id,
+    kind: "detector",
+    weight,
+    version: "1.0.0",
+    displayName: `${short} detector`,
+    description: `Reports ${short}.`,
+    frontmatter: { tags: ["holder"], audience: ["holder"], severity: { min: "low", max: "high" } },
+  };
+}
+
+const DETAIL_ANALYZE = {
+  ...ANALYZE_FIXTURE,
+  pluginResults: [
+    {
+      pluginId: "dev.brandklipparen.blacklist",
+      pluginVersion: "1.0.0",
+      outcome: "ok",
+      findings: [
+        {
+          id: "dev.brandklipparen.blacklist:blacklist",
+          title: "Blocked wallets",
+          payload: { feature: "blacklist" },
+          evidence: [{ selector: "0x44337ea1", offset: 2623 }],
+        },
+      ],
+    },
+    {
+      pluginId: "dev.brandklipparen.pause",
+      pluginVersion: "1.0.0",
+      outcome: "ok",
+      findings: [],
+    },
+  ],
+};
+
+const DETAIL_PLUGINS = {
+  plugins: [registryEntry("dev.brandklipparen.blacklist", 3), registryEntry("dev.brandklipparen.pause", 1)],
+};
+
+async function mockDetailRest(page: Page): Promise<void> {
+  await page.route("**/health", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
+  });
+  await page.route("**/v1/analyze*", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(DETAIL_ANALYZE) });
+  });
+  await page.route("**/v1/plugins", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(DETAIL_PLUGINS) });
+  });
+  await page.route("**/v1/proof*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "ok", apiVersion: "v1", codeHash: "0xabc", proofs: [] }),
+    });
+  });
+  await page.route("**/v1/personalize/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ mapping: { disabled: true } }),
+    });
+  });
+  await page.route("**/v1/live-tokens*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ source: "none", status: "live", updatedAt: 0, items: [] }),
+    });
+  });
+}
+
+// W-10, M-4: the detail status sentence types into the visible slice, but
+// the full text lives in an sr-only twin from the first render, so it is
+// present in the accessibility tree at t=0.
+test("phosphor_detail_status_sentence_is_in_the_accessibility_tree_at_once", async ({ page }) => {
+  await mockDetailRest(page);
+  await page.goto(`/#/token/${ADDRESS}/plugins/blacklist`);
+  await expect(page.getByRole("heading", { name: "Blacklist" })).toBeVisible();
+  const sentence = "The owner can stop chosen wallets from sending tokens.";
+  await expect(page.locator(".detail-sentence .sr-only", { hasText: sentence })).toBeAttached();
+  await expect(page.getByText(sentence, { exact: true }).first()).toBeAttached();
+});

@@ -1,7 +1,7 @@
-// Switch and ask-button hit-area pattern (W-8): the Expert switch keeps
-// a 44x44 box with a visible keyboard ring and a themed on-state, and
-// the Ask button stays focusable with an off tone while empty (no Motion
-// switch exists yet: it ships in W-10).
+// Switch and ask-button hit-area pattern (W-8, W-10): the Expert and
+// Motion switches keep a 44x44 box with a visible keyboard ring and a
+// themed on-state, and the Ask button stays focusable with an off tone
+// while empty.
 import { expect, test } from "@playwright/test";
 
 const ADDRESS = "0x5ab1e0000000000000000000000000000000f005";
@@ -92,4 +92,48 @@ test("control_hit_area_visual_boundary_and_states", async ({ page }) => {
   expect(await ask.evaluate((element) => getComputedStyle(element).cursor)).toBe("not-allowed");
   await ask.dispatchEvent("click");
   await expect(page.getByTestId("muse-output")).toHaveCount(0);
+});
+
+test("control_motion_switch_hit_area_and_keyboard", async ({ page }) => {
+  await page.route("**/health", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "ok", apiVersion: "v1", assessment: { disabled: true }, costUnits: "x" }),
+    });
+  });
+  await page.route("**/v1/analyze*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "x-deepening-status": "ready" },
+      body: JSON.stringify(ANALYZE),
+    });
+  });
+  await page.route("**/v1/plugins", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ plugins: [] }) });
+  });
+
+  // Note: hash URLs build by concatenation (see token-symbol-heading).
+  await page.goto("/#/token/" + ADDRESS);
+  await expect(page.getByRole("img", { name: /Combined score 10 of 100/ })).toBeVisible();
+
+  // The Motion switch keeps a real 44x44 box in the page footer.
+  const motion = page.getByTestId("motion-switch");
+  await expect(motion).toBeVisible();
+  const box = await motion.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+  // Space flips it off and pins data-motion; Space flips it back on.
+  await expect(motion).toHaveAttribute("aria-checked", "true");
+  await motion.focus();
+  await expect.poll(() => motion.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+  expect(await motion.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("solid");
+  await page.keyboard.press("Space");
+  await expect(motion).toHaveAttribute("aria-checked", "false");
+  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBe("off");
+  await page.keyboard.press("Space");
+  await expect(motion).toHaveAttribute("aria-checked", "true");
+  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBeUndefined();
 });

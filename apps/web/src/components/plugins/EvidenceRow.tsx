@@ -5,6 +5,7 @@
 // Everything renders as inert text under the strict CSP: no HTML sink.
 import { useId, useRef, useState, type CSSProperties, type JSX } from "react";
 import { Pictogram } from "../Pictogram.tsx";
+import { ScanStatus } from "../ScanStatus.tsx";
 import { CopyButton } from "../CopyButton.tsx";
 import { fetchSnippet, type SnippetResult } from "../../lib/api.ts";
 import { useReducedMotion } from "../../lib/motion.ts";
@@ -159,10 +160,7 @@ export function EvidenceRow({
       {expanded ? (
         <div className="evidence-snippet" id={regionId} role="region" aria-label={`Readable code for ${displayName} at ${offsetText}`}>
           {snippet.kind === "loading" ? (
-            <p role="status" className="scan-status">
-              {reduce ? "Loading…" : "Scanning…"}
-              {reduce ? null : <b className="cursor" aria-hidden="true" />}
-            </p>
+            <ScanStatus text={reduce ? "Loading…" : "Scanning…"} />
           ) : snippet.kind === "failed" ? (
             <p className="muted">Readable code is not available for this function.</p>
           ) : snippet.kind === "ready" ? (

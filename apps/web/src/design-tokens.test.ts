@@ -133,6 +133,8 @@ test("phosphor_keyframes_cover_only_opacity_colour_and_glow", () => {
 });
 
 test("phosphor_transitions_cover_only_opacity_colour_and_shadow", () => {
+  // Owner-approved X-1 (UI v2 §5.7): the disclosure wrapper may ride
+  // grid-template-rows 0fr → 1fr, transitions only, capped at 300 ms.
   const allowed = new Set([
     "background-color",
     "border-color",
@@ -141,6 +143,7 @@ test("phosphor_transitions_cover_only_opacity_colour_and_shadow", () => {
     "opacity",
     "stroke",
     "filter",
+    "grid-template-rows",
   ]);
   const blocks = code.match(/^[ \t]*transition(?!-)[^;]*;/gm) ?? [];
   expect(blocks.length).toBeGreaterThan(0);
@@ -227,6 +230,18 @@ test("phosphor_no_raw_box_shadow_outside_tokens", () => {
   const lines = withoutRoot.split("\n");
   const raw = lines.filter((line) => line.includes("box-shadow:") && !line.includes("var(--"));
   expect(raw).toEqual([]);
+});
+
+test("phosphor_loops_are_capped_except_the_live_square", () => {
+  // W-10: after load the only infinite loop is the LIVE square on the
+  // start page. Every other loop is capped: high lamps breathe 2
+  // cycles, skeleton rows 2 cycles, shimmer 2 cycles, cursors rest
+  // after 8 cycles, and M-8 lines unmount when their request finishes.
+  const blocks = code.match(/[^}{]*\{[^}]*infinite[^}]*\}/g) ?? [];
+  expect(blocks.length).toBeGreaterThan(0);
+  for (const block of blocks) {
+    expect(block).toMatch(/\.live/);
+  }
 });
 
 test("phosphor_kill_switch_is_fully_static", () => {
@@ -329,7 +344,7 @@ test("r1_r3_r4_touch_targets_wrap_and_separator", () => {
   // R-3: tabs, copy buttons and ghost buttons carry a real 44 px desktop
   // floor; the "?" trigger is a real 44 px box with a 20 px visual, so
   // the touch rule never enlarges the glyph.
-  for (const selector of ["\\.tab", "\\.copy-btn", "\\.button-ghost", "\\.explain-trigger"]) {
+  for (const selector of ["\\.tab", "\\.copy-btn", "\\.button-ghost", "\\.explain-trigger", "\\.motion-switch"]) {
     const rule = code.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`))?.[0] ?? "";
     expect(rule, `${selector} keeps the 44 px floor`).toMatch(/min-height:\s*44px/);
   }

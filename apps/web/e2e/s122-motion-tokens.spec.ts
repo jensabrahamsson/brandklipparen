@@ -215,3 +215,32 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
   expect(await reducedPage.evaluate(() => document.getAnimations().length)).toBe(0);
   await reduced.close();
 });
+
+test("s122_motion_switch_footer_toggles_data_motion", async ({ page }) => {
+  await mockRest(page);
+  await page.goto(`/#/token/${ADDRESS}`);
+  await expect(page.locator(".card").first()).toBeVisible();
+
+  // The token footer carries the Motion switch and the model line, with
+  // a real 44 px box on every width.
+  const motion = page.getByTestId("motion-switch");
+  await expect(motion).toBeVisible();
+  const box = await motion.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await expect(page.locator(".page-foot .foot-model")).toContainText("Model 0.1.0");
+
+  // Off pins data-motion and kills running loops; on removes it again.
+  await motion.click();
+  await expect(motion).toHaveAttribute("aria-checked", "false");
+  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBe("off");
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+  await motion.click();
+  await expect(motion).toHaveAttribute("aria-checked", "true");
+  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBeUndefined();
+
+  // The start page carries the same footer switch.
+  await page.goto("/#/");
+  await expect(page.getByTestId("motion-switch")).toBeVisible();
+});

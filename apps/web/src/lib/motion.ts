@@ -4,6 +4,14 @@
 import { useEffect, useState } from "react";
 
 export function reducedMotionRequested(): boolean {
+  // The Motion switch pins the same static end states as the operating
+  // system setting (UI v2 §5.6): data-motion="off" counts as reduced.
+  if (
+    typeof document !== "undefined" &&
+    document.documentElement?.dataset?.["motion"] === "off"
+  ) {
+    return true;
+  }
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&

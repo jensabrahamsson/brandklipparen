@@ -314,7 +314,9 @@ a {
   background:
     radial-gradient(60% 40% at 22% 8%, rgb(200 255 225 / 7%), transparent 70%),
     linear-gradient(115deg, transparent 58%, rgb(200 255 225 / 2.5%) 64%, transparent 70%);
-  animation: bk-glass var(--glass-breathe) var(--ease-in-out) infinite;
+  /* W-10: the tube shimmer settles after 2 breaths (6.4 s), so a loaded
+     page ends fully static; the LIVE square keeps the only loop. */
+  animation: bk-glass var(--glass-breathe) var(--ease-in-out) 2;
 }
 
 /* Status bar */
@@ -414,7 +416,10 @@ a {
   vertical-align: -0.16em;
   background: var(--phosphor);
   box-shadow: 0 0 12px var(--glow);
-  animation: bk-blink var(--blink-cursor) steps(1) infinite;
+  /* W-10: the block cursor blinks 8 cycles (9.6 s) and rests lit. The
+     M-4 typewriter removes its cursor when done, and M-8 lines unmount
+     on completion, so a loaded page ends fully static. */
+  animation: bk-blink var(--blink-cursor) steps(1) 8;
 }
 
 .glow {
@@ -706,7 +711,8 @@ a {
   background: var(--red);
   padding: 1px 7px;
   box-shadow: var(--glow-red);
-  animation: bk-hot var(--hot) var(--ease-in-out) infinite;
+  /* W-10: the high tag breathes 2 cycles (4.4 s) and rests. */
+  animation: bk-hot var(--hot) var(--ease-in-out) 2;
 }
 
 .pending {
@@ -719,7 +725,8 @@ a {
 .pending b {
   color: var(--phosphor);
   font-weight: 400;
-  animation: bk-blink var(--blink-analyzing) steps(1) infinite;
+  /* W-10: the analyzing marker blinks 8 cycles (8 s) and rests lit. */
+  animation: bk-blink var(--blink-analyzing) steps(1) 8;
 }
 
 .cantword {
@@ -1098,7 +1105,8 @@ a {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   box-shadow: var(--glow-red);
-  animation: bk-hot var(--hot) var(--ease-in-out) infinite;
+  /* W-10: the high tag breathes 2 cycles (4.4 s) and rests. */
+  animation: bk-hot var(--hot) var(--ease-in-out) 2;
 }
 
 /* Cards, rows and buttons */
@@ -1510,7 +1518,8 @@ a {
   inset: 22%;
   border-radius: 50%;
   background: radial-gradient(circle, rgb(255 90 82 / 22%), transparent 68%);
-  animation: bk-breathe var(--breathe) var(--ease-in-out) infinite;
+  /* W-10: the halo breathes 2 cycles (6 s) and rests. */
+  animation: bk-breathe var(--breathe) var(--ease-in-out) 2;
 }
 
 .score-dial.low .halo {
@@ -1566,7 +1575,8 @@ a {
   background: var(--red);
   color: var(--void);
   box-shadow: var(--glow-red-lg);
-  animation: bk-hot var(--hot-badge) var(--ease-in-out) infinite;
+  /* W-10: the high tag breathes 2 cycles (4 s) and rests. */
+  animation: bk-hot var(--hot-badge) var(--ease-in-out) 2;
 }
 
 .score-dial.elevated .bandtag {
@@ -1903,7 +1913,8 @@ a {
 .sev.high {
   background: var(--red);
   color: var(--void);
-  animation: bk-warn var(--warn) var(--ease-in-out) infinite;
+  /* W-10: the high tag warns 2 cycles (2.8 s) and rests. */
+  animation: bk-warn var(--warn) var(--ease-in-out) 2;
 }
 
 .sig.medium .sev,
@@ -3544,8 +3555,107 @@ a {
   display: inline-flex;
 }
 
+/* Motion switch (UI v2 §5.6, W-10, WCAG 2.2.2): the same 44 px pill as
+   the Expert switch. The state word reads before the label. */
+.motion-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  min-width: 44px;
+  max-width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+.motion-switch:hover {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+}
+
+.motion-switch:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.motion-switch[aria-checked="true"] {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+  box-shadow: 0 0 10px var(--glow-soft);
+}
+
+.motion-switch-state {
+  font-weight: 700;
+  color: var(--phosphor-hi);
+}
+
+/* Page footer (UI v2 §1.1): one row with the Motion switch and the
+   model and version line. Wraps on narrow widths, never scrolls: the
+   note line breaks instead of pushing the page wide. */
+.page-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--rule);
+  font-size: 13px;
+  color: var(--dim);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.page-foot > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.page-foot .foot-model {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .detail-head {
   animation: bk-poweron 420ms var(--ease-out) both;
+}
+
+/* Found-high header (UI v2 §5.2, M-1/M-2): the alert edge lands once on
+   entry, and the lamp breathes 2 cycles (4.4 s) then rests at its glow.
+   One shot per entry; static under reduced motion and the Motion switch. */
+@keyframes bk-alertin {
+  0% {
+    box-shadow: var(--alert-glow);
+  }
+
+  100% {
+    box-shadow: var(--elev-2);
+  }
+}
+
+.detail-head.is-found-high {
+  animation:
+    bk-poweron 420ms var(--ease-out) both,
+    bk-alertin 900ms var(--ease-out) 1;
+}
+
+.detail-head.is-found-high .lamp {
+  color: var(--high);
+  box-shadow: var(--glow-seg);
+  animation:
+    bk-ignite 700ms var(--ease-out) both,
+    bk-hot 2.2s var(--ease-in-out) 1s 2;
 }
 
 .detail-head .lamp {
@@ -3715,10 +3825,23 @@ a {
 }
 
 .evidence-snippet {
+  position: relative;
   margin-top: 8px;
   border-left: 2px solid var(--phosphor);
   padding-left: 12px;
   animation: bk-rail 500ms var(--ease-out) 1;
+}
+
+/* M-6 scanline flicker on the expanded evidence region: one low
+   contrast pass, opacity only, then rest. */
+.evidence-snippet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent 0 2px, var(--glow-soft) 2px 3px);
+  opacity: 0;
+  animation: bk-flicker 240ms var(--ease-out) 1;
+  pointer-events: none;
 }
 
 @keyframes bk-rail {
@@ -3735,9 +3858,70 @@ a {
 
 .scan-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  margin: 8px 0 0;
   font-size: 14px;
+  color: var(--dim);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.scan-status > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* M-8 lamps: three tiny lamps breathing opacity on a 3 s period with
+   0 / 1 / 2 s phase offsets, capped at 12 cycles (36 s). The line only
+   renders while its request is pending and unmounts on completion, so
+   the loops never outlive the wait. Static under reduced motion and
+   with the Motion switch off through the global kill switches. */
+.scan-lamps {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.scan-lamps i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--phosphor);
+  box-shadow: 0 0 8px var(--glow);
+  animation: bk-breathe var(--breathe) var(--ease-in-out) 12;
+}
+
+.scan-lamps i:nth-child(2) {
+  animation-delay: -1s;
+}
+
+.scan-lamps i:nth-child(3) {
+  animation-delay: -2s;
+}
+
+/* Loading skeleton rows (UI v2 §6.1): glass blocks breathing opacity
+   on the 3 s period, stopped after 2 cycles (6 s). Static under reduced
+   motion and with the Motion switch off. */
+.skel {
+  display: block;
+  height: 14px;
+  max-width: 100%;
+  margin-top: 10px;
+  border-radius: 7px;
+  background: var(--glass-2);
+  box-shadow: var(--elev-1);
+  animation: bk-breathe var(--breathe) var(--ease-in-out) 2;
+}
+
+.skel:nth-of-type(2) {
+  width: 72%;
+}
+
+.skel:nth-of-type(3) {
+  width: 48%;
 }
 
 .snippet-lines {
@@ -3881,12 +4065,6 @@ a {
   font-size: 13px;
   color: var(--dim);
   overflow-wrap: anywhere;
-}
-
-.proof-loading {
-  margin: 4px 0 0;
-  font-size: 14px;
-  color: var(--dim);
 }
 
 .detail-raw-finding {
@@ -4105,12 +4283,27 @@ a {
   color: var(--dim);
 }
 
+/* X-1 (owner-approved): a short height expand for in-card disclosure
+   bodies. The wrapper rides grid-template-rows 0fr → 1fr over 180 ms;
+   collapse is instant (no exit transition). Bodies taller than ~480 px
+   open instantly through the same class (no animation); reduced motion
+   and the Motion switch render every end state statically. */
+.decompiler-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .decompiler-expand.is-open {
-  display: block;
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 180ms var(--ease-out);
 }
 
 .decompiler-expand-clip {
   overflow: hidden;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -4770,12 +4963,22 @@ span.cite-chip {
   list-style: none;
 }
 
+.code-note-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .code-note-expand.is-open {
-  display: block;
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 180ms var(--ease-out);
 }
 
 .code-note-clip {
   overflow: hidden;
+  min-width: 0;
   min-height: 0;
 }
 

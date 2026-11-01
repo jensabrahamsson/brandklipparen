@@ -12,6 +12,7 @@ import { Pictogram } from "../Pictogram.tsx";
 import { SchemaValue } from "../SchemaValue.tsx";
 import { DecompilerList } from "./DecompilerList.tsx";
 import { EvidenceRow } from "./EvidenceRow.tsx";
+import { ScanStatus } from "../ScanStatus.tsx";
 import { OwnerChip } from "./OwnerChip.tsx";
 import { ProofTrace } from "./ProofTrace.tsx";
 import { fetchProof, type ProofStep } from "../../lib/api.ts";
@@ -114,9 +115,7 @@ function ProofSection({
     return (
       <section className="card detail-proof" aria-label="How we checked">
         <h2>How we checked</h2>
-        <p role="status" className="proof-loading">
-          Loading proof trace…
-        </p>
+        <ScanStatus text="Loading proof trace…" />
       </section>
     );
   }
@@ -266,7 +265,10 @@ export function PluginDetailView({
           </p>
         </section>
       ) : (
-        <section className="card detail-head" aria-label="Check details">
+        <section
+          className={`card detail-head${tile.state === "found-scored" && tile.severity === "high" ? " is-found-high" : ""}`}
+          aria-label="Check details"
+        >
           <span className="detail-pict" aria-hidden="true">
             <Pictogram name={tile.copy.pictogram} size={32} />
           </span>
