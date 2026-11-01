@@ -21,6 +21,7 @@ import {
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
   constSlotLoadNearFlavor,
+  feeArithProven,
   interpretRegionExprs,
   interpretRegionSlots,
   isStandardTokenWriter,
@@ -192,6 +193,7 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
   }
   const attribution = attributeFunctions(input.bytecode);
   const view = analyzeOwnerControl(input.bytecode);
+  const code = disassemble(input.bytecode);
   const privilegedSet = new Set(view.privileged);
   const transferSet = new Set(view.transfers);
   const candidates = new Set<number>();
@@ -244,6 +246,13 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
         }
         const proof = constSlotLoadNearFlavor(transfer, slot, ["mul", "div"]);
         if (proof === null) {
+          continue;
+        }
+        // F-10d: an unpack shift (DIV by a power of two) beside the
+        // load, or arithmetic with no calldata operand, never proves
+        // a rate application.
+        const transferMember = (pc: number): boolean => attribution.holderOf(pc) === transferSelector;
+        if (!feeArithProven(code, transferMember, proof.gatePc)) {
           continue;
         }
         if (writePc === proof.loadPc) {
@@ -320,9 +329,13 @@ function exprLoadsSlot(expr: Expr | undefined, slot: number): boolean {
 }
 
 // Whether a transfer jump condition multiplies or divides the loaded
-// rate slot: a MUL or DIV node whose subtree loads the slot. The slot
-// load and its use can sit hundreds of PCs apart in real compiler
-// output, past any beside window, while the condition still names both.
+// rate slot as a fee (F-10d): a MUL or DIV node whose subtree loads the
+// slot, with the transferred amount beside it (another operand subtree
+// carrying calldata) and no constant power-of-two operand (an unpack
+// shift like DIV by 256**20, straight or EXP-folded). The slot load and
+// its use can sit hundreds of PCs apart in real compiler output, past
+// any beside window, while the condition still names both. A bare unpack
+// of a packed flag (no calldata operand) never counts as fee arithmetic.
 // Exported for the extended-proof diagnostics.
 export function condUsesSlotArithmetically(cond: Expr | undefined, slot: number): boolean {
   if (cond === undefined || cond.kind === "unknown") {
@@ -333,7 +346,9 @@ export function condUsesSlotArithmetically(cond: Expr | undefined, slot: number)
     (cond.name === "MUL" || cond.name === "DIV") &&
     cond.args.some((arg) => exprLoadsSlot(arg, slot))
   ) {
-    return true;
+    if (feeOperandsProven(cond.args)) {
+      return true;
+    }
   }
   if (cond.kind === "calldata") {
     return condUsesSlotArithmetically(cond.offset, slot);
@@ -348,6 +363,41 @@ export function condUsesSlotArithmetically(cond: Expr | undefined, slot: number)
     return cond.args.some((arg) => condUsesSlotArithmetically(arg, slot));
   }
   return false;
+}
+
+// Fee operands (F-10d): no constant power of two among the MUL/DIV args
+// (an unpack shift) and a calldata operand (the transferred amount).
+function feeOperandsProven(args: readonly Expr[]): boolean {
+  if (args.some((arg) => exprIsPow2Const(arg))) {
+    return false;
+  }
+  return args.some((arg) => exprHasCalldata(arg));
+}
+
+function exprHasCalldata(expr: Expr | undefined): boolean {
+  if (expr === undefined) {
+    return false;
+  }
+  if (expr.kind === "calldata") {
+    return true;
+  }
+  if (expr.kind === "sload") {
+    return exprHasCalldata(expr.slot);
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprHasCalldata(word));
+  }
+  if (expr.kind === "op") {
+    return expr.args.some((arg) => exprHasCalldata(arg));
+  }
+  return false;
+}
+
+function exprIsPow2Const(expr: Expr | undefined): boolean {
+  if (expr === undefined || expr.kind !== "const") {
+    return false;
+  }
+  return expr.value >= 2n && (expr.value & (expr.value - 1n)) === 0n;
 }
 
 function holderFor(
@@ -447,7 +497,11 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         }
         const gateMember = memberOf(transferSelector);
         const windowProof = constSlotLoadNearFlavor(transfer, slot, ["mul", "div"], EXTENDED_FEE_WINDOW_PC);
-        let usePc: number | null = windowProof === null ? null : windowProof.loadPc;
+        // F-10d: an unpack shift beside the load, or arithmetic with
+        // no calldata operand, never proves a rate application.
+        const windowProven =
+          windowProof !== null && feeArithProven(code, gateMember, windowProof.gatePc, EXTENDED_FEE_WINDOW_PC);
+        let usePc: number | null = windowProven && windowProof !== null ? windowProof.loadPc : null;
         if (usePc === null) {
           const gateExprs = interpretRegionExprs(input.bytecode, transferSelector);
           for (const [pc, cond] of gateExprs.jumpis) {

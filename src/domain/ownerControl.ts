@@ -115,6 +115,35 @@ export type FlavorOp = "add" | "sub" | "mul" | "div" | "lt" | "gt" | "eq" | "isz
 // opcode belongs to other logic in merged output and must not count.
 export const SLOT_FLAVOR_WINDOW_PC = 16;
 
+// Caller-compare load windows (F-10c): a constant slot load feeds an
+// owner check only when an EQ follows the load within the mask span
+// (old solc unpacks a packed owner through DIV/EXP/AND over dozens of
+// PCs) and CALLER sits near that compare. Region flags alone credit
+// unrelated merged logic (a supply read beside another function's
+// guard), so both the slot selection and the ownership evidence require
+// this per-load link.
+export const OWNER_EQ_WINDOW_PC = 96;
+export const OWNER_CALLER_WINDOW_PC = 32;
+
+// Per-load owner proof (F-10c): true when the load at loadPc feeds an EQ
+// beside CALLER. The compare must follow the load (a compare before the
+// load cannot consume the loaded value) and CALLER must sit near the
+// compare (the onlyOwner shape), so a supply read after a guard, or a
+// load near an unrelated compare, never proves the slot.
+export function slotLoadFeedsCallerEq(region: RegionFacts, loadPc: number): boolean {
+  for (const eqPc of region.opPcs.eq) {
+    if (eqPc < loadPc || eqPc - loadPc > OWNER_EQ_WINDOW_PC) {
+      continue;
+    }
+    for (const callerPc of region.callerPcs) {
+      if (Math.abs(callerPc - eqPc) <= OWNER_CALLER_WINDOW_PC) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export type OwnerControlView = {
   readonly regions: readonly RegionFacts[];
   // Constant slot compared against CALLER with EQ in at least one
@@ -1902,6 +1931,70 @@ export function constSlotLoadNearFlavor(
     }
   }
   return null;
+}
+
+// Fee-arithmetic proof (F-10d): the MUL/DIV at gatePc applies a
+// caller-chosen rate only when no constant power-of-two operand (an
+// unpack shift like DIV by 256**20, straight or EXP-built) sits beside
+// it and a calldata operand feeds it (the transferred amount). Slot and
+// offset pushes (immediately consumed by SLOAD, SSTORE, CALLDATALOAD,
+// MSTORE or MLOAD) and jump destinations never count as arithmetic
+// operands; small constants (caps, percents, basis points) are never
+// powers of two, so genuine fee math keeps its proof.
+export function feeArithProven(
+  insns: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  gatePc: number,
+  windowPc: number = SLOT_FLAVOR_WINDOW_PC,
+): boolean {
+  let gateIndex = -1;
+  for (let at = 0; at < insns.length; at += 1) {
+    if (insns[at]?.pc === gatePc) {
+      gateIndex = at;
+      break;
+    }
+  }
+  if (gateIndex < 0) {
+    return false;
+  }
+  let sawCalldata = false;
+  for (let back = gateIndex - 1; back >= 0; back -= 1) {
+    const candidate = insns[back];
+    if (candidate === undefined || !isMember(candidate.pc)) {
+      continue;
+    }
+    if (gatePc - candidate.pc > windowPc) {
+      break;
+    }
+    if (candidate.opcode === 0x35) {
+      sawCalldata = true;
+      continue;
+    }
+    if (candidate.opcode < 0x60 || candidate.opcode > 0x7f || candidate.immediate.length === 0) {
+      continue;
+    }
+    const next = insns[back + 1];
+    if (
+      next !== undefined &&
+      (next.opcode === 0x54 ||
+        next.opcode === 0x55 ||
+        next.opcode === 0x35 ||
+        next.opcode === 0x52 ||
+        next.opcode === 0x51 ||
+        next.opcode === 0x56 ||
+        next.opcode === 0x57)
+    ) {
+      continue;
+    }
+    let value = 0n;
+    for (const byte of candidate.immediate) {
+      value = value * 256n + BigInt(byte);
+    }
+    if (value >= 2n && (value & (value - 1n)) === 0n) {
+      return false;
+    }
+  }
+  return sawCalldata;
 }
 
 // Slot-linked flavor proof for mapping reads (blacklist gates): the load
@@ -3995,6 +4088,10 @@ export function analyzeOwnerControl(bytecode: BytecodeType, options?: OwnerContr
     holdersByPc.set(instruction.pc, attribution.holdersOf(instruction.pc));
   }
   const regions: RegionFacts[] = [];
+  // Per-region v2 expression state for the owner-slot selection below:
+  // the slot lookup plus the JUMPI conditions the expression owner
+  // check runs on. The scored v1 path never builds it.
+  const v2Lookups: Array<{ readonly slotOf: SlotLookup; readonly jumpis: ReadonlyMap<number, Expr> } | null> = [];
   for (const entry of byTarget) {
     const start = entry.target as number;
     const wanted = entry.selector;
@@ -4004,25 +4101,47 @@ export function analyzeOwnerControl(bytecode: BytecodeType, options?: OwnerContr
       // sees it.
       const interpreted = interpretRegionSlots(bytecode, entry.selector);
       const slotOf: SlotLookup = (pc) => interpreted.get(pc);
+      v2Lookups.push({ slotOf, jumpis: interpretRegionExprs(bytecode, entry.selector).jumpis });
       regions.push(
         regionOf(entry.selector, start, code, (pc) => holdersByPc.get(pc)?.includes(wanted) ?? false, true, slotOf),
       );
     } else {
       const expected = wanted as string;
+      v2Lookups.push(null);
       regions.push(regionOf(entry.selector, start, code, (pc) => holderByPc.get(pc) === expected, false));
     }
   }
 
-  // Owner slot: a constant slot loaded in a region that also compares
-  // with CALLER through EQ. The lowest such slot wins; storage slot
-  // zero is the conventional owner seat but nothing here assumes it.
+  // Owner slot: a constant slot proven against CALLER (F-10c). Region
+  // flags alone credit unrelated merged logic (a supply read beside
+  // another function's guard), so each candidate slot must prove the
+  // check itself: in v2 through the expression owner check (which sees
+  // through shared helpers and packed masks), in v1 through the
+  // SLOAD-to-EQ window holding CALLER. The lowest such slot wins;
+  // storage slot zero is the conventional owner seat but nothing here
+  // assumes it.
   let ownerSlot: number | null = null;
-  for (const region of regions) {
-    if (!region.hasCaller || !region.hasEq) {
+  for (let index = 0; index < regions.length; index += 1) {
+    const region = regions[index];
+    if (region === undefined || !region.hasCaller || !region.hasEq) {
       continue;
     }
+    const member = (pc: number): boolean => holdersByPc.get(pc)?.includes(region.selector) ?? false;
+    const lookup = v2Lookups[index] ?? null;
+    const seen = new Set<number>();
     for (const load of region.loads) {
-      if (load.slot.kind === "const" && (ownerSlot === null || load.slot.value < ownerSlot)) {
+      if (load.slot.kind !== "const" || seen.has(load.slot.value)) {
+        continue;
+      }
+      seen.add(load.slot.value);
+      const proven =
+        lookup !== null
+          ? ownerCheckVia(code, member, load.slot.value, lookup.slotOf, lookup.jumpis, bytecode) !== null
+          : slotLoadFeedsCallerEq(region, load.pc);
+      if (!proven) {
+        continue;
+      }
+      if (ownerSlot === null || load.slot.value < ownerSlot) {
         ownerSlot = load.slot.value;
       }
     }

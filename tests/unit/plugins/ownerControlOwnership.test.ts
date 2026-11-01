@@ -14,14 +14,20 @@ import { ownershipDetectorPlugin } from "../../../src/plugins/detectors/ownershi
 import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
 import {
   CALLDATALOAD,
+  CALLER,
+  EQ,
   PUSH0,
+  REVERT,
+  SLOAD,
   SSTORE,
   STOP,
+  branchOk,
   ownerGuard,
   push1,
   sstoreConstSlot,
   tokenBytecode,
 } from "../../helpers/ownerControlFixtures.ts";
+import { analyzeOwnerControl } from "../../../src/domain/ownerControl.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -106,5 +112,64 @@ describe("ownership detector plugin", () => {
       codeHash: mustOk(CodeHash.of(parsed.value)),
     });
     expect(ownershipDetectorPlugin.detect(input)).toEqual([]);
+  });
+});
+
+describe("ownership caller-compare loads (F-10c)", () => {
+  const DUP1 = 0x80;
+  const SWAP1 = 0x90;
+
+  // A packed-owner guard where the slot push is shuffled behind DUP and
+  // SWAP, so the legacy window proof never resolves the slot: CALLER,
+  // PUSH slot, DUP, SWAP, SLOAD, EQ with a reverting branch, then a
+  // later plain read of another slot in the same guarded region.
+  function shuffledGuardBody(): number[] {
+    return [
+      CALLER,
+      ...push1(0),
+      DUP1,
+      SWAP1,
+      SLOAD,
+      EQ,
+      ...branchOk(),
+      ...push1(0),
+      DUP1,
+      REVERT,
+      0x5b,
+      ...push1(1),
+      SLOAD,
+      STOP,
+    ];
+  }
+
+  test("a supply read after the guard never becomes the owner slot", () => {
+    // The only constant load (slot 1) sits past the guard compare, so
+    // it cannot feed it. The packed owner load never resolves in v1, so
+    // no slot is proven and the detector stays silent instead of
+    // reporting the supply slot.
+    const bytecode = tokenBytecode([{ selector: "0x11111111", body: shuffledGuardBody() }]);
+    expect(analyzeOwnerControl(bytecode).ownerSlot).toBe(null);
+    const input: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+    expect(ownershipDetectorPlugin.detect(input)).toEqual([]);
+  });
+
+  test("evidence names only the loads feeding the caller compare", () => {
+    // A guarded writer plus a plain owner read elsewhere: the slot is
+    // proven by the guard, but the unguarded read is not an owner check
+    // and must not appear as evidence.
+    const bytecode = tokenBytecode([
+      { selector: "0x22222222", body: [...ownerGuard(0, 200), STOP] },
+      { selector: "0x33333333", body: [...push1(0), SLOAD, STOP] },
+    ]);
+    const input: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+    const findings = ownershipDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    const finding = findings[0];
+    if (finding === undefined) {
+      throw new Error("expected exactly one finding");
+    }
+    expect(finding.payload).toEqual({ feature: "owner-slot", slot: 0, privilegedFunctions: 1 });
+    expect(finding.evidence).toHaveLength(1);
+    expect(finding.evidence[0]?.selector).toBe("0x22222222");
   });
 });

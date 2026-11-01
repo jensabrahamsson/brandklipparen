@@ -19,6 +19,7 @@ import {
   constSlotLoadNearFlavor,
   exprConstValue,
   exprMappingBase,
+  feeArithProven,
   hasRevertingGateAfter,
   hasRevertingSide,
   interpretRegionExprs,
@@ -367,7 +368,7 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
       ]),
     ]);
   }
-  const { code, writers, attribution, view } = opening;
+  const { code, writers, attribution, view, ownerSlot } = opening;
   const memberOf = (selector: SelectorType): ((pc: number) => boolean) => {
     return (pc: number): boolean => attribution.holdersOf(pc).includes(selector);
   };
@@ -380,7 +381,20 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
         continue;
       }
       if (store.valueIsZero || (store.valueConst !== null && store.valueConst <= 1)) {
-        candidates.add(store.slot.value);
+        // F-10e: the owner seat holds an address, never a boolean
+        // flag; a packed bit write to the same slot still proves its
+        // bit below.
+        if (store.slot.value !== ownerSlot) {
+          candidates.add(store.slot.value);
+        } else {
+          const seatWriteIndex = sstoreIndexAt(store.pc);
+          const seatLegacyPacked =
+            seatWriteIndex >= 0 ? packedBoolWriteAt(code, seatWriteIndex, store.slot.value, writer.slotOf) : null;
+          const seatExprPacked = packedBoolWriteExpr(store.slot.value, writer.exprs.stores.get(store.pc));
+          if (seatLegacyPacked !== null || seatExprPacked !== null) {
+            candidates.add(store.slot.value);
+          }
+        }
         continue;
       }
       const writeIndex = sstoreIndexAt(store.pc);
@@ -414,8 +428,21 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
   for (const slot of orderedSlots) {
     for (const writer of writers) {
       const writerName = writer.region.selector as string;
+      // F-10e: a plain write to the owner seat never proves a flag
+      // writer (a renounce writes zero there); a packed bit write to
+      // the same slot still can, through the same writer pc or the
+      // expression fallback below.
       const legacyWritePc = flagWriter(writer.region, slot);
       let writePc = legacyWritePc;
+      if (writePc !== null && slot === ownerSlot) {
+        const ownerWriteIndex = sstoreIndexAt(writePc);
+        const ownerLegacyPacked =
+          ownerWriteIndex >= 0 ? packedBoolWriteAt(code, ownerWriteIndex, slot, writer.slotOf) : null;
+        const ownerExprPacked = packedBoolWriteExpr(slot, writer.exprs.stores.get(writePc));
+        if (ownerLegacyPacked === null && ownerExprPacked === null) {
+          writePc = null;
+        }
+      }
       if (writePc === null) {
         const exprStores = [...writer.exprs.stores.entries()]
           .filter(([, record]) => packedBoolWriteExpr(slot, record) !== null)
@@ -832,7 +859,7 @@ function explainFee(bytecode: BytecodeType): ExtendedProof {
       ...blockedTail(opening.firstFailed, [CANDIDATE_SLOTS, TRANSFER_USE, SUBTRACTION]),
     ]);
   }
-  const { writers, attribution, view } = opening;
+  const { code, writers, attribution, view } = opening;
   const ownerSlot = view.ownerSlot;
   const candidates = new Set<number>();
   for (const writer of writers) {
@@ -883,11 +910,15 @@ function explainFee(bytecode: BytecodeType): ExtendedProof {
         const transferName = transferSelector as string;
         const gateMember = memberOf(transferSelector);
         const windowProof = constSlotLoadNearFlavor(transfer, slot, ["mul", "div"], 64);
+        // F-10d: an unpack shift beside the load, or arithmetic with
+        // no calldata operand, never proves a rate application.
+        const windowProven =
+          windowProof !== null && feeArithProven(code, gateMember, windowProof.gatePc, 64);
         let useDetail: string | null =
-          windowProof === null
+          !windowProven || windowProof === null
             ? null
             : `slot ${slot} used arithmetically beside the load on transfer ${transferName} via window`;
-        let usePc: number | null = windowProof === null ? null : windowProof.loadPc;
+        let usePc: number | null = !windowProven || windowProof === null ? null : windowProof.loadPc;
         if (usePc === null) {
           const gateExprs = interpretRegionExprs(bytecode, transferSelector);
           for (const [pc, cond] of gateExprs.jumpis) {

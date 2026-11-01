@@ -15,13 +15,17 @@ import { pauseDetectorPlugin } from "../../../src/plugins/detectors/pause/index.
 import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
 import {
   CALLDATALOAD,
+  CALLER,
+  EQ,
   EXP_PAUSE_SET,
   ISZERO,
   MASKED_PAUSE_CLEAR,
   MASKED_PAUSE_SET,
   PACKED_PAUSE_SET,
+  PUSH0,
   REVERT,
   SLOAD,
+  SSTORE,
   STOP,
   ownerGuard,
   expGatedTransferBody,
@@ -35,6 +39,7 @@ import {
   tokenBytecode,
   branchOk,
 } from "../../helpers/ownerControlFixtures.ts";
+import { ownershipDetectorPlugin } from "../../../src/plugins/detectors/ownership/index.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -228,6 +233,87 @@ describe("pause masked packed write (P-11 follow-up)", () => {
       { selector: MASKED_PAUSE_SET, body: maskedPauseSetBody(9) },
       { selector: MASKED_PAUSE_CLEAR, body: maskedPauseClearBody(9) },
       { selector: TRANSFER, body: expGatedTransferBody(8) },
+    ]);
+    const input: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+    expect(pauseDetectorPlugin.detect(input)).toEqual([]);
+  });
+});
+
+describe("pause owner-seat silence (F-10e)", () => {
+  const DUP1 = 0x80;
+  const SWAP1 = 0x90;
+  const RENOUNCE = "0x44444444";
+  const GUARDED_MOVE = "0x55555555";
+
+  function renounceBody(): number[] {
+    // onlyOwner guard, then a zero write to the owner slot.
+    return [...ownerGuard(0, 200), PUSH0, ...push1(0), SSTORE, STOP];
+  }
+
+  function guardedMoveBody(): number[] {
+    // onlyOwner guard, then a plain balance write: an owner-gated
+    // transfer-shaped function with no flag of its own.
+    return [...ownerGuard(0, 200), ...sstoreConstSlot(2, [CALLDATALOAD]), STOP];
+  }
+
+  test("plain Ownable with renounce reports no pause", () => {
+    // The renounce writes zero to the owner seat, and the guarded
+    // transfer carries the owner check itself. Neither proves a pause
+    // flag, while the ownership proof still reports the slot and the
+    // renounce path.
+    const bytecode = tokenBytecode([
+      { selector: RENOUNCE, body: renounceBody() },
+      { selector: TRANSFER, body: guardedMoveBody() },
+    ]);
+    const input: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+    expect(pauseDetectorPlugin.detect(input)).toEqual([]);
+    const owned = ownershipDetectorPlugin.detect(input);
+    expect(owned.map((finding) => finding.id).sort()).toEqual([
+      "dev.brandklipparen.ownership:owner-slot",
+      "dev.brandklipparen.ownership:renounce",
+    ]);
+  });
+
+  test("an owner check used as the gate reports no pause", () => {
+    // The guarded slot proves as the caller-compared slot, so the
+    // writer's constant store to it is not a flag write, while the
+    // transfer path gates on its own caller compare. The caller compare
+    // is access control, not a pause gate.
+    const bytecode = tokenBytecode([
+      {
+        selector: GUARDED_MOVE,
+        body: [
+          CALLER,
+          ...push1(7),
+          DUP1,
+          SWAP1,
+          SLOAD,
+          EQ,
+          ...branchOk(),
+          ...push1(0),
+          DUP1,
+          REVERT,
+          0x5b,
+          ...sstoreConstSlot(4, [...push1(1)]),
+          STOP,
+        ],
+      },
+      {
+        selector: TRANSFER,
+        body: [
+          CALLER,
+          ...push1(4),
+          SLOAD,
+          EQ,
+          ...branchOk(),
+          ...push1(0),
+          DUP1,
+          REVERT,
+          0x5b,
+          ...sstoreConstSlot(2, [CALLDATALOAD]),
+          STOP,
+        ],
+      },
     ]);
     const input: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
     expect(pauseDetectorPlugin.detect(input)).toEqual([]);

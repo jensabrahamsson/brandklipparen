@@ -14,13 +14,16 @@ import type { Result } from "../../../src/domain/result.ts";
 import { transferFeeDetectorPlugin } from "../../../src/plugins/detectors/transfer-fee/index.ts";
 import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
 import {
+  AND,
   CALLDATALOAD,
+  DIV,
   GT,
   ISZERO,
   LT,
   MUL,
   REVERT,
   SLOAD,
+  SSTORE,
   STOP,
   SUB,
   branchOk,
@@ -222,5 +225,66 @@ describe("transfer-fee extended fact (P-11)", () => {
       { selector: TRANSFER, body: transferBody() },
     ]);
     expect(transferFeeDetectorPlugin.detect(input)).toEqual([]);
+  });
+});
+
+describe("transfer-fee unpack silence (F-10d)", () => {
+  const SWAP1 = 0x90;
+  const DUP1 = 0x80;
+  const PAUSE_SET = "0x0a9c6c1f";
+
+  // The 256**20 unpack shift: PUSH21 of 0x01 followed by twenty zero
+  // bytes. A hand-assembled synthetic constant only.
+  function unpackShift(): number[] {
+    return [0x74, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  }
+
+  // A packed-flag unpack gate: DIV of the slot by the shift, masked and
+  // reverting, with a subtraction later so the region reads fee-shaped.
+  // No calldata feeds the division: the divisor is a pure constant.
+  function unpackGatedTransferBody(): number[] {
+    return [
+      ...push1(1),
+      SLOAD,
+      ...push1(0),
+      SWAP1,
+      ...unpackShift(),
+      SWAP1,
+      DIV,
+      ...push1(0xff),
+      AND,
+      ISZERO,
+      ...branchOk(),
+      ...push1(0),
+      DUP1,
+      REVERT,
+      0x5b,
+      CALLDATALOAD,
+      CALLDATALOAD,
+      SUB,
+      ...push1(2),
+      SSTORE,
+      STOP,
+    ];
+  }
+
+  function unpackInput(): DetectorInput {
+    const bytecode = tokenBytecode([
+      {
+        selector: PAUSE_SET,
+        body: [...ownerGuard(0, 200), ...sstoreConstSlot(1, [CALLDATALOAD]), STOP],
+      },
+      { selector: TRANSFER, body: unpackGatedTransferBody() },
+    ]);
+    return Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+  }
+
+  test("a packed-flag unpack with a privileged writer stays silent", () => {
+    // A guarded writer stores a caller-chosen value to the packed slot
+    // while the transfer path unpacks the same slot with DIV by a power
+    // of 256. The divisor is an unpack shift, not a rate, and no calldata
+    // feeds the division, so neither the window proof nor the condition
+    // proof counts it as fee arithmetic.
+    expect(transferFeeDetectorPlugin.detect(unpackInput())).toEqual([]);
   });
 });

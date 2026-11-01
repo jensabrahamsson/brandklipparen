@@ -19,6 +19,7 @@
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
 import {
+  SLOT_FLAVOR_WINDOW_PC,
   TRANSFER_FROM_SELECTOR,
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
@@ -144,6 +145,12 @@ function gatedFlagRead(region: RegionFacts, slot: number): number | null {
   }
   const eqProof = constSlotLoadNearFlavor(region, slot, ["eq"]);
   if (eqProof !== null) {
+    // F-10e: an access check is not a pause gate. An equality beside
+    // CALLER checks the sender's authority (onlyOwner), while a pause
+    // gate discriminates on the stored flag.
+    if (region.callerPcs.some((pc) => Math.abs(pc - eqProof.gatePc) <= SLOT_FLAVOR_WINDOW_PC)) {
+      return null;
+    }
     return eqProof.loadPc;
   }
   const zeroProof = constSlotLoadNearFlavor(region, slot, ["iszero"]);
@@ -151,6 +158,9 @@ function gatedFlagRead(region: RegionFacts, slot: number): number | null {
     return null;
   }
   if (flavorBetween(region, ["lt", "gt"], zeroProof.loadPc, zeroProof.gatePc)) {
+    return null;
+  }
+  if (region.callerPcs.some((pc) => Math.abs(pc - zeroProof.gatePc) <= SLOT_FLAVOR_WINDOW_PC)) {
     return null;
   }
   return zeroProof.loadPc;
@@ -220,12 +230,18 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
   const privilegedSet = new Set(view.privileged);
   const transferSet = new Set(view.transfers);
   const candidates = new Set<number>();
+  const ownerSlot = view.ownerSlot;
   for (const region of view.regions) {
     if (!privilegedSet.has(region.selector)) {
       continue;
     }
     for (const store of region.stores) {
       if (store.slot.kind !== "const") {
+        continue;
+      }
+      // F-10e: the owner seat holds an address, never a pause flag. A
+      // renounce (a zero write to the owner slot) is not a pause setter.
+      if (ownerSlot !== null && store.slot.value === ownerSlot) {
         continue;
       }
       if (store.valueIsZero || (store.valueConst !== null && store.valueConst <= 1)) {
@@ -319,6 +335,10 @@ export function gatedFlagReadPrecise(
   }
   const eqProof = constSlotLoadNearFlavor(region, slot, ["eq"]);
   if (eqProof !== null) {
+    // F-10e: an access check is not a pause gate (see gatedFlagRead).
+    if (region.callerPcs.some((pc) => Math.abs(pc - eqProof.gatePc) <= SLOT_FLAVOR_WINDOW_PC)) {
+      return null;
+    }
     return Object.freeze({ loadPc: eqProof.loadPc, cmpPc: eqProof.gatePc });
   }
   const zeroProof = constSlotLoadNearFlavor(region, slot, ["iszero"]);
@@ -326,6 +346,9 @@ export function gatedFlagReadPrecise(
     return null;
   }
   if (flavorBetween(region, ["lt", "gt"], zeroProof.loadPc, zeroProof.gatePc)) {
+    return null;
+  }
+  if (region.callerPcs.some((pc) => Math.abs(pc - zeroProof.gatePc) <= SLOT_FLAVOR_WINDOW_PC)) {
     return null;
   }
   return Object.freeze({ loadPc: zeroProof.loadPc, cmpPc: zeroProof.gatePc });
@@ -389,7 +412,21 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         continue;
       }
       if (store.valueIsZero || (store.valueConst !== null && store.valueConst <= 1)) {
-        candidates.add(store.slot.value);
+        // F-10e: the owner seat holds an address, never a boolean
+        // flag. A renounce (a zero write to the owner slot) is not a
+        // pause setter; a packed bit write to the same slot still
+        // proves its bit below.
+        if (store.slot.value !== ownerSlot) {
+          candidates.add(store.slot.value);
+        } else {
+          const seatWriteIndex = sstoreIndexAt(store.pc);
+          const seatLegacyPacked =
+            seatWriteIndex >= 0 ? packedBoolWriteAt(code, seatWriteIndex, store.slot.value, candidateSlotOf) : null;
+          const seatExprPacked = packedBoolWriteExpr(store.slot.value, candidateExprs.stores.get(store.pc));
+          if (seatLegacyPacked !== null || seatExprPacked !== null) {
+            candidates.add(store.slot.value);
+          }
+        }
         continue;
       }
       // A masked packed-bool write stores a computed word
@@ -422,11 +459,24 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       ) {
         continue;
       }
+      // F-10e: a plain write to the owner seat never proves a flag
+      // writer (a renounce writes zero there); a packed bit write to
+      // the same slot still can, through the same writer pc or the
+      // expression fallback below.
       const legacyWritePc = flagWriter(region, slot);
+      let writePc = legacyWritePc;
+      if (writePc !== null && slot === ownerSlot) {
+        const ownerWriteIndex = sstoreIndexAt(writePc);
+        const ownerLegacyPacked =
+          ownerWriteIndex >= 0 ? packedBoolWriteAt(code, ownerWriteIndex, slot, writerSlotOf) : null;
+        const ownerExprPacked = packedBoolWriteExpr(slot, writerExprs.stores.get(writePc));
+        if (ownerLegacyPacked === null && ownerExprPacked === null) {
+          writePc = null;
+        }
+      }
       // Expression-packed writes carry no constant beside the store, so
       // the legacy writer lookup stays silent for them: fall back to the
       // lowest member store the expression matcher proves.
-      let writePc = legacyWritePc;
       if (writePc === null) {
         const exprStores = [...writerExprs.stores.entries()]
           .filter(([, record]) => packedBoolWriteExpr(slot, record) !== null)

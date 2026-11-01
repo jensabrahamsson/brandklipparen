@@ -11,7 +11,7 @@
 // and domain types and pure functions.
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
-import { analyzeOwnerControl } from "../../../domain/ownerControl.ts";
+import { analyzeOwnerControl, slotLoadFeedsCallerEq } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
 import type { FunctionAttribution } from "../../../domain/evmFlow.ts";
 import { extractSelectors } from "../../../domain/selectors.ts";
@@ -118,7 +118,9 @@ function evidenceFor(
 // a finding list, never an exception. Deterministic: one region scan in
 // selector order, evidence sorted canonically, final sort on the
 // namespaced finding id. Bytecode without selectors yields no findings,
-// since a finding without selector evidence is unrepresentable.
+// since a finding without selector evidence is unrepresentable. Only
+// loads that feed the caller compare count as owner checks (F-10c): a
+// supply read in a guarded region is not an ownership proof.
 function detect(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -134,11 +136,15 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
   const checks: EvidenceType[] = [];
   for (const region of view.regions) {
     for (const load of region.loads) {
-      if (load.slot.kind === "const" && load.slot.value === slot) {
-        const entry = evidenceFor(input.bytecode, attribution, load.pc);
-        if (entry !== null) {
-          checks.push(entry);
-        }
+      if (load.slot.kind !== "const" || load.slot.value !== slot) {
+        continue;
+      }
+      if (!slotLoadFeedsCallerEq(region, load.pc)) {
+        continue;
+      }
+      const entry = evidenceFor(input.bytecode, attribution, load.pc);
+      if (entry !== null) {
+        checks.push(entry);
       }
     }
   }
