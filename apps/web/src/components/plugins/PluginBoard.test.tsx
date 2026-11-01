@@ -95,9 +95,10 @@ describe("plugin board (UI v2 §5.1)", () => {
     expect(html).toContain("What we checked");
     expect(html).toContain("Owner powers");
     expect(html).toContain("Analysis tools");
-    for (const word of ["Found · High", "Found · Not in score", "Error", "Not run", "Not found"]) {
+    for (const word of ["Found · High", "Found", "Error", "Not run", "Not found"]) {
       expect(html).toContain(word);
     }
+    expect(html).toContain("Extended analysis");
   });
 
   test("a hard read turns quiet tiles into can't tell", () => {

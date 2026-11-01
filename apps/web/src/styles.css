@@ -3942,17 +3942,25 @@ a {
 /* Plugin detail view, level 2 (UI v2 §1.3). One h1 per view; the header
    pictogram is 32 px. */
 .detail-back {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 0 12px;
-  margin-left: -12px;
+  text-decoration: none;
 }
 
 .detail-crumb {
   margin: 0 0 12px;
   font-size: 13px;
   color: var(--dim);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.detail-crumb a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--phosphor);
+  text-decoration: none;
 }
 
 .detail-head {
@@ -3962,8 +3970,12 @@ a {
   align-items: start;
 }
 
+.detail-head > * {
+  min-width: 0;
+}
+
 .detail-pict {
-  grid-row: span 4;
+  grid-row: span 5;
   display: inline-flex;
   padding-top: 4px;
 }
@@ -3974,14 +3986,34 @@ a {
   line-height: 1.25;
 }
 
+/* The h1 takes programmatic focus on entry so screen readers announce
+   the check; it is not interactive, so the browser default ring stays
+   off and the X-2 entry sweep marks the new view instead. */
+.detail-head h1:focus {
+  outline: none;
+}
+
 .detail-status,
+.detail-question,
 .detail-sentence,
+.detail-owner,
+.detail-temporality,
 .detail-provenance {
   grid-column: 2;
   margin: 0;
+  min-width: 0;
+}
+
+.detail-question {
+  font-size: 15px;
+  color: var(--dim);
 }
 
 .detail-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
   font-size: 14px;
 }
 
@@ -3993,6 +4025,27 @@ a {
 .detail-provenance {
   margin-top: 8px;
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.detail-plugin-id {
+  overflow-wrap: anywhere;
+}
+
+.detail-stack {
+  display: grid;
+  gap: var(--s4);
+  margin-top: var(--s4);
+  min-width: 0;
+}
+
+.detail-evidence h2,
+.detail-proof h2,
+.detail-limits h2,
+.detail-raw h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 12px;
 }
 
 .detail-prevnext {
@@ -4006,6 +4059,18 @@ a {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
+  text-decoration: none;
+}
+
+@media (max-width: 479px) {
+  .detail-head {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .detail-pict svg {
+    width: 24px;
+    height: 24px;
+  }
 }
 
 /* Plugin detail view, level 2 (UI v2 W-5 §5.2, §5.3). Phosphor Console:
@@ -4177,6 +4242,10 @@ a {
   font-size: 14px;
 }
 
+.detail-owner-btn {
+  margin-left: 8px;
+}
+
 .owner-chip {
   display: inline-flex;
   align-items: center;
@@ -4212,6 +4281,7 @@ a {
 }
 
 .detail-temporality {
+  margin: 8px 0 0;
   color: var(--dim);
   font-size: 13px;
 }

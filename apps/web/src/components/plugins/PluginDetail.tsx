@@ -13,13 +13,13 @@ import { SchemaValue } from "../SchemaValue.tsx";
 import { DecompilerList } from "./DecompilerList.tsx";
 import { EvidenceRow } from "./EvidenceRow.tsx";
 import { ScanStatus } from "../ScanStatus.tsx";
-import { OwnerChip } from "./OwnerChip.tsx";
+import { OwnerChip, type ProvenOwner } from "./OwnerChip.tsx";
 import { ProofTrace } from "./ProofTrace.tsx";
-import { fetchProof, type ProofStep } from "../../lib/api.ts";
+import { fetchOnchainFeatures, fetchProof, type OnchainFeaturesState, type ProofStep } from "../../lib/api.ts";
 import type { BoardTile } from "./PluginBoard.tsx";
 import { severityWord } from "./PluginTile.tsx";
 import type { ExplainEvidenceEntry } from "../code/CodeView.tsx";
-import type { AiFeatureAvailability } from "../../lib/capabilities.ts";
+import type { AiFeatureAvailability, Availability } from "../../lib/capabilities.ts";
 import type { PluginFindingView, PluginListEntry } from "../PluginsPanel.tsx";
 import { PLUGIN_STATE_WORD } from "../../lib/pluginState.ts";
 import { codeHref, type CodePaneView } from "../../lib/route.ts";
@@ -46,12 +46,125 @@ export function detailProvenance(
   modelVersion: string,
 ): string {
   if (state === "extended") {
-    return "No: extended analysis";
+    return "In score: no (extended analysis)";
   }
   if (weight !== undefined && weight <= 0) {
-    return "No: extended analysis";
+    return "In score: no (extended analysis)";
   }
   return `In score: yes (model ${modelVersion})`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+// The on-chain owner feature has the same shape as the facts card reads
+// (ContractFacts): an ok status plus the owner record. Anything else names
+// no owner, so the row stays honest instead of inventing one.
+function toProvenOwner(feature: unknown): ProvenOwner | null {
+  const record = asRecord(feature);
+  if (record === null || record["status"] !== "ok") {
+    return null;
+  }
+  const owner = asRecord(record["owner"]);
+  if (owner === null) {
+    return null;
+  }
+  const kind = owner["kind"];
+  const address = typeof owner["address"] === "string" ? owner["address"] : null;
+  if (kind === "renounced") {
+    return { address: null, kind: "renounced" };
+  }
+  if (kind === "safe") {
+    return { address, kind: "safe-multisig" };
+  }
+  if (kind === "contract") {
+    return { address, kind: "contract" };
+  }
+  if (address !== null) {
+    return { address, kind: "single-key" };
+  }
+  return null;
+}
+
+function provenOwnerFromFeatures(features: unknown): ProvenOwner | null {
+  const root = asRecord(features);
+  const variants = root !== null && Array.isArray(root["variants"]) ? root["variants"] : null;
+  const variant = variants === null ? null : asRecord(variants[0] ?? null);
+  return variant === null ? null : toProvenOwner(variant["owner"]);
+}
+
+// Owner row for found and extended owner checks (UI v2 §5.2): analysis
+// tools have no owner, so they render no row at all. Before the live read
+// the row says the owner was not read yet; the button fetches the same
+// on-chain features as the facts card and fills the owner chip, tagged
+// "Live read · not in score" because the read never moves the score.
+function DetailOwnerRow({
+  address,
+  apiKey,
+  group,
+  temporality,
+  onchainAvailability,
+}: {
+  readonly address: string;
+  readonly apiKey: string;
+  readonly group: string;
+  readonly temporality: string | null;
+  readonly onchainAvailability: Availability;
+}): JSX.Element | null {
+  const [onchain, setOnchain] = useState<OnchainFeaturesState | null>(null);
+  const [pending, setPending] = useState(false);
+  if (group !== "owner") {
+    return null;
+  }
+  async function onReadOwner(): Promise<void> {
+    setPending(true);
+    const next = await fetchOnchainFeatures(address, apiKey.length === 0 ? null : apiKey);
+    setPending(false);
+    setOnchain(next);
+  }
+  const owner = onchain !== null && onchain.status === "ready" ? provenOwnerFromFeatures(onchain.features) : null;
+  // S-123: no enabled button may fire a request that answers
+  // not-configured. While /health reports the on-chain read unavailable
+  // the row names it with no button, so the dead 501 fetch (and its
+  // browser-level console error) never happens.
+  const notConfigured =
+    onchain !== null ? onchain.status === "not-configured" : onchainAvailability === "unavailable";
+  return (
+    <>
+      <p className="detail-owner">
+        {owner === null ? (
+          <>
+            <span className="owner-control">Controlled by:</span> <span>not read yet</span>{" "}
+            {notConfigured ? (
+              <span className="quiet">On-chain reads are not configured on this server.</span>
+            ) : (
+              <>
+                {onchain !== null ? (
+                  <span className="quiet">The on-chain read did not name an owner. </span>
+                ) : null}
+                <button
+                  type="button"
+                  className="button-ghost detail-owner-btn"
+                  onClick={() => void onReadOwner()}
+                  disabled={pending}
+                >
+                  {pending ? "Loading…" : onchain === null ? "Read owner on-chain" : "Retry"}
+                </button>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <OwnerChip owner={owner} /> <span className="live-tag">Live read · not in score</span>
+          </>
+        )}
+      </p>
+      {temporality === null ? null : <p className="detail-temporality">{temporality}</p>}
+    </>
+  );
 }
 
 const EVIDENCE_LIMIT = 5;
@@ -248,14 +361,18 @@ export function PluginDetailView({
   return (
     <div>
       <div className="detail-toolbar">
-        <a className="detail-back" href={pluginsHref(address)}>
-          ← All plugins
+        <a className="button-ghost detail-back" href={pluginsHref(address)}>
+          ← All checks
         </a>
         <ExpertSwitch mode={mode} onModeChange={onModeChange} testId="detail-expert-switch" />
       </div>
-      <p className="detail-crumb">
-        {symbol} › What we checked › {title}
-      </p>
+      <nav className="detail-crumb" aria-label="Breadcrumb">
+        <a href={`#/token/${encodeURIComponent(address)}`}>{symbol}</a>
+        <span aria-hidden="true"> › </span>
+        <a href={pluginsHref(address)}>What we checked</a>
+        <span aria-hidden="true"> › </span>
+        <span aria-current="page">{title}</span>
+      </nav>
       <p role="status" className="sr-only">
         {title} details
       </p>
@@ -281,6 +398,7 @@ export function PluginDetailView({
           <h1 tabIndex={-1} ref={headingRef}>
             {tile.copy.title}
           </h1>
+          <p className="detail-question">{tile.copy.question}</p>
           <p className="detail-status">
             <span className="lamp" aria-hidden="true">
               <Pictogram name={tile.state === "found-scored" ? "found" : tile.state === "extended" ? "extended" : tile.state === "error" ? "error" : tile.state === "not-run" ? "notrun" : tile.state === "cant-tell" ? "canttell" : "notfound"} size={20} />
@@ -289,13 +407,15 @@ export function PluginDetailView({
               {tile.state === "found-scored"
                 ? `Found · ${severityWord(tile.severity)}`
                 : PLUGIN_STATE_WORD[tile.state]}
-            </span>{" "}
+            </span>
             {tile.state === "extended" ? (
-              <span className="extended-chip" data-testid="detail-not-in-score" data-nowrap={true}>
-                Not in score
-              </span>
-            ) : null}{" "}
-            <span className="dim">{tile.copy.question}</span>
+              <>
+                {" "}
+                <span className="extended-chip" data-testid="detail-not-in-score" data-nowrap={true}>
+                  Not in score
+                </span>
+              </>
+            ) : null}
           </p>
           <p className="detail-sentence">
             <span aria-hidden="true">
@@ -305,63 +425,73 @@ export function PluginDetailView({
             <span className="sr-only">{sentence}</span>
           </p>
           {tile.state === "found-scored" || tile.state === "extended" ? (
-            <p className="detail-owner">
-              <OwnerChip owner={null} />
-              <span className="detail-temporality"> · {temporalityLine(tile.payloads)}</span>
-            </p>
+            <DetailOwnerRow
+              address={address}
+              apiKey={apiKey}
+              group={tile.copy.group}
+              temporality={temporalityLine(tile.payloads)}
+              onchainAvailability={availability?.onchain ?? "available"}
+            />
           ) : null}
           <p className="quiet numeric detail-provenance">
-            {tile.pluginId} · v{entry?.version ?? "0.0.0"} · {detailProvenance(tile.state, entry?.weight, modelVersion)}
+            {expert ? (
+              <>
+                <span className="detail-plugin-id">{tile.pluginId}</span>
+                {` · v${entry?.version ?? "0.0.0"} · `}
+              </>
+            ) : null}
+            {detailProvenance(tile.state, entry?.weight, modelVersion)}
+            {expert ? null : ` · Check v${entry?.version ?? "0.0.0"}`}
           </p>
         </section>
       )}
-      {tile === null ? null : slug === "decompiler" ? (
-        <DecompilerList
-          address={address}
-          apiKey={apiKey}
-          findings={findings}
-          expert={expert}
-          initialSelector={fn}
-          initialView={codeView}
-          initialPc={codePc}
-          explainAvailable={(availability?.explainCode ?? "available") === "available"}
-          evidenceIndex={evidenceIndex}
-        />
-      ) : (
-        <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} />
-      )}
       {tile === null ? null : (
-        <ProofSection
-          address={address}
-          apiKey={apiKey}
-          pluginId={tile.pluginId}
-          slug={slug}
-          expert={expert}
-        />
-      )}
-      {tile === null ? null : (
-        <section className="card detail-limits" aria-label="What this check can't tell you">
-          <h2>What this check can&apos;t tell you</h2>
-          <p className="detail-limits-text">{tile.copy.limits}</p>
-        </section>
-      )}
-      {tile === null || !expert ? null : (
-        <section className="card detail-raw" aria-label="Expert raw" data-testid="detail-expert-raw">
-          <h2>Expert raw</h2>
-          {findings.length === 0 ? (
-            <p className="muted">No findings: no payload to show.</p>
+        <div className="detail-stack">
+          {slug === "decompiler" ? (
+            <DecompilerList
+              address={address}
+              apiKey={apiKey}
+              findings={findings}
+              expert={expert}
+              initialSelector={fn}
+              initialView={codeView}
+              initialPc={codePc}
+              explainAvailable={(availability?.explainCode ?? "available") === "available"}
+              evidenceIndex={evidenceIndex}
+            />
           ) : (
-            findings.map((finding) => (
-              <article key={finding.id} className="detail-raw-finding">
-                <h3 className="mono">{finding.id}</h3>
-                <p>{finding.title}</p>
-                {finding.payload === undefined ? null : (
-                  <SchemaValue value={finding.payload} schema={entry?.outputSchema} />
-                )}
-              </article>
-            ))
+            <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} />
           )}
-        </section>
+          <ProofSection
+            address={address}
+            apiKey={apiKey}
+            pluginId={tile.pluginId}
+            slug={slug}
+            expert={expert}
+          />
+          <section className="card detail-limits" aria-label="What this check can't tell you">
+            <h2>What this check can&apos;t tell you</h2>
+            <p className="detail-limits-text">{tile.copy.limits}</p>
+          </section>
+          {!expert ? null : (
+            <section className="card detail-raw" aria-label="Expert raw" data-testid="detail-expert-raw">
+              <h2>Expert raw</h2>
+              {findings.length === 0 ? (
+                <p className="muted">No findings: no payload to show.</p>
+              ) : (
+                findings.map((finding) => (
+                  <article key={finding.id} className="detail-raw-finding">
+                    <h3 className="mono">{finding.id}</h3>
+                    <p>{finding.title}</p>
+                    {finding.payload === undefined ? null : (
+                      <SchemaValue value={finding.payload} schema={entry?.outputSchema} />
+                    )}
+                  </article>
+                ))
+              )}
+            </section>
+          )}
+        </div>
       )}
       {prev === null && next === null ? null : (
         <nav className="detail-prevnext" aria-label="More checks">

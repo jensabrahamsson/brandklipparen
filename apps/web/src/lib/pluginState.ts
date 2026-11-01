@@ -100,7 +100,7 @@ export const PLUGIN_STATE_WORD: Record<PluginState, string> = Object.freeze({
   error: "Error",
   "not-run": "Not run",
   "found-scored": "Found",
-  extended: "Found · Not in score",
+  extended: "Found",
   "cant-tell": "Can't tell",
   "not-found": "Not found",
 });

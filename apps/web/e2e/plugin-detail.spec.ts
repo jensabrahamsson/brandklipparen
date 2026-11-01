@@ -220,8 +220,9 @@ test("plugin_detail_focuses_heading_sets_title_and_states_provenance", async ({ 
 
   // Scored weight from /v1/plugins: the check reads as in score.
   await expect(page.getByText("In score: yes (model 1.0.1)")).toBeVisible();
-  // Owner honesty: no address is proven by the envelope.
-  await expect(page.getByText("Owner not identified")).toBeVisible();
+  // Owner honesty: no address is proven by the envelope until read live.
+  await expect(page.getByText("not read yet")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Read owner on-chain" })).toBeVisible();
   await expect(page.getByText("Applies now")).toBeVisible();
   // Limits and evidence naming from the decompiler readout.
   await expect(page.getByText("not which wallets are listed")).toBeVisible();
@@ -232,7 +233,7 @@ test("plugin_detail_focuses_heading_sets_title_and_states_provenance", async ({ 
   await page.goto(`/#/token/${ADDRESS}/plugins/mint`);
   await expect(page.getByRole("heading", { name: "Mint", level: 1 })).toBeFocused();
   await expect(page.getByTestId("detail-not-in-score")).toContainText("Not in score");
-  await expect(page.getByText("No: extended analysis")).toBeVisible();
+  await expect(page.getByText("In score: no (extended analysis)")).toBeVisible();
 });
 
 test("plugin_detail_expert_shows_raw_payload", async ({ page }) => {

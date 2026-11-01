@@ -77,9 +77,9 @@ describe("plugin detail provenance", () => {
   });
 
   test("a zero weight reads as extended analysis, never in score", () => {
-    expect(detailProvenance("found-scored", 0, "1.0.1")).toBe("No: extended analysis");
-    expect(detail("found-scored", 0)).toContain("No: extended analysis");
-    expect(detail("found-scored", 0)).not.toContain("In score");
+    expect(detailProvenance("found-scored", 0, "1.0.1")).toBe("In score: no (extended analysis)");
+    expect(detail("found-scored", 0)).toContain("In score: no (extended analysis)");
+    expect(detail("found-scored", 0)).toContain("Check v1.0.0");
   });
 
   test("the extended finding shows Not in score in one non-wrapping chip", () => {
@@ -100,5 +100,95 @@ describe("plugin detail provenance", () => {
   test("the status sentence stays whole in the accessibility tree", () => {
     const html = detail("found-scored", 3);
     expect(html).toContain("The owner can stop chosen wallets from sending tokens.");
+  });
+});
+
+describe("plugin detail header (D-7)", () => {
+  function toolDetail(): string {
+    return renderToString(
+      <PluginDetailView
+        address={ADDRESS}
+        apiKey=""
+        symbol="TST"
+        slug="capability"
+        tile={{
+          pluginId: "dev.brandklipparen.capability",
+          slug: "capability",
+          copy: PLUGIN_COPY["capability"] as BoardTile["copy"],
+          state: "found-scored",
+          severity: "low",
+          payloads: [{ capability: "call" }],
+          evidenceCount: 1,
+          orderIndex: 9,
+        }}
+        entry={entry(0)}
+        findings={FINDINGS}
+        names={new Map()}
+        modelVersion="1.0.1"
+        mode="simple"
+        onModeChange={() => undefined}
+        prev={null}
+        next={null}
+      />,
+    );
+  }
+
+  test("the extended header names the question and says Not in score once", () => {
+    const html = detail("extended");
+    expect(html).toContain("Can the owner block wallets?");
+    expect(html.match(/Not in score/g) ?? []).toHaveLength(1);
+  });
+
+  test("owner checks offer the on-chain owner read with its own temporality line", () => {
+    const html = detail("found-scored", 3);
+    expect(html).toContain("Controlled by:");
+    expect(html).toContain("not read yet");
+    expect(html).toContain("Read owner on-chain");
+    expect(html).toContain('class="detail-temporality">Applies now');
+  });
+
+  test("tool checks render no owner row", () => {
+    const html = toolDetail();
+    expect(html).not.toContain("detail-owner");
+    expect(html).not.toContain("Read owner on-chain");
+    expect(html).not.toContain("not read yet");
+  });
+
+  test("the breadcrumb links the token and the board, and the back link names checks", () => {
+    const html = detail("found-scored", 3);
+    expect(html).toContain('aria-label="Breadcrumb"');
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain("← All checks");
+    expect(html).not.toContain("All plugins");
+  });
+
+  test("simple mode hides the plugin id from the provenance line", () => {
+    const html = detail("found-scored", 3);
+    expect(html).not.toContain("dev.brandklipparen.blacklist");
+    expect(html).toContain("Check v1.0.0");
+  });
+
+  test("an unavailable on-chain read names it with no button and no request", () => {
+    const html = renderToString(
+      <PluginDetailView
+        address={ADDRESS}
+        apiKey=""
+        symbol="TST"
+        slug="blacklist"
+        tile={tile("found-scored")}
+        entry={entry(3)}
+        findings={FINDINGS}
+        names={new Map()}
+        modelVersion="1.0.1"
+        mode="simple"
+        onModeChange={() => undefined}
+        prev={null}
+        next={null}
+        availability={{ investigation: "unavailable", explain: "unavailable", chat: "unavailable", rug: "unavailable", explainCode: "unavailable", onchain: "unavailable" }}
+      />,
+    );
+    expect(html).toContain("not read yet");
+    expect(html).toContain("On-chain reads are not configured on this server.");
+    expect(html).not.toContain("Read owner on-chain");
   });
 });
