@@ -1,7 +1,9 @@
 // Live new-tokens list: a calm feed of fresh Uniswap V2/V3 pairs,
 // newest first, polled every ~10 s. Rows never jump: while the reader is
-// scrolled or focused inside the list, new rows wait in a buffer behind
-// an "N new tokens · Show" pill instead of pushing the rows down.
+// focused inside the list or hovering it, unseen rows wait in a buffer
+// behind an "N new tokens · Show" pill instead of pushing the rows down.
+// Rows already shown always take the poll's updates, so they keep
+// resolving instead of freezing.
 // The count line is the single polite live region; the list itself is
 // not one, so screen readers hear the count, not every row.
 // Rows are the shared FeedRow (DX-1): symbol, compact age, score, DEX,
@@ -18,9 +20,10 @@ import {
   feedStatusLabel,
   filterLiveEntries,
   formatAgeCompact,
+  isSectionEngaged,
   mergeShown,
+  nextLiveView,
   tokenCountLabel,
-  unseenEntries,
 } from "../lib/liveTokens.ts";
 import { formatUsdCompact, marketVolumeFor, type MarketItem } from "../lib/market.ts";
 import type { LiveFilter, LiveTokenEntry, LiveTokensSnapshot } from "../lib/liveTokens.ts";
@@ -394,13 +397,9 @@ export function LiveTokens({
 
   useEffect(() => {
     let cancelled = false;
-    const readerEngaged = (): boolean => {
-      if (typeof window !== "undefined" && window.scrollY > 0) {
-        return true;
-      }
-      const root = sectionRef.current;
-      return root !== null && root.contains(document.activeElement);
-    };
+    // Engagement is focus or hover inside the section (F-13 fix): scroll
+    // position alone never freezes the rows.
+    const readerEngaged = (): boolean => isSectionEngaged(sectionRef.current);
     const load = (): void => {
       fetchLiveTokens(apiKey)
         .then((next) => {
@@ -409,15 +408,7 @@ export function LiveTokens({
           }
           setError(null);
           setLastPollAt(Date.now());
-          setView((current) => {
-            if (current === null || !readerEngaged()) {
-              return { snapshot: next, buffered: [] };
-            }
-            return {
-              snapshot: current.snapshot,
-              buffered: unseenEntries(current.snapshot.items, next.items, current.buffered),
-            };
-          });
+          setView((current) => nextLiveView(current, next, readerEngaged()));
         })
         .catch(() => {
           if (!cancelled) {

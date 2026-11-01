@@ -8,7 +8,10 @@ import {
   formatAge,
   formatAgeCompact,
   isFeedStale,
+  isSectionEngaged,
   mergeShown,
+  nextLiveView,
+  refreshShown,
   shortAddress,
   tokenCountLabel,
   unseenEntries,
@@ -332,5 +335,74 @@ describe("live tokens client", () => {
     expect(html).toContain('role="status"');
     expect(html).not.toContain('role="alert"');
     expect(html).toContain("Could not load new tokens. Retrying…");
+  });
+});
+
+describe("c14 feed freeze", () => {
+  function idleRoot(): { contains: (node: Node | null) => boolean; matches: (selector: string) => boolean } {
+    return { contains: () => false, matches: () => false };
+  }
+
+  test("scroll position alone never counts as engaged", () => {
+    vi.stubGlobal("window", { scrollY: 480 });
+    try {
+      expect(isSectionEngaged(idleRoot())).toBe(false);
+      expect(isSectionEngaged(null)).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("focus or hover inside the section counts as engaged", () => {
+    const focused = {} as unknown as Node;
+    vi.stubGlobal("document", { activeElement: focused });
+    try {
+      expect(isSectionEngaged({ contains: (node) => node === focused, matches: () => false })).toBe(true);
+      expect(isSectionEngaged({ contains: () => false, matches: () => true })).toBe(true);
+      expect(isSectionEngaged({ contains: () => false, matches: () => false })).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("an engaged poll merges updates into shown rows and buffers only unseen rows", () => {
+    vi.stubGlobal("window", { scrollY: 480 });
+    try {
+      const shown: LiveTokenEntry = { ...PENDING, state: "analyzing", score: undefined };
+      const current = { snapshot: snapshot([shown]), buffered: [] as LiveTokenEntry[] };
+      const resolved: LiveTokenEntry = { ...PENDING, state: "done", riskBand: "Low", score: 12 };
+      const fresh: LiveTokenEntry = { ...NEW, pairAddress: syntheticAddress(40) };
+      const next = snapshot([resolved, fresh]);
+      const view = nextLiveView(current, { ...next, updatedAt: 1700000060000 }, true);
+      // The shown row resolves in place and keeps its position.
+      expect(view.snapshot.items.map((entry) => entry.pairAddress)).toEqual([PENDING.pairAddress]);
+      expect(view.snapshot.items[0]?.state).toBe("done");
+      expect(view.snapshot.items[0]?.score).toBe(12);
+      // The header timestamp advances, so the feed never reads paused.
+      expect(view.snapshot.updatedAt).toBe(1700000060000);
+      // Only the unseen row waits in the buffer.
+      expect(view.buffered.map((entry) => entry.pairAddress)).toEqual([fresh.pairAddress]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("a disengaged poll replaces the snapshot and drops the buffer", () => {
+    const current = { snapshot: snapshot([NEW]), buffered: [PENDING] };
+    const view = nextLiveView(current, snapshot([CANT_TELL]), false);
+    expect(view.snapshot.items.map((entry) => entry.pairAddress)).toEqual([CANT_TELL.pairAddress]);
+    expect(view.buffered).toEqual([]);
+    expect(nextLiveView(null, snapshot([NEW]), true).snapshot.items).toHaveLength(1);
+  });
+
+  test("refreshShown keeps shown order and keeps rows missing from the poll", () => {
+    const incoming: LiveTokenEntry = { ...PENDING, state: "done", riskBand: "High", score: 78 };
+    expect(refreshShown([PENDING, NEW], [incoming]).map((entry) => entry.pairAddress)).toEqual([
+      PENDING.pairAddress,
+      NEW.pairAddress,
+    ]);
+    expect(refreshShown([PENDING, NEW], [incoming])[0]).toEqual(incoming);
+    expect(refreshShown([PENDING, NEW], [incoming])[1]).toEqual(NEW);
+    expect(refreshShown([NEW], [])).toEqual([NEW]);
   });
 });

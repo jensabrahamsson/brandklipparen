@@ -1,14 +1,16 @@
 // DexScreener market list (DX-1 §A3, W-13): the promoted-tokens column
 // beside New pairs. Polls /v1/market-new every 30 s; while the reader is
-// scrolled or focused inside the list, new rows wait behind a "3 new ·
-// Show" pill instead of pushing rows down. Rows are the shared FeedRow:
+// focused inside the list or hovering it, unseen rows wait behind a
+// "3 new · Show" pill instead of pushing rows down. Rows already shown
+// always take the poll's updates, so they keep resolving instead of
+// freezing. Rows are the shared FeedRow:
 // symbol, compact age, owner-power chip, score when analysed, DEX,
 // liquidity and volume, then the full token address with copy. The frame
 // uses the dashed "outside the score" rule. Display only: nothing here
 // touches scoring, signals or evidence.
 import { useEffect, useRef, useState, type JSX } from "react";
 import { riskBand } from "../lib/risk.ts";
-import { formatAgeCompact } from "../lib/liveTokens.ts";
+import { formatAgeCompact, isSectionEngaged } from "../lib/liveTokens.ts";
 import {
   fetchMarketNew,
   formatPriceChange,
@@ -20,7 +22,7 @@ import {
   marketStatusLabel,
   marketVolumeFor,
   mergeMarketShown,
-  unseenMarketItems,
+  nextMarketView,
   type MarketItem,
   type MarketSnapshot,
   type RecentAnalysis,
@@ -305,13 +307,9 @@ export function MarketList({
 
   useEffect(() => {
     let cancelled = false;
-    const readerEngaged = (): boolean => {
-      if (typeof window !== "undefined" && window.scrollY > 0) {
-        return true;
-      }
-      const root = sectionRef.current;
-      return root !== null && root.contains(document.activeElement);
-    };
+    // Engagement is focus or hover inside the section (F-13 fix): scroll
+    // position alone never freezes the rows.
+    const readerEngaged = (): boolean => isSectionEngaged(sectionRef.current);
     const load = (): void => {
       fetchMarketNew(apiKey)
         .then((next) => {
@@ -327,15 +325,7 @@ export function MarketList({
           }
           setError(null);
           setLastPollAt(Date.now());
-          setView((current) => {
-            if (current === null || !readerEngaged()) {
-              return { snapshot: next, buffered: [] };
-            }
-            return {
-              snapshot: current.snapshot,
-              buffered: unseenMarketItems(current.snapshot.items, next.items, current.buffered),
-            };
-          });
+          setView((current) => nextMarketView(current, next, readerEngaged()));
         })
         .catch(() => {
           if (!cancelled) {

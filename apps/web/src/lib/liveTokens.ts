@@ -95,10 +95,61 @@ export function feedStatusLabel(updatedAt: number, nowMs: number): string {
   return updatedAgoLabel(updatedAt, nowMs);
 }
 
-// Buffering (S-124): while the reader is scrolled or focused inside the
-// list, new rows wait in a buffer instead of pushing the table down. The
-// newest poll's unseen entries come first; nothing already shown or
-// buffered ever repeats.
+// Engagement (F-13 fix): the reader counts as engaged only while focus
+// or hover is inside the section. Scroll position alone never counts:
+// both feeds sit below the fold, so `scrollY > 0` kept every shown row
+// stuck on "analyzing…" and left the header reading paused while polls
+// were succeeding.
+export function isSectionEngaged(
+  root: { contains(node: Node | null): boolean; matches(selector: string): boolean } | null | undefined,
+): boolean {
+  if (root === null || root === undefined) {
+    return false;
+  }
+  if (typeof document !== "undefined" && root.contains(document.activeElement)) {
+    return true;
+  }
+  try {
+    return root.matches(":hover");
+  } catch {
+    return false;
+  }
+}
+
+// Refresh (F-13 fix): merge a poll's updates into the rows the reader
+// already sees, matched by pair address, keeping the shown order. Rows
+// already on screen therefore keep resolving (analyzing → scored) while
+// the reader is engaged; only unseen rows wait in the buffer.
+export function refreshShown(
+  displayed: readonly LiveTokenEntry[],
+  incoming: readonly LiveTokenEntry[],
+): LiveTokenEntry[] {
+  if (incoming.length === 0) {
+    return [...displayed];
+  }
+  const freshByPair = new Map(incoming.map((entry) => [entry.pairAddress, entry]));
+  return displayed.map((entry) => freshByPair.get(entry.pairAddress) ?? entry);
+}
+
+export function nextLiveView(
+  current: { readonly snapshot: LiveTokensSnapshot; readonly buffered: readonly LiveTokenEntry[] } | null,
+  next: LiveTokensSnapshot,
+  engaged: boolean,
+): { snapshot: LiveTokensSnapshot; buffered: readonly LiveTokenEntry[] } {
+  if (current === null || !engaged) {
+    return { snapshot: next, buffered: [] };
+  }
+  const shown = refreshShown(current.snapshot.items, next.items);
+  return {
+    snapshot: { ...next, items: shown },
+    buffered: unseenEntries(shown, next.items, current.buffered),
+  };
+}
+
+// Buffering (S-124): while the reader is focused inside the list or
+// hovering it, new rows wait in a buffer instead of pushing the table
+// down. The newest poll's unseen entries come first; nothing already
+// shown or buffered ever repeats.
 export function unseenEntries(
   displayed: readonly LiveTokenEntry[],
   incoming: readonly LiveTokenEntry[],

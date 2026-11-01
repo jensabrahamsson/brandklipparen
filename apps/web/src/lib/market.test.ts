@@ -12,8 +12,10 @@ import {
   marketShownLabel,
   marketVolumeFor,
   mergeMarketShown,
+  nextMarketView,
   parseMarketItem,
   parseMarketSnapshot,
+  refreshMarketShown,
   unseenMarketItems,
   type MarketItem,
 } from "./market.ts";
@@ -140,6 +142,49 @@ describe("market listing client", () => {
     expect(fresh.map((entry) => entry.tokenAddress)).toEqual([second.tokenAddress]);
     const shown = mergeMarketShown([first], fresh);
     expect(shown.map((entry) => entry.tokenAddress)).toEqual([second.tokenAddress, first.tokenAddress]);
+  });
+
+  test("c14_engaged_poll_merges_updates_into_shown_rows_despite_scroll", () => {
+    vi.stubGlobal("window", { scrollY: 480 });
+    try {
+      const shown = validItem({ tokenAddress: syntheticAddress(78).toLowerCase() });
+      const current = {
+        snapshot: { status: "live" as const, updatedAt: BASE, items: [shown] },
+        buffered: [] as MarketItem[],
+      };
+      const rescored = validItem({
+        tokenAddress: shown.tokenAddress,
+        analysis: { score: 45, powersFound: 3, powersExtended: 1 },
+      });
+      const fresh = validItem({ tokenAddress: syntheticAddress(79).toLowerCase() });
+      const view = nextMarketView(
+        current,
+        { status: "live", updatedAt: BASE + 30_000, items: [rescored, fresh] },
+        true,
+      );
+      // The shown row takes the poll's analysis in place and keeps position.
+      expect(view.snapshot.items.map((entry) => entry.tokenAddress)).toEqual([shown.tokenAddress]);
+      expect(view.snapshot.items[0]?.analysis).toEqual({ score: 45, powersFound: 3, powersExtended: 1 });
+      // The header timestamp advances, so the market never reads stale.
+      expect(view.snapshot.updatedAt).toBe(BASE + 30_000);
+      // Only the unseen row waits in the buffer.
+      expect(view.buffered.map((entry) => entry.tokenAddress)).toEqual([fresh.tokenAddress]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("c14_refreshMarketShown_matches_case_insensitively_and_keeps_order", () => {
+    const shown = validItem({ tokenAddress: syntheticAddress(78).toLowerCase() });
+    const other = validItem({ tokenAddress: syntheticAddress(80).toLowerCase() });
+    const updated = validItem({
+      tokenAddress: shown.tokenAddress,
+      liquidityUsd: 999,
+    });
+    const refreshed = refreshMarketShown([shown, other], [updated]);
+    expect(refreshed.map((entry) => entry.tokenAddress)).toEqual([shown.tokenAddress, other.tokenAddress]);
+    expect(refreshed[0]?.liquidityUsd).toBe(999);
+    expect(refreshed[1]).toEqual(other);
   });
 
   test("dx1_fetch_returns_the_snapshot_and_maps_not_configured", async () => {

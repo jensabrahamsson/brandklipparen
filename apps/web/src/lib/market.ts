@@ -323,8 +323,38 @@ export function marketShownLabel(shown: number, total: number): string {
   return `${shown} of ${total} new tokens`;
 }
 
+// Refresh (F-13 fix): merge a poll's updates into the rows the reader
+// already sees, matched by token address, keeping the shown order. Rows
+// already on screen therefore keep resolving while the reader is
+// engaged; only unseen rows wait in the buffer.
+export function refreshMarketShown(
+  displayed: readonly MarketItem[],
+  incoming: readonly MarketItem[],
+): MarketItem[] {
+  if (incoming.length === 0) {
+    return [...displayed];
+  }
+  const freshByToken = new Map(incoming.map((entry) => [entry.tokenAddress.toLowerCase(), entry]));
+  return displayed.map((entry) => freshByToken.get(entry.tokenAddress.toLowerCase()) ?? entry);
+}
+
+export function nextMarketView(
+  current: { readonly snapshot: MarketSnapshot; readonly buffered: readonly MarketItem[] } | null,
+  next: MarketSnapshot,
+  engaged: boolean,
+): { snapshot: MarketSnapshot; buffered: readonly MarketItem[] } {
+  if (current === null || !engaged) {
+    return { snapshot: next, buffered: [] };
+  }
+  const shown = refreshMarketShown(current.snapshot.items, next.items);
+  return {
+    snapshot: { ...next, items: shown },
+    buffered: unseenMarketItems(shown, next.items, current.buffered),
+  };
+}
+
 // Buffering (same calm contract as the on-chain list): while the reader
-// is scrolled or focused inside the list, new rows wait behind a
+// is focused inside the list or hovering it, new rows wait behind a
 // "3 new · Show" pill instead of pushing the rows down.
 export function unseenMarketItems(
   displayed: readonly MarketItem[],
