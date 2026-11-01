@@ -202,7 +202,7 @@ export function PluginBoard({
       />
     ));
   return (
-    <section aria-label="What we checked" data-testid="plugin-board">
+    <section aria-label="What we checked" data-testid="plugin-board" className="plugin-board">
       <h2 id="plugin-board" tabIndex={-1}>
         What we checked
       </h2>

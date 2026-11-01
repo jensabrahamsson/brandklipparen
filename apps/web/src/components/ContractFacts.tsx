@@ -279,7 +279,7 @@ export function ContractFacts({
   const liveRows = variant !== null;
 
   return (
-    <aside aria-label="Contract facts">
+    <aside aria-label="Contract facts" className="token-facts">
       <section className="card contract-facts">
         <h2>Contract facts</h2>
         <dl className="facts contract-facts-list">

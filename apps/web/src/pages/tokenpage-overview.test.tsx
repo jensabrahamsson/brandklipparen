@@ -224,6 +224,28 @@ describe("local question match highlights tiles (K-035)", () => {
   });
 });
 
+describe("token grid areas (R2-7 D-8)", () => {
+  test("board_and_cant_span_full_width_with_facts_beside_main", () => {
+    const html = renderOverview("");
+    // Each overview section maps onto its grid area.
+    expect(html).toContain('data-section="explanation"');
+    expect(html).toContain("token-main");
+    expect(html).toContain('data-section="plugin-findings"');
+    expect(html).toContain("token-board");
+    expect(html).toContain('data-section="cant-tell"');
+    expect(html).toContain("token-cant");
+    // The board hosts container queries for its tiles.
+    expect(html).toContain("plugin-board");
+    // Facts sit beside main at desktop and below the board under 1100 px,
+    // so the facts aside renders after the board in DOM order.
+    const boardAt = html.indexOf('data-testid="plugin-board"');
+    const factsAt = html.indexOf("Contract facts");
+    expect(boardAt).toBeGreaterThanOrEqual(0);
+    expect(factsAt).toBeGreaterThan(boardAt);
+    expect(html).toContain("token-facts");
+  });
+});
+
 describe("expert mode detail (K-034)", () => {
   test("expert_renders_the_expert_detail_section", () => {
     const html = renderOverview("", "expert");

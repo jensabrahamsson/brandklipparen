@@ -706,6 +706,16 @@ function AssessedView({
   );
 }
 
+// R2-7 (D-8): each overview section maps onto its grid area. The DOM
+// stays content-first (main, board, cant, facts): at desktop the facts
+// card is a complementary aside placed top-right, and below 1100 px the
+// visual order matches the DOM with the facts below the board.
+const GRID_AREA_CLASS: Record<string, string> = {
+  explanation: "token-main",
+  "plugin-findings": "token-board",
+  "cant-tell": "token-cant",
+};
+
 // Overview sections in deterministic risk-adaptive order (S-060, K-034,
 // P-19, W-8): the plan comes from the frozen analysis only, DOM order
 // equals visual order, and every section always renders. The Ask field
@@ -835,20 +845,18 @@ export function OverviewSections({
   return (
     <div>
       <div className="token-grid">
-        <div>
-          {renderedSections.map((sectionId, sectionIndex) => (
-            <div
-              key={sectionId}
-              data-section={sectionId}
-              className="fade-sec"
-              tabIndex={-1}
-              style={{ "--sec-i": sectionIndex + 1 } as CSSProperties}
-            >
-              {blocks[sectionId]}
-            </div>
-          ))}
-          {mode === "expert" ? <ExpertDetail result={result} /> : null}
-        </div>
+        {renderedSections.map((sectionId, sectionIndex) => (
+          <div
+            key={sectionId}
+            data-section={sectionId}
+            className={`fade-sec ${GRID_AREA_CLASS[sectionId] ?? ""}`}
+            tabIndex={-1}
+            style={{ "--sec-i": sectionIndex + 1 } as CSSProperties}
+          >
+            {blocks[sectionId]}
+            {sectionId === "explanation" && mode === "expert" ? <ExpertDetail result={result} /> : null}
+          </div>
+        ))}
         <ContractFacts
           result={result}
           expert={mode === "expert"}

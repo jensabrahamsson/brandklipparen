@@ -2319,9 +2319,9 @@ a {
   }
 }
 
-/* Wide phone and tablet (640-900 px): the card is full width below the
-   plugin board, so facts read in two columns. */
-@media (min-width: 640px) and (max-width: 900px) {
+/* R2-7 (D-8): below 1100 px the card is full width below the plugin
+   board, so facts read in two columns. */
+@media (min-width: 640px) and (max-width: 1099px) {
   .contract-facts-list {
     grid-template-columns: 1fr 1fr;
     column-gap: 24px;
@@ -2404,16 +2404,45 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
+/* R2-7 (D-8): the facts card is a side column only at >=1100 px.
+   The plugin board and the can't-tell panel span the full page width
+   below the facts, so no column sits empty for thousands of pixels.
+   The DOM stays content-first (main, board, cant, facts): below
+   1100 px the visual order matches the DOM with the facts below the
+   board. Every area keeps min-width 0 so long addresses never push
+   the page wide. */
 .token-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "main" "board" "cant" "facts";
   gap: 20px;
   margin-top: 20px;
 }
 
-@media (max-width: 900px) {
+.token-grid > .token-main {
+  grid-area: main;
+  min-width: 0;
+}
+
+.token-grid > .token-board {
+  grid-area: board;
+  min-width: 0;
+}
+
+.token-grid > .token-cant {
+  grid-area: cant;
+  min-width: 0;
+}
+
+.token-grid > .token-facts {
+  grid-area: facts;
+  min-width: 0;
+}
+
+@media (min-width: 1100px) {
   .token-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-areas: "main facts" "board board" "cant cant";
   }
 }
 
@@ -3393,21 +3422,46 @@ a {
   font-weight: 600;
 }
 
+/* R2-7 (D-8): the board spans the full page width, so its tiles
+   answer to the board width (container query), not the viewport. The
+   old viewport query made 3 columns of about 175 px tiles inside a
+   560 px main column; the full-width board gets about 380 px tiles. */
+.plugin-board {
+  container-type: inline-size;
+}
+
 .plugin-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
-@media (min-width: 480px) {
+@container (min-width: 480px) {
   .plugin-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (min-width: 900px) {
+@container (min-width: 760px) {
   .plugin-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* Fallback for engines without container queries: viewport widths at
+   which the full-width board is wide enough for 2 or 3 tiles of at
+   least 260 px. */
+@supports not (container-type: inline-size) {
+  @media (min-width: 560px) {
+    .plugin-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .plugin-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
   }
 }
 
