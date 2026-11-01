@@ -1,9 +1,9 @@
 // Verified-source application service behind GET /v1/source (VS-B2).
 // Composes the primary and fallback VerifiedSourcePort adapters over one
 // bytecode fetch: the route fetches the contract code through the bound
-// chain port, keys the bounded memo by code hash, and serves the mapped
-// shape. Scoring, signals, evidence and the analyze envelope stay
-// untouched: this service feeds a separate read route only. `none`
+// chain port, keys the bounded memo by address and code hash, and serves
+// the mapped shape. Scoring, signals, evidence and the analyze envelope
+// stay untouched: this service feeds a separate read route only. `none`
 // (checked, nothing published) is distinct from `unavailable` (could not
 // check): only a reached provider answering empty is `none`.
 import { keccak256HexOfUtf8 } from "../domain/types.ts";
@@ -16,6 +16,7 @@ import type {
   Timestamp as TimestampType,
 } from "../domain/types.ts";
 import type { RpcPort } from "../ports/rpc.ts";
+import type { ClockPort } from "../ports/clock.ts";
 import type {
   VerifiedSourceMatch,
   VerifiedSourcePort,
@@ -72,14 +73,27 @@ export type VerifiedSourceServiceOptions = {
   readonly primary: VerifiedSourcePort;
   readonly fallback?: VerifiedSourcePort | undefined;
   readonly rpc: RpcPort;
+  readonly clock: ClockPort;
+};
+
+// Time-to-live for `none` memo entries (C-25, F-30): a token verified
+// later must become visible, so a checked-and-empty answer expires after
+// five minutes. `verified` entries live until LRU eviction; transient
+// `unavailable` answers are never stored.
+export const VERIFIED_SOURCE_NONE_TTL_MS = 300000;
+
+type VerifiedSourceCacheEntry = {
+  readonly outcome: VerifiedSourceOutcome;
+  readonly storedAt: number;
 };
 
 // Total served source bytes across all files (VS-B2): sources can be
 // large, so the body is capped while the file list stays complete.
 export const MAX_VERIFIED_SOURCE_TOTAL_BYTES = 1048576;
-// Bounded per-code-hash memo (VS-B2): a long-lived server cannot grow
-// without bound. Entries are immutable once stored: a cached code hash
-// never recomputes while it stays cached.
+// Bounded per-address memo (C-25): a long-lived server cannot grow
+// without bound. `verified` entries are immutable once stored; `none`
+// entries expire after VERIFIED_SOURCE_NONE_TTL_MS and `unavailable`
+// answers are never stored.
 const SOURCE_CACHE_CAP = 256;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -166,7 +180,61 @@ type SourceDeclaration = {
   readonly paramsText: string;
   readonly startLine: number;
   readonly endLine: number;
+  readonly hasBody: boolean;
+  readonly isOverride: boolean;
+  readonly contractName: string | null;
+  readonly contractKind: "contract" | "library" | "interface" | null;
 };
+
+// Bounds for the declaration scan (C-25): one huge flattened file must
+// not stall the event loop, so each file keeps at most 2,000
+// declarations and the whole answer at most 10,000. Past the cap the
+// outcome stays `verified` with partial functions.
+export const MAX_DECLARATIONS_PER_FILE = 2000;
+export const MAX_DECLARATIONS_TOTAL = 10000;
+
+type ContractSpan = {
+  readonly name: string;
+  readonly kind: "contract" | "library" | "interface";
+  readonly openBrace: number;
+  readonly closeBrace: number;
+};
+
+// Contract, library and interface spans in the masked text: the brace
+// matching ignores comments and strings because it runs over the masked
+// text, so a `{` inside a comment cannot unbalance the scan.
+function contractSpansOf(masked: string): ContractSpan[] {
+  const spans: ContractSpan[] = [];
+  const pattern = /\b(abstract\s+contract|contract|library|interface)\s+([A-Za-z_$][A-Za-z0-9_$]*)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(masked)) !== null) {
+    const keyword = match[1] ?? "";
+    const name = match[2] ?? "";
+    const kind = keyword.includes("interface") ? ("interface" as const) : keyword.includes("library") ? ("library" as const) : ("contract" as const);
+    let cursor = match.index + match[0].length;
+    while (cursor < masked.length && masked[cursor] !== "{") {
+      cursor += 1;
+    }
+    if (cursor >= masked.length) {
+      continue;
+    }
+    let depth = 1;
+    let scan = cursor + 1;
+    while (scan < masked.length && depth > 0) {
+      if (masked[scan] === "{") {
+        depth += 1;
+      } else if (masked[scan] === "}") {
+        depth -= 1;
+      }
+      scan += 1;
+    }
+    if (depth !== 0) {
+      continue;
+    }
+    spans.push({ name, kind, openBrace: cursor, closeBrace: scan - 1 });
+  }
+  return spans;
+}
 
 // Masking pass for one source text: comments and string literals become
 // spaces (newlines kept), so the declaration scan never matches a
@@ -236,23 +304,33 @@ function maskSourceText(content: string): string {
   return masked.join("");
 }
 
+// Binary search over the sorted newline offsets: the declaration loop
+// calls this per declaration, so the linear scan made huge files
+// quadratic (C-25, F-30).
 function lineOf(offsets: readonly number[], index: number): number {
-  let line = 1;
-  for (const offset of offsets) {
-    if (offset <= index) {
-      line += 1;
+  let low = 0;
+  let high = offsets.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    const offset = offsets[mid];
+    if (offset !== undefined && offset <= index) {
+      low = mid + 1;
     } else {
-      break;
+      high = mid;
     }
   }
-  return line;
+  return low + 1;
 }
 
-// Function declarations per file (VS-B2): `function name(params)` with
-// the range from the `function` keyword to the matching close brace, or
-// to the `;` for bodyless declarations. No compiler: parens and braces
-// are counted over the masked text, so comments and strings cannot
-// unbalance the scan.
+// Function declarations per file (VS-B2, C-25): `function name(params)`
+// with the range from the `function` keyword to the matching close
+// brace, or to the `;` for bodyless declarations. Each declaration also
+// records whether it has a body, whether its modifiers name `override`,
+// and the enclosing contract or library, so the ABI mapping can prefer
+// the override body in the compilation-target contract over a base or
+// interface declaration. No compiler: parens and braces are counted
+// over the masked text, so comments and strings cannot unbalance the
+// scan. At most MAX_DECLARATIONS_PER_FILE declarations are kept.
 export function extractSourceDeclarations(
   content: string,
 ): SourceDeclaration[] {
@@ -264,10 +342,14 @@ export function extractSourceDeclarations(
       newlineOffsets.push(index);
     }
   }
+  const spans = contractSpansOf(masked);
   const found: SourceDeclaration[] = [];
   const pattern = /\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(masked)) !== null) {
+    if (found.length >= MAX_DECLARATIONS_PER_FILE) {
+      break;
+    }
     const name = match[1] ?? "";
     let depth = 1;
     let cursor = match.index + match[0].length;
@@ -284,14 +366,19 @@ export function extractSourceDeclarations(
     }
     const paramsText = normalized.slice(match.index + match[0].length, cursor - 1);
     let endLine: number | null = null;
+    let hasBody = false;
+    let modifiersText = "";
     let scan = cursor;
     while (scan < masked.length) {
       const char = masked[scan];
       if (char === ";") {
         endLine = lineOf(newlineOffsets, scan);
+        modifiersText = normalized.slice(cursor, scan);
         break;
       }
       if (char === "{") {
+        hasBody = true;
+        modifiersText = normalized.slice(cursor, scan);
         let braceDepth = 1;
         scan += 1;
         while (scan < masked.length && braceDepth > 0) {
@@ -312,11 +399,23 @@ export function extractSourceDeclarations(
     if (endLine === null) {
       continue;
     }
+    let contractName: string | null = null;
+    let contractKind: "contract" | "library" | "interface" | null = null;
+    for (const span of spans) {
+      if (span.openBrace <= match.index && match.index <= span.closeBrace) {
+        contractName = span.name;
+        contractKind = span.kind;
+      }
+    }
     found.push({
       name,
       paramsText,
       startLine: lineOf(newlineOffsets, match.index),
       endLine,
+      hasBody,
+      isOverride: /\boverride\b/.test(modifiersText),
+      contractName,
+      contractKind,
     });
   }
   return found;
@@ -414,13 +513,33 @@ function abiFunctionsOf(abi: readonly unknown[]): AbiFunction[] {
   return functions;
 }
 
-// ABI functions located in the published sources (VS-B2): matched by
-// name, then by parameter count for overloads, in declaration order.
-// Each declaration maps at most one ABI entry, so overloads pair up
-// instead of collapsing onto the first declaration.
+// Mappable declaration view: the stored fields plus the file. Extra
+// fields are optional so existing callers and fixtures keep working;
+// an absent flag counts as false and an absent contract as unknown.
+export type MappableDeclaration = {
+  readonly name: string;
+  readonly paramsText: string;
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly file: string;
+  readonly hasBody?: boolean | undefined;
+  readonly isOverride?: boolean | undefined;
+  readonly contractName?: string | null | undefined;
+  readonly contractKind?: "contract" | "library" | "interface" | null | undefined;
+};
+
+// ABI functions located in the published sources (VS-B2, C-25): matched
+// by name, then by parameter count for overloads, then ranked so the
+// override body wins over a base or interface declaration: a bodied
+// declaration beats a bodyless one, the compilation-target contract
+// beats other files, `override` beats plain, and anything beats an
+// interface. Declaration order breaks the remaining ties. Each
+// declaration maps at most one ABI entry, so overloads pair up instead
+// of collapsing onto the first declaration.
 export function mapSourceFunctions(
   abi: readonly unknown[],
-  declarations: readonly (SourceDeclaration & { readonly file: string })[],
+  declarations: readonly MappableDeclaration[],
+  compilationTarget?: { readonly path: string; readonly contractName: string } | null | undefined,
 ): VerifiedSourceFunction[] {
   const wanted = abiFunctionsOf(abi);
   const used = new Array<boolean>(declarations.length).fill(false);
@@ -436,14 +555,35 @@ export function mapSourceFunctions(
     if (candidates.length === 0) {
       continue;
     }
-    const arityMatch = candidates.filter((index) => {
+    const rankOf = (index: number): readonly number[] => {
       const declaration = declarations[index];
-      if (declaration === undefined) {
-        return false;
+      const arityMatches =
+        declaration !== undefined && splitTopLevel(declaration.paramsText).length === fn.arity ? 0 : 1;
+      const body = declaration?.hasBody === true ? 0 : 1;
+      const target =
+        compilationTarget !== null &&
+        compilationTarget !== undefined &&
+        declaration?.file === compilationTarget.path &&
+        (declaration?.contractName ?? null) === compilationTarget.contractName
+          ? 0
+          : 1;
+      const overrideFlag = declaration?.isOverride === true ? 0 : 1;
+      const kind = declaration?.contractKind === "interface" ? 1 : 0;
+      return [arityMatches, body, target, overrideFlag, kind, index] as const;
+    };
+    candidates.sort((left, right) => {
+      const leftRank = rankOf(left);
+      const rightRank = rankOf(right);
+      for (let rank = 0; rank < leftRank.length; rank += 1) {
+        const leftValue = leftRank[rank] ?? 0;
+        const rightValue = rightRank[rank] ?? 0;
+        if (leftValue !== rightValue) {
+          return leftValue - rightValue;
+        }
       }
-      return splitTopLevel(declaration.paramsText).length === fn.arity;
+      return 0;
     });
-    const picked = (arityMatch.length > 0 ? arityMatch : candidates)[0];
+    const picked = candidates[0];
     if (picked === undefined) {
       continue;
     }
@@ -469,10 +609,16 @@ function buildOutcome(raw: VerifiedSourceRaw): VerifiedSourceOutcome {
   const normalized = raw.files.map((file) => ({ path: file.path, content: normalizeSourceContent(file.content) }));
   const sanitized = normalized.map((file) => ({ path: file.path, content: markHiddenSourceChars(file.content) }));
   const files = applySourceSizeCap(sanitized);
-  const declarations: (SourceDeclaration & { readonly file: string })[] = [];
+  const declarations: MappableDeclaration[] = [];
   for (const file of normalized) {
     for (const declaration of extractSourceDeclarations(file.content)) {
+      if (declarations.length >= MAX_DECLARATIONS_TOTAL) {
+        break;
+      }
       declarations.push({ ...declaration, file: file.path });
+    }
+    if (declarations.length >= MAX_DECLARATIONS_TOTAL) {
+      break;
     }
   }
   const outcome: VerifiedSourceOutcome = {
@@ -481,7 +627,7 @@ function buildOutcome(raw: VerifiedSourceRaw): VerifiedSourceOutcome {
     match: raw.match,
     compiler: raw.compiler,
     files,
-    functions: mapSourceFunctions(raw.abi, declarations),
+    functions: mapSourceFunctions(raw.abi, declarations, raw.compilationTarget),
   };
   return outcome;
 }
@@ -495,7 +641,11 @@ function unavailableOutcome(): VerifiedSourceOutcome {
 }
 
 export function createVerifiedSourceService(options: VerifiedSourceServiceOptions): VerifiedSourceService {
-  const cache = new Map<string, VerifiedSourceOutcome>();
+  const cache = new Map<string, VerifiedSourceCacheEntry>();
+  const touch = (key: string, entry: VerifiedSourceCacheEntry): void => {
+    cache.delete(key);
+    cache.set(key, entry);
+  };
   const getSource: VerifiedSourceService["getSource"] = async (address, ctx) => {
     const fetched = await options.rpc.getCode(address, {
       requestId: ctx.requestId,
@@ -510,38 +660,52 @@ export function createVerifiedSourceService(options: VerifiedSourceServiceOption
       return { ok: false as const, error: "rpc-error" as const };
     }
     const hashText = codeHash.value as string;
-    const hit = cache.get(hashText);
+    const key = `${(address as string).toLowerCase()}|${hashText}`;
+    const hit = cache.get(key);
     if (hit !== undefined) {
-      return { ok: true as const, value: { codeHash: hashText, source: hit } };
+      if (hit.outcome.status === "verified") {
+        touch(key, hit);
+        return { ok: true as const, value: { codeHash: hashText, source: hit.outcome } };
+      }
+      const age = (options.clock.now() as number) - hit.storedAt;
+      if (age < VERIFIED_SOURCE_NONE_TTL_MS) {
+        touch(key, hit);
+        return { ok: true as const, value: { codeHash: hashText, source: hit.outcome } };
+      }
+      cache.delete(key);
     }
-    const store = (outcome: VerifiedSourceOutcome): { ok: true; value: VerifiedSourceResult } => {
+    const answer = (outcome: VerifiedSourceOutcome): { ok: true; value: VerifiedSourceResult } => {
+      // Transient failures are never pinned: a later check may succeed.
+      if (outcome.status === "unavailable") {
+        return { ok: true as const, value: { codeHash: hashText, source: outcome } };
+      }
       if (cache.size >= SOURCE_CACHE_CAP) {
         const oldest = cache.keys().next().value;
         if (oldest !== undefined) {
           cache.delete(oldest);
         }
       }
-      cache.set(hashText, outcome);
+      cache.set(key, { outcome, storedAt: options.clock.now() as number });
       return { ok: true as const, value: { codeHash: hashText, source: outcome } };
     };
     const addressText = address as string;
     const primary = await options.primary.fetchVerifiedSource(addressText);
     if (primary.ok && primary.value.status === "verified") {
-      return store(buildOutcome(primary.value));
+      return answer(buildOutcome(primary.value));
     }
     if (options.fallback === undefined) {
-      return store(primary.ok ? noneOutcome(primary.value.provider) : unavailableOutcome());
+      return answer(primary.ok ? noneOutcome(primary.value.provider) : unavailableOutcome());
     }
     const fallback = await options.fallback.fetchVerifiedSource(addressText);
     if (fallback.ok && fallback.value.status === "verified") {
-      return store(buildOutcome(fallback.value));
+      return answer(buildOutcome(fallback.value));
     }
     // `none` only when every attempted provider was reached and holds
     // nothing: any error leaves the check incomplete (`unavailable`).
     if (primary.ok && fallback.ok) {
-      return store(noneOutcome(fallback.value.provider));
+      return answer(noneOutcome(fallback.value.provider));
     }
-    return store(unavailableOutcome());
+    return answer(unavailableOutcome());
   };
   return Object.freeze({ getSource });
 }

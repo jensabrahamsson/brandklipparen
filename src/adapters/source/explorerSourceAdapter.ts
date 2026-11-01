@@ -13,6 +13,7 @@ import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import type { SecretString } from "../../ports/config.ts";
 import type {
+  VerifiedSourceCompilationTarget,
   VerifiedSourceFetchError,
   VerifiedSourcePort,
   VerifiedSourceRaw,
@@ -68,7 +69,27 @@ function checkBaseUrl(baseUrl: string): void {
 }
 
 function noneResult(): VerifiedSourceRaw {
-  return { status: "none", provider: "etherscan", match: null, compiler: null, files: [], abi: [] };
+  return { status: "none", provider: "etherscan", match: null, compiler: null, files: [], abi: [], compilationTarget: null };
+}
+
+// Compilation target from the explorer reply: `ContractName` paired
+// with the file declaring that contract. Null when no file declares
+// it, so the application ranking falls back to body and override order.
+function compilationTargetFor(
+  contractName: string,
+  files: readonly VerifiedSourceRawFile[],
+): VerifiedSourceCompilationTarget | null {
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(contractName)) {
+    return null;
+  }
+  const escaped = contractName.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&");
+  const pattern = new RegExp(`\\bcontract\\s+${escaped}\\b`);
+  for (const file of files) {
+    if (pattern.test(file.content)) {
+      return { path: file.path, contractName };
+    }
+  }
+  return null;
 }
 
 // Multi-file answers wrap the standard JSON input in doubled braces
@@ -204,6 +225,7 @@ export class ExplorerSourceAdapter implements VerifiedSourcePort {
     const compiler = typeof first["CompilerVersion"] === "string" && first["CompilerVersion"] !== ""
       ? (first["CompilerVersion"] as string)
       : null;
+    const explorerName = typeof first["ContractName"] === "string" ? (first["ContractName"] as string) : "";
     const raw: VerifiedSourceRaw = {
       status: "verified",
       provider: "etherscan",
@@ -211,6 +233,7 @@ export class ExplorerSourceAdapter implements VerifiedSourcePort {
       compiler,
       files,
       abi,
+      compilationTarget: compilationTargetFor(explorerName, files),
     };
     return ok(raw);
   }

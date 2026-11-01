@@ -12,6 +12,7 @@
 import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import type {
+  VerifiedSourceCompilationTarget,
   VerifiedSourceFetchError,
   VerifiedSourceMatch,
   VerifiedSourcePort,
@@ -130,6 +131,30 @@ function readFiles(body: Record<string, unknown>): VerifiedSourceRawFile[] | nul
   return files;
 }
 
+function readCompilationTarget(body: Record<string, unknown>): VerifiedSourceCompilationTarget | null {
+  const compilation = body["compilation"];
+  if (!isRecord(compilation)) {
+    return null;
+  }
+  const fullyQualified = compilation["fullyQualifiedName"];
+  if (typeof fullyQualified !== "string") {
+    return null;
+  }
+  const separator = fullyQualified.lastIndexOf(":");
+  if (separator <= 0 || separator >= fullyQualified.length - 1) {
+    return null;
+  }
+  const path = fullyQualified.slice(0, separator);
+  const contractName = fullyQualified.slice(separator + 1);
+  if (path.length === 0 || path.length > 512) {
+    return null;
+  }
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(contractName)) {
+    return null;
+  }
+  return { path, contractName };
+}
+
 function readAbi(body: Record<string, unknown>): readonly unknown[] | null {
   const abi = body["abi"];
   if (abi === undefined) {
@@ -191,7 +216,7 @@ export class SourcifySourceAdapter implements VerifiedSourcePort {
       return err({ kind: "invalid-response", message: "the verified-source reply exceeds the size limit" });
     }
     if (response.status === 404) {
-      return ok({ status: "none", provider: "sourcify", match: null, compiler: null, files: [], abi: [] });
+      return ok({ status: "none", provider: "sourcify", match: null, compiler: null, files: [], abi: [], compilationTarget: null });
     }
     if (response.status < 200 || response.status >= 300) {
       return err({ kind: "unavailable", message: "the verified-source origin is unavailable" });
@@ -214,8 +239,9 @@ export class SourcifySourceAdapter implements VerifiedSourcePort {
       return err({ kind: "invalid-response", message: "the verified-source origin gave an ABI in an unknown shape" });
     }
     if (files.length === 0) {
-      return ok({ status: "none", provider: "sourcify", match: null, compiler: null, files: [], abi: [] });
+      return ok({ status: "none", provider: "sourcify", match: null, compiler: null, files: [], abi: [], compilationTarget: null });
     }
+    const compilationTarget: VerifiedSourceCompilationTarget | null = readCompilationTarget(body);
     const raw: VerifiedSourceRaw = {
       status: "verified",
       provider: "sourcify",
@@ -223,6 +249,7 @@ export class SourcifySourceAdapter implements VerifiedSourcePort {
       compiler: readCompiler(body),
       files,
       abi,
+      compilationTarget,
     };
     return ok(raw);
   }

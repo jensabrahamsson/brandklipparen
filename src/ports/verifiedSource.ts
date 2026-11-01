@@ -26,6 +26,16 @@ export type VerifiedSourceRawFile = {
   readonly content: string;
 };
 
+// Compilation target naming the deployed contract: the provider path
+// plus the contract name. Sourcify reports it as
+// `compilation.fullyQualifiedName` ("path:Name"); the explorer fallback
+// pairs `ContractName` with the file declaring that contract. Null when
+// the provider names no target.
+export type VerifiedSourceCompilationTarget = {
+  readonly path: string;
+  readonly contractName: string;
+};
+
 // Raw provider answer: the file set plus the contract ABI entries the
 // application service maps to selectors. `none` means the provider was
 // reached and holds nothing for the address; transport trouble is the
@@ -37,6 +47,7 @@ export type VerifiedSourceRaw = {
   readonly compiler: string | null;
   readonly files: readonly VerifiedSourceRawFile[];
   readonly abi: readonly unknown[];
+  readonly compilationTarget: VerifiedSourceCompilationTarget | null;
 };
 
 export type VerifiedSourceFetchError = {

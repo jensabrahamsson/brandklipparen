@@ -2,15 +2,37 @@
 // declaration tokenizer and ABI-to-selector mapping. All fixtures below
 // are hand-assembled synthetic shapes for tests only.
 import { describe, expect, test } from "vitest";
-import { keccak256HexOfUtf8 } from "../../../src/domain/types.ts";
+import { err, ok } from "../../../src/domain/result.ts";
+import type { Result } from "../../../src/domain/result.ts";
+import type {
+  BlockNumber as BlockNumberType,
+  RequestId as RequestIdType,
+  Timestamp as TimestampType,
+} from "../../../src/domain/types.ts";
 import {
+  Address,
+  BlockNumber,
+  RequestId,
+  Timestamp,
+  keccak256HexOfUtf8,
+} from "../../../src/domain/types.ts";
+import type { ClockPort } from "../../../src/ports/clock.ts";
+import type {
+  VerifiedSourceFetchError,
+  VerifiedSourcePort,
+  VerifiedSourceRaw,
+} from "../../../src/ports/verifiedSource.ts";
+import {
+  VERIFIED_SOURCE_NONE_TTL_MS,
   applySourceSizeCap,
+  createVerifiedSourceService,
   extractSourceDeclarations,
   mapSourceFunctions,
   markHiddenSourceChars,
   normalizeSourceContent,
 } from "../../../src/application/verifiedSource.ts";
 import { mapRegistryMatch } from "../../../src/adapters/source/sourcifyAdapter.ts";
+import { FakeRpcAdapter } from "../../fakes/fakeRpc.ts";
 
 describe("verified-source hidden-character markers (VS-B2)", () => {
   test("vsb2_hidden_characters_render_as_visible_markers", () => {
@@ -210,5 +232,250 @@ describe("verified-source size cap (VS-B2)", () => {
       { path: "a.sol", content: "contract A {}" },
       { path: "b.sol", content: "" },
     ]);
+  });
+});
+
+describe("verified-source override ranking (C-25)", () => {
+  // Hand-assembled synthetic shapes: an OZ-style base with a virtual
+  // body, a bodiless interface, and a scam override holding the hidden
+  // logic. The compilation target names the scam contract.
+  const BASE_SOURCE = [
+    "// SPDX-License-Identifier: MIT",
+    "pragma solidity ^0.8.20;",
+    "contract ERC20 {",
+    "    function transfer(address to, uint256 amount) public virtual returns (bool) {",
+    "        return true;",
+    "    }",
+    "}",
+  ].join("\n");
+  const INTERFACE_SOURCE = [
+    "// SPDX-License-Identifier: MIT",
+    "pragma solidity ^0.8.20;",
+    "interface IERC20 {",
+    "    function transfer(address to, uint256 amount) external returns (bool);",
+    "}",
+  ].join("\n");
+  const SCAM_SOURCE = [
+    "// SPDX-License-Identifier: MIT",
+    "pragma solidity ^0.8.20;",
+    "contract Scam is ERC20 {",
+    "    function transfer(address to, uint256 amount) public override returns (bool) {",
+    "        return true;",
+    "    }",
+    "}",
+  ].join("\n");
+  const TRANSFER_ABI = [
+    { type: "function", name: "transfer", inputs: [{ type: "address" }, { type: "uint256" }] },
+  ];
+  const TARGET = { path: "contracts/Scam.sol", contractName: "Scam" };
+
+  function scamDeclarations(): Array<{
+    file: string;
+    name: string;
+    paramsText: string;
+    startLine: number;
+    endLine: number;
+    hasBody: boolean;
+    isOverride: boolean;
+    contractName: string | null;
+    contractKind: "contract" | "library" | "interface" | null;
+  }> {
+    return [
+      ...extractSourceDeclarations(BASE_SOURCE).map((declaration) => ({
+        ...declaration,
+        file: "@openzeppelin/contracts/token/ERC20/ERC20.sol",
+      })),
+      ...extractSourceDeclarations(INTERFACE_SOURCE).map((declaration) => ({
+        ...declaration,
+        file: "contracts/IERC20.sol",
+      })),
+      ...extractSourceDeclarations(SCAM_SOURCE).map((declaration) => ({
+        ...declaration,
+        file: "contracts/Scam.sol",
+      })),
+    ];
+  }
+
+  test("c25_override_body_wins_over_base_and_interface", () => {
+    const mapped = mapSourceFunctions(TRANSFER_ABI, scamDeclarations(), TARGET);
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]).toMatchObject({
+      file: "contracts/Scam.sol",
+      startLine: 4,
+      endLine: 6,
+      signature: "transfer(address,uint256)",
+      selector: keccak256HexOfUtf8("transfer(address,uint256)").slice(0, 10),
+    });
+  });
+
+  test("c25_without_target_prefers_bodied_override", () => {
+    const mapped = mapSourceFunctions(TRANSFER_ABI, scamDeclarations(), null);
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]).toMatchObject({ file: "contracts/Scam.sol", startLine: 4 });
+  });
+
+  test("c25_interface_never_beats_body", () => {
+    const declarations = [
+      ...extractSourceDeclarations(INTERFACE_SOURCE).map((declaration) => ({
+        ...declaration,
+        file: "contracts/IERC20.sol",
+      })),
+      ...extractSourceDeclarations(BASE_SOURCE).map((declaration) => ({
+        ...declaration,
+        file: "contracts/Plain.sol",
+      })),
+    ];
+    const mapped = mapSourceFunctions(TRANSFER_ABI, declarations, null);
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]).toMatchObject({ file: "contracts/Plain.sol" });
+  });
+
+  test("c25_large_file_linear", () => {
+    // 5,000 synthetic functions over about 50,000 lines: the binary
+    // line search keeps the scan near-linear.
+    const lines: string[] = ["contract Big {"];
+    for (let index = 0; index < 5000; index += 1) {
+      lines.push(`    function fn${index}(uint256 x) public returns (uint256) {`);
+      for (let body = 0; body < 8; body += 1) {
+        lines.push(`        uint256 y${body} = x + ${body};`);
+      }
+      lines.push("        return x;");
+      lines.push("    }");
+    }
+    lines.push("}");
+    const started = Date.now();
+    const declarations = extractSourceDeclarations(lines.join("\n"));
+    const elapsed = Date.now() - started;
+    expect(declarations).toHaveLength(2000);
+    expect(elapsed).toBeLessThan(200);
+  });
+});
+
+describe("verified-source memo behaviour (C-25)", () => {
+  const BYTECODE = "0x6080604052348015600e575f5ffd5b50603e80601a5f395ff3";
+  const ADDRESS_A = "0x0102030405060708090a0b0c0d0e0f1011121314";
+  const ADDRESS_B = `0x${"ab".repeat(20)}`;
+  const ABI = [
+    { type: "function", name: "transfer", inputs: [{ type: "address" }, { type: "uint256" }] },
+  ];
+
+  function must<T, E extends { message: string }>(result: Result<T, E>): T {
+    if (!result.ok) {
+      throw new Error(`expected ok: ${result.error.message}`);
+    }
+    return result.value;
+  }
+
+  function mutableClock(start: number): { clock: ClockPort; advance: (ms: number) => void } {
+    let now = start;
+    return {
+      clock: { now: () => must(Timestamp.of(now)) },
+      advance: (ms: number): void => {
+        now += ms;
+      },
+    };
+  }
+
+  function rpcFor(addresses: readonly string[]): FakeRpcAdapter {
+    const codes = new Map<string, string>();
+    for (const address of addresses) {
+      codes.set(must(Address.parse(address)) as string, BYTECODE);
+    }
+    return new FakeRpcAdapter(codes, must(BlockNumber.of(18000000)));
+  }
+
+  function ctx(): { requestId: RequestIdType; deadline: TimestampType; block: BlockNumberType } {
+    return {
+      requestId: must(RequestId.parse("123e4567-e89b-12d3-a456-426614174000")),
+      deadline: must(Timestamp.of(1800000000000)),
+      block: must(BlockNumber.of(18000000)),
+    };
+  }
+
+  function verifiedPort(calls: { count: number }, files: { path: string; content: string }[]): VerifiedSourcePort {
+    return {
+      fetchVerifiedSource: async (): Promise<Result<VerifiedSourceRaw, VerifiedSourceFetchError>> => {
+        calls.count += 1;
+        return ok({
+          status: "verified",
+          provider: "sourcify",
+          match: "full",
+          compiler: "0.8.20+commit.a1b79de6",
+          files,
+          abi: ABI,
+          compilationTarget: null,
+        });
+      },
+    };
+  }
+
+  test("c25_same_code_other_address_not_shared", async () => {
+    const calls = { count: 0 };
+    const service = createVerifiedSourceService({
+      primary: verifiedPort(calls, [{ path: "A.sol", content: "contract A {}" }]),
+      rpc: rpcFor([ADDRESS_A, ADDRESS_B]),
+      clock: mutableClock(1700000000000).clock,
+    });
+    const first = await service.getSource(must(Address.parse(ADDRESS_A)), ctx());
+    const second = await service.getSource(must(Address.parse(ADDRESS_B)), ctx());
+    expect(first.ok && second.ok).toBe(true);
+    expect(calls.count).toBe(2);
+  });
+
+  test("c25_unavailable_not_cached", async () => {
+    const calls = { count: 0 };
+    const failing: VerifiedSourcePort = {
+      fetchVerifiedSource: async () => {
+        calls.count += 1;
+        return err({ kind: "unavailable", message: "synthetic transport failure" });
+      },
+    };
+    const service = createVerifiedSourceService({
+      primary: failing,
+      rpc: rpcFor([ADDRESS_A]),
+      clock: mutableClock(1700000000000).clock,
+    });
+    const first = await service.getSource(must(Address.parse(ADDRESS_A)), ctx());
+    const second = await service.getSource(must(Address.parse(ADDRESS_A)), ctx());
+    expect(first.ok && second.ok).toBe(true);
+    if (first.ok && second.ok) {
+      expect(first.value.source.status).toBe("unavailable");
+      expect(second.value.source.status).toBe("unavailable");
+    }
+    expect(calls.count).toBe(2);
+  });
+
+  test("c25_none_expires_after_ttl", async () => {
+    const calls = { count: 0 };
+    const empty: VerifiedSourcePort = {
+      fetchVerifiedSource: async () => {
+        calls.count += 1;
+        return ok({
+          status: "none",
+          provider: "sourcify",
+          match: null,
+          compiler: null,
+          files: [],
+          abi: [],
+          compilationTarget: null,
+        });
+      },
+    };
+    const time = mutableClock(1700000000000);
+    const service = createVerifiedSourceService({
+      primary: empty,
+      rpc: rpcFor([ADDRESS_A]),
+      clock: time.clock,
+    });
+    const address = must(Address.parse(ADDRESS_A));
+    const first = await service.getSource(address, ctx());
+    expect(first.ok && first.ok && first.value.source.status).toBe("none");
+    const cached = await service.getSource(address, ctx());
+    expect(cached.ok && cached.ok && cached.value.source.status).toBe("none");
+    expect(calls.count).toBe(1);
+    time.advance(VERIFIED_SOURCE_NONE_TTL_MS + 1);
+    const refetched = await service.getSource(address, ctx());
+    expect(refetched.ok && refetched.ok && refetched.value.source.status).toBe("none");
+    expect(calls.count).toBe(2);
   });
 });

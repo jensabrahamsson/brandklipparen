@@ -107,7 +107,10 @@ function sourcifyVerifiedBody(): string {
     match: "full",
     chainId: "1",
     compilerVersion: "0.8.20+commit.a1b79de6",
-    compilation: { compilerVersion: "0.8.20+commit.a1b79de6" },
+    compilation: {
+      compilerVersion: "0.8.20+commit.a1b79de6",
+      fullyQualifiedName: "contracts/FixtureToken.sol:FixtureToken",
+    },
     sources: {
       "contracts/FixtureToken.sol": { content: FIXTURE_SOURCE },
       "contracts/Helper.sol": { content: "// helper note\u202e\nlibrary Helper {\n}" },
@@ -247,8 +250,9 @@ describe("verified-source route through the composed app (VS-B2)", () => {
       expect(second.statusCode).toBe(200);
       expect(second.body).toBe(first.body);
       expect(sourcifyCalls).toHaveLength(1);
-      // A different address with identical bytecode shares the cache
-      // entry: still one provider call.
+      // A different address with identical bytecode is cached per
+      // address (C-25): clones inherit nothing, so the provider is
+      // called again for the twin address.
       const twin = await rest.inject({
         method: "GET",
         url: `/v1/source?address=${TEST_ADDRESS_SAME_CODE}`,
@@ -256,7 +260,7 @@ describe("verified-source route through the composed app (VS-B2)", () => {
       });
       expect(twin.statusCode).toBe(200);
       expect((JSON.parse(twin.body) as SourceBody).source?.status).toBe("verified");
-      expect(sourcifyCalls).toHaveLength(1);
+      expect(sourcifyCalls).toHaveLength(2);
     } finally {
       await rest.close();
     }

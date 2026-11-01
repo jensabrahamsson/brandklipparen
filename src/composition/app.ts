@@ -398,6 +398,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
                   transport: deps.sourceTransports?.explorer,
                 }),
           rpc: deps.ports.rpc,
+          clock: deps.ports.clock,
         });
   const rest: RestServerOptions = Object.freeze({
     services,
