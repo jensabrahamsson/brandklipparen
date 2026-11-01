@@ -277,6 +277,7 @@ export class DexscreenerMarketFeedAdapter implements MarketFeedPort {
     }
     const liquidity = isRecord(raw["liquidity"]) ? raw["liquidity"]["usd"] : null;
     const volume = isRecord(raw["volume"]) ? raw["volume"] : null;
+    const priceChange = isRecord(raw["priceChange"]) ? raw["priceChange"] : null;
     const built = MarketTokenItem.create({
       tokenAddress,
       symbol: side["symbol"] ?? null,
@@ -287,6 +288,8 @@ export class DexscreenerMarketFeedAdapter implements MarketFeedPort {
       liquidityUsd: liquidity === undefined ? null : liquidity,
       volume1hUsd: volume !== null && volume["h1"] !== undefined ? volume["h1"] : null,
       volume24hUsd: volume !== null && volume["h24"] !== undefined ? volume["h24"] : null,
+      priceChange24hPct:
+        priceChange !== null && priceChange["h24"] !== undefined ? priceChange["h24"] : null,
     });
     if (!built.ok) {
       return null;

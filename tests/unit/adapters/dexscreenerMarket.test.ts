@@ -156,6 +156,34 @@ describe("dexscreener market feed adapter", () => {
     expect(first?.createdAt).toBeGreaterThan(second?.createdAt ?? 0);
   });
 
+  test("w13_price_change_parses_from_h24_and_stays_null_when_absent", async () => {
+    const seen: string[] = [];
+    const adapter = new DexscreenerMarketFeedAdapter({
+      transport: async (url: string) => {
+        seen.push(url);
+        if (url.includes("/token-profiles/")) {
+          return { status: 200, bodyText: profilesBody() };
+        }
+        if (url.includes("/token-boosts/")) {
+          return { status: 200, bodyText: boostsBody() };
+        }
+        // Token A reports a 24 h move; token B reports none.
+        const priced = JSON.parse(pairsBody()) as Array<Record<string, unknown>>;
+        (priced[1] as Record<string, unknown>)["priceChange"] = { h24: 12.5 };
+        return { status: 200, bodyText: JSON.stringify(priced) };
+      },
+      now: () => 1700000100000,
+    });
+    const result = await adapter.fetchNewTokens({ chain: "ethereum" }, ctx());
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const [first, second] = result.value.items;
+    expect(first).toMatchObject({ priceChange24hPct: 12.5 });
+    expect(second).toMatchObject({ priceChange24hPct: null });
+  });
+
   test("filters chains, dedups discovery and batches pairs into one call", async () => {
     const seen: string[] = [];
     const adapter = new DexscreenerMarketFeedAdapter({

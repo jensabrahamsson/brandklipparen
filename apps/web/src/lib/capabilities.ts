@@ -3,17 +3,28 @@
 // a request that answers not-configured. Unknown fields (older servers)
 // keep the previous explicit-request behaviour.
 import type { HealthState } from "../types.ts";
-import type { FeatureCapability, OnchainCapability } from "../types.ts";
+import type { FeatureCapability, MarketCapability, OnchainCapability } from "../types.ts";
 
 export type Availability = "available" | "unavailable";
 
 export function toAvailability(
-  capability: FeatureCapability | OnchainCapability | undefined,
+  capability: FeatureCapability | OnchainCapability | MarketCapability | undefined,
 ): Availability {
   if (capability === undefined) {
     return "available";
   }
   return "disabled" in capability ? "unavailable" : "available";
+}
+
+// DexScreener market listing (DX-1): present only while /health reports
+// the market feed as configured. A missing field, a disabled feed or a
+// failed health fetch hides the column and the tabs instead of flashing
+// a wrong layout; New pairs then takes the full width.
+export function toMarketAvailability(health: HealthState | null): Availability {
+  if (health === null || health.market === undefined) {
+    return "unavailable";
+  }
+  return toAvailability(health.market);
 }
 
 export type AiFeatureAvailability = {

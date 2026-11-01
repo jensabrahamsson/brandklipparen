@@ -94,6 +94,7 @@ function liveReader(): MarketNewReader {
         liquidityUsd: 2500,
         volume1hUsd: 30,
         volume24hUsd: 900,
+        priceChange24hPct: 3.5,
         analysis: Object.freeze({ score: 12, powersFound: 2, powersExtended: 1 }),
       }),
       Object.freeze({
@@ -106,6 +107,7 @@ function liveReader(): MarketNewReader {
         liquidityUsd: null,
         volume1hUsd: null,
         volume24hUsd: null,
+        priceChange24hPct: null,
       }),
     ]),
   };
@@ -160,6 +162,7 @@ describe("GET /v1/market-new", () => {
       liquidityUsd: 2500,
       volume1hUsd: 30,
       volume24hUsd: 900,
+      priceChange24hPct: 3.5,
       analysis: { score: 12, powersFound: 2, powersExtended: 1 },
     });
     expect(items[1]).toMatchObject({

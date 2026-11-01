@@ -51,6 +51,8 @@ const NAMES: readonly PictogramName[] = [
   "back",
   "expert",
   "link",
+  "volume",
+  "market",
 ];
 
 describe("pictogram", () => {

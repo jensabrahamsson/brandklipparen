@@ -259,27 +259,6 @@ a {
   color: var(--dim);
 }
 
-/* Live list address cells: full values wrap to two lines instead of
-   overflowing the table. */
-.live-table .addr-cell {
-  max-width: 250px;
-  min-width: 0;
-}
-
-/* Mobile cards: full token and pair addresses sit on their own lines
-   with copy, wrapping cleanly. */
-.live-addr,
-.live-pair-full {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  font-size: 12px;
-  color: var(--dim);
-  min-width: 0;
-}
-
 /* Recent rows: the full address meta sits below the navigating button
    (never nested inside it) so the text stays selectable. */
 .recent-meta {
@@ -540,7 +519,7 @@ a {
 }
 
 .search-row .input {
-  min-width: 12ch;
+  min-width: 0;
   flex: 1 1 auto;
   background: transparent;
   border: none;
@@ -751,63 +730,323 @@ a {
   white-space: nowrap;
 }
 
-/* Live new-tokens list: a terminal table with text-only updates. Rows
-   keep stable keys so polls never shift existing rows; the "new" marker
-   is plain text. A fresh row flashes in place once (background and glow
-   only, never pushed with animation). */
-.live-table {
-  width: 100%;
-  border-collapse: collapse;
+/* Feed rows (DX-1): one three-line design for both lists at every
+   width. Rows keep stable keys so polls never shift existing rows; the
+   "new" marker is plain text. A fresh row flashes in place once
+   (background and glow only, never pushed with animation). The whole row
+   is a stretched link; the copy button sits above it (z-index on
+   .copy-btn) so a copy click never navigates. */
+.feed-section {
+  margin-top: 56px;
+  min-width: 0;
+}
+
+.feed-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px 24px;
+  align-items: start;
+  margin-top: 56px;
+}
+
+.feed-cols .feed-section {
+  margin-top: 0;
+}
+
+/* DX-1: the two-column feed grid only applies at desktop widths (>= 1280
+   px, matching the tabbed switch in StartPage). Below that the markup is
+   tabbed, but a stale wide render right after a resize must still stack:
+   one column never squeezes a feed row, so the nowrap owner-power chips
+   cannot push the page wide. Layout only, no motion. */
+@media (max-width: 1279px) {
+  .feed-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.feed-tabs {
+  margin-top: 40px;
+}
+
+.feed-tabs + .feed-section {
+  margin-top: 16px;
+}
+
+/* Feed tabs at phone widths (320/390): two equal columns instead of a
+   scrolling row, labels wrap with the count on its own line, so the
+   tablist never scrolls sideways. Only layout changes: the roving
+   tabindex WAI-ARIA pattern, the 44 px targets and the row alignment
+   fix are untouched. No motion, no transform. */
+@media (max-width: 640px) {
+  .tabs.feed-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+
+  .tabs.feed-tabs .tab {
+    white-space: normal;
+    min-width: 0;
+    min-height: 44px;
+    overflow-wrap: anywhere;
+  }
+
+  .tabs.feed-tabs .tab-count {
+    display: block;
+  }
+}
+
+/* Settings API-key row on the start page (W-12): inline label + fixed
+   input on desktop; stacked with a full-width input on phones so the
+   label never pushes the page wide at 320/390. */
+.api-key-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  margin-top: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.api-key-row .input {
+  width: 200px;
+  max-width: 100%;
+  min-width: 0;
+  font-family: var(--font-sans);
   font-size: 14px;
 }
 
-.live-table th,
-.live-table td {
-  text-align: left;
-  padding: 9px 12px;
-  border-top: 1px dashed var(--edge);
-  vertical-align: middle;
+@media (max-width: 640px) {
+  .api-key-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .api-key-row .input {
+    width: 100%;
+  }
 }
 
-.live-table thead th {
-  font-size: 11px;
-  letter-spacing: normal;
-  text-transform: none;
+.feed-sub {
+  font-size: 13px;
   color: var(--dim);
-  font-weight: 600;
-  border-top: none;
-  border-bottom: 1px dashed var(--edge);
+  margin: 8px 0 0;
+  max-width: 72ch;
 }
 
-.live-table tbody tr {
+.market-frame {
+  border: 1px dashed var(--edge);
+  border-radius: var(--radius-card);
+  padding: 16px;
+  background: rgb(6 32 22 / 40%);
+  box-shadow: var(--shadow-none);
+}
+
+.feed-rows {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.feed-row {
   position: relative;
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-row);
+  padding: 8px 12px;
+  min-width: 0;
+  box-shadow: var(--elev-1);
+  display: grid;
+  gap: 2px;
   transition:
     box-shadow var(--dur-hover) var(--ease-out),
-    background-color var(--dur-hover) var(--ease-out);
+    border-color var(--dur-hover) var(--ease-out);
 }
 
-.live-table tbody tr:hover {
-  box-shadow: var(--elev-1);
-}
-
-.live-table tbody tr:focus-within {
-  outline: 2px solid var(--brand);
-  outline-offset: -2px;
+.feed-row:hover {
+  border-color: var(--dim);
   box-shadow: var(--elev-2);
 }
 
-.live-table td:first-child a::after {
+.feed-row:focus-within {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  box-shadow: var(--elev-2);
+}
+
+.feed-row.is-new {
+  animation: bk-arrive var(--arrive) var(--ease-out) 1;
+}
+
+.feed-row.is-scored .feed-score {
+  animation: bk-settle var(--settle) var(--ease-out) 1;
+}
+
+.feed-line1 {
+  display: flex;
+  align-items: center;
+  gap: 4px 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.feed-link {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--phosphor-hi);
+  text-decoration: none;
+  /* Touch-target contract (WCAG 2.5.8): the symbol link keeps a real
+     44x44 box on every width like every other control. The extra floor
+     lands to the right of short symbols, so the left text edge never
+     moves and wrapping flex rows never push the page wide. */
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.feed-link::after {
   content: "";
   position: absolute;
   inset: 0;
 }
 
-.live-table tbody tr.is-new {
-  animation: bk-arrive var(--arrive) var(--ease-out) 1;
+.feed-name {
+  color: var(--dim);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(280px, 100%);
+  min-width: 0;
 }
 
-.live-table tbody tr.is-scored .risk {
-  animation: bk-settle var(--settle) var(--ease-out) 1;
+.feed-age {
+  font-size: 13px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.feed-lamp {
+  display: inline-flex;
+  align-items: center;
+}
+
+.feed-lamp-low {
+  color: var(--low);
+}
+
+.feed-lamp-elevated {
+  color: var(--elevated);
+}
+
+.feed-lamp-high {
+  color: var(--high);
+}
+
+.feed-lamp-dim {
+  color: var(--dim);
+}
+
+.feed-chip {
+  font-size: 12px;
+  color: var(--phosphor);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+
+.feed-chip-dim {
+  color: var(--dim);
+  border-style: dashed;
+}
+
+.feed-score {
+  display: inline-flex;
+  align-items: center;
+}
+
+.feed-score .risk .segs {
+  display: none;
+}
+
+.feed-go {
+  color: var(--dim);
+  margin-left: auto;
+}
+
+.feed-line2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  row-gap: 2px;
+  column-gap: 1.8em;
+  overflow-x: clip;
+  overflow-y: visible;
+  padding-inline-start: 4px;
+  margin-inline-start: -4px;
+  font-size: 13px;
+  color: var(--dim);
+  min-width: 0;
+}
+
+/* Feed meta items wrap only between each other: they never shrink
+   below content width, so on phones their text stays on readable
+   wrapped lines instead of overlapping on one line. */
+.feed-line2 > .meta-item {
+  flex-shrink: 0;
+}
+
+.feed-pic {
+  display: inline-flex;
+  vertical-align: -3px;
+  color: var(--dim);
+}
+
+.feed-line3 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--dim);
+  min-width: 0;
+}
+
+/* Gestalt alignment: the three lines of a feed row share one left text
+   edge. Line 2's leading pictogram and line 1's status lamp hang in a
+   fixed 20 px gutter through absolute positioning, while every line
+   carries the same 20 px inline-start inset, so the first glyph of each
+   line starts at the same x independent of font metrics. The icons stay
+   inside their boxes, so the separator inline-start clip, the 44 px
+   targets and the stretched row link (.feed-row stays the positioning
+   context) are unchanged. No motion, no transform. */
+.feed-line1 {
+  padding-inline-start: 20px;
+}
+
+.feed-line1 > .feed-lamp {
+  position: absolute;
+  inset-inline-start: 12px;
+  top: 8px;
+}
+
+.feed-line3 {
+  padding-inline-start: 20px;
+}
+
+.feed-line2 > .meta-item:first-child {
+  padding-inline-start: 20px;
+}
+
+.feed-line2 > .meta-item:first-child > .feed-pic {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  margin-top: -8px;
 }
 
 .live-new {
@@ -820,40 +1059,6 @@ a {
   padding: 1px 8px;
   margin-left: 8px;
   white-space: nowrap;
-}
-
-.live-cards {
-  display: none;
-}
-
-.live-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.live-card {
-  position: relative;
-  transition:
-    box-shadow var(--dur-hover) var(--ease-out),
-    border-color var(--dur-hover) var(--ease-out);
-}
-
-.live-card:focus-within {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-  box-shadow: var(--elev-2);
-}
-
-.live-card-top a::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-}
-
-.live-card.is-new {
-  animation: bk-arrive var(--arrive) var(--ease-out) 1;
 }
 
 /* Risk badge: number and word together, never colour-only. HIGH reads
@@ -1163,10 +1368,7 @@ a {
    addresses, which may wrap. A separator inside one unbreakable item
    (the DEX · fee · age group) stays interior and can never strand. */
 .hero-meta,
-.live-sub,
-.live-meta,
-.live-pair,
-.live-pair-full,
+.feed-line2,
 .feedhead .count {
   display: flex;
   flex-wrap: wrap;
@@ -1182,15 +1384,8 @@ a {
    exactly. Rows that hold a copy button keep the button-to-next-text
    distance at the usual separator width (copy-gap budgets 24 px), so
    their junctions sit a hair tighter than before. */
-.live-pair,
-.live-pair-full {
-  column-gap: calc(6px + 1.15em);
-  row-gap: 4px;
-}
-
 .hero-meta,
-.live-sub,
-.live-meta,
+.feed-line2,
 .feedhead .count {
   column-gap: 1.8em;
 }
@@ -1214,8 +1409,7 @@ a {
 }
 
 .token-meta > .meta-item + .meta-item::before,
-.live-pair > .meta-item + .meta-item::before,
-.live-pair-full > .meta-item + .meta-item::before {
+.feed-line2 > .meta-item + .meta-item::before {
   inset-inline-start: -1.15em;
 }
 
@@ -1231,16 +1425,6 @@ a {
 .meta-addr {
   white-space: normal;
   min-width: 0;
-}
-
-/* The pair label, address and copy stay grouped as one wrapping item;
-   only the block number separates onto its own item, so only that
-   boundary can wrap onto a new line. */
-.pair-group {
-  display: inline-flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 8px;
 }
 
 /* Verdict headline caret: takes the verdict's risk colour from
@@ -2811,64 +2995,8 @@ details[open] > *:not(summary) {
   }
 }
 
-/* W-12 (D2): the live table becomes stacked cards at and below 1023 px,
-   so the Address column never pushes the start page wide at 768; the
-   terminal table stays for wider screens. */
-@media (max-width: 1023px) {
-  .live-table-wrap {
-    display: none;
-  }
-
-  .live-cards {
-    display: grid;
-    gap: 12px;
-    margin: 16px 0 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .live-card {
-    background: var(--surface);
-    border: 1px solid var(--edge);
-    border-radius: var(--radius-row);
-    padding: 12px 16px;
-    min-width: 0;
-    box-shadow: var(--elev-1);
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 2px 10px;
-  }
-
-  .live-card .risk .segs {
-    display: none;
-  }
-
-  /* Two-line mobile cards: symbol + risk, then age · DEX · liquidity. */
-  .live-card .live-card-top {
-    grid-column: 1 / -1;
-  }
-
-  .live-card .live-sub {
-    grid-column: 1 / -1;
-    font-size: 12px;
-    color: var(--dim);
-  }
-
-  .live-card .live-meta,
-  .live-card .live-pair {
-    display: none;
-  }
-}
-
-.live-card .live-sub {
-  display: none;
-}
-
-@media (max-width: 1023px) {
-  .live-card .live-sub {
-    display: flex;
-  }
-}
+/* DX-1 (D2): one row component at every width, so there is no wide
+   table to overflow at 768 px and no card/table switch to maintain. */
 
 /* Flex children that must shrink instead of pushing the page wide. */
 .recent-bars,

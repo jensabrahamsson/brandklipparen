@@ -162,6 +162,25 @@ export function formatAge(ageSeconds: number | null): string {
   return `${Math.floor(ageSeconds / 86400)} d ago`;
 }
 
+// Compact feed-row age (DX-1, shared with W-7 facts): "12m", "3h", "2d".
+// Whole units from the feed's own chain timestamp, so the column rarely
+// changes width between polls. Unknown stays a labelled "unknown".
+export function formatAgeCompact(ageSeconds: number | null): string {
+  if (ageSeconds === null || !Number.isFinite(ageSeconds)) {
+    return "unknown";
+  }
+  if (ageSeconds < 60) {
+    return "just now";
+  }
+  if (ageSeconds < 3600) {
+    return `${Math.floor(ageSeconds / 60)}m`;
+  }
+  if (ageSeconds < 86400) {
+    return `${Math.floor(ageSeconds / 3600)}h`;
+  }
+  return `${Math.floor(ageSeconds / 86400)}d`;
+}
+
 export function shortAddress(address: string): string {
   if (address.length < 12) {
     return address;

@@ -449,6 +449,14 @@ async function expectRowAligned(page: Page, selector: string, index: number): Pr
   return first;
 }
 
+// First visual line's left edge for one row: compares edges across the
+// three feed lines without requiring each line to fit on one line.
+async function firstLineLeft(page: Page, selector: string, index: number): Promise<number> {
+  const lefts = await rowLineLefts(page, selector, index);
+  expect(lefts.length, `${selector}#${index} has a visible first line`).toBeGreaterThan(0);
+  return lefts[0] as number;
+}
+
 type SepStatus = {
   found: boolean;
   startsLine: boolean;
@@ -521,13 +529,38 @@ test("brief40_mobile_separators_found_generically", async ({ page }) => {
   expect(startScan.failures, startScan.failures.join("; ")).toEqual([]);
   expect(startScan.wrapped).toBe(true);
 
-  // Live card rows share one left text edge per card.
-  const liveSubCount = await page.locator(".live-cards .live-sub").count();
-  expect(liveSubCount).toBeGreaterThanOrEqual(2);
-  for (let i = 0; i < liveSubCount; i += 1) {
-    const subLeft = await expectRowAligned(page, ".live-cards .live-sub", i);
-    const pairLeft = await expectRowAligned(page, ".live-cards .live-pair-full", i);
-    expect(Math.abs(pairLeft - subLeft), `live card ${i} rows share left edge`).toBeLessThanOrEqual(0.5);
+  // Feed rows share one left text edge per row (DX-1 replaces the old
+  // card/table layouts with one FeedRow at every width): the symbol line,
+  // the meta line and the address line all start flush.
+  const feedRows = page.locator('section[aria-label="New tokens"] .feed-row');
+  const feedRowCount = await feedRows.count();
+  expect(feedRowCount).toBeGreaterThanOrEqual(2);
+  for (let i = 0; i < feedRowCount; i += 1) {
+    const line1Left = await firstLineLeft(page, 'section[aria-label="New tokens"] .feed-line1', i);
+    const line2Left = await firstLineLeft(page, 'section[aria-label="New tokens"] .feed-line2', i);
+    const line3Left = await firstLineLeft(page, 'section[aria-label="New tokens"] .feed-line3', i);
+    expect(Math.abs(line2Left - line1Left), `feed row ${i} lines share left edge`).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(line3Left - line1Left), `feed row ${i} address shares left edge`).toBeLessThanOrEqual(0.5);
+  }
+
+  // The feed meta line keeps real separators between items at phone
+  // width (DX-1 points the scan at the new row component's meta line):
+  // every meta item after the first draws its own dot, a wrapped line
+  // starts with a bare item, and mid-line dots stay painted.
+  for (let i = 0; i < feedRowCount; i += 1) {
+    const metaItems = await itemCount(page, 'section[aria-label="New tokens"] .feed-line2', i);
+    expect(metaItems).toBeGreaterThanOrEqual(2);
+    let painted = 0;
+    for (let k = 1; k < metaItems; k += 1) {
+      const sep = await sepStatus(page, 'section[aria-label="New tokens"] .feed-line2', i, k);
+      expect(sep.found).toBe(true);
+      expect(sep.beforeContent, `feed meta row ${i} item ${k} separator`).toContain("·");
+      if (!sep.startsLine) {
+        expect(sep.hitIsItem, `feed meta row ${i} item ${k} separator painted`).toBe(true);
+        painted += 1;
+      }
+    }
+    expect(painted).toBeGreaterThanOrEqual(1);
   }
 
   // Note: hash URLs build by concatenation (see token-symbol-heading).
@@ -601,8 +634,9 @@ test("brief40_desktop_separators_stay_visible_between_items", async ({ page }) =
 
   await page.goto("/#/");
   await expect(page.getByText("2 new tokens")).toBeVisible();
-  // The live table keeps its real inline separators on desktop.
-  await expect(page.locator(".live-table").getByText("Uniswap V3 · 1%").first()).toBeVisible();
+  // The feed rows keep their real inline separators on desktop (DX-1
+  // replaces the wide live table with FeedRow at every width).
+  await expect(page.locator(".feed-row").getByText("Uniswap V3 · 1%").first()).toBeVisible();
   // The feed header keeps separators between its items on desktop.
   const feedItems = await itemCount(page, ".feedhead .feed-count", 0);
   expect(feedItems).toBeGreaterThanOrEqual(3);

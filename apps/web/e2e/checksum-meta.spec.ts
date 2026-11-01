@@ -8,7 +8,6 @@ import type { Page } from "@playwright/test";
 const TOKEN_A = "0x5ab1e0000000000000000000000000000000a001";
 const PAIR_A = "0x5ab1e0000000000000000000000000000000a0aa";
 const C_TOKEN_A = "0x5ab1E0000000000000000000000000000000a001";
-const C_PAIR_A = "0x5aB1E0000000000000000000000000000000a0aa";
 
 const HEALTH = {
   status: "ok",
@@ -96,9 +95,8 @@ test("brief36_live_list_addresses_render_in_eip55_form", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText("1 new token")).toBeVisible();
   const live = page.locator('section[aria-label="New tokens"]');
-  // The feed sends lowercase; the cards show the EIP-55 mixed-case form.
-  await expect(live.locator('[data-testid="live-card-token-full"]').first()).toHaveText(C_TOKEN_A);
-  await expect(live.locator('[data-testid="live-card-pair-full"]').first()).toHaveText(C_PAIR_A);
+  // The feed sends lowercase; the rows show the EIP-55 mixed-case form.
+  await expect(live.locator('[data-testid="live-token-full"]').first()).toHaveText(C_TOKEN_A);
   await expect(live.getByText(TOKEN_A, { exact: true })).toHaveCount(0);
 });
 

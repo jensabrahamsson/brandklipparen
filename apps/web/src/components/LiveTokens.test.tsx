@@ -6,6 +6,7 @@ import {
   feedStatusLabel,
   filterLiveEntries,
   formatAge,
+  formatAgeCompact,
   isFeedStale,
   mergeShown,
   shortAddress,
@@ -67,9 +68,17 @@ function snapshot(items: readonly LiveTokenEntry[]): LiveTokensSnapshot {
   return { source: "etherscan", status: "live", updatedAt: 1700000000000, items };
 }
 
+// Rendered text without markup: grouped address chunks wrap by group in
+// the markup but read as the full address, so text assertions strip tags.
+function renderedText(html: string): string {
+  return html.replace(/<[^>]+>/g, "");
+}
+
+const NO_MARKET = new Map<never, never>();
+
 describe("live tokens list", () => {
   test("rows render newest first with symbol, age, pair and liquidity", () => {
-    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} />);
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} marketByToken={NO_MARKET} />);
     const firstRow = html.indexOf(NEW.tokenAddress);
     const secondRow = html.indexOf(PENDING.tokenAddress);
     expect(firstRow).toBeGreaterThan(-1);
@@ -80,30 +89,28 @@ describe("live tokens list", () => {
     expect(html).toContain("1.5 WETH");
     expect(html).toContain("Uniswap V3");
     expect(html).toContain("0.3%");
-    expect(html).toContain("1 h ago");
+    expect(html).toContain(">1h<");
     expect(html).toContain("analyzing…");
     expect(html).toContain("can&#x27;t tell");
   });
 
-  test("duplicate symbols stay distinguishable by fee tier and pair", () => {
+  test("duplicate symbols stay distinguishable by fee tier", () => {
     const first = { ...PENDING, symbol: "NEW" };
     const second = { ...PENDING, symbol: "NEW", pairAddress: syntheticAddress(30), feeTier: 10000 };
-    const html = renderToString(<LiveTokensList snapshot={snapshot([first, second])} />);
+    const html = renderToString(<LiveTokensList snapshot={snapshot([first, second])} marketByToken={NO_MARKET} />);
     expect(html).toContain("0.3%");
     expect(html).toContain("1%");
-    expect(html).toContain(toChecksumAddress(first.pairAddress));
-    expect(html).toContain(toChecksumAddress(second.pairAddress));
   });
 
   test("queued rows read analyzing until the queue reaches them", () => {
     const queued: LiveTokenEntry = { ...PENDING, state: "queued", reason: undefined };
-    const html = renderToString(<LiveTokensList snapshot={snapshot([queued])} />);
+    const html = renderToString(<LiveTokensList snapshot={snapshot([queued])} marketByToken={NO_MARKET} />);
     expect(html).toContain("analyzing…");
     expect(html).not.toContain('data-testid="risk-badge"');
   });
 
   test("done rows carry the risk badge while missing data reads calm", () => {
-    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, CANT_TELL])} />);
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, CANT_TELL])} marketByToken={NO_MARKET} />);
     expect(html).toContain('data-testid="risk-badge"');
     expect(html).toContain("can&#x27;t tell");
     expect(html).toContain(">unknown<");
@@ -111,7 +118,7 @@ describe("live tokens list", () => {
   });
 
   test("unknown chain age reads as a labelled unknown with the reason, never a bare dash", () => {
-    const html = renderToString(<LiveTokensList snapshot={snapshot([CANT_TELL])} />);
+    const html = renderToString(<LiveTokensList snapshot={snapshot([CANT_TELL])} marketByToken={NO_MARKET} />);
     expect(html).toContain(">unknown<");
     expect(html).not.toContain(">-<");
     expect(html).toContain("Pair creation time not reported");
@@ -119,12 +126,12 @@ describe("live tokens list", () => {
   });
 
   test("s124_filters_name_both_bands_and_count_uses_grammar", () => {
-    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} lastPollAt={1700000006000} />);
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} lastPollAt={1700000006000} marketByToken={NO_MARKET} />);
     expect(html).toContain("Elevated &amp; high");
     expect(html).toContain(">Low<");
     expect(html).not.toContain("High risk");
     expect(html).not.toContain("Low risk");
-    expect(renderToString(<LiveTokensList snapshot={snapshot([NEW])} />)).toContain("1 new token");
+    expect(renderToString(<LiveTokensList snapshot={snapshot([NEW])} marketByToken={NO_MARKET} />)).toContain("1 new token");
     expect(html).toContain("2 new tokens");
     expect(html).toMatch(/Updated \d+ s ago/);
   });
@@ -155,20 +162,19 @@ describe("live tokens list", () => {
   });
 
   test("token links open the token page and rows keep stable keys", () => {
-    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} />);
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} marketByToken={NO_MARKET} />);
     expect(html).toContain(`href="#/token/${NEW.tokenAddress}"`);
-    expect(html).toContain(toChecksumAddress(NEW.tokenAddress));
-    expect(html).toContain(toChecksumAddress(NEW.pairAddress));
+    // Grouped chunks wrap by group; the rendered text stays the full form.
+    expect(renderedText(html)).toContain(toChecksumAddress(NEW.tokenAddress));
+    expect(html).toContain('class="feed-row');
   });
 
   test("s134_full_addresses_render_with_copy_and_no_short_form", () => {
-    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} />);
-    expect(html).toContain(toChecksumAddress(NEW.tokenAddress));
-    expect(html).toContain(toChecksumAddress(NEW.pairAddress));
-    expect(html).toContain(toChecksumAddress(PENDING.tokenAddress));
-    expect(html).toContain(toChecksumAddress(PENDING.pairAddress));
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} marketByToken={NO_MARKET} />);
+    expect(renderedText(html)).toContain(toChecksumAddress(NEW.tokenAddress));
+    expect(renderedText(html)).toContain(toChecksumAddress(PENDING.tokenAddress));
     expect(html).toContain('aria-label="Copy contract address"');
-    expect(html).toContain('aria-label="Copy pair address"');
+    expect(html).not.toContain('aria-label="Copy pair address"');
   });
 
   test("s36_live_list_shows_checksummed_addresses_but_routes_on_raw", () => {
@@ -185,19 +191,17 @@ describe("live tokens list", () => {
       name: null,
       pairAddress: rawPair,
     };
-    const html = renderToString(<LiveTokensList snapshot={snapshot([entry])} />);
-    // Table and mobile cards display the checksummed form only.
-    expect(html).toContain(`>${token}<`);
-    expect(html).toContain(`>${pair}<`);
-    expect(html).not.toContain(`>${rawToken}<`);
-    expect(html).not.toContain(`>${rawPair}<`);
+    const html = renderToString(<LiveTokensList snapshot={snapshot([entry])} marketByToken={NO_MARKET} />);
+    // Feed rows display the checksummed token address only.
+    expect(renderedText(html)).toContain(token);
+    expect(renderedText(html)).not.toContain(rawToken);
     // Routing keys stay raw: links still target the original address.
     expect(html).toContain(`href="#/token/${rawToken}"`);
     expect(html).not.toContain(`href="#/token/${token}"`);
   });
 
   test("the new marker is static text with no animation hooks", () => {
-    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} />);
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} marketByToken={NO_MARKET} />);
     expect(html).toContain('<span class="live-new">new</span>');
     // The marker element itself carries no animation hook: it renders
     // uppercase through CSS only. (Section-level one-shot fades live on
@@ -208,18 +212,32 @@ describe("live tokens list", () => {
   });
 
   test("the count line is the single polite live region", () => {
-    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} />);
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} marketByToken={NO_MARKET} />);
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain("2 new tokens");
-    expect(html).not.toContain("<tableARIA");
-    const tableTag = html.slice(html.indexOf("<table"), html.indexOf("<table") + 120);
-    expect(tableTag).not.toContain("aria-live");
+    // Feed rows replaced the table: no table markup at all.
+    expect(html).not.toContain("<table");
+    expect(html).not.toContain("<ulARIA");
+    expect(html).toContain('class="feed-rows"');
+  });
+
+  test("dx1_rows_page_at_10_and_keep_the_total_in_the_label", () => {
+    const many = Array.from({ length: 30 }, (_, index) =>
+      index === 0 ? NEW : { ...PENDING, pairAddress: syntheticAddress(100 + index) },
+    );
+    const html = renderToString(<LiveTokensList snapshot={snapshot(many)} marketByToken={NO_MARKET} />);
+    expect(renderedText(html)).toContain("10 of 30 new tokens");
+    expect(renderedText(html).replace(/<!-- -->/g, "")).toContain("Show 10 more");
+    expect(html.match(/class="feed-row[ "]/g)).toHaveLength(10);
   });
 
   test("empty and not-configured states read plainly", () => {
-    expect(renderToString(<LiveTokensList snapshot={snapshot([])} />)).toContain("Waiting for new pairs…");
+    expect(renderToString(<LiveTokensList snapshot={snapshot([])} marketByToken={NO_MARKET} />)).toContain("Waiting for new pairs…");
     const off = renderToString(
-      <LiveTokensList snapshot={{ source: "none", status: "not-configured", updatedAt: 0, items: [] }} />,
+      <LiveTokensList
+        snapshot={{ source: "none", status: "not-configured", updatedAt: 0, items: [] }}
+        marketByToken={NO_MARKET}
+      />,
     );
     expect(off).toContain("New tokens are unavailable");
     expect(off).not.toContain("ETHERSCAN_API_KEY");
@@ -236,6 +254,16 @@ describe("live tokens client", () => {
     expect(formatAge(null)).toBe("unknown");
   });
 
+  test("dx1_compact_age_reads_whole_units_for_feed_rows", () => {
+    expect(formatAgeCompact(5)).toBe("just now");
+    expect(formatAgeCompact(125)).toBe("2m");
+    expect(formatAgeCompact(3700)).toBe("1h");
+    expect(formatAgeCompact(7200)).toBe("2h");
+    expect(formatAgeCompact(90000)).toBe("1d");
+    expect(formatAgeCompact(null)).toBe("unknown");
+    expect(formatAgeCompact(Number.NaN)).toBe("unknown");
+  });
+
   test("s132_updated_label_reads_plainly_and_flags_a_stale_feed", () => {
     const base = 1700000000000;
     expect(updatedAgoLabel(base, base + 3_000)).toBe("Updated just now");
@@ -248,10 +276,10 @@ describe("live tokens client", () => {
     expect(feedStatusLabel(base, base + 12_000)).toBe("Updated 12 s ago");
     expect(feedStatusLabel(base, base + 240_000)).toBe("Feed paused, last update 4 min ago");
     const staleHtml = renderToString(
-      <LiveTokensList snapshot={snapshot([NEW])} lastPollAt={base + 300_000} />,
+      <LiveTokensList snapshot={snapshot([NEW])} lastPollAt={base + 300_000} marketByToken={NO_MARKET} />,
     );
     expect(staleHtml).toContain("Feed paused, last update 5 min ago");
-    const freshHtml = renderToString(<LiveTokensList snapshot={snapshot([NEW])} lastPollAt={base + 12_000} />);
+    const freshHtml = renderToString(<LiveTokensList snapshot={snapshot([NEW])} lastPollAt={base + 12_000} marketByToken={NO_MARKET} />);
     expect(freshHtml).toContain("Updated 12 s ago");
   });
 

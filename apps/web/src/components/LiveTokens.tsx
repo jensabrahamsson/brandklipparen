@@ -1,26 +1,34 @@
+// Live new-tokens list: a calm feed of fresh Uniswap V2/V3 pairs,
+// newest first, polled every ~10 s. Rows never jump: while the reader is
+// scrolled or focused inside the list, new rows wait in a buffer behind
+// an "N new tokens · Show" pill instead of pushing the rows down.
+// The count line is the single polite live region; the list itself is
+// not one, so screen readers hear the count, not every row.
+// Rows are the shared FeedRow (DX-1): symbol, compact age, score, DEX,
+// WETH liquidity, DexScreener market enrichment (W-13, display only),
+// then the full token address with copy. The list shows 10 rows plus
+// "Show 10 more"; the total stays in the label (W-12).
 import { useEffect, useRef, useState, type CSSProperties, type JSX, type RefObject } from "react";
-import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { riskBand } from "../lib/risk.ts";
 import { RiskBadge } from "./RiskBadge.tsx";
-import { CopyButton } from "./CopyButton.tsx";
+import { FeedRow } from "./FeedRow.tsx";
+import { Pictogram } from "./Pictogram.tsx";
 import {
   fetchLiveTokens,
   feedStatusLabel,
   filterLiveEntries,
-  formatAge,
+  formatAgeCompact,
   mergeShown,
-  shortAddress,
   tokenCountLabel,
   unseenEntries,
 } from "../lib/liveTokens.ts";
+import { formatUsdCompact, marketVolumeFor, type MarketItem } from "../lib/market.ts";
 import type { LiveFilter, LiveTokenEntry, LiveTokensSnapshot } from "../lib/liveTokens.ts";
 
-// Live new-tokens list: a calm table of fresh Uniswap V2/V3 pairs,
-// newest first, polled every ~10 s. Rows never jump: while the reader is
-// scrolled or focused inside the list, new rows wait in a buffer behind a
-// "N new tokens · Show" pill instead of pushing the table down.
-// The count line is the single polite live region; the table itself is
-// not one, so screen readers hear the count, not every row.
+// Live list page size (W-12): 10 rows plus "Show 10 more", so the start
+// page stays under its height budget with both feeds full.
+export const LIVE_PAGE_SIZE = 10;
+
 const FILTERS = ["All", "Elevated & high", "Low"] as const;
 
 type Filter = (typeof FILTERS)[number];
@@ -29,27 +37,25 @@ function filterToEntries(items: readonly LiveTokenEntry[], filter: Filter): read
   return filterLiveEntries(items, filter as LiveFilter);
 }
 
-// Age reads as a human phrase from the feed's own chain timestamp; the
-// block number rides in the tooltip as provenance. An unknown chain age
-// reads as a quiet labelled "unknown" with the reason, never a bare "-"
-// that looks like a bug.
-function ageText(entry: LiveTokenEntry): JSX.Element | string {
-  const text = formatAge(entry.ageSeconds);
-  if (text !== "unknown") {
-    return (
-      <span title={`Block ${entry.block}`}>
-        {text}
-      </span>
-    );
+// Age reads as a compact feed stamp from the feed's own chain timestamp;
+// the block number rides in the tooltip as provenance. An unknown chain
+// age reads as a quiet labelled "unknown" with the reason, never a bare
+// "-" that looks like a bug.
+function ageProps(entry: LiveTokenEntry): { label: string; dateTime: string | null; title: string } {
+  const label = formatAgeCompact(entry.ageSeconds);
+  if (label !== "unknown") {
+    const stamp = entry.blockTimestampMs;
+    return {
+      label,
+      dateTime: stamp === null ? null : new Date(stamp).toISOString(),
+      title: `Block ${entry.block}`,
+    };
   }
-  return (
-    <span
-      className="quiet"
-      title={`Pair creation time not reported by the feed (block ${entry.block})`}
-    >
-      unknown
-    </span>
-  );
+  return {
+    label: "unknown",
+    dateTime: null,
+    title: `Pair creation time not reported by the feed (block ${entry.block})`,
+  };
 }
 
 function bandClass(entry: LiveTokenEntry): string {
@@ -86,7 +92,7 @@ function riskCell(entry: LiveTokenEntry): JSX.Element {
   if (entry.state === "cant-tell") {
     return (
       <span className="cantword" title={entry.reason ?? "missing data"}>
-        can't tell
+        can&apos;t tell
       </span>
     );
   }
@@ -96,20 +102,67 @@ function riskCell(entry: LiveTokenEntry): JSX.Element {
   return <span className="muted">{entry.reason ?? "error"}</span>;
 }
 
+// DexScreener market enrichment for one on-chain row (W-13): liquidity
+// USD, 24 h volume and price change when the market listing holds this
+// token, clearly labelled and display only. Missing data reads "—".
+function marketSegment(
+  entry: LiveTokenEntry,
+  marketByToken: ReadonlyMap<string, MarketItem>,
+): JSX.Element {
+  const market = marketByToken.get(entry.tokenAddress.toLowerCase());
+  const title = "Market data from DexScreener, not part of the score.";
+  if (market === undefined) {
+    return (
+      <span className="meta-item" title={title}>
+        <span className="feed-pic" aria-hidden="true">
+          <Pictogram name="market" size={16} />
+        </span>{" "}
+        Market —
+      </span>
+    );
+  }
+  const liquidity = formatUsdCompact(market.liquidityUsd);
+  const volume = marketVolumeFor(market, Date.now());
+  const volumeText = formatUsdCompact(volume.value);
+  const price = market.priceChange24hPct;
+  const priceText =
+    price === null ? "—" : `${price >= 0 ? "+" : ""}${Math.round(price * 10) / 10}%`;
+  return (
+    <span className="meta-item" title={title}>
+      <span className="feed-pic" aria-hidden="true">
+        <Pictogram name="market" size={16} />
+      </span>{" "}
+      Market {liquidity === null ? "can't tell" : liquidity} · {volume.label}{" "}
+      {volumeText === null ? "can't tell" : volumeText} · {priceText}
+    </span>
+  );
+}
+
 export function LiveTokensList({
   snapshot,
   buffered = [],
   lastPollAt = null,
   sectionRef = null,
   onShowBuffered = null,
+  tabbed = false,
+  hidden = false,
+  marketByToken,
+  onCount = null,
+  onTokens = null,
 }: {
   readonly snapshot: LiveTokensSnapshot;
   readonly buffered?: readonly LiveTokenEntry[] | undefined;
   readonly lastPollAt?: number | null | undefined;
   readonly sectionRef?: RefObject<HTMLElement | null> | null | undefined;
   readonly onShowBuffered?: (() => void) | null | undefined;
+  readonly tabbed?: boolean | undefined;
+  readonly hidden?: boolean | undefined;
+  readonly marketByToken: ReadonlyMap<string, MarketItem>;
+  readonly onCount?: ((shown: number, total: number) => void) | null | undefined;
+  readonly onTokens?: ((tokens: readonly string[]) => void) | null | undefined;
 }): JSX.Element {
   const [filter, setFilter] = useState<Filter>("All");
+  const [visible, setVisible] = useState(LIVE_PAGE_SIZE);
   // Fresh-row flash (Phosphor Console): rows the reader has not seen get
   // the in-place afterglow once. Everything on the first paint counts as
   // seen, so loading never flashes; later polls flash only their inserts.
@@ -125,16 +178,24 @@ export function LiveTokensList({
       return next;
     });
   }, [snapshot.items]);
-  const rowClass = (entry: LiveTokenEntry): string | undefined => {
-    const fresh = !seen.has(entry.pairAddress);
-    if (!fresh) {
-      return undefined;
-    }
-    return entry.state === "done" ? "is-new is-scored" : "is-new";
-  };
+
+  const items = filterToEntries(snapshot.items, filter);
+  const rows = items.slice(0, visible);
+
+  useEffect(() => {
+    onCount?.(Math.min(visible, items.length), items.length);
+  }, [visible, items.length, onCount]);
+  useEffect(() => {
+    onTokens?.(snapshot.items.map((entry) => entry.tokenAddress.toLowerCase()));
+  }, [snapshot.items, onTokens]);
+
+  const panelProps = tabbed
+    ? { role: "tabpanel" as const, id: "feed-panel-live", "aria-labelledby": "feed-tab-live" }
+    : { role: undefined, id: undefined, "aria-labelledby": undefined };
+
   if (snapshot.status === "not-configured") {
     return (
-      <section aria-label="New tokens" style={{ marginTop: 56 }}>
+      <section aria-label="New tokens" className="feed-section fade-sec" hidden={hidden} {...panelProps}>
         <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>New tokens</h2>
         <div className="card" style={{ marginTop: 16 }}>
           <p className="muted" style={{ margin: 0 }}>
@@ -145,25 +206,19 @@ export function LiveTokensList({
     );
   }
 
-  const items = filterToEntries(snapshot.items, filter);
-  const sourceLabel =
-    snapshot.source === "none"
-      ? "Live feed"
-      : snapshot.source === "rpc"
-        ? "Live feed · via RPC"
-        : "Live feed · via Etherscan";
-
   return (
     <section
       aria-label="New tokens"
       ref={sectionRef}
-      className="fade-sec"
-      style={{ marginTop: 56, "--sec-i": 2 } as CSSProperties}
+      className="feed-section fade-sec"
+      style={{ "--sec-i": 2 } as CSSProperties}
+      hidden={hidden}
+      {...panelProps}
     >
       <div className="feedhead">
         <h2>New pairs</h2>
         <span className="count feed-count">
-          <span className="meta-item">{sourceLabel}</span>
+          <span className="meta-item">live from chain</span>
           <span className="meta-item">newest first</span>
           <span className="meta-item">
             <span className="live" style={{ fontSize: 12 }}>
@@ -182,7 +237,10 @@ export function LiveTokensList({
               type="button"
               className="chip"
               aria-pressed={filter === name}
-              onClick={() => setFilter(name)}
+              onClick={() => {
+                setFilter(name);
+                setVisible(LIVE_PAGE_SIZE);
+              }}
             >
               {name}
             </button>
@@ -190,7 +248,7 @@ export function LiveTokensList({
         </div>
       </div>
       <p className="quiet numeric" aria-live="polite" style={{ margin: "8px 0 0" }}>
-        {tokenCountLabel(items.length)}
+        {items.length <= visible ? tokenCountLabel(items.length) : `${visible} of ${items.length} new tokens`}
       </p>
       {/*
         Buffered-rows pill slot (S-124): always rendered at a fixed height
@@ -216,7 +274,14 @@ export function LiveTokensList({
               No tokens match this filter.
             </p>
             <p style={{ margin: "12px 0 0" }}>
-              <button type="button" className="button-ghost" onClick={() => setFilter("All")}>
+              <button
+                type="button"
+                className="button-ghost"
+                onClick={() => {
+                  setFilter("All");
+                  setVisible(LIVE_PAGE_SIZE);
+                }}
+              >
                 Show all
               </button>
             </p>
@@ -224,142 +289,68 @@ export function LiveTokensList({
         )
       ) : (
         <>
-          <ul className="live-cards">
-            {items.map((entry) => (
-              <li key={entry.pairAddress} className={rowClass(entry) === undefined ? "live-card" : `live-card ${rowClass(entry)}`}>
-                <div className="live-card-top">
-                  <a
-                    href={`#/token/${encodeURIComponent(entry.tokenAddress)}`}
-                    title={toChecksumAddress(entry.tokenAddress)}
-                  >
-                    {entry.symbol ?? shortAddress(entry.tokenAddress)}
-                  </a>
-                  {riskCell(entry)}
-                </div>
-                <div className="quiet numeric live-sub">
-                  <span className="meta-item">{ageText(entry)}</span>
-                  <span className="meta-item">
-                    {entry.dex}
-                    {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null}
-                  </span>
-                  <span className="meta-item">
-                    <span
-                      className="muted"
-                      title={
-                        entry.initialLiquidityWeth === null
-                          ? "No WETH liquidity seen in the pair's first logs"
-                          : undefined
-                      }
-                    >
-                      {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
-                    </span>
-                  </span>
-                </div>
-                <div className="live-addr">
-                  <span className="addr-full mono numeric" data-testid="live-card-token-full">
-                    {toChecksumAddress(entry.tokenAddress)}
-                  </span>{" "}
-                  <CopyButton value={toChecksumAddress(entry.tokenAddress)} label="Copy contract address" />
-                </div>
-                <div className="live-pair-full">
-                  <span className="meta-item meta-addr pair-group">
-                    Pair{" "}
-                    <span className="addr-full mono numeric" data-testid="live-card-pair-full">
-                      {toChecksumAddress(entry.pairAddress)}
-                    </span>{" "}
-                    <CopyButton value={toChecksumAddress(entry.pairAddress)} label="Copy pair address" />
-                  </span>
-                  <span className="meta-item">block {entry.block}</span>
-                </div>
-                <div className="quiet numeric live-meta">
-                  <span className="meta-item">{ageText(entry)}</span>
-                  <span className="meta-item">
-                    {entry.dex}
-                    {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null}
-                  </span>
-                  <span className="meta-item">
-                    <span
-                      className="muted"
-                      title={
-                        entry.initialLiquidityWeth === null
-                          ? "No WETH liquidity seen in the pair's first logs"
-                          : undefined
-                      }
-                    >
-                      {entry.initialLiquidityWeth === null ? "can't tell" : `${entry.initialLiquidityWeth} WETH`}
-                    </span>
-                  </span>
-                </div>
-                <div className="quiet numeric live-pair">
-                  <span className="meta-item meta-addr pair-group">
-                    Pair{" "}
-                    <span className="addr-full mono numeric" data-testid="live-card-pair-full-wide">
-                      {toChecksumAddress(entry.pairAddress)}
-                    </span>{" "}
-                    <CopyButton value={toChecksumAddress(entry.pairAddress)} label="Copy pair address" />
-                  </span>
-                  <span className="meta-item">block {entry.block}</span>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className="card live-table-wrap" style={{ marginTop: 16, padding: 8 }}>
-            <table className="live-table">
-            <caption className="skip-link">New Uniswap pairs, newest first</caption>
-            <thead>
-              <tr>
-                <th scope="col">Token</th>
-                <th scope="col">Address</th>
-                <th scope="col">Age</th>
-                <th scope="col">Pair/DEX</th>
-                <th scope="col">Liquidity</th>
-                <th scope="col">Risk</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((entry) => (
-                <tr key={entry.pairAddress} className={rowClass(entry)}>
-                  <td>
-                    <a
-                      href={`#/token/${encodeURIComponent(entry.tokenAddress)}`}
-                      title={toChecksumAddress(entry.tokenAddress)}
-                    >
-                      {entry.symbol ?? shortAddress(entry.tokenAddress)}
-                    </a>
-                    {entry.ageSeconds !== null && entry.ageSeconds < 120 ? (
-                      <span className="live-new">new</span>
-                    ) : null}
-                  </td>
-                  <td className="mono numeric addr-cell">
-                    <span className="addr-full" data-testid="live-token-full">
-                      {toChecksumAddress(entry.tokenAddress)}
-                    </span>{" "}
-                    <CopyButton value={toChecksumAddress(entry.tokenAddress)} label="Copy contract address" />
-                  </td>
-                  <td className="numeric">{ageText(entry)}</td>
-                  <td className="addr-cell">
-                    {entry.dex}
-                    {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null} ·{" "}
-                    <span className="addr-full mono numeric" data-testid="live-pair-full">
-                      {toChecksumAddress(entry.pairAddress)}
-                    </span>{" "}
-                    <CopyButton value={toChecksumAddress(entry.pairAddress)} label="Copy pair address" />
-                  </td>
-                  <td className="numeric">
-                    {entry.initialLiquidityWeth === null ? (
-                      <span className="muted" title="No WETH liquidity seen in the pair's first logs">
-                        can't tell
+          <ul className="feed-rows">
+            {rows.map((entry) => {
+              const fresh = !seen.has(entry.pairAddress);
+              const age = ageProps(entry);
+              return (
+                <FeedRow
+                  key={entry.pairAddress}
+                  href={`#/token/${encodeURIComponent(entry.tokenAddress)}`}
+                  symbol={entry.symbol}
+                  tokenAddress={entry.tokenAddress}
+                  name={entry.name}
+                  ageLabel={age.label}
+                  ageDateTime={age.dateTime}
+                  ageTitle={age.title}
+                  lamp={null}
+                  chip={null}
+                  score={riskCell(entry)}
+                  meta={
+                    <>
+                      <span className="meta-item" title={`Pair ${entry.pairAddress}`}>
+                        <span className="feed-pic" aria-hidden="true">
+                          <Pictogram name="dex" size={16} />
+                        </span>{" "}
+                        {entry.dex}
+                        {typeof entry.feeTier === "number" ? ` · ${entry.feeTier / 10000}%` : null}
                       </span>
-                    ) : (
-                      `${entry.initialLiquidityWeth} WETH`
-                    )}
-                  </td>
-                  <td>{riskCell(entry)}</td>
-                </tr>
-              ))}
-            </tbody>
-            </table>
-          </div>
+                      <span className="meta-item">
+                        <span className="feed-pic" aria-hidden="true">
+                          <Pictogram name="liquidity" size={16} />
+                        </span>{" "}
+                        {entry.initialLiquidityWeth === null ? (
+                          <span className="muted" title="No WETH liquidity seen in the pair's first logs">
+                            can&apos;t tell
+                          </span>
+                        ) : (
+                          `${entry.initialLiquidityWeth} WETH`
+                        )}
+                      </span>
+                      {marketSegment(entry, marketByToken)}
+                      <span className="meta-item">block {entry.block}</span>
+                    </>
+                  }
+                  copyLabel="Copy contract address"
+                  tokenTestId="live-token-full"
+                  marker={
+                    entry.ageSeconds !== null && entry.ageSeconds < 120 ? (
+                      <span className="live-new">new</span>
+                    ) : null
+                  }
+                  isNew={fresh}
+                  isScored={entry.state === "done"}
+                />
+              );
+            })}
+          </ul>
+          {items.length > visible ? (
+            <p style={{ margin: "16px 0 0" }}>
+              <button type="button" className="button-ghost" onClick={() => setVisible(visible + LIVE_PAGE_SIZE)}>
+                Show {Math.min(LIVE_PAGE_SIZE, items.length - visible)} more
+              </button>
+            </p>
+          ) : null}
         </>
       )}
     </section>
@@ -370,7 +361,7 @@ export function LiveTokensList({
 // (role status) and never competes with the page's own alerts.
 export function LiveTokensError({ message }: { readonly message: string }): JSX.Element {
   return (
-    <section aria-label="New tokens" style={{ marginTop: 56 }}>
+    <section aria-label="New tokens" className="feed-section">
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>New tokens</h2>
       <div className="card" style={{ marginTop: 16 }}>
         <p className="muted" style={{ margin: 0 }} role="status">
@@ -381,7 +372,21 @@ export function LiveTokensError({ message }: { readonly message: string }): JSX.
   );
 }
 
-export function LiveTokens({ apiKey }: { readonly apiKey: string }): JSX.Element {
+export function LiveTokens({
+  apiKey,
+  marketByToken,
+  tabbed = false,
+  hidden = false,
+  onCount = null,
+  onTokens = null,
+}: {
+  readonly apiKey: string;
+  readonly marketByToken: ReadonlyMap<string, MarketItem>;
+  readonly tabbed?: boolean | undefined;
+  readonly hidden?: boolean | undefined;
+  readonly onCount?: ((shown: number, total: number) => void) | null | undefined;
+  readonly onTokens?: ((tokens: readonly string[]) => void) | null | undefined;
+}): JSX.Element {
   const [view, setView] = useState<{ snapshot: LiveTokensSnapshot; buffered: readonly LiveTokenEntry[] } | null>(null);
   const [lastPollAt, setLastPollAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -434,7 +439,7 @@ export function LiveTokens({ apiKey }: { readonly apiKey: string }): JSX.Element
 
   if (view === null) {
     return (
-      <section aria-label="New tokens" style={{ marginTop: 56 }}>
+      <section aria-label="New tokens" className="feed-section">
         <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>New tokens</h2>
         <div className="card" style={{ marginTop: 16 }}>
           <p className="muted" style={{ margin: 0 }}>
@@ -460,6 +465,11 @@ export function LiveTokens({ apiKey }: { readonly apiKey: string }): JSX.Element
       lastPollAt={lastPollAt}
       sectionRef={sectionRef}
       onShowBuffered={view.buffered.length === 0 ? null : showBuffered}
+      tabbed={tabbed}
+      hidden={hidden}
+      marketByToken={marketByToken}
+      onCount={onCount}
+      onTokens={onTokens}
     />
   );
 }

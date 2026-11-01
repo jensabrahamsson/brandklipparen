@@ -1,6 +1,6 @@
 // S-134: the full token contract address (all 42 characters) shows in
-// the UI instead of shortened forms: the live list (desktop table and
-// mobile cards), the token page header/meta, the sidebar facts, and
+// the UI instead of shortened forms: the live list (shared FeedRow at
+// every width), the token page header/meta, the sidebar facts, and
 // recently analyzed rows. Copy buttons sit next to each full address;
 // row clicks still navigate while copy clicks do not.
 import { expect, test } from "@playwright/test";
@@ -13,9 +13,8 @@ const PAIR_B = "0x5ab1e0000000000000000000000000000000b0bb";
 // Displayed (and copied) forms are EIP-55 checksummed; mocks, routes and
 // API calls keep the raw lowercase strings above.
 const C_TOKEN_A = "0x5ab1E0000000000000000000000000000000a001";
-const C_PAIR_A = "0x5aB1E0000000000000000000000000000000a0aa";
 const C_TOKEN_B = "0x5AB1E0000000000000000000000000000000b002";
-const C_PAIR_B = "0x5ab1E0000000000000000000000000000000b0BB";
+const C_PAIR_A = "0x5aB1E0000000000000000000000000000000a0aa";
 
 function liveItems(): Record<string, unknown>[] {
   return [
@@ -97,6 +96,9 @@ async function copiedValues(page: Page): Promise<string[]> {
 }
 
 async function mockStart(page: Page): Promise<void> {
+  await page.route("**/health", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
+  });
   await page.route("**/v1/live-tokens", async (route) => {
     await route.fulfill({
       status: 200,
@@ -155,26 +157,16 @@ test("s134_live_list_shows_full_addresses_without_overflow", async ({ page }) =>
     await page.setViewportSize(viewport);
     await page.goto("/");
     await expect(page.getByText("2 new tokens")).toBeVisible();
-    // Full token and pair addresses render as exact text, never shortened.
-    // The table serves wide screens and the cards serve narrow ones, so
-    // the visible assertion follows the layout.
+    // Full token addresses render as exact text, never shortened. The
+    // shared FeedRow serves every width, so the assertion is the same
+    // at 1440, 390 and 320.
     const live = page.locator('section[aria-label="New tokens"]');
-    if (viewport.width >= 640) {
-      await expect(live.locator('[data-testid="live-token-full"]').first()).toBeVisible();
-      await expect(live.locator('[data-testid="live-token-full"]').first()).toHaveText(C_TOKEN_A);
-      await expect(live.locator('[data-testid="live-token-full"]').nth(1)).toHaveText(C_TOKEN_B);
-      await expect(live.locator('[data-testid="live-pair-full"]').first()).toHaveText(C_PAIR_A);
-      await expect(live.locator('[data-testid="live-pair-full"]').nth(1)).toHaveText(C_PAIR_B);
-    } else {
-      await expect(live.locator('[data-testid="live-card-token-full"]').first()).toBeVisible();
-      await expect(live.locator('[data-testid="live-card-token-full"]').first()).toHaveText(C_TOKEN_A);
-      await expect(live.locator('[data-testid="live-card-token-full"]').nth(1)).toHaveText(C_TOKEN_B);
-      await expect(live.locator('[data-testid="live-card-pair-full"]').first()).toHaveText(C_PAIR_A);
-      await expect(live.locator('[data-testid="live-card-pair-full"]').nth(1)).toHaveText(C_PAIR_B);
-    }
-    // Pair addresses never shorten; the token title may stay short only
+    await expect(live.locator('[data-testid="live-token-full"]').first()).toBeVisible();
+    await expect(live.locator('[data-testid="live-token-full"]').first()).toHaveText(C_TOKEN_A);
+    await expect(live.locator('[data-testid="live-token-full"]').nth(1)).toHaveText(C_TOKEN_B);
+    // Neither token address shortens; the token link may stay short only
     // when the symbol is missing (TOKEN_B), with the full address in the
-    // row cells.
+    // row below it.
     await expect(live.getByText("0x5ab1…a0aa")).toHaveCount(0);
     await expect(live.getByText("0x5ab1…b0bb")).toHaveCount(0);
     await expect(live.getByText("0x5ab1…a001")).toHaveCount(0);
@@ -222,7 +214,7 @@ test("s134_list_row_click_navigates_but_copy_click_does_not", async ({ page }) =
   await expect(page.getByText("2 new tokens")).toBeVisible();
 
   // Enter on a focused row link opens the analysis.
-  await page.locator(".live-table tbody tr a").first().focus();
+  await page.locator(".feed-row a").first().focus();
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => window.location.hash)).toContain(`#/token/${TOKEN_A}`);
 

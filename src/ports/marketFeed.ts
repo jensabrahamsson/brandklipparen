@@ -32,7 +32,8 @@ export type MarketAnalysisSummary = {
 export type MarketAnalysisLookup = (tokenAddress: string) => MarketAnalysisSummary | null;
 
 // One listed token as served: addresses in full EIP-55 form, money fields
-// as USD numbers or null when the source did not report them.
+// as USD numbers or null when the source did not report them, plus the
+// 24 h price change in percent (W-13 enrichment display) or null.
 export type MarketTokenItem = {
   readonly tokenAddress: string;
   readonly symbol: string | null;
@@ -43,6 +44,7 @@ export type MarketTokenItem = {
   readonly liquidityUsd: number | null;
   readonly volume1hUsd: number | null;
   readonly volume24hUsd: number | null;
+  readonly priceChange24hPct: number | null;
   readonly analysis?: MarketAnalysisSummary | undefined;
 };
 
@@ -111,6 +113,7 @@ export const MarketTokenItem = {
     readonly liquidityUsd: unknown;
     readonly volume1hUsd: unknown;
     readonly volume24hUsd: unknown;
+    readonly priceChange24hPct?: unknown | undefined;
   }): Result<MarketTokenItem, { kind: "invalid-market-item"; message: string }> {
     const token = Address.parse(input.tokenAddress);
     if (!token.ok) {
@@ -161,6 +164,10 @@ export const MarketTokenItem = {
     if (!volume24h.ok) {
       return err(volume24h.error);
     }
+    const priceChange = money(input.priceChange24hPct);
+    if (!priceChange.ok) {
+      return err(priceChange.error);
+    }
     return ok(
       Object.freeze({
         tokenAddress: token.value as string,
@@ -172,6 +179,7 @@ export const MarketTokenItem = {
         liquidityUsd: liquidity.value,
         volume1hUsd: volume1h.value,
         volume24hUsd: volume24h.value,
+        priceChange24hPct: priceChange.value,
       }),
     );
   },

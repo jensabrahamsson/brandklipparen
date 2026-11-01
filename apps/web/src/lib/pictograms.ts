@@ -68,7 +68,9 @@ export type PictogramName =
   | "chevron-down"
   | "back"
   | "expert"
-  | "link";
+  | "link"
+  | "volume"
+  | "market";
 
 export const PICTOGRAMS: Record<PictogramName, { readonly label: string; readonly nodes: readonly PictoNode[] }> =
   Object.freeze({
@@ -384,6 +386,24 @@ export const PICTOGRAMS: Record<PictogramName, { readonly label: string; readonl
       nodes: Object.freeze([
         ["path", { d: "M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" }],
         ["path", { d: "M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" }],
+      ] as const),
+    },
+    volume: {
+      label: "Volume",
+      nodes: Object.freeze([
+        ["path", { d: "M5 20v-6" }],
+        ["path", { d: "M10 20V8" }],
+        ["path", { d: "M15 20v-9" }],
+        ["path", { d: "M20 20V5" }],
+      ] as const),
+    },
+    market: {
+      label: "Market",
+      nodes: Object.freeze([
+        ["path", { d: "M7 3.5v17" }],
+        ["rect", { x: 5, y: 8, width: 4, height: 7, rx: 0.5 }],
+        ["path", { d: "M17 3.5v17" }],
+        ["rect", { x: 15, y: 6, width: 4, height: 9, rx: 0.5 }],
       ] as const),
     },
   });

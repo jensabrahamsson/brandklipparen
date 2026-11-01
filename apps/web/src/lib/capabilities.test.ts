@@ -1,6 +1,6 @@
 // Capability mapping (S-123): /health decides AI availability up front.
 import { describe, expect, test } from "vitest";
-import { toAiAvailability, toAvailability } from "./capabilities.ts";
+import { toAiAvailability, toAvailability, toMarketAvailability } from "./capabilities.ts";
 import type { HealthState } from "../types.ts";
 
 const BASE: HealthState = {
@@ -44,6 +44,13 @@ describe("ai capabilities", () => {
       rug: "available",
       onchain: "available",
     });
+  });
+
+  test("dx1_market_listing_follows_the_health_market_field", () => {
+    expect(toMarketAvailability(null)).toBe("unavailable");
+    expect(toMarketAvailability(BASE)).toBe("unavailable");
+    expect(toMarketAvailability({ ...BASE, market: { disabled: true } })).toBe("unavailable");
+    expect(toMarketAvailability({ ...BASE, market: { provider: "dexscreener" } })).toBe("available");
   });
 
   test("s123_unknown_capabilities_keep_explicit_request", () => {

@@ -163,6 +163,8 @@ export type FeatureCapability =
 
 export type OnchainCapability = { readonly disabled: true } | { readonly available: true };
 
+export type MarketCapability = { readonly disabled: true } | { readonly provider: string };
+
 export type HealthState = {
   readonly assessment: FeatureCapability;
   readonly investigation?: FeatureCapability | undefined;
@@ -171,4 +173,5 @@ export type HealthState = {
   readonly rug?: FeatureCapability | undefined;
   readonly personalize?: FeatureCapability | undefined;
   readonly onchain?: OnchainCapability | undefined;
+  readonly market?: MarketCapability | undefined;
 };

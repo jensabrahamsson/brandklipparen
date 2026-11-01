@@ -109,8 +109,8 @@ test("phosphor_reduced_motion_is_fully_static_on_start_and_analysis", async ({ p
   await expect(page.getByText("3 new tokens")).toBeVisible();
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
 
-  // Count-ups show final values and fills render final under reduce.
-  await expect(page.locator(".live-table tbody tr")).toHaveCount(3);
+    // Count-ups show final values and fills render final under reduce.
+  await expect(page.locator(".feed-row")).toHaveCount(3);
 
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
@@ -196,7 +196,7 @@ test("phosphor_running_animations_use_only_allowed_properties_with_bounded_cycle
 
   // The start page pulses too: glass breathing, LIVE square, cursor.
   await page.goto("/#/");
-  await expect(page.getByText("2 new tokens")).toBeVisible();
+  await expect(page.locator('section[aria-label="New tokens"]').getByText("2 new tokens")).toBeVisible();
   await page.waitForTimeout(1500);
   const start = await page.evaluate(() =>
     document
@@ -218,8 +218,9 @@ test("phosphor_live_list_updates_move_nothing_but_plain_insertion", async ({ pag
   let secondPoll = false;
   await mockRest(page, () => (secondPoll ? [liveEntry("cc", "CCC"), liveEntry("aa", "AAA"), liveEntry("bb", "BBB")] : [liveEntry("aa", "AAA"), liveEntry("bb", "BBB")]));
   await page.goto("/#/");
-  await expect(page.getByText("2 new tokens")).toBeVisible();
-  await expect(page.locator(".live-table tbody tr")).toHaveCount(2);
+  const live = page.locator('section[aria-label="New tokens"]');
+  await expect(live.getByText("2 new tokens")).toBeVisible();
+  await expect(live.locator(".feed-row")).toHaveCount(2);
 
   // Sample row boxes at 4 Hz across the next poll: pre-existing rows may
   // jump once when the insert lands (plain DOM insertion) but must never
@@ -232,7 +233,7 @@ test("phosphor_live_list_updates_move_nothing_but_plain_insertion", async ({ pag
         let ticks = 0;
         const timer = window.setInterval(() => {
           ticks += 1;
-          for (const row of Array.from(document.querySelectorAll(".live-table tbody tr"))) {
+          for (const row of Array.from(document.querySelectorAll(".feed-row"))) {
             const key = row.querySelector("a")?.getAttribute("href") ?? "?";
             const rect = row.getBoundingClientRect();
             if (frames[key] === undefined) {

@@ -175,12 +175,13 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
     await expect(page.getByRole("heading", { name: "Scan before you ape." })).toBeVisible();
     await expectFitsViewport(page);
 
-    // Below 640 px the live list renders as stacked cards, not a table.
+    // The live list renders as shared rows at every width: no table,
+    // no separate card layout, no horizontal overflow.
     const live = page.locator('section[aria-label="New tokens"]');
     await expect(live).toBeVisible();
-    await expect(live.locator(".live-cards")).toBeVisible();
-    await expect(live.locator(".live-table")).toBeHidden();
-    await expect(live.locator(".live-card").first()).toContainText("PEPE");
+    await expect(live.locator(".feed-row").first()).toContainText("PEPE");
+    expect(await live.locator(".live-table").count()).toBe(0);
+    expect(await live.locator(".live-cards").count()).toBe(0);
     await expectFitsViewport(page);
     await expectBadgesVisible(page);
     await expectTapTargets(page);

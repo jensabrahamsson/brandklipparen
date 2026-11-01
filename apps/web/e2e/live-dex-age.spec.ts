@@ -1,7 +1,7 @@
-// Live list DEX and human age: rows show the DEX (Uniswap V2 / V3 with
-// fee tier) and a human age from feed data, unknown ages read as a
+// Live list DEX and compact age: rows show the DEX (Uniswap V2 / V3 with
+// fee tier) and a compact age from feed data, unknown ages read as a
 // labelled "unknown" with the reason, and a repeated symbol stays
-// distinguishable by fee tier and pair. Cards and table both.
+// distinguishable by fee tier. The shared FeedRow serves every width.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -69,7 +69,17 @@ const UNKNOWN = entry({
   reason: "no contract code at the pinned block",
 });
 
+const HEALTH_NO_MARKET = {
+  status: "ok",
+  apiVersion: "v1",
+  assessment: { disabled: true },
+  costUnits: "placeholder-cost-unit",
+};
+
 async function mockLive(page: Page): Promise<void> {
+  await page.route("**/health", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_NO_MARKET) });
+  });
   await page.route("**/v1/live-tokens", async (route) => {
     await route.fulfill({
       status: 200,
@@ -88,36 +98,32 @@ test("live_list_dex_and_human_age", async ({ page }) => {
   await mockLive(page);
   await page.goto("/#/");
 
-  // Table (wide): DEX with fee tier, human ages, labelled unknown.
-  await page.setViewportSize({ width: 1280, height: 800 });
-  const table = page.locator(".live-table");
-  await expect(table.getByText("Uniswap V2").first()).toBeVisible();
-  expect(await table.getByText("Uniswap V2").count()).toBe(2);
-  await expect(table.getByText("Uniswap V3 · 0.3%")).toBeVisible();
-  await expect(table.getByText("Uniswap V3 · 1%")).toBeVisible();
-  await expect(table.getByText("3 min ago")).toBeVisible();
-  await expect(table.getByText("5 min ago")).toBeVisible();
-  await expect(table.getByText("2 h ago")).toBeVisible();
-  const unknownCell = table.getByText("unknown");
-  await expect(unknownCell).toBeVisible();
-  await expect(unknownCell).toHaveAttribute("title", /Pair creation time not reported/);
-  expect(await table.getByText(">-<").count()).toBe(0);
-  // No bare dash cell anywhere in the list.
-  const dashes = await table.locator("td").getByText("-", { exact: true }).count();
-  expect(dashes).toBe(0);
-  // Liquidity can't-tell carries its reason.
-  await expect(table.getByTitle("No WETH liquidity seen in the pair's first logs").first()).toBeVisible();
-  // The repeated symbol stays distinguishable: three fee/pair variants
-  // with full pair addresses (S-134).
-  expect(await table.getByText("DUP").count()).toBeGreaterThanOrEqual(3);
-  expect(await table.getByText("0x5aB1E0000000000000000000000000000000a0aa").count()).toBeGreaterThanOrEqual(1);
-
-  // Cards (narrow): same DEX, age and pair information.
-  await page.setViewportSize({ width: 390, height: 844 });
-  const cards = page.locator(".live-cards");
-  await expect(cards.getByText("Uniswap V3 · 0.3%").first()).toBeVisible();
-  await expect(cards.getByText("Uniswap V3 · 1%").first()).toBeVisible();
-  await expect(cards.getByText("3 min ago").first()).toBeVisible();
-  await expect(cards.getByText("unknown").first()).toHaveAttribute("title", /Pair creation time not reported/);
-  await expect(cards.getByText("0x5ab1E0000000000000000000000000000000b0BB").first()).toBeVisible();
+  const feed = page.locator('section[aria-label="New tokens"]');
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    // Rows: DEX with fee tier, compact ages, labelled unknown.
+    await expect(feed.getByText("Uniswap V2").first()).toBeVisible();
+    expect(await feed.getByText("Uniswap V2").count()).toBe(2);
+    await expect(feed.getByText("Uniswap V3 · 0.3%")).toBeVisible();
+    await expect(feed.getByText("Uniswap V3 · 1%")).toBeVisible();
+    await expect(feed.getByText("3m").first()).toBeVisible();
+    await expect(feed.getByText("5m").first()).toBeVisible();
+    await expect(feed.getByText("2h").first()).toBeVisible();
+    const unknownCell = feed.getByText("unknown");
+    await expect(unknownCell).toBeVisible();
+    await expect(unknownCell).toHaveAttribute("title", /Pair creation time not reported/);
+    // No bare dash anywhere in the list.
+    expect(await feed.getByText("-", { exact: true }).count()).toBe(0);
+    // Liquidity can't-tell carries its reason.
+    await expect(feed.getByTitle("No WETH liquidity seen in the pair's first logs").first()).toBeVisible();
+    // The repeated symbol stays distinguishable: three fee variants with
+    // the full token address and the block number in each row.
+    expect(await feed.getByText("DUP").count()).toBeGreaterThanOrEqual(3);
+    expect(await feed.getByText("block 21600010").count()).toBeGreaterThanOrEqual(1);
+    expect(await feed.getByText("block 21600008").count()).toBeGreaterThanOrEqual(1);
+    expect(await feed.getByText("block 21600006").count()).toBeGreaterThanOrEqual(1);
+  }
 });

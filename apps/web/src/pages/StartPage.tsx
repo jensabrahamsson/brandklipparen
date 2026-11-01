@@ -1,8 +1,15 @@
-import { useState, type CSSProperties, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type JSX } from "react";
 import { ChainSelector } from "../components/ChainSelector.tsx";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { CopyButton } from "../components/CopyButton.tsx";
 import { LiveTokens } from "../components/LiveTokens.tsx";
+import { MarketList } from "../components/MarketList.tsx";
+import { FeedTabs, readFeedTab, FEED_TAB_STORAGE_KEY, type FeedTabId } from "../components/FeedTabs.tsx";
+import { fetchHealth } from "../lib/api.ts";
+import { toMarketAvailability } from "../lib/capabilities.ts";
+import { tokenCountLabel } from "../lib/liveTokens.ts";
+import { marketShownLabel, type MarketItem, type RecentAnalysis } from "../lib/market.ts";
+import { useMediaQuery } from "../lib/useMediaQuery.ts";
 import { ELEVATED_BAND, HIGH_BAND, LOW_BAND, RISK_SHORT } from "../lib/risk.ts";
 import { recentRowTitle } from "../lib/tokenIdentity.ts";
 import { isValidAddress, normalizeAddress, validationMessage } from "../lib/validate.ts";
@@ -68,6 +75,87 @@ export function StartPage({
   const [raw, setRaw] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [recent] = useState<RecentEntry[]>(loadRecent);
+  // DexScreener column (DX-1): visible only while /health reports the
+  // market feed. A failed or silent health check hides the column rather
+  // than flashing a wrong layout.
+  const [marketAvailable, setMarketAvailable] = useState(false);
+  const wide = useMediaQuery("(min-width: 1280px)");
+  const [feedTab, setFeedTab] = useState<FeedTabId>(readFeedTab);
+  // Tab counts and the cross-list join (W-13 "Also in New pairs" chip and
+  // on-chain market enrichment) ride on callbacks, never on refetches.
+  const [liveCount, setLiveCount] = useState<{ shown: number; total: number } | null>(null);
+  const [marketCount, setMarketCount] = useState<{ shown: number; total: number } | null>(null);
+  const [liveTokens, setLiveTokens] = useState<ReadonlySet<string>>(() => new Set());
+  const [marketItems, setMarketItems] = useState<readonly MarketItem[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchHealth().then(
+      (health) => {
+        if (!cancelled) {
+          setMarketAvailable(toMarketAvailability(health) === "available");
+        }
+      },
+      () => {
+        if (!cancelled) {
+          setMarketAvailable(false);
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onSelectTab = useCallback((tab: FeedTabId) => {
+    setFeedTab(tab);
+    try {
+      sessionStorage.setItem(FEED_TAB_STORAGE_KEY, tab);
+    } catch {
+      // Session storage is a convenience only; the choice still applies.
+    }
+  }, []);
+
+  const onLiveCount = useCallback((shown: number, total: number) => {
+    setLiveCount({ shown, total });
+  }, []);
+  const onMarketCount = useCallback((shown: number, total: number) => {
+    setMarketCount({ shown, total });
+  }, []);
+  const onLiveTokens = useCallback((tokens: readonly string[]) => {
+    setLiveTokens(new Set(tokens));
+  }, []);
+  const onMarket = useCallback((items: readonly MarketItem[]) => {
+    setMarketItems(items);
+  }, []);
+  const onMarketUnavailable = useCallback(() => {
+    setMarketAvailable(false);
+  }, []);
+
+  const recentByToken = useMemo(() => {
+    const map = new Map<string, RecentAnalysis>();
+    for (const entry of recent) {
+      map.set(entry.address.toLowerCase(), { score: entry.score, word: entry.word });
+    }
+    return map;
+  }, [recent]);
+  const marketByToken = useMemo(() => {
+    const map = new Map<string, MarketItem>();
+    for (const item of marketItems) {
+      map.set(item.tokenAddress.toLowerCase(), item);
+    }
+    return map;
+  }, [marketItems]);
+
+  const liveCountLabel =
+    liveCount === null
+      ? null
+      : liveCount.total <= liveCount.shown
+        ? tokenCountLabel(liveCount.total)
+        : `${liveCount.shown} of ${liveCount.total} new tokens`;
+  const marketCountLabel =
+    marketCount === null ? null : marketShownLabel(marketCount.shown, marketCount.total);
+  const showTabs = marketAvailable && !wide;
 
   const submit = (event: { preventDefault: () => void }): void => {
     event.preventDefault();
@@ -155,12 +243,11 @@ export function StartPage({
         <ChainSelector />
         <details className="muted" style={{ fontSize: 14 }}>
           <summary style={{ cursor: "pointer" }}>Settings</summary>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, marginTop: 8 }} className="muted">
+          <label className="muted api-key-row">
             API key
             <input
               type="password"
               className="input"
-              style={{ width: 200, fontFamily: "var(--font-sans)", fontSize: 14 }}
               autoComplete="off"
               placeholder="Demo key"
               value={apiKey}
@@ -218,7 +305,54 @@ export function StartPage({
           </ul>
         </section>
       ) : null}
-      <LiveTokens apiKey={apiKey} />
+      {wide && marketAvailable ? (
+        <div className="feed-cols">
+          <LiveTokens
+            apiKey={apiKey}
+            marketByToken={marketByToken}
+            tabbed={false}
+            hidden={false}
+            onCount={onLiveCount}
+            onTokens={onLiveTokens}
+          />
+          <MarketList
+            apiKey={apiKey}
+            recentByToken={recentByToken}
+            liveTokens={liveTokens}
+            tabbed={false}
+            hidden={false}
+            onCount={onMarketCount}
+            onMarket={onMarket}
+            onUnavailable={onMarketUnavailable}
+          />
+        </div>
+      ) : (
+        <>
+          {showTabs ? (
+            <FeedTabs active={feedTab} onSelect={onSelectTab} liveCount={liveCountLabel} marketCount={marketCountLabel} />
+          ) : null}
+          <LiveTokens
+            apiKey={apiKey}
+            marketByToken={marketByToken}
+            tabbed={showTabs}
+            hidden={showTabs && feedTab !== "live"}
+            onCount={onLiveCount}
+            onTokens={onLiveTokens}
+          />
+          {marketAvailable ? (
+            <MarketList
+              apiKey={apiKey}
+              recentByToken={recentByToken}
+              liveTokens={liveTokens}
+              tabbed={showTabs}
+              hidden={showTabs && feedTab !== "market"}
+              onCount={onMarketCount}
+              onMarket={onMarket}
+              onUnavailable={onMarketUnavailable}
+            />
+          ) : null}
+        </>
+      )}
       <section aria-label="Guarantees" style={{ marginTop: 32 }}>
         <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }} className="muted">
           <span>Works on unverified contracts</span>

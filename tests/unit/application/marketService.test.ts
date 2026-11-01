@@ -5,7 +5,13 @@ import { describe, expect, test } from "vitest";
 import { Address } from "../../../src/domain/types.ts";
 import type { Result } from "../../../src/domain/result.ts";
 import { err, ok } from "../../../src/domain/result.ts";
-import { MARKET_CACHE_TTL_MS, createMarketService } from "../../../src/application/marketService.ts";
+import {
+  MARKET_BUFFER_MAX_ITEMS,
+  MARKET_BUFFER_TTL_MS,
+  MARKET_CACHE_TTL_MS,
+  MARKET_REFRESH_MS,
+  createMarketService,
+} from "../../../src/application/marketService.ts";
 import type {
   MarketAnalysisLookup,
   MarketFeedError,
@@ -34,6 +40,7 @@ function item(tokenIndex: number, pairIndex: number): MarketTokenItem {
     liquidityUsd: 100,
     volume1hUsd: 10,
     volume24hUsd: 50,
+    priceChange24hPct: null,
   });
 }
 
@@ -53,6 +60,7 @@ class FakeFeed implements MarketFeedPort {
 describe("market listing service", () => {
   test("the server-side cache holds for at least 30 seconds", async () => {
     expect(MARKET_CACHE_TTL_MS).toBeGreaterThanOrEqual(30000);
+    expect(MARKET_REFRESH_MS).toBeGreaterThanOrEqual(60000);
     let at = 1700000100000;
     const feed = new FakeFeed(ok({ items: [item(51, 61)] }));
     const service = createMarketService({ feed, now: () => at });
@@ -64,9 +72,15 @@ describe("market listing service", () => {
     const cached = await service.getMarket("ethereum");
     expect(cached.updatedAt).toBe(1700000100000);
     expect(feed.calls).toBe(1);
+    // The rolling buffer refreshes about once a minute (W-13): at 31 s
+    // the buffer still serves with zero provider calls.
     at += 2000;
+    const stillCached = await service.getMarket("ethereum");
+    expect(stillCached.updatedAt).toBe(1700000100000);
+    expect(feed.calls).toBe(1);
+    at += 30000;
     const refreshed = await service.getMarket("ethereum");
-    expect(refreshed.updatedAt).toBe(1700000131000);
+    expect(refreshed.updatedAt).toBe(1700000161000);
     expect(feed.calls).toBe(2);
   });
 
@@ -116,6 +130,72 @@ describe("market listing service", () => {
     expect(snapshot.status).toBe("live");
     expect(snapshot.items).toHaveLength(1);
     expect(snapshot.items[0]).not.toHaveProperty("analysis");
+  });
+
+  test("w13_the_buffer_dedups_tokens_and_prunes_after_24h", async () => {
+    expect(MARKET_BUFFER_TTL_MS).toBe(24 * 60 * 60 * 1000);
+    expect(MARKET_BUFFER_MAX_ITEMS).toBeGreaterThanOrEqual(100);
+    const base = 1700000100000;
+    let at = base;
+    // A feed that answers a fresh listing per call: the first refresh
+    // holds two tokens, the second repeats one with newer market data.
+    const answers: Array<Result<MarketFeedResult, MarketFeedError>> = [
+      ok({ items: [item(51, 61), item(52, 62)] }),
+      ok({ items: [{ ...item(51, 61), liquidityUsd: 999 }, item(53, 63)] }),
+    ];
+    let calls = 0;
+    const feed = {
+      async fetchNewTokens(): Promise<Result<MarketFeedResult, MarketFeedError>> {
+        const answer = answers[Math.min(calls, answers.length - 1)];
+        calls += 1;
+        if (answer === undefined) {
+          throw new Error("no answer");
+        }
+        return answer;
+      },
+    } satisfies MarketFeedPort;
+    const service = createMarketService({ feed, now: () => at });
+    const first = await service.getMarket("ethereum");
+    expect(first.items).toHaveLength(2);
+    at += MARKET_REFRESH_MS + 1000;
+    const second = await service.getMarket("ethereum");
+    // Token 51 appears once with refreshed market data; token 52 from the
+    // first refresh survives beside the new token 53.
+    const tokens = second.items.map((entry) => entry.tokenAddress.toLowerCase());
+    expect(new Set(tokens).size).toBe(tokens.length);
+    expect(tokens).toHaveLength(3);
+    expect(second.items.find((entry) => entry.tokenAddress.toLowerCase() === syntheticAddress(51).toLowerCase()))
+      .toMatchObject({ liquidityUsd: 999 });
+    // Past 24 h the first listing ages out of the rolling buffer.
+    at += MARKET_BUFFER_TTL_MS + MARKET_REFRESH_MS;
+    const pruned = await service.getMarket("ethereum");
+    expect(pruned.items.map((entry) => entry.tokenAddress.toLowerCase())).not.toContain(
+      syntheticAddress(52).toLowerCase(),
+    );
+  });
+
+  test("w13_a_failed_refresh_serves_the_buffered_list", async () => {
+    const base = 1700000100000;
+    let at = base;
+    let failing = false;
+    const feed = {
+      async fetchNewTokens(): Promise<Result<MarketFeedResult, MarketFeedError>> {
+        if (failing) {
+          return err({ kind: "unavailable", message: "down" });
+        }
+        return ok({ items: [item(51, 61)] });
+      },
+    } satisfies MarketFeedPort;
+    const service = createMarketService({ feed, now: () => at });
+    const first = await service.getMarket("ethereum");
+    expect(first.status).toBe("live");
+    failing = true;
+    at += MARKET_REFRESH_MS + 1000;
+    const stale = await service.getMarket("ethereum");
+    // The buffered list survives a failed refresh instead of blinking out.
+    expect(stale.status).toBe("live");
+    expect(stale.updatedAt).toBe(base);
+    expect(stale.items).toHaveLength(1);
   });
 
   test("provider states map to typed snapshots with empty items", async () => {
