@@ -254,7 +254,7 @@ section 5.
 | T | A crafted or oversized request reaches the analysis with distorted fields. | Boundary validation and a size limit before analysis give a machine-readable error as per A-18 (H-05, M-10). |
 | R | A caller disputes their consumption or a rejected call. | Every call is logged with request-id, key ID, address, code hash and typed outcome as per I-10 (H-10, M-16). |
 | I | Error messages or responses leak internal details, key values or stack traces. | The uniform error format as per A-18 carries status, machine-readable code, message in English and request-id; logs are redacted as per I-10 (H-10, M-16). |
-| D | A flood of expensive analyses consumes RPC quota and demo budget. | Rate per key per minute, daily quota per key and global rate as per I-12; expensive steps require a valid key with remaining quota; cache hits keep responding under the cost cap (H-04, M-08, M-09). |
+| D | A flood of expensive analyses consumes RPC quota and demo budget. | Rate per key per minute, daily quota per key and global rate as per I-12; expensive steps require a valid key with remaining quota; cache hits keep responding within the per-key daily caps (H-04, M-08, M-09). |
 | E | A caller with an invalid key reaches decompilation or a Muse contract assessment. | The key and quota step in the application service runs before every expensive step (H-04, M-08). |
 
 ### 4.3 MCP server in `interfaces/mcp` (F-02, F-03, F-15)
@@ -265,7 +265,7 @@ section 5.
 | T | An unknown tool or extra fields are injected into the tool list or the call. | The tool list is closed and versioned; the input schema is strict; unknown tools give a machine-readable error with the tool name (H-08, M-15). |
 | R | A tool misuse is disputed afterwards. | Every tool call is logged with request-id, tool name, address and outcome as per I-10 (H-10, M-16). |
 | I | Tool output is interpreted as an instruction by the client's model or leaks internal fields. | Output is marked as untrusted data, bounded in size and carries solely the assessment's published fields (H-08, M-15). |
-| D | A client spams expensive tool calls and drains the quota. | Rate, quota and cost cap are shared with REST as per I-12 and I-14 (H-04, M-08, M-09). |
+| D | A client spams expensive tool calls and drains the quota. | Rate, quota and per-key daily caps are shared with REST as per I-12 and I-14 (H-04, M-08, M-09). |
 | E | A tool writes state, reads files or calls arbitrary URLs. | The tool registry contains solely reading tools over the application service; every new tool passes the security review as per K-026 before release (H-08, M-15). |
 
 ### 4.4 Application service and domain core (F-03 in, F-04–F-11 out)
@@ -320,7 +320,7 @@ section 5.
 | T | A poisoned or corrupt entry is served as a valid assessment. | Every entry is verified against code hash and model version on reading; the `entry-corrupt` error branch gives a fresh analysis and a logged deviation (H-09, M-14). |
 | R | An invalidation after a model change passes with zero trace. | A new model version keys new entries and leaves older entries unused; the version is logged per analysis as per K-013 and I-10 (H-09, M-14). |
 | I | Cached assessments leak keys or caller identities between keys. | Entries carry solely the assessment's fields; consumption per key is stored separately under the key's hash ID (H-10, M-16). |
-| D | Cache outage or cache errors bring down the demo under load. | A miss gives a fresh analysis within quota; cached responses continue under the cost cap as per I-14 (H-04, M-09). |
+| D | Cache outage or cache errors bring down the demo under load. | A miss gives a fresh analysis within quota; cached responses continue within the per-key daily caps as per I-14 (H-04, M-09). |
 | E | A client writes directly to the cache. | The write path goes solely via the application service through `CachePort` (H-09, M-14). |
 
 ### 4.9 Model artifact and offline chain (F-10, F-16)
@@ -347,7 +347,7 @@ surface in every mode per section 6.
 | T | Contract strings, metadata or decompiled code steer the prompt as instruction for either provider. | The prompt carries a closed typed evidence list; contract strings are quoted as untrusted data with a length limit through `UntrustedText.quote`; calls are tool-free (H-02, M-03, M-04). |
 | R | An incorrect assessment wording is disputed afterwards. | Prompt version, provider, model id and evidence IDs are logged as per I-10; the response carries prompt version, provider, model id and the Muse-generated marking (H-02, M-04, M-05, M-20). |
 | I | Either provider key or prompt content leaks to client or log. | Both keys live in the secret store and leave the server solely as a header to the selected provider; prompts are logged as version and evidence IDs (H-05, H-10, M-11, M-16, M-20). |
-| D | A slow or expensive provider response binds the assessment or the budget for either provider. | Time limit per call, at most one assessment call per uncached request, caching per code hash, prompt version, provider and model id and per-provider daily caps and alerts as per I-14; every error branch gives the template text (H-04, M-09, M-20). |
+| D | A slow or expensive provider response binds the assessment or the budget for either provider. | Time limit per call, at most one assessment call per uncached request, caching per code hash, prompt version, provider and model id and per-key daily caps as per I-14; every error branch gives the template text (H-04, M-09, M-20). |
 | E | Provider output steers probabilities, grade, signals or tools. | The output is validated against the versioned assessment schema as per K-305 with size limits and provider identity check; scores and evidence are frozen before the call and left bit-identical as per K-307 (H-02, H-14, M-05, M-06, M-20). |
 
 ### 4.11 DeploymentFeed adapter (F-09)
@@ -411,7 +411,7 @@ discipline carries into M-33–M-35.
 | T | Analysis or plugin text instructs the layout model to hide, invent, or restyle content, or a crafted spec orders content deceptively. | Layout input is closed facts plus quoted finding titles in a tool-free call; the spec is whitelist-validated and can only order and emphasise unchanged frozen content (H-22, H-23, M-28, M-29). |
 | R | A visitor disputes what was shown under an AI-chosen order. | The deterministic content, score, and evidence are identical in every layout; the applied layout source, provider, model id, and layout prompt version are stated on the page (H-23, M-29). |
 | I | The layout call leaks the provider key, full analysis text, or neighbouring page data to the provider or the client. | The call is server-side with the key as header only; input is minimised to closed layout facts and capped quoted titles, logged as ids and versions (H-22, M-28). |
-| D | A slow, oversize, or repeated layout response binds the token page or the provider budget. | Deadline, input and output size limits, at most one call per uncached view, cache per code hash, prompt version, provider, and model id, and per-provider daily caps; every failure keeps the deterministic layout (H-21, M-27, M-09). |
+| D | A slow, oversize, or repeated layout response binds the token page or the provider budget. | Deadline, input and output size limits, at most one call per uncached view, cache per code hash, prompt version, provider, and model id; every failure keeps the deterministic layout (H-21, M-27, M-09). |
 | E | A spec carrying HTML, code, URLs, or styles executes in the visitor's browser, or a tampered stored mode preference steers rendering. | Spec fields outside the whitelist descriptor are unrepresentable and the whole spec is discarded; all content renders as escaped text under the strict CSP with no new HTML sink; the stored mode is read against a closed `simple` / `expert` union (H-24, H-25, M-27, M-30, M-31). |
 
 ### 4.16 User-priority personalization (F-20, F-15 out; design per ADR section 14)
@@ -428,7 +428,7 @@ toggle, one spec family; ADR P-27).
 | T | User priorities or `PLUGIN.md` text instructs the personalize model to hide critical evidence, invent plugins, or change scores, or a crafted spec ranks deceptively. | Priorities and docs reach the model solely as quoted untrusted data in a tool-free call; the spec is whitelist-validated and the severity floor keeps critical evidence always visible over unchanged frozen content (H-27, H-28, M-33, M-34). |
 | R | A visitor disputes what was emphasised under a personalized order. | Scores, evidence, and finding text are identical in every order; the page states the applied source (priorities match with matched tags, or AI with provider, model id, and personalize prompt version) and offers one-click return to the standard order (H-28, M-34). |
 | I | Priorities text — which a user may fill with PII-ish context — leaks to the server, logs, cache keys, other visitors, or the provider without the opt-in. | Priorities live only under one `localStorage` key, are never logged, cached, or profiled server-side, and leave the device solely inside the single opted-in F-20 mapping call as quoted data (H-26, M-32). |
-| D | Repeated personalize calls, a slow provider, or an oversize spec binds the token page or the provider budget. | Off by default, at most one call per uncached view, cache per code hash, prompt version, provider, and model id (never per priorities text), deadline and size limits, per-provider daily caps; every failure keeps the deterministic baseline (H-29, M-35, M-09). |
+| D | Repeated personalize calls, a slow provider, or an oversize spec binds the token page or the provider budget. | Off by default, at most one call per uncached view, cache per code hash, prompt version, provider, and model id (never per priorities text), deadline and size limits, and the per-key daily cap; every failure keeps the deterministic baseline (H-29, M-35, M-09). |
 | E | A spec carrying HTML, code, URLs, or styles executes in the browser, or a tampered stored priorities value steers rendering beyond emphasis. | Spec fields outside the whitelist are unrepresentable and the whole spec is discarded; priorities and all content render as escaped text under the strict CSP; the stored value is read against its closed versioned shape and rejected to empty (H-29, H-30, M-35, M-36). |
 
 ### 4.17 Investigate with Muse: graph runner, registry tools, and step stream (F-21, F-15 out; design per `docs/adr-investigate-with-muse.md`)
@@ -443,7 +443,7 @@ opt-in loop, its read-only tools, and the streamed trace.
 | T | On-chain strings or `PLUGIN.md` text instructs the model to run a planted tool, skip a detector, or conclude falsely; a crafted decision names a disallowed tool or malformed args. | All strings enter the prompt solely as quoted untrusted data in a tool-free decision call; every decision passes allowlist and schema validation in the runner before any tool runs (H-31, H-34, M-37, M-40). |
 | R | A visitor disputes what the investigation claimed or which evidence it used. | Every step records tool, rationale, and returned evidence ids; the narrative survives only with citations into that recorded set, with drops counted (H-32, M-38). |
 | I | The investigation call or stream leaks the provider key, full bytecode, or neighbouring analysis data to the provider or the client. | The call is server-side with the key as header only; input is minimised to the frozen summary, tool catalogue, and trace ids, logged as ids and versions (H-36, M-42). |
-| D | A looping or slow model binds the runner, repeats expensive tools, or drains the provider budget. | Max steps, max tokens, wall-clock deadline, per-tool deadlines, one investigation per uncached request, and per-provider caps bound every run; limits end in a typed outcome with the partial trace (H-33, M-39). |
+| D | A looping or slow model binds the runner, repeats expensive tools, or drains the provider budget. | Max steps, max tokens, wall-clock deadline, per-tool deadlines, one investigation per uncached request, and the per-key daily cap bound every run; limits end in a typed outcome with the partial trace (H-33, M-39). |
 | E | A tool call writes state, fetches a URL, or reaches the network or score path beyond the frozen facts. | The tool catalogue type admits only read-only registry tools over frozen facts; no tool holds a port, and the report type has no field the scoring path reads (H-34, H-35, M-40, M-41). |
 
 ### 4.18 Own EVM decompiler pipeline and eval harness (no new runtime flow; harness is operator-local)
@@ -726,8 +726,8 @@ the user as a credible Muse assessment or binds the assessment path.
   hits.
 
 Cost abuse against the same assessment path is handled by M-08 and
-M-09 against H-04 in section 5.5, with per-provider daily caps and
-alerts in I-14 as their own frames per K-513.
+M-09 against H-04 in section 5.5, with the per-key, per-feature daily
+caps in I-14 as their own frames per K-513.
 
 ### 5.4 SSRF in address-driven retrieval
 
@@ -763,7 +763,7 @@ A flood of calls, a rotation of addresses that hit the cache
 rarely or repeated assessment requests consume RPC quota,
 decompilation capacity and the selected provider's budget for either
 provider, so the demo responds slowly or reaches its
-cost cap during the assessment period.
+key caps during the assessment period.
 
 - M-08 Rate limits, daily quotas and key requirement before expensive steps:
   rate per API key per minute, daily quota per API key and
@@ -782,29 +782,23 @@ cost cap during the assessment period.
   key with remaining quota before every expensive step; the load test
   `k504_limits_hold_under_overload_and_cache_serves` requires that
   the limits hold under overload.
-- M-09 Cost cap, alarms and cache as cost protection for both
+- M-09 Per-key daily caps and cache as cost protection for both
   providers: every
   analysis sums the count of RPC calls per key and, per assessment
-  request, the count of assessment calls and cost per provider and
+  request, the count of assessment calls per provider and
   model id separately as per K-107 and K-309. At most one
   assessment call per uncached request applies as a fixed rule; a
   cache hit consumes zero RPC calls and zero assessment calls.
-  The daily caps for RPC calls in the demo, per key and per provider
-  (Meta and hosted) are versioned in I-14 with alarm levels before
-  each cap;
-  every alarm is written as a structured `warn` entry with
-  key ID, provider, consumption and remaining share. At the cap
-  the service closes the expensive paths for that provider and keeps responding with
+  The per-key, per-feature daily caps are versioned in I-14;
+  at a key's cap
+  the service closes that key's expensive calls for that feature and keeps responding with
   cache hits and the fast path's cached content, so the demo
-  stays reachable during the assessment period. Requirement: K-504, K-513. Test:
+  stays reachable during the assessment period. There is no global
+  per-provider daily cap, no cost cap and no alarm level. Requirement: K-504, K-513. Test:
   the integration test `k013_cache_hit_skips_decompilation_and_external_calls`
   requires zero external calls at a cache hit; the integration test
   `k107_analysis_sums_rpc_and_assessment_calls` requires summed
-  consumption per analysis, key, provider and model id; the integration test
-  `k107_alarm_fires_before_cap` requires an alarm before the cap at
-  simulated consumption for each provider; the integration test
-  `k513_cost_caps_and_alerts_apply_to_both_providers` requires
-  per-provider caps and alerts.
+  consumption per analysis, key, provider and model id.
 
 ### 5.6 API keys and secrets
 
@@ -919,7 +913,7 @@ as an instruction for further action.
   machine-readable error with the tool name. Output is marked as
   untrusted data in the tool response, bounded at
   the size limit as per A-17 and carries solely the assessment's
-  published fields. Rate, quota and cost cap are shared with REST
+  published fields. Rate, quota and per-key daily caps are shared with REST
   as per M-08 and M-09. Every tool leaves chain state and
   project data unchanged, apart from log and quota measurement,
   and every new tool passes the security review as per
@@ -1755,7 +1749,7 @@ the same investigation, every stated limit could be multiplied.
   every node transition through `CallContext` (A-05), per-tool
   deadlines with `tool-timeout` and `tool-output-too-large` as
   typed observations, at most one investigation per uncached
-  request, and the per-key and per-provider daily caps as in I-14
+  request, and the per-key daily cap as in I-14
   — all from typed configuration (I-08), all enforced by the
   runner and never by the model (ADR P-34). A failed validation
   consumes its step, and retries never reset budgets: one
@@ -2203,22 +2197,16 @@ section 6.3, with the template text as the outcome at every deviation.
   requires zero new calls at a cache hit with the full key (M-09, K-504).
 - Cost limit for both providers: at most one assessment call per
   uncached request
-  applies as a fixed rule; every request sums its assessment calls and
-  cost per provider and model id as per K-107; the per-provider daily
-  caps `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_META` and
-  `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_hosted` with the
-  cost caps per I-14
-  close the assessment calls at the cap, with an alarm before each cap, and
+  applies as a fixed rule; every request sums its assessment calls
+  per provider and model id as per K-107; the per-key daily cap
+  `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` per I-14
+  closes the assessment calls at the cap, and
   the template text keeps responding. Rate per key, daily quota per
   key and global rate as per M-08 apply to the assessment path to
   the same extent as to the analysis path. Test:
   the integration test `k107_no_request_zero_assessment_calls_and_cost`
   requires zero assessment calls and zero assessment cost ahead of an
-  explicit request; the integration test `k107_alarm_fires_before_cap`
-  requires an alarm before the cap at simulated consumption for each
-  provider; the integration test
-  `k513_cost_caps_and_alerts_apply_to_both_providers` requires
-  per-provider caps and alerts (M-08, M-09,
+  explicit request (M-08, M-09,
   K-504, K-513).
 - Key protection for both providers: both provider keys live in the
   platform secret store,
@@ -2263,7 +2251,7 @@ order on one token page. Marking, caching, and cost protection mirror
 section 6.3: the page states `Experimental AI layout` with provider
 and model id while an AI layout is applied; specs are cached per code
 hash, layout prompt version, provider, and model id with at most one
-call per uncached view and the per-provider daily caps in I-14; and
+call per uncached view and the per-key daily caps in I-14; and
 every error branch, including `not-configured` without a key, leaves
 the deterministic layout standing with a notice. Tests are the
 contract suite `runPluginLayoutModelPortContract` against the fake
@@ -2292,7 +2280,7 @@ caching, and cost protection mirror section 6.4: the page states
 AI spec is applied; specs are cached per code hash, personalize
 prompt version, provider, and model id — never per priorities
 text — with at most one call per uncached view and the
-per-provider daily caps in I-14; and every error branch, including
+per-key daily cap in I-14; and every error branch, including
 `not-configured` without a key, leaves the deterministic baseline
 standing with a notice. Tests are the contract suite
 `runPluginPersonalizeModelPortContract` against the fake with zero
@@ -2314,9 +2302,9 @@ as per K-210.
 | REST: Just-deployed list for `listJustDeployed` | API key in header | Filters for high risk, low risk and unverified contracts only, and page size | The same rate and quota as the analysis path; page size limit as per A-17 (M-08). |
 | REST and web UI: health check `/health` | Open read status | Zero input | The response carries status per dependency, model version and artifact checksum with secrets kept outside the response as per I-12. |
 | Web UI: search field, list view, token page and timeline | Open surface that calls the REST API through the published schema | Pasted address, filter, page choices | Client validation with server validation at B1 and B2 in every call; responses are rendered as text with a strict CSP (M-13); page size limit per response. |
-| MCP: the `assess_token` tool | API key as per the MCP transport with the same quota as REST | Address parameter against the published strict input schema | The same rate, quota and cost cap as REST; output is marked as untrusted data with a size limit (M-15). |
+| MCP: the `assess_token` tool | API key as per the MCP transport with the same quota as REST | Address parameter against the published strict input schema | The same rate, quota and per-key daily caps as REST; output is marked as untrusted data with a size limit (M-15). |
 | MCP: tool list and tool discovery | API key as per the MCP transport | Zero address input | Closed versioned list; unknown tools give a machine-readable error with the tool name (M-15). |
-| Muse contract assessment: button or tab, REST endpoint and MCP tool | API key with remaining quota; solely on request with the selected provider per K-309 | Code hash and evidence list for an already analysed contract | At most one assessment call per uncached request; cache per code hash, prompt version, provider and model id; per-provider daily caps and cost caps; timeout and input and output size limits (M-08, M-09, M-20). |
+| Muse contract assessment: button or tab, REST endpoint and MCP tool | API key with remaining quota; solely on request with the selected provider per K-309 | Code hash and evidence list for an already analysed contract | At most one assessment call per uncached request; cache per code hash, prompt version, provider and model id; per-key, per-feature daily caps; timeout and input and output size limits (M-08, M-09, M-20). |
 | Internal decompiler via `DecompilerPort` | Internal port; calls solely from the application service | Bytecode as the sole input | In-process engine under its deterministic caps; port-level input and output byte caps; unresolved control flow as `invalid-output` (M-01, M-02). |
 | RPC responses via `RpcPort` | Provider key in URL or header at an allowlisted host | Bytecode, storage words, call responses and block number | Schema validation at the boundary; time limit, response size limit and retry budget per call; uncertainty flag at deviation (M-14). |
 | Cache via `CachePort` | Internal port; write path solely via the application service | Analysis results per code hash and model version | Verification at reading against code hash and model version; a new model version keys new entries (M-14). |
@@ -2330,9 +2318,9 @@ as per K-210.
 | Plugin audit: CLI and CI job (design per ADR P-13, P-14) | Operator or CI identity; AI phase solely on opt-in with a configured hosted key | Plugin source, manifest, and `PLUGIN.md` from one plugin directory in; deterministic check results and, on opt-in, structured advisory findings out | Deterministic checks run first and block on failure; the AI phase sends solely the listed plugin files, quoted as untrusted data under size caps, tool-free; findings are schema-validated and advisory only; without a key the AI phase reports `not configured` with zero provider calls (M-23–M-25). |
 | Plugin docs: `PLUGIN.md` via REST, MCP, and web UI (design per ADR P-15, P-16) | API key in header for REST and MCP as per the plugin list; web UI through the REST API | Plugin id in; validated markdown with its section list out | Read-only; presence and required sections validated deterministically before exposure; markdown rendered through a sanitizer with raw HTML as inert text under the strict CSP (M-26, M-13). |
 | Adaptive web UI: schema-driven panel, risk-adaptive layout, Simple / Expert (design per ADR P-18–P-20) | Open surface that calls the REST API through the published schema; mode preference in `localStorage` on the device | Frozen analysis and registry output in; ordered sections out | Client-side only; fixed component library with canonical-JSON fallback; deterministic order from frozen fields; stored mode read against the closed `simple` / `expert` union (M-30, M-31). |
-| AI layout: `POST /v1/layout` and hosted layout call (design per ADR P-21) | API key in header; solely after an explicit opt-in in the web UI | Code hash and closed layout facts in; validated layout spec with provider and model id out | Off by default; `layout-not-configured` with zero provider calls without a key; whitelist spec validation with total deterministic fallback; at most one call per uncached view with per-provider caps (M-27–M-29). |
+| AI layout: `POST /v1/layout` and hosted layout call (design per ADR P-21) | API key in header; solely after an explicit opt-in in the web UI | Code hash and closed layout facts in; validated layout spec with provider and model id out | Off by default; `layout-not-configured` with zero provider calls without a key; whitelist spec validation with total deterministic fallback; at most one call per uncached view with the per-key daily cap (M-27–M-29). |
 | User priorities and deterministic baseline: priorities field, `localStorage` store, frontmatter matcher (design per ADR P-24, P-25) | Open surface in `apps/web`; no server authentication because no server state exists | Free-text priorities (capped at 500 characters) and validated `PLUGIN.md` frontmatter `tags` in; ordered plugin ids, matched tags, and highlight set out | Client-side only; one versioned key with a closed-shape read rejected to empty; pure matcher with zero network calls; severity floor keeps `high`/`critical` evidence always visible; no log, cache-key, or profile copy (M-32, M-34, M-36). |
-| AI personalize: `POST /v1/personalize` and hosted personalize call (design per ADR P-27) | API key in header; solely after the explicit `AI personalize (experimental)` opt-in in the web UI | Current priorities text (quoted), code hash, closed layout facts, and quoted frontmatter/section excerpts in; validated ranking-plus-layout spec with provider and model id out | Off by default; `not-configured` with zero provider calls without a key; whitelist spec validation with total fallback to the deterministic baseline; cache per code hash, prompt version, provider, and model id (never per priorities text); at most one call per uncached view with per-provider caps (M-33–M-35). |
+| AI personalize: `POST /v1/personalize` and hosted personalize call (design per ADR P-27) | API key in header; solely after the explicit `AI personalize (experimental)` opt-in in the web UI | Current priorities text (quoted), code hash, closed layout facts, and quoted frontmatter/section excerpts in; validated ranking-plus-layout spec with provider and model id out | Off by default; `not-configured` with zero provider calls without a key; whitelist spec validation with total fallback to the deterministic baseline; cache per code hash, prompt version, provider, and model id (never per priorities text); at most one call per uncached view with the per-key daily cap (M-33–M-35). |
 | Investigate with Muse: `POST /v1/tokens/:address/investigate`, `GET /v1/investigations/:id/events`, MCP `investigate_token` (design per `docs/adr-investigate-with-muse.md`) | API key with remaining quota; solely after an explicit investigation request | Frozen analysis summary, registry tool catalogue, trace so far, and quoted on-chain/`PLUGIN.md` strings in; schema-validated decision (one allowlisted tool call or conclude) out per step; trace steps streamed to the web UI | Off by default; `investigation-not-configured` with zero provider calls without a key; runner-enforced max steps, max tokens, wall-clock and per-tool deadlines; allowlist and schema validation before any tool runs; read-only tools over frozen facts only; server-side call with minimised input and id-only logging (M-37–M-42). |
 | Own decompiler pipeline as a detector plugin (design per `docs/adr-evm-decompiler.md`) | Internal; registration solely at build time from reviewed source in the repo | Frozen bytecode in; structured pseudo-Solidity with exact `[startPc, endPc)` ranges, unresolved-jump count, and token-pattern annotations out under `pluginResults` | Pure, deterministic, bounded stages; resolve-or-record jump accounting; interpreter-checked lifting; weight 0 until the artifact names the plugin; text-only generic rendering (M-43–M-46, M-22). |
 | Internal decompiler eval (dev/eval only, operator machine) | Operator identity outside the repo; never a runtime entry point | Frozen corpus files in; metrics table out | Local corpus files only with no external binary or process on the path (M-47). |
@@ -2349,7 +2337,7 @@ by the width of the exposed surface.
 | Rank | Threat | Likelihood | Impact | Product | Rationale |
 |---|---|---|---|---|---|
 | 1 | H-01 Decompilation DoS and resource exhaustion | High | High | Highest | Every submitted address reaches the internal decompiler in the deepening from the first call, and pathological bytecode is free to deploy. A successful exhaustion binds the run within its caps, delays the deepening for parallel assessors and hits the demo during its most visible window. The engine caps in M-01 with input and output byte caps are operation's most important boundary. |
-| 2 | H-04 Draining via expensive analysis paths | High | High | Highest | The demo is public and every uncached analysis costs RPC calls and an in-process decompilation. A single actor with address rotation reaches the cost cap or the global rate and degrades response times for the jury. Rate, quota, cap and cache in M-08 and M-09 keep the demo reachable with cached responses. |
+| 2 | H-04 Draining via expensive analysis paths | High | High | Highest | The demo is public and every uncached analysis costs RPC calls and an in-process decompilation. A single actor with address rotation reaches a key cap or the global rate and degrades response times for the jury. Rate, quota, per-key caps and cache in M-08 and M-09 keep the demo reachable with cached responses. |
 | 3 | H-07 Script via contract data in the UI | Medium | High | High | Token names, symbols and strings are attacker-controlled on every token page and in every list row, so a single shown token reaches every visitor's browser. A successful script runs in the product's own view during the assessment and harms trust in every shown figure. Text rendering and strict CSP in M-13 keep the data inert in every view. |
 | 4 | H-09 Manipulated RPC responses and cache poisoning | Medium | High | High | Incorrect bytecode or storage from a node, or a poisoned entry under a valid code hash, gives an incorrect assessment that looks deterministic and is reused for every following caller with the same code. Schema validation, block binding and verified cache entries in M-14 make the deviation visible as an uncertainty flag. |
 | 5 | H-05 Stolen, leaked or guessed API key | Medium | Medium | Medium | A leaked key amplifies H-04 under the key's own quota and is hard to detect afterwards in a public demo with many callers. Hashed storage, header transport, constant-time comparison and revocation from the next call in M-10 and M-11 bound the theft surface and the damage per key. |
@@ -2474,7 +2462,7 @@ K-5xx to its threats and countermeasures, is in section 12.2 in
 | M-06 One-way explanation chain | H-02 | K-502 | `k307_scores_and_evidence_identical_with_and_without_adapter` (unit) |
 | M-07 Allowlisted outbound targets | H-03 | K-503 | `k503_crafted_inputs_stay_within_allowlist` (unit) |
 | M-08 Rate limits and quotas | H-04 | K-504 | `k504_limits_hold_under_overload_and_cache_serves` (load test) |
-| M-09 Cost cap, alarms and cache for both providers | H-04 | K-504, K-513 | `k513_cost_caps_and_alerts_apply_to_both_providers` (integration) |
+| M-09 Per-key daily caps and cache for both providers | H-04 | K-504, K-513 | `k107_analysis_sums_rpc_and_assessment_calls` (integration) |
 | M-10 Header transport and hashed comparison | H-05 | K-510 | `k510_key_comparison_is_constant_time` (property) |
 | M-11 Lifecycle and secret-free history for all keys | H-05 | K-505, K-510, K-513 | `k505_gitleaks_clean_on_repo_and_history` (CI check) |
 | M-12 Locked and scanned supply chain | H-06 | K-506 | `k506_pinning_and_vulnerability_scan_block_release` (CI check) |

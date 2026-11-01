@@ -7,7 +7,7 @@ The architecture rules (A-xx) live in `docs/architecture.md`. Threats with
 countermeasures (H-xx, M-xx) live in `docs/threat-model.md`. This file owns
 the infrastructure rules (I-xx) and the versioned operations configuration:
 the decompilation caps under K-008 and the port limits under A-17, the
-rate and quota limits under K-504, and the cost caps under K-107.
+rate and quota limits under K-504, and the per-key, per-feature daily caps under K-107.
 The risk model's detection thresholds, weights and limits are learned and
 calibrated from data and are versioned only in the calibration artifact
 under K-210 and K-211. Each rule below is phrased positively and states
@@ -222,15 +222,7 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE` | Rate limit per API key under I-12 | No | Demo |
 | `BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY` | Daily quota per API key under I-12 | No | Demo |
 | `BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE` | Global rate limit for the demo under I-12 | No | Demo |
-| `BRANDKLIPPAREN_BUDGET_DAILY_CAP_RPC_CALLS` | Daily cap for RPC calls in the demo under I-14 | No | Demo |
-| `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_RPC_CALLS` | Daily cap for RPC calls per API key under I-14 | No | Demo |
-| `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS` | Daily cap for assessment calls for the selected provider under I-14 | No | Demo |
-| `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_META` | Daily cap for Meta Model API assessment calls under I-14 | No | Demo with the Meta provider selected |
-| `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_hosted` | Daily cap for hosted open-weights assessment calls under I-14 and I-18 | No | Demo with the hosted provider selected |
 | `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` | Daily cap for assessment calls per API key under I-14, for both providers | No | Demo |
-| `BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_META` | Daily cost cap for the Meta Model API provider under I-14 | No | Demo with the Meta provider selected |
-| `BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_hosted` | Daily cost cap for the hosted provider under I-14 and I-18 | No | Demo with the hosted provider selected |
-| `BRANDKLIPPAREN_ALARM_LEVELS_PERCENT` | Alarm levels in percent of the daily caps under I-14 | No | Demo |
 | `BRANDKLIPPAREN_LOG_LEVEL` | Log level: `debug`, `info`, `warn` or `error` under I-10 | No | All |
 | `BRANDKLIPPAREN_ASSESSMENT_PROVIDER` | Selected assessment provider under K-309: `meta-model-api` (recommended), `hosted-open-weights` or `generic-compatible` (local development only); exactly one adapter is bound at startup per A-34. The demo defaults to `meta-model-api` when a Meta key is configured unless set explicitly | No | Demo |
 | `BRANDKLIPPAREN_ASSESSMENT_PROMPT_VERSION` | Prompt version for the Muse contract assessment; part of the cache key per K-305 and K-309 | No | Demo |
@@ -244,8 +236,6 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY` | Key for the vendor-neutral chat-completions provider, server-side only under I-13 | Yes | Local development with the vendor-neutral provider selected |
 | `BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID` | Model id for the vendor-neutral provider, shown per assessment under K-305 | No | Local development with the vendor-neutral provider selected |
 | `BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL` | Base URL for the vendor-neutral provider (temporary local endpoint), validated at startup under K-503 | No | Local development with the vendor-neutral provider selected |
-| `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_generic_COMPATIBLE` | Daily cap for vendor-neutral assessment calls under I-14 | No | Local development with the vendor-neutral provider selected |
-| `BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_generic_COMPATIBLE` | Daily cost cap for the vendor-neutral provider under I-14 | No | Local development with the vendor-neutral provider selected |
 | `BRANDKLIPPAREN_INVESTIGATE_PROVIDER` | Selected investigation provider: `meta-model-api`, `hosted-open-weights` or `off`; exactly one adapter is bound at startup. The demo defaults to `meta-model-api` when the assessment Meta key file is set unless set explicitly; `off` or a provider without its key leaves the loop answering not-configured | No | Demo with the investigation loop enabled |
 | `BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL` | Allowlisted endpoint for the Meta Model API investigation loop, validated at startup under K-503; unset leaves the loop answering not-configured | No | Demo with the Meta investigation provider selected |
 | `BRANDKLIPPAREN_INVESTIGATE_META_API_KEY` | Key for the Meta Model API investigation loop, server-side only under K-505; loads only via its `*_FILE` pointer | Yes | Demo with the Meta investigation provider selected |
@@ -504,7 +494,7 @@ and a retry time under A-18. Expensive steps (in-process decompilation
 and Muse contract assessment calls for either provider per K-309)
 require a valid key with
 remaining quota under K-504; cached responses are delivered within the
-same rate limits and continue under the cost cap under I-14.
+same rate limits and continue within the per-key daily caps under I-14.
 (K-024, K-102, K-104, K-402, K-504, K-507, A-18, M-08, M-09)
 
 | Limit (v1) | Configuration variable under I-08 | Scope | On exceed |
@@ -576,7 +566,7 @@ per K-309. The deployment is configured through
 `BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID` under I-08, with the
 key `BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY` in the platform secret
 store under I-09. The deployment states model id, deployment id and
-health in its operator view, scales within the cost cap per I-14, and
+health in its operator view, scales within the per-key daily caps per I-14, and
 answers solely assessment requests from the demo server with the key
 as a server-side header. Running on this deployment qualifies the
 project for the bonus prize "Best Build on Meta Open Weight Models"
@@ -594,32 +584,22 @@ provider status with the deployment selected.
 
 ## 8. Costs
 
-**I-14 Versioned cost caps with cache, alarms and ceiling.**
+**I-14 Per-key, per-feature daily caps with cache.**
 The project measures the cost per analysis in number of RPC calls and,
-per assessment request, number of assessment calls and cost per
+per assessment request, number of assessment calls per
 provider and model id separately under K-107 and K-309. Each analysis
 sums its consumption per API key and writes
 the sum to the log under I-10. The cache per code hash and
 model version under K-013 reuses earlier responses, and the assessment
 cache per code hash, prompt version, provider and model id reuses
 assessment text, so a
-cache hit consumes zero RPC calls and zero assessment calls and counts
-as zero cost in each cap. Budget and cost ceilings are
-configuration under I-08 with the values in table v1 below; each
-value change happens as a change to this file with a new version.
-Consumption is compared continuously against the ceilings, and the
-alarms in the table fire at the alarm levels that
-`BRANDKLIPPAREN_ALARM_LEVELS_PERCENT` states, always before the ceiling.
-Each alarm is written as a structured `warn` record under I-10 with key
-ID, consumption and remaining share, and the same levels are shown on
-the health check under I-12, so the operator sees approaching ceilings
-in the log and health response before the ceiling. On reaching the daily
-ceiling, the service closes the expensive paths (new
-in-process decompilations and assessment calls for the selected provider)
-and keeps responding with
-cache hits and the fast path's cached content, so the demo
-stays reachable during the assessment period.
-The measurement, the ceilings and the alarm levels hold for the demo
+cache hit consumes zero RPC calls and zero assessment calls. The only
+enforced ceilings are per-key, per-feature daily caps: when a key
+reaches its cap, that key's calls for that feature close and the
+deterministic template text keeps responding. There is no global
+per-provider daily cap, no cost cap and no alarm level: provider spend
+is bounded by the per-key caps below together with the rate, quota and
+global rate limits under I-12. The caps hold for the demo
 environment; local development and CI run against fixtures and consume
 zero paid calls under I-07. (K-013, K-107, K-504, K-513, M-08, M-09)
 
@@ -627,20 +607,16 @@ zero paid calls under I-07. (K-013, K-107, K-504, K-513, M-08, M-09)
 |---|---|---|---|
 | At most one assessment call per uncached request | Fixed rule in the assessment path per K-305 | Each assessment request, both providers | Caching per code hash, prompt version, provider and model id under K-013 and K-309, with call counting per request in the log under I-10 |
 | Zero external calls on a cache hit | `CacheKey` under A-10 | Each cache hit | Cache lookup before RPC, decompilation and assessment in the request path |
-| Daily cap for RPC calls in the demo | `BRANDKLIPPAREN_BUDGET_DAILY_CAP_RPC_CALLS` | The whole demo environment | Consumption measurement per day; alarm at the configured alarm levels before the ceiling; expensive paths close at the ceiling |
-| Daily cap for RPC calls per key | `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_RPC_CALLS` | Each API key | Consumption measurement per key and day; the key's expensive steps close at the ceiling |
-| Daily cap for assessment calls (selected provider) | `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS` | The whole demo environment, selected provider | Consumption measurement per day; assessment calls close at the ceiling and the template text under K-301 keeps responding |
-| Daily cap for Meta assessment calls and cost | `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_META`, `BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_META` | Meta Model API provider | Per-provider measurement; alarm before the cap; assessment calls close at the cap |
-| Daily cap for hosted assessment calls and cost | `BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_hosted`, `BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_hosted` | hosted open-weights provider per I-18 | Per-provider measurement; alarm before the cap; assessment calls close at the cap |
-| Daily cap for assessment calls per key | `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` | Each API key, both providers | Consumption measurement per key, provider and day; the key's assessment steps close at the ceiling |
+| Daily cap for assessment calls per key | `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` | Each API key, both providers | Per-key, per-day meter in the assessment service; the key's assessment steps close at the cap and the template text under K-301 keeps responding |
 | At most one investigation per uncached request | Fixed rule in the investigation path per K-036 | Each investigation request | Caching per code hash, prompt version, provider and model id, with the trace replayed from the recorded-trace library |
-| Daily cap for investigations per key | `BRANDKLIPPAREN_INVESTIGATE_DAILY_CAP_PER_KEY` | Each API key | Consumption measurement per key and day; the key's investigation steps close at the ceiling with a typed `budget-exhausted` outcome and the deterministic analysis standing |
-| Alarm levels before the ceiling | `BRANDKLIPPAREN_ALARM_LEVELS_PERCENT` | Each daily cap above, for RPC and both assessment providers | Alarm to the operator at each passed level, with key ID, provider, consumption and remaining share in the alarm |
+| Daily cap for investigations per key | `BRANDKLIPPAREN_INVESTIGATE_DAILY_CAP_PER_KEY` | Each API key | Consumption measurement per key and day; the key's investigation steps close at the cap with a typed `budget-exhausted` outcome and the deterministic analysis standing |
+| Daily cap for personalize calls per key | `BRANDKLIPPAREN_PERSONALIZE_DAILY_CAP_PER_KEY` | Each API key | Per-key, per-day meter in the personalize service; the deterministic baseline stands at the cap |
+| Daily cap for explain calls per key | `BRANDKLIPPAREN_EXPLAIN_DAILY_CAP_PER_KEY` | Each API key | Per-key, per-day meter in the explain overlay; the deterministic text stands at the cap |
+| Daily cap for chat calls per key | `BRANDKLIPPAREN_CHAT_DAILY_CAP_PER_KEY` | Each API key | Per-key, per-day meter in the chat overlay; the deterministic text stands at the cap |
+| Daily cap for rug calls per key | `BRANDKLIPPAREN_RUG_DAILY_CAP_PER_KEY` | Each API key | Per-key, per-day meter in the rug overlay; the deterministic text stands at the cap |
+| Daily cap for explain-code calls per key | `BRANDKLIPPAREN_EXPLAIN_CODE_DAILY_CAP_PER_KEY` | Each API key | Per-key, per-day meter in the explain-code overlay; the deterministic text stands at the cap |
 
-Costs for Modal, hosted, the RPC provider and the Meta Model API are
-tracked per day and per provider during the assessment period against
-the ceilings above, and
-the consumption report per key and provider is saved with the day's logs
+The consumption report per key and provider is saved with the day's logs
 under I-10.
 
 Acceptance: The integration test
@@ -650,13 +626,9 @@ zero external calls on a cache hit; the integration test
 consumption per analysis, key, provider and model id; the integration test
 `k107_no_request_zero_assessment_calls_and_cost` requires zero
 assessment calls and zero assessment cost ahead of an explicit request;
-the integration test `k107_alarm_fires_before_cap` requires an alarm
-before the ceiling at simulated consumption for RPC and for each
-assessment provider; the integration test
-`k513_cost_caps_and_alerts_apply_to_both_providers` requires per-provider
-caps and alerts; the load test
+the load test
 `k504_limits_hold_under_overload_and_cache_serves` requires that
-cached responses continue when the ceiling has closed the expensive paths.
+cached responses continue when a key cap has closed the expensive paths.
 
 ## 9. Publication
 
@@ -786,7 +758,7 @@ requires an equal report at equal seed and data version.
 ## 11. Updating the rules
 
 **I-17 Changes to the operations configuration.** The project changes
-operations limits, rate and quota values, cost ceilings, alarm levels,
+operations limits, rate and quota values, per-key daily caps,
 configuration variables and the CI gate through a change to this
 file with a new version on the affected table (v1, v2, …) in the same
 change as code and tests. Each new I-rule receives the next free I-ID,

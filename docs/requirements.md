@@ -1228,10 +1228,10 @@ separately per request, per provider and per model id.
   test `k107_no_request_zero_assessment_calls_and_cost`, which runs the
   analysis ahead of a request and requires zero calls to
   `AssessmentModelPort` for either provider.
-- The frames per analysis and per key and day are versioned in
-  `docs/infrastructure.md`, and alarms fire ahead of the cap under
-  simulated consumption. Verification: integration test
-  `k107_alarm_fires_before_cap`.
+- The per-key, per-feature daily caps are versioned in
+  `docs/infrastructure.md`. Verification: integration test
+  `k305_daily_cost_cap_per_key_stops_assessment_calls` and integration test
+  `k036_investigation_capped_key_makes_zero_calls`.
 - A cache hit consumes zero RPC calls and zero assessment calls.
   Verification: integration test
   `k013_cache_hit_skips_decompilation_and_external_calls`.
@@ -1598,9 +1598,9 @@ and model id.
   id, clearly separate from the deterministic score, probabilities,
   evidence and template text. Verification: e2e test and
   schema-validation test `k305_refined_text_marked_in_ui_rest_and_mcp`.
-- Cost stays within the cost limit per API key and day per K-107 and
+- Cost stays within the per-key daily cap per K-107 and
   I-14 in `docs/infrastructure.md` for both providers: at most one
-  assessment call per uncached request, alarm ahead of the cap and
+  assessment call per uncached request and
   template text standing when the cap is reached. Timeout and input
   and output size limits per K-309 apply to both providers. Contract
   strings pass as untrusted data per K-308 into the prompt.
@@ -1986,7 +1986,7 @@ come from configuration. Fulfilled by M-07 against H-03 in
 ### K-504 API abuse and rate limiting (MVP)
 
 The project limits call rate and quota per key and protects expensive
-analysis paths with cost caps. Fulfilled by M-08 and M-09 against H-04
+analysis paths with per-key, per-feature daily caps. Fulfilled by M-08 and M-09 against H-04
 in `docs/threat-model.md`.
 
 - The limits are versioned in `docs/infrastructure.md` (I-12, I-14),
@@ -1995,7 +1995,7 @@ in `docs/threat-model.md`.
   `k504_over_limit_returns_retryable_machine_error`.
 - Expensive steps (decompilation and Muse contract assessment calls
   per K-305 for either provider per K-309) require a valid key with
-  remaining quota, with cost caps and alerts per provider per I-14.
+  remaining quota and an unspent per-key daily cap per I-14.
   Verification: integration test
   `k504_expensive_steps_require_key_with_quota` for each provider.
 - The limits hold under overload, and cached responses continue under
@@ -2135,7 +2135,7 @@ H-13 in `docs/threat-model.md`.
 The project protects the Muse contract assessment for both providers
 per K-309: provider responses are schema-validated and size-bounded,
 provider and model identity are verified against the selected
-configuration, cost abuse is capped per provider, and both provider
+configuration, cost abuse is capped per key, and both provider
 keys stay server-side in the secret store. Fulfilled by M-11 and M-20
 against H-05 and H-14 in `docs/threat-model.md`, with cost caps in
 M-09 against H-04.
@@ -2154,10 +2154,9 @@ M-09 against H-04.
   the selected provider, and appear with zero hits in client responses
   and logs. Verification: integration test
   `k513_both_provider_keys_absent_from_client_and_logs`.
-- Cost abuse against either provider is bounded by the per-provider
-  cost caps, timeout and size limits per K-309 and I-14, with alerts
-  ahead of each cap. Verification: integration test
-  `k513_cost_caps_and_alerts_apply_to_both_providers`.
+- Cost abuse against either provider is bounded by the per-key daily
+  caps, timeout and size limits per K-309 and I-14. Verification: integration test
+  `k305_daily_cost_cap_per_key_stops_assessment_calls`.
 
 ### K-514 Plugin supply chain: static registration only (MVP)
 

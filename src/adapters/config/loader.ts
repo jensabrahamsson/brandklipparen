@@ -133,17 +133,6 @@ function parseInteger(
   return ok(value);
 }
 
-function parsePositiveAmount(name: string, raw: string): Result<number, ConfigError> {
-  if (!/^\d+(\.\d+)?$/.test(raw)) {
-    return err(invalid(name, "must be a positive amount"));
-  }
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0 || value > 1000000000000) {
-    return err(invalid(name, "must be a positive amount"));
-  }
-  return ok(value);
-}
-
 function parseBoundedNumber(name: string, raw: string, min: number, max: number): Result<number, ConfigError> {
   if (!/^\d+(\.\d+)?$/.test(raw)) {
     return err(invalid(name, `must be a number in [${min}, ${max}]`));
@@ -222,22 +211,6 @@ function parseApiKeys(name: string, raw: string): Result<readonly SecretString[]
   return ok(keys);
 }
 
-function parseAlarmLevels(name: string, raw: string): Result<readonly number[], ConfigError> {
-  const parts = raw.split(",");
-  const levels: number[] = [];
-  for (const part of parts) {
-    const parsed = parseInteger(name, part.trim(), 1, 100);
-    if (!parsed.ok) {
-      return err(invalid(name, "must be a comma-separated list of percents in [1, 100]"));
-    }
-    levels.push(parsed.value);
-  }
-  if (levels.length === 0) {
-    return err(invalid(name, "must be a comma-separated list of percents in [1, 100]"));
-  }
-  return ok(levels);
-}
-
 // Every variable name from the I-08 table, kept in one place so the schema
 // and .env.example stay aligned.
 const V = {
@@ -264,15 +237,7 @@ const V = {
   rateLimitPerKeyPerMinute: "BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE",
   quotaPerKeyPerDay: "BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY",
   globalRatePerMinute: "BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE",
-  budgetDailyCapRpcCalls: "BRANDKLIPPAREN_BUDGET_DAILY_CAP_RPC_CALLS",
-  budgetPerKeyDailyCapRpcCalls: "BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_RPC_CALLS",
-  budgetDailyCapAssessmentCalls: "BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS",
-  budgetDailyCapAssessmentCallsMeta: "BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_META",
-  budgetDailyCapAssessmentCallshosted: "BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_hosted",
   budgetPerKeyDailyCapAssessmentCalls: "BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS",
-  assessmentDailyCostCapMeta: "BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_META",
-  assessmentDailyCostCaphosted: "BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_hosted",
-  alarmLevelsPercent: "BRANDKLIPPAREN_ALARM_LEVELS_PERCENT",
   logLevel: "BRANDKLIPPAREN_LOG_LEVEL",
   assessmentProvider: "BRANDKLIPPAREN_ASSESSMENT_PROVIDER",
   assessmentPromptVersion: "BRANDKLIPPAREN_ASSESSMENT_PROMPT_VERSION",
@@ -288,9 +253,6 @@ const V = {
   assessmentGenericCompatibleBaseUrl: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL",
   assessmentGenericCompatibleTemperature: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_TEMPERATURE",
   assessmentGenericCompatibleMaxTokens: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MAX_TOKENS",
-  budgetDailyCapAssessmentCallsGenericCompatible:
-    "BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_generic_COMPATIBLE",
-  assessmentDailyCostCapGenericCompatible: "BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_generic_COMPATIBLE",
   personalizeProvider: "BRANDKLIPPAREN_PERSONALIZE_PROVIDER",
   personalizeDailyCapPerKey: "BRANDKLIPPAREN_PERSONALIZE_DAILY_CAP_PER_KEY",
   investigateProvider: "BRANDKLIPPAREN_INVESTIGATE_PROVIDER",
@@ -384,7 +346,81 @@ const parseOverlayProvider = (
 // check and future tooling stay aligned with the loader.
 export const CONFIG_VARIABLE_NAMES: readonly string[] = Object.freeze(Object.values(V));
 
-export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
+// Explicit allowlist for `<NAME>_FILE` secret indirection (C-28, F-29):
+// every variable parsed by parseSecret or parseRpcUrls. A `<NAME>_FILE`
+// pointer for any other name is ignored, so an unrelated pointer in the
+// environment (for example a cloud credential file) never flows into the
+// typed config. Exported so the demo launcher expands the same set.
+export const SECRET_FILE_ALLOWLIST: readonly string[] = Object.freeze([
+  V.apiKeyPepper,
+  V.rpcUrls,
+  V.assessmentMetaApiKey,
+  V.assessmenthostedApiKey,
+  V.assessmentGenericCompatibleApiKey,
+  V.investigateMetaApiKey,
+  V.investigatehostedApiKey,
+  V.explainMetaApiKey,
+  V.chatMetaApiKey,
+  V.rugMetaApiKey,
+  V.explainCodeMetaApiKey,
+  V.feedEtherscanApiKey,
+]);
+
+const SECRET_FILE_MAX_LENGTH = 4096;
+
+// Injected file reader for `<NAME>_FILE` pointers. The loader performs
+// no I/O itself: the process entry point passes the real reader while
+// tests inject fakes, so the loader boundary test keeps holding.
+export type LoadConfigOptions = {
+  readonly readSecretFile?: (path: string) => string;
+};
+
+// Resolves allowlisted `<NAME>_FILE` pointers into a merged environment
+// before parsing. Both `<NAME>` and `<NAME>_FILE` set is a config error;
+// an unreadable file or a value over the size cap is a config error;
+// a single trailing newline is trimmed and an empty file counts as
+// unset. Unknown `<NAME>_FILE` variables are left untouched.
+function resolveSecretFiles(
+  env: EnvInput,
+  readSecretFile: ((path: string) => string) | undefined,
+): Result<EnvInput, ConfigError> {
+  const merged: Record<string, string | undefined> = Object.assign({}, env);
+  for (const name of SECRET_FILE_ALLOWLIST) {
+    const pointer = `${name}_FILE`;
+    const rawPointer = rawValue(env, pointer);
+    if (rawPointer === undefined) {
+      continue;
+    }
+    if (rawValue(env, name) !== undefined) {
+      return err(invalid(name, `must not set both ${name} and ${pointer}`));
+    }
+    if (readSecretFile === undefined) {
+      continue;
+    }
+    let fileContent: string;
+    try {
+      fileContent = readSecretFile(rawPointer);
+    } catch {
+      return err(invalid(pointer, "unreadable secret file"));
+    }
+    const value = fileContent.replace(/\r?\n$/, "");
+    if (value.length > SECRET_FILE_MAX_LENGTH) {
+      return err(invalid(pointer, "secret file value is too long"));
+    }
+    if (value.length === 0) {
+      continue;
+    }
+    merged[name] = value;
+  }
+  return ok(merged);
+}
+
+export function loadConfig(env: EnvInput, options?: LoadConfigOptions): Result<AppConfig, ConfigError> {
+  const resolved = resolveSecretFiles(env, options?.readSecretFile);
+  if (!resolved.ok) {
+    return resolved;
+  }
+  env = resolved.value;
   const envParsed = requiredField(env, V.environment, parseEnvName);
   if (!envParsed.ok) {
     return envParsed;
@@ -538,48 +574,6 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   if (!globalRatePerMinute.ok) {
     return globalRatePerMinute;
   }
-  const budgetDailyCapRpcCalls = requiredWhen(env, V.budgetDailyCapRpcCalls, isDemo, (raw) =>
-    parseInteger(V.budgetDailyCapRpcCalls, raw, 1, 1000000000),
-  );
-  if (!budgetDailyCapRpcCalls.ok) {
-    return budgetDailyCapRpcCalls;
-  }
-  const budgetPerKeyDailyCapRpcCalls = requiredWhen(
-    env,
-    V.budgetPerKeyDailyCapRpcCalls,
-    isDemo,
-    (raw) => parseInteger(V.budgetPerKeyDailyCapRpcCalls, raw, 1, 1000000000),
-  );
-  if (!budgetPerKeyDailyCapRpcCalls.ok) {
-    return budgetPerKeyDailyCapRpcCalls;
-  }
-  const budgetDailyCapAssessmentCalls = requiredWhen(
-    env,
-    V.budgetDailyCapAssessmentCalls,
-    isDemo,
-    (raw) => parseInteger(V.budgetDailyCapAssessmentCalls, raw, 1, 1000000000),
-  );
-  if (!budgetDailyCapAssessmentCalls.ok) {
-    return budgetDailyCapAssessmentCalls;
-  }
-  const budgetDailyCapAssessmentCallsMeta = requiredWhen(
-    env,
-    V.budgetDailyCapAssessmentCallsMeta,
-    isDemo,
-    (raw) => parseInteger(V.budgetDailyCapAssessmentCallsMeta, raw, 1, 1000000000),
-  );
-  if (!budgetDailyCapAssessmentCallsMeta.ok) {
-    return budgetDailyCapAssessmentCallsMeta;
-  }
-  const budgetDailyCapAssessmentCallshosted = requiredWhen(
-    env,
-    V.budgetDailyCapAssessmentCallshosted,
-    isDemo,
-    (raw) => parseInteger(V.budgetDailyCapAssessmentCallshosted, raw, 1, 1000000000),
-  );
-  if (!budgetDailyCapAssessmentCallshosted.ok) {
-    return budgetDailyCapAssessmentCallshosted;
-  }
   const budgetPerKeyDailyCapAssessmentCalls = requiredWhen(
     env,
     V.budgetPerKeyDailyCapAssessmentCalls,
@@ -588,27 +582,6 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   );
   if (!budgetPerKeyDailyCapAssessmentCalls.ok) {
     return budgetPerKeyDailyCapAssessmentCalls;
-  }
-  const assessmentDailyCostCapMeta = requiredWhen(env, V.assessmentDailyCostCapMeta, isDemo, (raw) =>
-    parsePositiveAmount(V.assessmentDailyCostCapMeta, raw),
-  );
-  if (!assessmentDailyCostCapMeta.ok) {
-    return assessmentDailyCostCapMeta;
-  }
-  const assessmentDailyCostCaphosted = requiredWhen(
-    env,
-    V.assessmentDailyCostCaphosted,
-    isDemo,
-    (raw) => parsePositiveAmount(V.assessmentDailyCostCaphosted, raw),
-  );
-  if (!assessmentDailyCostCaphosted.ok) {
-    return assessmentDailyCostCaphosted;
-  }
-  const alarmLevelsPercent = requiredWhen(env, V.alarmLevelsPercent, isDemo, (raw) =>
-    parseAlarmLevels(V.alarmLevelsPercent, raw),
-  );
-  if (!alarmLevelsPercent.ok) {
-    return alarmLevelsPercent;
   }
   const assessmentProvider = requiredWhen(env, V.assessmentProvider, isDemo, parseProvider);
   if (!assessmentProvider.ok) {
@@ -713,25 +686,6 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   );
   if (!assessmentGenericCompatibleBaseUrl.ok) {
     return assessmentGenericCompatibleBaseUrl;
-  }
-  // Matching daily caps for the vendor-neutral provider, mirroring the
-  // Meta/hosted cap variables. Optional in every setup, so local runs
-  // stay lean: the service falls back to its placeholder caps when unset.
-  const budgetDailyCapAssessmentCallsGenericCompatible = optionalField(
-    env,
-    V.budgetDailyCapAssessmentCallsGenericCompatible,
-    (raw) => parseInteger(V.budgetDailyCapAssessmentCallsGenericCompatible, raw, 1, 1000000000),
-  );
-  if (!budgetDailyCapAssessmentCallsGenericCompatible.ok) {
-    return budgetDailyCapAssessmentCallsGenericCompatible;
-  }
-  const assessmentDailyCostCapGenericCompatible = optionalField(
-    env,
-    V.assessmentDailyCostCapGenericCompatible,
-    (raw) => parsePositiveAmount(V.assessmentDailyCostCapGenericCompatible, raw),
-  );
-  if (!assessmentDailyCostCapGenericCompatible.ok) {
-    return assessmentDailyCostCapGenericCompatible;
   }
   // Optional sampling temperature in [0, 1] for the vendor-neutral
   // provider: sent only when set, otherwise no sampling parameter
@@ -1116,33 +1070,9 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(globalRatePerMinute.value === undefined
       ? {}
       : { globalRatePerMinute: globalRatePerMinute.value }),
-    ...(budgetDailyCapRpcCalls.value === undefined
-      ? {}
-      : { budgetDailyCapRpcCalls: budgetDailyCapRpcCalls.value }),
-    ...(budgetPerKeyDailyCapRpcCalls.value === undefined
-      ? {}
-      : { budgetPerKeyDailyCapRpcCalls: budgetPerKeyDailyCapRpcCalls.value }),
-    ...(budgetDailyCapAssessmentCalls.value === undefined
-      ? {}
-      : { budgetDailyCapAssessmentCalls: budgetDailyCapAssessmentCalls.value }),
-    ...(budgetDailyCapAssessmentCallsMeta.value === undefined
-      ? {}
-      : { budgetDailyCapAssessmentCallsMeta: budgetDailyCapAssessmentCallsMeta.value }),
-    ...(budgetDailyCapAssessmentCallshosted.value === undefined
-      ? {}
-      : { budgetDailyCapAssessmentCallshosted: budgetDailyCapAssessmentCallshosted.value }),
     ...(budgetPerKeyDailyCapAssessmentCalls.value === undefined
       ? {}
       : { budgetPerKeyDailyCapAssessmentCalls: budgetPerKeyDailyCapAssessmentCalls.value }),
-    ...(assessmentDailyCostCapMeta.value === undefined
-      ? {}
-      : { assessmentDailyCostCapMeta: assessmentDailyCostCapMeta.value }),
-    ...(assessmentDailyCostCaphosted.value === undefined
-      ? {}
-      : { assessmentDailyCostCaphosted: assessmentDailyCostCaphosted.value }),
-    ...(alarmLevelsPercent.value === undefined
-      ? {}
-      : { alarmLevelsPercent: alarmLevelsPercent.value }),
     ...(assessmentProvider.value === undefined ? {} : { assessmentProvider: assessmentProvider.value }),
     ...(assessmentPromptVersion.value === undefined
       ? {}
@@ -1177,15 +1107,6 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
     ...(assessmentGenericCompatibleBaseUrl.value === undefined
       ? {}
       : { assessmentGenericCompatibleBaseUrl: assessmentGenericCompatibleBaseUrl.value }),
-    ...(budgetDailyCapAssessmentCallsGenericCompatible.value === undefined
-      ? {}
-      : {
-          budgetDailyCapAssessmentCallsGenericCompatible:
-            budgetDailyCapAssessmentCallsGenericCompatible.value,
-        }),
-    ...(assessmentDailyCostCapGenericCompatible.value === undefined
-      ? {}
-      : { assessmentDailyCostCapGenericCompatible: assessmentDailyCostCapGenericCompatible.value }),
     ...(assessmentGenericCompatibleTemperature.value === undefined
       ? {}
       : { assessmentGenericCompatibleTemperature: assessmentGenericCompatibleTemperature.value }),
@@ -1312,9 +1233,6 @@ export function loadConfig(env: EnvInput): Result<AppConfig, ConfigError> {
   }
   if (config.apiKeys !== undefined) {
     Object.freeze(config.apiKeys);
-  }
-  if (config.alarmLevelsPercent !== undefined) {
-    Object.freeze(config.alarmLevelsPercent);
   }
   return ok(Object.freeze(config));
 }

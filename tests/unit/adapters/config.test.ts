@@ -1,7 +1,8 @@
 // Tests for S-004 (K-505, K-510): typed config and secret handling at startup.
 // Written first (red) per A-21; the implementation lives in
 // src/ports/config.ts and src/adapters/config/loader.ts.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { inspect } from "node:util";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,15 +64,7 @@ function demoEnv(): EnvInput {
     BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE: "60",
     BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY: "1000",
     BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE: "600",
-    BRANDKLIPPAREN_BUDGET_DAILY_CAP_RPC_CALLS: "100000",
-    BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_RPC_CALLS: "10000",
-    BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS: "1000",
-    BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_META: "500",
-    BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_hosted: "500",
     BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS: "100",
-    BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_META: "50",
-    BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_hosted: "50",
-    BRANDKLIPPAREN_ALARM_LEVELS_PERCENT: "50,80,95",
     BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "meta-model-api",
     BRANDKLIPPAREN_ASSESSMENT_PROMPT_VERSION: "1.0.0",
     BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-meta-key-for-tests-only",
@@ -97,8 +90,6 @@ describe("vendor-neutral provider for local development", () => {
       [COMPAT_KEY]: "fake-compat-key-for-tests-only",
       [COMPAT_MODEL]: "fake-compat-model-1",
       [COMPAT_URL]: "https://compat.example.invalid",
-      BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_generic_COMPATIBLE: "500",
-      BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_generic_COMPATIBLE: "50",
     };
   }
 
@@ -113,8 +104,6 @@ describe("vendor-neutral provider for local development", () => {
       "fake-compat-key-for-tests-only",
     );
     expect(loaded.value.assessmentGenericCompatibleBaseUrl).toBe("https://compat.example.invalid");
-    expect(loaded.value.budgetDailyCapAssessmentCallsGenericCompatible).toBe(500);
-    expect(loaded.value.assessmentDailyCostCapGenericCompatible).toBe(50);
   });
 
   test("generic-compatible loads with the assessment off when any value is missing (S-135)", () => {
@@ -309,9 +298,6 @@ describe("typed config and secret handling at startup (K-505, K-510)", () => {
       for (const url of loaded.value.rpcUrls) {
         expect(Object.isFrozen(url)).toBe(true);
       }
-    }
-    if (loaded.value.alarmLevelsPercent !== undefined) {
-      expect(Object.isFrozen(loaded.value.alarmLevelsPercent)).toBe(true);
     }
   });
 
@@ -576,5 +562,121 @@ describe("demo provider without key or model id means assessment off (S-135)", (
     if (!bad.ok) {
       expect(bad.error.variable).toBe("BRANDKLIPPAREN_MARKET_PROVIDER");
     }
+  });
+});
+
+describe("secret file pointers (C-28, F-29)", () => {
+  const SECRET_KEY = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY";
+  const SECRET_FILE = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE";
+
+  function tempDir(): string {
+    return mkdtempSync(join(tmpdir(), "brandklipparen-config-c28-"));
+  }
+
+  function fileEnv(name: string, content: string): EnvInput {
+    const dir = tempDir();
+    const path = join(dir, name);
+    writeFileSync(path, content, "utf8");
+    return { ...baseCiEnv(), [`${SECRET_KEY}_FILE`]: path };
+  }
+
+  function readFile(path: string): string {
+    return readFileSync(path, "utf8");
+  }
+
+  test("c28_file_secret_resolved_by_loadConfig", () => {
+    const loaded = loadConfig(fileEnv("fake-key.txt", "fake-file-key-for-tests-only\n"), {
+      readSecretFile: readFile,
+    });
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) {
+      return;
+    }
+    expect(loaded.value.assessmentMetaApiKey?.reveal()).toBe("fake-file-key-for-tests-only");
+  });
+
+  test("c28_file_secret_trims_crlf_and_rejects_both_set", () => {
+    const dir = tempDir();
+    const path = join(dir, "fake-key.txt");
+    writeFileSync(path, "fake-file-key-for-tests-only\r\n", "utf8");
+    const both = loadConfig(
+      { ...baseCiEnv(), [SECRET_KEY]: "fake-direct-key", [SECRET_FILE]: path },
+      { readSecretFile: readFile },
+    );
+    expect(both.ok).toBe(false);
+    if (!both.ok) {
+      expect(both.error.variable).toBe(SECRET_KEY);
+      expect(formatConfigError(both.error).includes("fake-direct-key")).toBe(false);
+    }
+    const trimmed = loadConfig(
+      { ...baseCiEnv(), [SECRET_FILE]: path },
+      { readSecretFile: readFile },
+    );
+    expect(trimmed.ok).toBe(true);
+    if (trimmed.ok) {
+      expect(trimmed.value.assessmentMetaApiKey?.reveal()).toBe("fake-file-key-for-tests-only");
+    }
+  });
+
+  test("c28_file_secret_missing_file_is_config_error", () => {
+    const missing = loadConfig(
+      { ...baseCiEnv(), [SECRET_FILE]: join(tempDir(), "absent.txt") },
+      { readSecretFile: readFile },
+    );
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.error.variable).toBe(SECRET_FILE);
+    }
+  });
+
+  test("c28_file_secret_over_size_cap_is_config_error", () => {
+    const loaded = loadConfig(fileEnv("big-key.txt", `${"k".repeat(4097)}\n`), {
+      readSecretFile: readFile,
+    });
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) {
+      expect(loaded.error.variable).toBe(SECRET_FILE);
+      expect(formatConfigError(loaded.error).includes("k".repeat(16))).toBe(false);
+    }
+  });
+
+  test("c28_file_secret_at_size_cap_loads", () => {
+    const secret = "s".repeat(4096);
+    const loaded = loadConfig(fileEnv("capped-key.txt", secret), { readSecretFile: readFile });
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) {
+      return;
+    }
+    expect(loaded.value.assessmentMetaApiKey?.reveal()).toBe(secret);
+  });
+
+  test("c28_unknown_FILE_vars_do_not_reach_loadConfig", () => {
+    let reads = 0;
+    const loaded = loadConfig(
+      {
+        ...baseCiEnv(),
+        BRANDKLIPPAREN_UNKNOWN_FOR_TESTS_FILE: "secrets/unknown.txt",
+      },
+      {
+        readSecretFile: (path) => {
+          reads += 1;
+          return readFile(path);
+        },
+      },
+    );
+    expect(loaded.ok).toBe(true);
+    expect(reads).toBe(0);
+  });
+
+  test("c28_FILE_pointer_without_reader_stays_unset", () => {
+    const loaded = loadConfig({
+      ...baseCiEnv(),
+      [SECRET_FILE]: join(tempDir(), "unread.txt"),
+    });
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) {
+      return;
+    }
+    expect(loaded.value.assessmentMetaApiKey).toBeUndefined();
   });
 });

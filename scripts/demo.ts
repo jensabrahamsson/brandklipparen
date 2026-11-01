@@ -15,6 +15,7 @@ import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { SECRET_FILE_ALLOWLIST } from "../src/adapters/config/loader.ts";
 
 export const DEMO_WEB_PORT = 5173;
 export const DEMO_DEFAULT_REST_PORT = "8080";
@@ -133,10 +134,13 @@ export function readEnvLocalFile(
   }
 }
 
-// Resolves `<NAME>_FILE` secret indirection (local development only): for
-// every `<NAME>_FILE` variable with a non-empty value whose `<NAME>` is
-// still unset, reads the file (absolute, or relative to the repo root),
-// trims it and sets `<NAME>`. A configured `<NAME>` always wins, so the
+// Resolves `<NAME>_FILE` secret indirection (local development only):
+// for every allowlisted `<NAME>_FILE` variable with a non-empty value
+// whose `<NAME>` is still unset, reads the file (absolute, or relative
+// to the repo root), trims it and sets `<NAME>`. The allowlist is the
+// loader's SECRET_FILE_ALLOWLIST, so an unrelated pointer in the
+// environment (for example a cloud credential file) is left untouched.
+// A configured `<NAME>` always wins, so the
 // file is only read when needed. Returns the merged environment plus the
 // resolved and failed target names (names only, never values or file
 // contents). Pure apart from the injected file reader.
@@ -149,6 +153,7 @@ export function resolveSecretFileVars(
   readonly loaded: readonly string[];
   readonly failed: readonly string[];
 } {
+  const allowed = new Set(SECRET_FILE_ALLOWLIST);
   const merged: Record<string, string | undefined> = { ...env };
   const loaded: string[] = [];
   const failed: string[] = [];
@@ -162,6 +167,9 @@ export function resolveSecretFileVars(
       continue;
     }
     const target = name.slice(0, -suffix.length);
+    if (!allowed.has(target)) {
+      continue;
+    }
     const current = merged[target];
     if (current !== undefined && current !== "") {
       continue;
@@ -225,6 +233,37 @@ export function ensureDemoApiKey(
     webKey: key,
     preview: maskKeyPreview(key),
   };
+}
+
+// Minimal environment for the Vite dev-server child (C-28, F-29): only
+// PATH, HOME, NODE_ENV and VITE_* entries travel, plus the two values
+// the web app needs (VITE_REST_ORIGIN and VITE_DEMO_API_KEY).
+// Server-side secrets (BRANDKLIPPAREN_* keys, *_FILE pointers) and
+// unrelated environment entries never reach the browser dev server.
+// Pure: reads names and values from the merged demo environment only.
+export function buildViteChildEnv(
+  demoEnv: Readonly<Record<string, string | undefined>>,
+  webKey: string,
+  restBase: string,
+): Record<string, string | undefined> {
+  const child: Record<string, string | undefined> = {};
+  for (const name of ["PATH", "HOME", "NODE_ENV"] as const) {
+    const value = demoEnv[name];
+    if (value !== undefined && value !== "") {
+      child[name] = value;
+    }
+  }
+  if (child["NODE_ENV"] === undefined) {
+    child["NODE_ENV"] = "development";
+  }
+  for (const [name, value] of Object.entries(demoEnv)) {
+    if (name.startsWith("VITE_") && value !== undefined && value !== "") {
+      child[name] = value;
+    }
+  }
+  child["VITE_REST_ORIGIN"] = restBase;
+  child["VITE_DEMO_API_KEY"] = webKey;
+  return child;
 }
 
 // Single assessment status line for the demo log: exactly one line
@@ -1008,10 +1047,11 @@ async function runDemo(): Promise<void> {
   const webBin = join(root, "apps", "web", "node_modules", "vite", "bin", "vite.js");
   const web = spawn(nodeBin, [webBin, "--strictPort"], {
     cwd: join(root, "apps", "web"),
-    // VITE_DEMO_API_KEY is dev-only: the web app reads it solely as the
-    // initial API key field value when running under `vite dev`, and a
-    // production build never sets it.
-    env: { ...demoEnv, VITE_REST_ORIGIN: restBase, VITE_DEMO_API_KEY: keyed.webKey },
+    // Minimal child environment (C-28, F-29): PATH, HOME, NODE_ENV and
+    // VITE_* only. VITE_DEMO_API_KEY is dev-only: the web app reads it
+    // solely as the initial API key field value when running under
+    // `vite dev`, and a production build never sets it.
+    env: buildViteChildEnv(demoEnv, keyed.webKey, restBase),
     stdio: "inherit",
   });
   const children: ReadonlyArray<{ readonly name: string; readonly child: ChildProcess }> =

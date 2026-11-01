@@ -12,6 +12,7 @@ import {
   applyEnvLocal,
   buildNode22LoopMessage,
   buildNode22MissingMessage,
+  buildViteChildEnv,
   checkNodeVersion,
   decideNode22Startup,
   DEMO_ASSESSMENT_hosted_READY_LINE,
@@ -310,6 +311,62 @@ describe("demo secret file indirection", () => {
     );
     expect(blank.env[KEY]).toBe(undefined);
     expect(blank.failed).toEqual([KEY]);
+  });
+
+  test("c28_unknown_FILE_vars_not_expanded", () => {
+    let reads = 0;
+    const input = {
+      AWS_SHARED_CREDENTIALS_FILE: "secrets/aws-shared.txt",
+      BRANDKLIPPAREN_UNKNOWN_FOR_TESTS_FILE: "secrets/unknown.txt",
+      [`${KEY}_FILE`]: "secrets/absent.txt",
+    };
+    const { env, loaded, failed } = resolveSecretFileVars(input, tempRoot(), () => {
+      reads += 1;
+      throw new Error("no such file");
+    });
+    expect(env["AWS_SHARED_CREDENTIALS_FILE"]).toBe("secrets/aws-shared.txt");
+    expect(env["BRANDKLIPPAREN_UNKNOWN_FOR_TESTS"]).toBe(undefined);
+    expect(env["BRANDKLIPPAREN_UNKNOWN_FOR_TESTS_FILE"]).toBe("secrets/unknown.txt");
+    expect(loaded).toEqual([]);
+    expect(failed).toEqual([KEY]);
+    expect(reads).toBe(1);
+  });
+});
+
+describe("demo Vite child environment (C-28, F-29)", () => {
+  test("c28_vite_child_env_minimal", () => {
+    const demoEnv = {
+      PATH: "/usr/bin:/bin",
+      HOME: "/home/tester",
+      NODE_ENV: "test",
+      BRANDKLIPPAREN_API_KEYS: "fake-key-for-tests-only",
+      BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-meta-key-for-tests-only",
+      BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE: "secrets/meta-key.txt",
+      AWS_SHARED_CREDENTIALS_FILE: "secrets/aws-shared.txt",
+      VITE_CUSTOM_FLAG: "1",
+      VITE_REST_ORIGIN: "http://stale.example.invalid",
+    };
+    const child = buildViteChildEnv(demoEnv, "fake-web-key", "http://127.0.0.1:8080");
+    expect(child["PATH"]).toBe("/usr/bin:/bin");
+    expect(child["HOME"]).toBe("/home/tester");
+    expect(child["NODE_ENV"]).toBe("test");
+    expect(child["VITE_CUSTOM_FLAG"]).toBe("1");
+    expect(child["VITE_REST_ORIGIN"]).toBe("http://127.0.0.1:8080");
+    expect(child["VITE_DEMO_API_KEY"]).toBe("fake-web-key");
+    for (const name of Object.keys(child)) {
+      expect(name.startsWith("BRANDKLIPPAREN_")).toBe(false);
+      expect(name.endsWith("_FILE")).toBe(false);
+      expect(name.startsWith("AWS_")).toBe(false);
+    }
+    expect(child["BRANDKLIPPAREN_API_KEYS"]).toBe(undefined);
+    expect(child["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY"]).toBe(undefined);
+    expect(child["AWS_SHARED_CREDENTIALS_FILE"]).toBe(undefined);
+  });
+
+  test("c28_vite_child_env_defaults_node_env", () => {
+    const child = buildViteChildEnv({ PATH: "/usr/bin", HOME: "/home/tester" }, "k", "http://127.0.0.1:8080");
+    expect(child["NODE_ENV"]).toBe("development");
+    expect(child["PATH"]).toBe("/usr/bin");
   });
 });
 

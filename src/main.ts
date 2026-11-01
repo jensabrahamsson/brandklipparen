@@ -123,7 +123,10 @@ async function startupPorts(config: AppConfig): Promise<AnalyzeTokenPorts> {
 }
 
 function loadAppConfig(): AppConfig {
-  const loaded = loadConfig(process.env);
+  // `start:rest` and `start:mcp` honour `<NAME>_FILE` secret pointers
+  // (C-28, F-29): the real file reader is injected here, so the loader
+  // itself performs no I/O.
+  const loaded = loadConfig(process.env, { readSecretFile: (path) => readFileSync(path, "utf8") });
   if (!loaded.ok) {
     fail(formatConfigError(loaded.error));
   }

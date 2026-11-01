@@ -82,15 +82,9 @@ export type AppConfig = {
   readonly rateLimitPerKeyPerMinute?: number;
   readonly quotaPerKeyPerDay?: number;
   readonly globalRatePerMinute?: number;
-  readonly budgetDailyCapRpcCalls?: number;
-  readonly budgetPerKeyDailyCapRpcCalls?: number;
-  readonly budgetDailyCapAssessmentCalls?: number;
-  readonly budgetDailyCapAssessmentCallsMeta?: number;
-  readonly budgetDailyCapAssessmentCallshosted?: number;
+  // Daily cap for assessment calls per API key: the only enforced
+  // provider-adjacent cap. There is no global per-provider daily cap.
   readonly budgetPerKeyDailyCapAssessmentCalls?: number;
-  readonly assessmentDailyCostCapMeta?: number;
-  readonly assessmentDailyCostCaphosted?: number;
-  readonly alarmLevelsPercent?: readonly number[];
   readonly assessmentProvider?: AssessmentProvider;
   readonly assessmentPromptVersion?: PromptVersion;
   readonly assessmentMetaApiKey?: SecretString;
@@ -121,8 +115,6 @@ export type AppConfig = {
   // travels. Optional completion budget override (default 4096).
   readonly assessmentGenericCompatibleTemperature?: number;
   readonly assessmentGenericCompatibleMaxTokens?: number;
-  readonly budgetDailyCapAssessmentCallsGenericCompatible?: number;
-  readonly assessmentDailyCostCapGenericCompatible?: number;
   // Investigation loop provider selection: unset or "off" leaves the
   // loop disabled with the deterministic analysis standing; a named
   // provider binds its adapter when its connection triple is complete,
