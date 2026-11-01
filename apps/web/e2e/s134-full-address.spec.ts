@@ -5,6 +5,7 @@
 // row clicks still navigate while copy clicks do not.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import { assertLayout } from "./helpers/layoutContract.ts";
 
 const TOKEN_A = "0x5ab1e0000000000000000000000000000000a001";
 const PAIR_A = "0x5ab1e0000000000000000000000000000000a0aa";
@@ -108,7 +109,7 @@ async function mockStart(page: Page): Promise<void> {
   });
 }
 
-async function mockToken(page: Page): Promise<void> {
+async function mockToken(page: Page, liveAgeSeconds: number | null = null): Promise<void> {
   await page.route("**/health", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
   });
@@ -131,10 +132,16 @@ async function mockToken(page: Page): Promise<void> {
     });
   });
   await page.route("**/v1/live-tokens", async (route) => {
+    const items = liveItems();
+    if (liveAgeSeconds !== null) {
+      const first = items[0] as Record<string, unknown>;
+      first["ageSeconds"] = liveAgeSeconds;
+      first["blockTimestampMs"] = 1700000000000 - liveAgeSeconds * 1000;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ source: "etherscan", status: "live", updatedAt: 1700000000000, items: liveItems() }),
+      body: JSON.stringify({ source: "etherscan", status: "live", updatedAt: 1700000000000, items }),
     });
   });
 }
@@ -237,10 +244,12 @@ test("s134_token_page_header_sidebar_and_recent_show_full_address", async ({ pag
   await expect(page.locator('[data-testid="token-address-full"]').first()).toHaveText(C_TOKEN_A);
   await expect(page.getByRole("button", { name: "Copy contract address" }).first()).toBeVisible();
 
-  // Sidebar facts carry the full address and pair with copy controls.
+  // Contract facts carry the full address and pair in the address block
+  // (UI v2 §3: label row with the copy icon, value below) with copy
+  // controls that write the exact values.
   const facts = page.locator('aside[aria-label="Contract facts"]');
-  await expect(facts).toContainText(C_TOKEN_A);
-  await expect(facts).toContainText(C_PAIR_A);
+  await expect(facts.locator('[data-testid="fact-contract-address"]')).toHaveText(C_TOKEN_A);
+  await expect(facts.locator('[data-testid="fact-pair-address"]')).toHaveText(C_PAIR_A);
   await expect(facts).not.toContainText("0x5ab1…");
 
   // Keyboard copy from the header writes the exact address.
@@ -268,4 +277,54 @@ test("s134_token_page_header_sidebar_and_recent_show_full_address", async ({ pag
     root.querySelectorAll("button button, a button, button a").length,
   );
   expect(nested).toBe(0);
+});
+
+test("s134_contract_facts_wrap_and_nowrap_contract", async ({ page }) => {
+  // W-7 (UI v2 §3): "None" and "1h ago" each render on one line, the
+  // address shows all 42 characters in at most 2 lines at 390 px and up
+  // (3 at 320), and nothing hyphenates.
+  await stubClipboard(page);
+  await mockToken(page, 3700);
+  // Note: hash URLs build by concatenation (see token-symbol-heading).
+  await page.goto("/#/token/" + TOKEN_A);
+  const facts = page.locator('aside[aria-label="Contract facts"]');
+  await expect(facts.locator('[data-testid="fact-contract-address"]')).toHaveText(C_TOKEN_A);
+
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+
+    // The proxy word and the compact age each stay on one line.
+    for (const row of ["Proxy", "First seen"]) {
+      const value = facts.locator(".fact-row", { has: page.locator(".fact-label", { hasText: row }) }).locator(".fact-value");
+      const box = await value.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        return { height: rect.height, lineHeight: getComputedStyle(element).lineHeight };
+      });
+      expect(box.height, `${row} value wraps at ${viewport.width}px`).toBeLessThanOrEqual(
+        Number.parseFloat(box.lineHeight) * 1.6,
+      );
+    }
+
+    // The address block reads as the exact 42 characters and wraps only
+    // between groups: at most 2 lines, 3 on the narrowest phone.
+    const address = facts.locator('[data-testid="fact-contract-address"]');
+    expect(((await address.textContent()) ?? "").length).toBe(42);
+    const lines = await address.evaluate((element) => element.getClientRects().length);
+    expect(lines, `address lines at ${viewport.width}px`).toBeLessThanOrEqual(viewport.width === 320 ? 3 : 2);
+
+    // No hyphenation anywhere in the facts card.
+    const hyphens = await facts
+      .locator(".fact-label, .fact-value")
+      .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).hyphens));
+    for (const hyphen of hyphens) {
+      expect(hyphen, `hyphens at ${viewport.width}px`).not.toBe("auto");
+    }
+  }
+
+  await assertLayout(page);
 });

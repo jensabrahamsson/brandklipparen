@@ -37,6 +37,9 @@ describe("sidebar contract facts", () => {
       <Sidebar
         result={result()}
         expert={false}
+        address={TARGET}
+        apiKey=""
+        availability="available"
         liveEntry={{
           tokenAddress: TARGET,
           symbol: "SYNTH",
@@ -52,11 +55,14 @@ describe("sidebar contract facts", () => {
         }}
       />,
     );
-    // Displayed facts and copied values use the checksummed form.
+    // Displayed facts and copied values use the checksummed form. The
+    // address block wraps between 4-character groups in the markup, so
+    // full-address assertions strip tags first.
+    const text = html.replace(/<[^>]+>/g, "");
     expect(toChecksumAddress(TARGET)).toBe("0x5ab1E0000000000000000000000000000000a001");
     expect(toChecksumAddress(PAIR)).toBe("0x5aB1E0000000000000000000000000000000a0aa");
-    expect(html).toContain("0x5ab1E0000000000000000000000000000000a001");
-    expect(html).toContain("0x5aB1E0000000000000000000000000000000a0aa");
+    expect(text).toContain("0x5ab1E0000000000000000000000000000000a001");
+    expect(text).toContain("0x5aB1E0000000000000000000000000000000a0aa");
     expect(html).not.toContain(`>${TARGET}<`);
     expect(html).toContain('aria-label="Copy contract address"');
     expect(html).toContain('aria-label="Copy pair address"');

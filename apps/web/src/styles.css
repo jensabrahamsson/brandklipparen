@@ -1884,31 +1884,142 @@ a {
   margin: 0;
 }
 
-.facts .fact-row {
-  display: flex;
-  gap: 10px;
-  padding: 9px 0;
-  border-bottom: 1px dashed var(--edge);
-  align-items: baseline;
+/* Contract facts (UI v2 §3): icon + label + value rows with an
+   always-visible explanation. Short values sit right-aligned on one
+   line; address rows put the copy icon on the label row and the value
+   below, breaking only between 4-character groups. No hyphenation and
+   no mid-word breaks anywhere in the card. Glow comes only from the
+   elevation tokens; nothing moves. */
+.contract-facts {
+  hyphens: manual;
 }
 
-.facts dt {
+.contract-facts h2 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+.contract-facts-list {
+  display: grid;
+}
+
+.fact-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  column-gap: 12px;
+  row-gap: 2px;
+  padding-block: 12px;
+  border-bottom: 1px dashed var(--rule);
+  align-items: start;
+}
+
+.fact-short {
+  grid-template-areas: "icon label side" "icon why why";
+}
+
+.fact-long {
+  grid-template-areas: "icon label side" "icon value value" "icon why why";
+}
+
+.fact-icon {
+  grid-area: icon;
+  display: inline-flex;
   color: var(--dim);
-  flex: none;
 }
 
-.facts dd {
+.fact-label {
+  grid-area: label;
+  align-self: center;
   margin: 0;
+  font-size: 13px;
+  color: var(--dim);
+  hyphens: manual;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.fact-short .fact-value {
+  grid-area: side;
+}
+
+.fact-copy {
+  grid-area: side;
+}
+
+.fact-long .fact-value {
+  grid-area: value;
+}
+
+.fact-value {
+  margin: 0;
+  font-size: 13px;
   color: var(--phosphor-hi);
-  overflow-wrap: anywhere;
   text-align: right;
 }
 
-.facts .lead {
-  flex: 1;
-  border-bottom: 1px dotted var(--faint);
-  margin-bottom: 6px;
-  min-width: 12px;
+.fact-short .fact-value {
+  align-self: center;
+  white-space: nowrap;
+  hyphens: manual;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.fact-short .fact-value:not([data-nowrap]) {
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.fact-long .fact-value {
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.fact-why {
+  grid-area: why;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
+/* Live on-chain rows carry their own tag under the explanation: one
+   non-wrapping chip, never the only cue (the sentence says "live"). */
+.live-tag {
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--dim);
+  border: 1px dashed var(--edge);
+  border-radius: 8px;
+  padding: 2px 8px;
+  margin-top: 4px;
+}
+
+.facts-action {
+  margin-top: 12px;
+}
+
+/* Narrow phones (<= 360 px): the short value drops under the label so
+   label + value never squeeze onto one line. */
+@media (max-width: 360px) {
+  .fact-short {
+    grid-template-areas: "icon label label" "icon side side" "icon why why";
+  }
+
+  .fact-short .fact-value {
+    text-align: left;
+  }
+}
+
+/* Wide phone and tablet (640-900 px): the card is full width below the
+   plugin board, so facts read in two columns. */
+@media (min-width: 640px) and (max-width: 900px) {
+  .contract-facts-list {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 24px;
+  }
 }
 
 /* Form controls: 44x44 hit areas, themed tones, glow-only state motion. */

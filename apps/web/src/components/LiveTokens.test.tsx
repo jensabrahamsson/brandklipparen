@@ -89,7 +89,7 @@ describe("live tokens list", () => {
     expect(html).toContain("1.5 WETH");
     expect(html).toContain("Uniswap V3");
     expect(html).toContain("0.3%");
-    expect(html).toContain(">1h<");
+    expect(html).toContain(">1h ago<");
     expect(html).toContain("analyzing…");
     expect(html).toContain("can&#x27;t tell");
   });
@@ -256,10 +256,10 @@ describe("live tokens client", () => {
 
   test("dx1_compact_age_reads_whole_units_for_feed_rows", () => {
     expect(formatAgeCompact(5)).toBe("just now");
-    expect(formatAgeCompact(125)).toBe("2m");
-    expect(formatAgeCompact(3700)).toBe("1h");
-    expect(formatAgeCompact(7200)).toBe("2h");
-    expect(formatAgeCompact(90000)).toBe("1d");
+    expect(formatAgeCompact(125)).toBe("2m ago");
+    expect(formatAgeCompact(3700)).toBe("1h ago");
+    expect(formatAgeCompact(7200)).toBe("2h ago");
+    expect(formatAgeCompact(90000)).toBe("1d ago");
     expect(formatAgeCompact(null)).toBe("unknown");
     expect(formatAgeCompact(Number.NaN)).toBe("unknown");
   });

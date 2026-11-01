@@ -154,6 +154,8 @@ function renderOverview(aiSpec: AiPersonalizeSpec | null): string {
       onSignalLink={() => undefined}
       visibleSections={visibleAll()}
       liveEntry={null}
+      apiKey=""
+      onchainAvailability="available"
     />,
   );
 }

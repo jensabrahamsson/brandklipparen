@@ -35,7 +35,7 @@ import {
 } from "../lib/personalize.ts";
 import type { AiPersonalizeSpec, PersonalizeContext } from "../lib/personalize.ts";
 import { riskBand, riskWord } from "../lib/risk.ts";
-import { toAiAvailability, type AiFeatureAvailability } from "../lib/capabilities.ts";
+import { toAiAvailability, type AiFeatureAvailability, type Availability } from "../lib/capabilities.ts";
 import { assignTemplateLines } from "../lib/claims.ts";
 import {
   combinedScoreLine,
@@ -50,14 +50,13 @@ import {
 import { FieldPicker, PICKABLE_SECTIONS } from "../components/FieldPicker.tsx";
 import { StreamView } from "../components/StreamView.tsx";
 import { MuseConsole } from "../components/MuseConsole.tsx";
-import { OnchainPanel } from "../components/OnchainPanel.tsx";
 import { CantTellPanel } from "../components/CantTellPanel.tsx";
 import { ExplanationList } from "../components/ExplanationList.tsx";
 import { Gauge } from "../components/Gauge.tsx";
 import { ScoreRing } from "../components/ScoreRing.tsx";
 import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
 import { useMediaQuery } from "../lib/useMediaQuery.ts";
-import { Sidebar } from "../components/Sidebar.tsx";
+import { ContractFacts } from "../components/ContractFacts.tsx";
 import { SignalList } from "../components/SignalList.tsx";
 import { Explain } from "../components/Explain.tsx";
 import type { AnalyzeResult, AssessmentState, HealthState, InvestigationState, InvestigationStep, ProviderInfo, RiskKind } from "../types.ts";
@@ -954,6 +953,8 @@ function AssessedView({
         priorities={priorities}
         standardOrder={standardOrder}
         onShowStandardOrder={onShowStandardOrder}
+        apiKey={apiKey}
+        onchainAvailability={availability.onchain}
         sorted={sorted}
         templateLine={templateLine}
         openSignals={openSignals}
@@ -963,7 +964,6 @@ function AssessedView({
         liveEntry={liveEntry}
       />
       {mode === "expert" ? <StreamView address={address} apiKey={apiKey} /> : null}
-      <OnchainPanel address={address} apiKey={apiKey} availability={availability.onchain} />
     </div>
   );
 }
@@ -1265,6 +1265,8 @@ export function OverviewSections({
   plugins,
   address,
   mode,
+  apiKey,
+  onchainAvailability,
   aiSpec,
   aiModelId,
   priorities,
@@ -1283,6 +1285,8 @@ export function OverviewSections({
   readonly plugins: readonly PluginListEntry[] | null;
   readonly address: string;
   readonly mode: UiMode;
+  readonly apiKey: string;
+  readonly onchainAvailability: Availability;
   readonly aiModelId?: string | undefined;
   readonly priorities: string;
   readonly standardOrder: boolean;
@@ -1521,7 +1525,14 @@ export function OverviewSections({
           })}
           {mode === "expert" ? <ExpertDetail result={result} /> : null}
         </div>
-        <Sidebar result={result} expert={mode === "expert"} liveEntry={liveEntry} />
+        <ContractFacts
+          result={result}
+          expert={mode === "expert"}
+          liveEntry={liveEntry}
+          address={address}
+          apiKey={apiKey}
+          availability={onchainAvailability}
+        />
       </div>
     </div>
   );
