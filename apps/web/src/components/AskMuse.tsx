@@ -8,6 +8,19 @@
 // clear icon renders only when the field is non-empty.
 import { useState, type FormEvent, type JSX } from "react";
 
+export function exampleQuestionsForSlugs(foundSlugs: readonly string[] | ReadonlySet<string>): readonly string[] {
+  const found = new Set<string>(foundSlugs);
+  const examples: string[] = [];
+  if (found.has("blacklist")) {
+    examples.push("Can the owner block my wallet?");
+  }
+  if (found.has("pause")) {
+    examples.push("Can the owner freeze trading?");
+  }
+  examples.push("Who controls this token?");
+  return examples;
+}
+
 export function AskMuse({
   question,
   onQuestionChange,
@@ -15,6 +28,7 @@ export function AskMuse({
   onAsk,
   pending,
   modelLabel,
+  examples = ["Who controls this token?"],
 }: {
   readonly question: string;
   readonly onQuestionChange: (text: string) => void;
@@ -22,6 +36,7 @@ export function AskMuse({
   readonly onAsk: () => void;
   readonly pending: boolean;
   readonly modelLabel: string;
+  readonly examples?: readonly string[];
 }): JSX.Element {
   const [showError, setShowError] = useState(false);
   const empty = question.trim().length === 0;
@@ -45,7 +60,7 @@ export function AskMuse({
     >
       <label htmlFor="muse-ask-input">Ask about this token</label>
       <div className="muse-ask-row">
-        <div className="muse-ask-field">
+        <div className={empty ? "muse-ask-field" : "muse-ask-field has-value"}>
           <input
             id="muse-ask-input"
             data-testid="ask-field"
@@ -53,7 +68,7 @@ export function AskMuse({
             type="text"
             value={question}
             maxLength={500}
-            placeholder="Ask about this token"
+            placeholder="Type your question"
             autoComplete="off"
             aria-invalid={showError && empty ? true : undefined}
             aria-describedby={showError && empty ? "ask-hint ask-consent" : "ask-consent"}
@@ -117,9 +132,25 @@ export function AskMuse({
       <p id="ask-consent" className="quiet muse-ask-consent" style={{ margin: "4px 0 0" }}>
         Sends your question to {modelLabel}. Not the address.
       </p>
-      <p className="quiet" style={{ margin: "4px 0 0" }}>
-        Example: Can the owner stop me selling?
-      </p>
+      {examples.length === 0 ? null : (
+        <div className="muse-examples" role="group" aria-label="Example questions">
+          {examples.map((example) => (
+            <button
+              key={example}
+              type="button"
+              className="muse-chip"
+              data-testid="ask-example"
+              onClick={() => {
+                setShowError(false);
+                onQuestionChange(example);
+                document.getElementById("muse-ask-input")?.focus();
+              }}
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+      )}
     </form>
   );
 }

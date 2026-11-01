@@ -19,7 +19,7 @@ import type {
   ProviderInfo,
   Signal,
 } from "../types.ts";
-import { AskMuse } from "./AskMuse.tsx";
+import { AskMuse, exampleQuestionsForSlugs } from "./AskMuse.tsx";
 import { AssessmentPanel } from "./AssessmentPanel.tsx";
 import { ScanStatus } from "./ScanStatus.tsx";
 import { ExplainPanel, ExplainSentences } from "./ExplainPanel.tsx";
@@ -71,6 +71,7 @@ export function MuseConsole({
   allIds,
   verdict,
   checkCount,
+  foundSlugs = [],
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -91,6 +92,7 @@ export function MuseConsole({
   readonly allIds: readonly string[];
   readonly verdict: string;
   readonly checkCount: number;
+  readonly foundSlugs?: readonly string[];
 }): JSX.Element {
   const explainSource = pickExplainSource(health);
   const showExplain =
@@ -162,8 +164,8 @@ export function MuseConsole({
       </p>
       <div className="muse-actions">
         {showExplain ? (
-          <button type="button" className="button" aria-label="Explain this result" onClick={onExplain}>
-            Explain
+          <button type="button" className="button" onClick={onExplain}>
+            <span aria-hidden="true">✦ </span>Explain this result
           </button>
         ) : null}
         {showInvestigate ? (
@@ -180,6 +182,7 @@ export function MuseConsole({
           onAsk={onAsk}
           pending={chatPending}
           modelLabel={chatModelId(health)}
+          examples={exampleQuestionsForSlugs(foundSlugs)}
         />
       ) : null}
       {request === null ? null : (

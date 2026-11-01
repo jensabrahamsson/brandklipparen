@@ -632,6 +632,9 @@ function AssessedView({
         question={question}
         onQuestionChange={onQuestionChange}
         onQuestionClear={onQuestionClear}
+        foundSlugs={heroBoard.ownerTiles
+          .filter((tile) => tile.state === "found-scored" || tile.state === "extended")
+          .map((tile) => tile.copy.slug)}
       />
       <div
         className="compact-strip"

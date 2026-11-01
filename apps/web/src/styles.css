@@ -2716,6 +2716,8 @@ a:focus-visible {
   letter-spacing: normal;
   text-transform: none;
   white-space: nowrap;
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 .muse-ask {
@@ -2744,6 +2746,11 @@ a:focus-visible {
   width: 100%;
   min-height: 44px;
   min-width: 0;
+}
+
+/* The clear icon only exists when the field is non-empty, so only
+   then does the input reserve its 44 px box on the right. */
+.muse-ask-field.has-value .input {
   padding-right: 44px;
 }
 
@@ -2819,10 +2826,30 @@ a:focus-visible {
   color: var(--muse);
 }
 
-@media (max-width: 480px) {
+/* Example questions: tappable chips that fill the field without
+   sending. They reuse the 44 px muse-chip box from the evidence
+   chips, so every chip is a full tap target on every width. */
+.muse-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+
+.muse-examples .muse-chip {
+  margin: 0;
+  white-space: normal;
+  text-align: left;
+}
+
+@media (max-width: 479px) {
+  /* Below 480 px the console stacks: full-width Explain on one line,
+     Investigate as a ghost button below it, and the Ask field over
+     the full-width Ask button. At 480 px and up the row layouts hold,
+     so Explain sits beside Investigate and Ask beside its field. */
   .muse-console .muse-actions {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .muse-console .muse-actions .button,
@@ -2832,9 +2859,7 @@ a:focus-visible {
     padding-left: 12px;
     padding-right: 12px;
   }
-}
 
-@media (max-width: 359px) {
   .muse-ask-row {
     grid-template-columns: minmax(0, 1fr);
   }

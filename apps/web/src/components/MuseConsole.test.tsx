@@ -96,20 +96,58 @@ describe("muse console (W-3)", () => {
     expect(html).not.toContain("disabled");
   });
 
-  test("explain_button_uses_the_short_label_with_the_full_accessible_name", () => {
+  test("explain_button_reads_the_full_result_label_on_one_line", () => {
     const html = consoleHtml(EXPLAIN_HEALTH, EXPLAIN_ONLY);
-    expect(html).toContain('aria-label="Explain this result"');
-    expect(html).toContain(">Explain</button>");
-    expect(html).not.toContain(">Explain this result</button>");
+    expect(html).toContain("Explain this result</button>");
+    expect(html).not.toContain(">Explain</button>");
   });
 
-  test("ask_field_uses_the_short_placeholder_with_an_example_below", () => {
+  test("ask_field_uses_the_short_placeholder_with_tappable_examples", () => {
     const html = consoleHtml(
       { ...NOTHING_HEALTH, chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" } },
       { ...NOTHING, chat: "available" },
     );
-    expect(html).toContain('placeholder="Ask about this token"');
-    expect(html).toContain("Example: Can the owner stop me selling?");
+    expect(html).toContain('placeholder="Type your question"');
+    expect(html).toContain('aria-label="Example questions"');
+    expect(html).toContain("Who controls this token?");
+    expect(html).not.toContain("Example: Can the owner stop me selling?");
+  });
+
+  test("example_chips_follow_the_found_owner_powers", () => {
+    function withSlugs(foundSlugs: readonly string[]): string {
+      return renderToString(
+        <MuseConsole
+          address="0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+          apiKey=""
+          health={{ ...NOTHING_HEALTH, chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" } }}
+          availability={{ ...NOTHING, chat: "available", explain: "available" }}
+          score={84}
+          assessment={IDLE_ASSESSMENT}
+          provider={READY_PROVIDER}
+          onRequestAssessment={() => undefined}
+          investigation={IDLE_INVESTIGATION}
+          onRunInvestigation={() => undefined}
+          signals={[]}
+          claims={[]}
+          onSignalLink={() => undefined}
+          question=""
+          onQuestionChange={() => undefined}
+          onQuestionClear={() => undefined}
+          allIds={[]}
+          verdict="Low risk. No owner power found in the code we could read. That is not the same as safe."
+          checkCount={0}
+          foundSlugs={foundSlugs}
+        />,
+      );
+    }
+    const both = withSlugs(["blacklist", "pause"]);
+    expect(both).toContain("Can the owner block my wallet?");
+    expect(both).toContain("Can the owner freeze trading?");
+    expect(both).toContain("Who controls this token?");
+    const none = withSlugs([]);
+    expect(none).toContain("Who controls this token?");
+    expect(none).not.toContain("Can the owner block my wallet?");
+    expect(none).not.toContain("Can the owner freeze trading?");
   });
 
   test("console_labels_itself_and_stays_sentence_case", () => {

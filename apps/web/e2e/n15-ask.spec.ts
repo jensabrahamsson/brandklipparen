@@ -180,3 +180,23 @@ test("n15_ask_failure_offers_retry_without_moving_score", async ({ page }) => {
   await expect(output.getByRole("button", { name: "Try again" })).toBeVisible();
   expect(await hero.innerText()).toBe(before);
 });
+
+test("n15_example_chip_fills_the_field_without_sending", async ({ page }) => {
+  const chatPosts = { count: 0 };
+  await mockRest(page, "ok", chatPosts);
+  await page.goto(`/#/token/${ADDRESS}`);
+  await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
+  const ask = page.getByLabel("Ask about this token");
+  await expect(ask).toBeVisible();
+  await expect(ask).toHaveValue("");
+  const chip = page.getByTestId("ask-example").first();
+  await expect(chip).toBeVisible();
+  await chip.click();
+  // Tapping an example only fills the field: the value lands, focus
+  // returns to the field, and no chat request leaves the page.
+  await expect(ask).not.toHaveValue("");
+  await expect(ask).toBeFocused();
+  await page.waitForTimeout(300);
+  expect(chatPosts.count).toBe(0);
+  await assertLayout(page, { widths: [320, 390] });
+});

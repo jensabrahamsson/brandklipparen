@@ -268,3 +268,94 @@ test("s119_error_pages_have_no_horizontal_scroll", async ({ page }) => {
   await expectFitsViewport(page);
   await expectTapTargets(page);
 });
+
+test("s119_muse_controls_fit_at_phone_widths", async ({ page }) => {
+  await mockRest(page, 200, ANALYZE_FIXTURE);
+  await page.goto(`/#/token/${ADDRESS}`);
+  const explain = page.getByRole("button", { name: "Explain this result", exact: true });
+  const investigate = page.getByRole("button", { name: "Investigate", exact: true });
+  const ask = page.getByLabel("Ask about this token");
+  await expect(explain).toBeVisible();
+  await expect(investigate).toBeVisible();
+  await expect(ask).toBeVisible();
+  for (const width of [320, 360, 390, 479]) {
+    await page.setViewportSize({ width, height: 900 });
+    // The Explain button reads the full label on exactly one line at 44 px.
+    const label = await explain.evaluate((node) => {
+      const text = Array.from(node.childNodes).find(
+        (child) => child.nodeType === Node.TEXT_NODE && child.textContent?.trim() !== "",
+      );
+      if (text === undefined) {
+        return { lines: -1, name: "" };
+      }
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      return { lines: range.getClientRects().length, name: text.textContent?.trim() ?? "" };
+    });
+    expect(label.name).toBe("Explain this result");
+    expect(label.lines).toBe(1);
+    expect((await explain.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    // The Ask field spans the full row with Ask below it.
+    const stacked = await page.evaluate(() => {
+      const row = document.querySelector(".muse-ask-row");
+      const field = document.querySelector(".muse-ask-field");
+      const button = document.querySelector<HTMLButtonElement>(".muse-ask-row .button");
+      if (row === null || field === null || button === null) {
+        return null;
+      }
+      const rowBox = row.getBoundingClientRect();
+      const fieldBox = field.getBoundingClientRect();
+      const buttonBox = button.getBoundingClientRect();
+      return {
+        columns: getComputedStyle(row).gridTemplateColumns.split(" ").length,
+        fieldWidth: fieldBox.width,
+        rowWidth: rowBox.width,
+        buttonBelow: buttonBox.top >= fieldBox.bottom - 1,
+        buttonFull: buttonBox.width >= rowBox.width - 2,
+      };
+    });
+    expect(stacked?.columns).toBe(1);
+    expect(stacked?.fieldWidth ?? 0).toBeGreaterThanOrEqual((stacked?.rowWidth ?? 0) - 2);
+    expect(stacked?.buttonBelow).toBe(true);
+    expect(stacked?.buttonFull).toBe(true);
+    // The placeholder fits the input's content width.
+    const fit = await page.evaluate(() => {
+      const input = document.getElementById("muse-ask-input") as HTMLInputElement | null;
+      if (input === null) {
+        return null;
+      }
+      const style = getComputedStyle(input);
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      if (context === null) {
+        return null;
+      }
+      context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      const text = context.measureText(input.placeholder).width;
+      const content = input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      return { placeholder: input.placeholder, text, content };
+    });
+    expect(fit?.placeholder).toBe("Type your question");
+    expect(fit?.text ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(fit?.content ?? -1);
+    // Every example chip is a 44 px target.
+    for (const chip of await page.getByTestId("ask-example").all()) {
+      expect((await chip.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    await expectFitsViewport(page);
+    await expectTapTargets(page);
+  }
+  // At 480 px and up Explain sits beside Investigate.
+  await page.setViewportSize({ width: 480, height: 900 });
+  const explainBox = await explain.boundingBox();
+  const investigateBox = await investigate.boundingBox();
+  expect(explainBox).not.toBeNull();
+  expect(investigateBox).not.toBeNull();
+  const explainBottom = (explainBox?.y ?? 0) + (explainBox?.height ?? 0);
+  const investigateBottom = (investigateBox?.y ?? 0) + (investigateBox?.height ?? 0);
+  const verticalOverlap =
+    Math.min(explainBottom, investigateBottom) - Math.max(explainBox?.y ?? 0, investigateBox?.y ?? 0);
+  expect(verticalOverlap).toBeGreaterThan(0);
+  expect(explainBox?.right ?? 0).toBeLessThanOrEqual(investigateBox?.x ?? 0);
+  await expectFitsViewport(page);
+  await expectTapTargets(page);
+});
