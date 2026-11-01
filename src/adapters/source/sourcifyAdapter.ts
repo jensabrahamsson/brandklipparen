@@ -18,6 +18,7 @@ import type {
   VerifiedSourceRaw,
   VerifiedSourceRawFile,
 } from "../../ports/verifiedSource.ts";
+import { safeFetchText } from "../http/safeFetch.ts";
 
 // Allowlisted outbound host (K-503, M-07): every request target derives
 // from this pinned base URL plus the validated address.
@@ -33,8 +34,10 @@ export type SourcifyTransportResponse = {
 export type SourcifyTransport = (url: string) => Promise<SourcifyTransportResponse>;
 
 async function fetchSourcifyTransport(url: string): Promise<SourcifyTransportResponse> {
-  const response = await fetch(url);
-  return { status: response.status, bodyText: await response.text() };
+  return safeFetchText(url, {
+    timeoutMs: DEFAULT_SOURCIFY_TIMEOUT_MS,
+    maxBytes: DEFAULT_SOURCIFY_MAX_RESPONSE_BYTES,
+  });
 }
 
 export type SourcifySourceAdapterOptions = {

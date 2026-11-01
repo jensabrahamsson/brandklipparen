@@ -28,6 +28,7 @@ import type {
   RpcLimits,
   RpcPort,
 } from "../../ports/rpc.ts";
+import { SafeFetchError, safeFetchText } from "../http/safeFetch.ts";
 
 // Single JSON-RPC round trip over an injected byte channel. The signal
 // aborts the underlying request on timeout; transports that ignore the
@@ -43,21 +44,24 @@ export type RpcTransport = (
   signal: AbortSignal,
 ) => Promise<RpcTransportResponse>;
 
-// Production transport over the built-in fetch of Node. The URL (which may
-// carry the provider key) is used solely as the request target and is never
-// logged or copied into errors.
+// Production transport over the built-in fetch of Node (C-24, F-28). The URL
+// (which may carry the provider key) is used solely as the request target
+// and is never logged or copied into errors. The bounded fetch refuses
+// redirects, streams the reply through the adapter cap instead of buffering
+// it whole, and combines the caller signal with its own deadline.
 export async function fetchRpcTransport(
   url: string,
   body: string,
   signal: AbortSignal,
 ): Promise<RpcTransportResponse> {
-  const response = await fetch(url, {
+  return safeFetchText(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body,
+    timeoutMs: DEFAULT_RPC_TIMEOUT_MS,
+    maxBytes: DEFAULT_RPC_MAX_RESPONSE_BYTES,
     signal,
   });
-  return { status: response.status, bodyText: await response.text() };
 }
 
 // Placeholder operational limits for tests and offline use (A-17, I-11).
@@ -599,7 +603,14 @@ export class JsonRpcAdapter implements RpcPort {
       const response = await Promise.race([pending, onTimeout]);
       return ok({ id, response });
     } catch (error) {
-      if (error instanceof RpcTimeout || controller.signal.aborted) {
+      // The bounded production transport reports its own deadline as a
+      // timeout kind; without this branch a slow body would surface as a
+      // node error instead of the timeout the caller contracted.
+      if (
+        error instanceof RpcTimeout ||
+        controller.signal.aborted ||
+        (error instanceof SafeFetchError && error.kind === "timeout")
+      ) {
         return err({ kind: "timeout", message: `rpc call ${method} timed out` });
       }
       return err({ kind: "node-error", message: `rpc call ${method} failed` });

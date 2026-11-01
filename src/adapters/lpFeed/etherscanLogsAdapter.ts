@@ -22,6 +22,7 @@ import type {
   LpFeedPort,
 } from "../../ports/lpFeed.ts";
 import { FeedPollInput as FeedPollInputCtor } from "../../ports/lpFeed.ts";
+import { safeFetchText } from "../http/safeFetch.ts";
 
 export const ETHERSCAN_LOGS_BASE_URL = "https://api.etherscan.io/v2/api";
 export const ETHERSCAN_LOGS_CHAIN_ID = 1;
@@ -34,8 +35,10 @@ export type EtherscanLogsTransportResponse = {
 export type EtherscanLogsTransport = (url: string) => Promise<EtherscanLogsTransportResponse>;
 
 async function fetchEtherscanLogsTransport(url: string): Promise<EtherscanLogsTransportResponse> {
-  const response = await fetch(url);
-  return { status: response.status, bodyText: await response.text() };
+  return safeFetchText(url, {
+    timeoutMs: DEFAULT_ETHERSCAN_LOGS_FETCH_TIMEOUT_MS,
+    maxBytes: DEFAULT_ETHERSCAN_LOGS_FETCH_MAX_RESPONSE_BYTES,
+  });
 }
 
 export type EtherscanLogsAdapterOptions = {
@@ -59,6 +62,11 @@ export type EtherscanLogsAdapterOptions = {
 
 export const DEFAULT_ETHERSCAN_CALLS_PER_SECOND = 3;
 export const DEFAULT_ETHERSCAN_CALLS_PER_DAY = 100000;
+// Default fetch envelope for the production transport (C-24, F-28): the
+// bounded fetch refuses redirects, times out slow bodies and caps the
+// streamed reply, so a hostile log endpoint cannot hang or OOM the feed.
+export const DEFAULT_ETHERSCAN_LOGS_FETCH_TIMEOUT_MS = 10000;
+export const DEFAULT_ETHERSCAN_LOGS_FETCH_MAX_RESPONSE_BYTES = 8388608;
 export const DEFAULT_ETHERSCAN_MAX_BLOCKS_PER_PAGE = 1000;
 
 type BucketState = {

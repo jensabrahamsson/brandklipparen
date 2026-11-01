@@ -21,6 +21,7 @@ import type {
 } from "../../ports/lpFeed.ts";
 import { FeedPollInput as FeedPollInputCtor } from "../../ports/lpFeed.ts";
 import { parseBlockTimestampMs, parseFeedLog } from "./feedLogCodec.ts";
+import { safeFetchText } from "../http/safeFetch.ts";
 
 export type RpcLogsTransportResponse = {
   readonly status: number;
@@ -30,12 +31,13 @@ export type RpcLogsTransportResponse = {
 export type RpcLogsTransport = (url: string, body: string) => Promise<RpcLogsTransportResponse>;
 
 async function fetchRpcLogsTransport(url: string, body: string): Promise<RpcLogsTransportResponse> {
-  const response = await fetch(url, {
+  return safeFetchText(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body,
+    timeoutMs: DEFAULT_RPC_LOGS_FETCH_TIMEOUT_MS,
+    maxBytes: DEFAULT_RPC_LOGS_FETCH_MAX_RESPONSE_BYTES,
   });
-  return { status: response.status, bodyText: await response.text() };
 }
 
 export type RpcLogsAdapterOptions = {
@@ -54,6 +56,11 @@ export type RpcLogsAdapterOptions = {
 // stay under typical public-endpoint range caps, large enough that the
 // bounded per-cycle span of the live service needs at most two pages.
 export const DEFAULT_RPC_LOGS_MAX_BLOCKS_PER_PAGE = 50;
+// Default fetch envelope for the production transport (C-24, F-28): the
+// bounded fetch refuses redirects, times out slow bodies and caps the
+// streamed reply, so a hostile log endpoint cannot hang or OOM the feed.
+export const DEFAULT_RPC_LOGS_FETCH_TIMEOUT_MS = 10000;
+export const DEFAULT_RPC_LOGS_FETCH_MAX_RESPONSE_BYTES = 8388608;
 
 // Timestamp lookups per poll stay bounded: one call per distinct block
 // missing a stamp, at most this many blocks per poll; the rest keep a

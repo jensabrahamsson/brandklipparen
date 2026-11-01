@@ -18,6 +18,7 @@ import type {
   MarketTokenItem as MarketTokenItemType,
 } from "../../ports/marketFeed.ts";
 import type { MarketFeedPort } from "../../ports/marketFeed.ts";
+import { safeFetchText } from "../http/safeFetch.ts";
 
 // Allowlisted outbound host (K-503, M-07): every request target derives
 // from this pinned base URL plus validated path segments. A configured
@@ -35,8 +36,10 @@ export type DexscreenerTransportResponse = {
 export type DexscreenerTransport = (url: string) => Promise<DexscreenerTransportResponse>;
 
 async function fetchDexscreenerTransport(url: string): Promise<DexscreenerTransportResponse> {
-  const response = await fetch(url);
-  return { status: response.status, bodyText: await response.text() };
+  return safeFetchText(url, {
+    timeoutMs: DEFAULT_DEXSCREENER_TIMEOUT_MS,
+    maxBytes: DEFAULT_DEXSCREENER_MAX_RESPONSE_BYTES,
+  });
 }
 
 export type DexscreenerAdapterOptions = {
