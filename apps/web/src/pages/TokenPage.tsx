@@ -807,6 +807,7 @@ function AssessedView({
         onModeChange={onModeChange}
         prev={position > 0 ? (board.allTiles[position - 1] ?? null) : null}
         next={position >= 0 ? (board.allTiles[position + 1] ?? null) : null}
+        fn={view.fn}
       />
     );
   }

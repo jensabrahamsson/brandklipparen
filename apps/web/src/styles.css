@@ -45,6 +45,7 @@
   --shadow-none: none;
   --alert-glow: 0 0 0 1px rgb(0 0 0 / 40%), 0 0 28px rgb(255 90 82 / 18%), inset 0 0 24px rgb(255 90 82 / 8%);
   --tube-rings: 0 0 0 1px #0d2a1b, 0 0 0 9px #050b08, 0 0 0 10px #12251a;
+  --code-evidence-bg: rgb(141 255 182 / 8%);
   --bg: #010402;
   --surface: #03110a;
   --surface-2: #062016;
@@ -3868,6 +3869,337 @@ a {
 .detail-raw-finding p {
   margin: 0 0 8px;
   font-size: 14px;
+}
+
+/* Decompiler function list (UI v2 §5.4 W-6, addendum §A1.4). Collapsed
+   per-function rows with a summary, a filter, a segmented control, the
+   spec order, pc-linked pseudo-code and Expert raw. Motion is row
+   stagger (M-5), rail ignite plus one scanline flicker (M-6) and the
+   owner-approved 180 ms height expand (X-1): opacity, colour and glow
+   only, plus grid-template-rows on the disclosure wrapper. The global
+   reduced-motion kill keeps everything static. */
+@keyframes bk-flicker {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes bk-rowin {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.detail-decompiler h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.decompiler-summary {
+  margin: 8px 0 0;
+  font-size: 15px;
+}
+
+.decompiler-explain {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.decompiler-filter {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.decompiler-filter label {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.decompiler-filter .input {
+  min-height: 44px;
+}
+
+.decompiler-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.decompiler-seg-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+.decompiler-seg-btn:hover {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+}
+
+.decompiler-seg-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.decompiler-seg-btn[aria-pressed="true"] {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+  box-shadow: 0 0 10px var(--glow-soft);
+}
+
+.decompiler-count {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.decompiler-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.decompiler-item {
+  animation: bk-rowin 180ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+.decompiler-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 4px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--rule);
+  color: var(--phosphor);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+.decompiler-row:hover {
+  background-color: var(--glass-2);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+
+.decompiler-row:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.decompiler-lamp {
+  display: inline-flex;
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+.decompiler-row.is-complete .decompiler-lamp {
+  color: var(--phosphor);
+}
+
+.decompiler-row.is-partly .decompiler-lamp {
+  color: var(--amber);
+}
+
+.decompiler-row.is-error .decompiler-lamp {
+  color: var(--high);
+}
+
+.decompiler-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.decompiler-selector {
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.owner-tag,
+.decompiler-chip {
+  display: inline-block;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--dim);
+}
+
+.owner-tag {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+}
+
+.decompiler-chev {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--dim);
+}
+
+.decompiler-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 180ms var(--ease-out);
+}
+
+.decompiler-expand.is-open {
+  grid-template-rows: 1fr;
+}
+
+.decompiler-expand-clip {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.decompiler-body {
+  position: relative;
+  margin-top: 4px;
+  border-left: 2px solid var(--phosphor);
+  padding: 4px 0 12px 12px;
+  animation: bk-rail 500ms var(--ease-out) 1;
+}
+
+.decompiler-body::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent 0 2px, var(--glow-soft) 2px 3px);
+  opacity: 0;
+  animation: bk-flicker 240ms var(--ease-out) 1;
+  pointer-events: none;
+}
+
+.decompiler-sentence {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.code-line {
+  position: relative;
+  animation: bk-rowin 180ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 30ms);
+}
+
+.code-line.is-evidence {
+  background-color: var(--code-evidence-bg);
+  box-shadow: inset 2px 0 0 var(--phosphor);
+}
+
+.code-line.is-target {
+  background-color: var(--glass-2);
+  box-shadow: inset 2px 0 0 var(--phosphor-hi), inset 0 0 0 1px var(--edge);
+}
+
+.code-line:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.code-lamp {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: -11px 0 -11px -8px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--phosphor);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+.code-lamp:hover {
+  background-color: var(--glass-2);
+  color: var(--phosphor-hi);
+  box-shadow: inset 0 0 0 1px var(--edge);
+}
+
+.code-lamp:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.code-link-note {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.decompiler-evidence {
+  margin-top: 8px;
+}
+
+.evidence-code-link {
+  margin-top: 8px;
+}
+
+.decompiler-raw {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px dashed var(--rule);
+  font-size: 13px;
+}
+
+.decompiler-raw div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.decompiler-raw dt {
+  color: var(--dim);
+}
+
+.decompiler-raw dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.decompiler-more {
+  margin-top: 12px;
 }
 
 

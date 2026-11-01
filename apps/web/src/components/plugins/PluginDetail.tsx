@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import { Pictogram } from "../Pictogram.tsx";
 import { SchemaValue } from "../SchemaValue.tsx";
+import { DecompilerList } from "./DecompilerList.tsx";
 import { EvidenceRow } from "./EvidenceRow.tsx";
 import { OwnerChip } from "./OwnerChip.tsx";
 import type { BoardTile } from "./PluginBoard.tsx";
@@ -115,6 +116,7 @@ export function PluginDetailView({
   onModeChange,
   prev,
   next,
+  fn,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -129,6 +131,8 @@ export function PluginDetailView({
   readonly onModeChange: (mode: UiMode) => void;
   readonly prev: BoardTile | null;
   readonly next: BoardTile | null;
+  // Route `<selector>` (UI v2 §1.3): the decompiler row to auto-expand.
+  readonly fn?: string | undefined;
 }): JSX.Element {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const title = tile?.copy.title ?? entry?.displayName ?? "Unknown check";
@@ -225,7 +229,9 @@ export function PluginDetailView({
           </p>
         </section>
       )}
-      {tile === null ? null : (
+      {tile === null ? null : slug === "decompiler" ? (
+        <DecompilerList address={address} apiKey={apiKey} findings={findings} expert={expert} initialSelector={fn} />
+      ) : (
         <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} />
       )}
       {tile === null ? null : (

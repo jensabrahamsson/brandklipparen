@@ -61,6 +61,8 @@ export function EvidenceRow({
   named,
   expert,
   index,
+  showInCodeId,
+  onShowInCode,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -74,6 +76,11 @@ export function EvidenceRow({
   readonly named: boolean;
   readonly expert: boolean;
   readonly index: number;
+  // Line-link target (addendum §A1.4): when the expanded code view holds
+  // the offset's line, this id plus handler render a "Show in code"
+  // button that highlights and focuses it. Absent otherwise.
+  readonly showInCodeId?: string | undefined;
+  readonly onShowInCode?: (() => void) | null | undefined;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const [snippet, setSnippet] = useState<SnippetState>({ kind: "idle" });
@@ -133,6 +140,11 @@ export function EvidenceRow({
         <p className="evidence-expert mono">
           PC {offsetText} · selector {selector}
         </p>
+      ) : null}
+      {showInCodeId !== undefined && onShowInCode !== null && onShowInCode !== undefined ? (
+        <button type="button" id={showInCodeId} className="button-ghost evidence-code-link" onClick={onShowInCode}>
+          Show in code
+        </button>
       ) : null}
       {expanded ? (
         <div className="evidence-snippet" id={regionId} role="region" aria-label={`Readable code for ${displayName} at ${offsetText}`}>

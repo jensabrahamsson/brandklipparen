@@ -130,6 +130,9 @@ test("phosphor_transitions_cover_only_opacity_colour_and_shadow", () => {
     "opacity",
     "stroke",
     "filter",
+    // Owner-approved X-1 (UI v2 §5.7): the 180 ms height expand on
+    // in-card disclosures. Duration stays capped at 300 ms below.
+    "grid-template-rows",
   ]);
   const blocks = code.match(/^[ \t]*transition(?!-)[^;]*;/gm) ?? [];
   expect(blocks.length).toBeGreaterThan(0);

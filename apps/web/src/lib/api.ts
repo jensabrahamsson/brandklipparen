@@ -481,6 +481,11 @@ export async function fetchChat(address: string, apiKey: string | null, question
 export type SnippetLine = {
   readonly lineNumber: number;
   readonly text: string;
+  // Exact instruction PCs of the printed statement (VS-B1): an evidence
+  // offset maps to exactly the line whose pcs include it. Structural
+  // lines (header, braces, comments) carry no PCs. Older servers omit
+  // the field, which reads as no PCs.
+  readonly pcs: readonly number[];
 };
 
 export type SnippetResult = {
@@ -516,11 +521,14 @@ function toSnippetResult(body: unknown): SnippetResult | null {
   }
   const lines: SnippetLine[] = [];
   for (const entry of snippet.lines) {
-    const line = entry as { lineNumber?: unknown; text?: unknown };
+    const line = entry as { lineNumber?: unknown; text?: unknown; pcs?: unknown };
     if (typeof line.lineNumber !== "number" || typeof line.text !== "string") {
       return null;
     }
-    lines.push({ lineNumber: line.lineNumber, text: line.text });
+    const pcs = Array.isArray(line.pcs)
+      ? line.pcs.filter((pc): pc is number => typeof pc === "number" && Number.isFinite(pc))
+      : [];
+    lines.push({ lineNumber: line.lineNumber, text: line.text, pcs: Object.freeze(pcs) });
   }
   return { selector: snippet.selector, entryPc: snippet.entryPc, lines };
 }
