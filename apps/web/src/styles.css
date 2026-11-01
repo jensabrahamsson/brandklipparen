@@ -3188,6 +3188,7 @@ details[open] > *:not(summary) {
 .button-ghost,
 .chip,
 .power-chip,
+.muse-chip,
 .tab,
 .explain-trigger,
 .copy-btn {
@@ -5442,6 +5443,62 @@ span.cite-chip {
   border-style: dashed;
   color: var(--dim);
   cursor: default;
+}
+
+/* Muse evidence chips (round-3 review D-5): lamp chips with a short
+   plain label in a 44 px box. Signal chips jump to the "Why this score"
+   row, check and analysis chips link to the plugin detail or the board,
+   and can't-tell chips scroll to the can't-tell panel. Phosphor only,
+   never risk colours; dashed where the finding sits outside the score. */
+.muse-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-height: 44px;
+  min-width: 44px;
+  max-width: 100%;
+  margin: 2px 4px 2px 0;
+  padding: 6px 14px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background-color: var(--glass-2);
+  color: var(--phosphor);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: none;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+button.muse-chip {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.muse-chip:hover {
+  border-color: var(--phosphor);
+  color: var(--phosphor-hi);
+  box-shadow: var(--elev-1);
+}
+
+.muse-chip:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.muse-chip-cant-tell {
+  border-style: dashed;
+}
+
+.muse-chip-cant-tell .muse-chip-lamp {
+  color: var(--dim);
+}
+
+.muse-chip-lamp {
+  display: inline-flex;
+  flex: none;
 }
 
 /* Line-anchored Muse notes. Interleaved callouts sit between the lines

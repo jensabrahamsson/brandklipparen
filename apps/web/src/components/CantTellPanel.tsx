@@ -8,7 +8,7 @@ import { Explain } from "./Explain.tsx";
 // plain questions (S-131); the envelope keeps the stable slugs.
 export function CantTellPanel({ entries }: { readonly entries: readonly CantTellEntry[] }): JSX.Element {
   return (
-    <section className="cant-tell" aria-label="What bytecode alone cannot tell you">
+    <section className="cant-tell" id="cant-tell" tabIndex={-1} aria-label="What bytecode alone cannot tell you">
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
         <span>What bytecode alone cannot tell you</span> <Explain explainKey="cant-tell" label="Can't-tell list" />
       </h2>

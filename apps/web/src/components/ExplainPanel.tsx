@@ -3,35 +3,135 @@
 // result, now without its own card: the console owns the frame, the
 // buttons and the advisory footer. Nothing fetches until the console
 // mounts this block. Sentences render as inert React text (never HTML),
-// the drop count names how many model sentences failed the evidence
-// check, and the invalid-output branch falls back to the deterministic
-// explanation. Scores and evidence are untouched: the block reads the
-// overlay endpoint only.
+// the drop count names how many model sentences lacked evidence, and the
+// invalid-output branch falls back to the verdict. Scores and evidence
+// are untouched: the block reads the overlay endpoint only.
 import { useEffect, useState, type JSX } from "react";
 import { ScanStatus } from "./ScanStatus.tsx";
+import { Pictogram } from "./Pictogram.tsx";
 import { fetchExplain, fetchRug } from "../lib/api.ts";
 import type { ExplainSource, ExplainState, RugState } from "../lib/api.ts";
 import type { ExplanationClaim, Signal } from "../types.ts";
-import { evidenceSignalKey, splitNarrative } from "../lib/investigation.ts";
+import { splitNarrative } from "../lib/investigation.ts";
+import { citationTarget } from "../lib/citationTarget.ts";
 
 export type ConsoleSentences = {
   readonly narrative: readonly string[];
   readonly droppedClaims: number;
 };
 
-// Sentences with evidence chips. Citation markers (`[E:signal:<id>]`)
-// inside model sentences become chips that move focus to the linked
-// signal; unknown ids render as plain text. Plain sentences without
-// markers render as-is.
+// One evidence chip per citation marker (`[E:<id>]`) inside a model
+// sentence. Every coverage id shape becomes a lamp chip with a short
+// plain label: signal chips jump to the "Why this score" row, check and
+// analysis chips link to the plugin detail or board, and can't-tell
+// chips scroll to the can't-tell panel. Unknown ids render nothing at
+// all, never a raw id.
+export function CoverageChip({
+  id,
+  signals,
+  address,
+  allIds,
+  onSignalLink,
+}: {
+  readonly id: string;
+  readonly signals: readonly Signal[];
+  readonly address: string;
+  readonly allIds: readonly string[];
+  readonly onSignalLink: (key: string) => void;
+}): JSX.Element | null {
+  const target = citationTarget(id, { signals, address, allIds });
+  if (target === null) {
+    return null;
+  }
+  const lamp = (
+    <span className="muse-chip-lamp" aria-hidden="true">
+      <Pictogram name={target.lamp} size={20} />
+    </span>
+  );
+  if (target.kind === "signal") {
+    return (
+      <button
+        type="button"
+        className="muse-chip"
+        data-evidence={id}
+        aria-label={`Evidence: ${target.label}. Open the Why this score row.`}
+        onClick={() => onSignalLink(target.signalKey)}
+      >
+        {lamp}
+        <span>{target.label}</span>
+      </button>
+    );
+  }
+  if (target.kind === "cant-tell") {
+    return (
+      <button
+        type="button"
+        className="muse-chip muse-chip-cant-tell"
+        data-evidence={id}
+        aria-label={`Evidence: ${target.label}. Open what the code can't tell you.`}
+        onClick={jumpToCantTell}
+      >
+        {lamp}
+        <span>{target.label}</span>
+      </button>
+    );
+  }
+  const detailHint =
+    target.label === "What we checked" ? "Open what we checked." : "Open the check detail.";
+  return (
+    <a
+      className="muse-chip"
+      data-evidence={id}
+      href={target.href}
+      aria-label={`Evidence: ${target.label}. ${detailHint}`}
+    >
+      {lamp}
+      <span>{target.label}</span>
+    </a>
+  );
+}
+
+// The can't-tell panel lives on the token main view. Hash routing owns
+// every `#…` link, so this scrolls and focuses directly instead of
+// touching the hash, which would route away from the token page.
+function jumpToCantTell(): void {
+  const target = document.getElementById("cant-tell");
+  if (target === null) {
+    return;
+  }
+  target.scrollIntoView({ block: "start" });
+  if (target instanceof HTMLElement) {
+    target.focus({ preventScroll: true });
+  }
+}
+
+// Spec wording for removed sentences (UI v2 §1.2): the count plus the
+// reason, never a developer term.
+export function droppedLine(droppedClaims: number): string | null {
+  if (droppedClaims <= 0) {
+    return null;
+  }
+  return droppedClaims === 1
+    ? "1 sentence removed: it cited no evidence."
+    : `${droppedClaims} sentences removed: they cited no evidence.`;
+}
+
+// Sentences with evidence chips. Citation markers become CoverageChips;
+// plain sentences render as-is.
 export function ExplainSentences({
   narrative,
   droppedClaims,
   signals,
+  address,
+  allIds,
   onSignalLink,
 }: ConsoleSentences & {
   readonly signals: readonly Signal[];
+  readonly address: string;
+  readonly allIds: readonly string[];
   readonly onSignalLink: (key: string) => void;
 }): JSX.Element {
+  const dropped = droppedLine(droppedClaims);
   return (
     <div data-testid="explain-sentences">
       {narrative.length === 0 ? null : (
@@ -42,74 +142,67 @@ export function ExplainSentences({
                 part.kind === "text" ? (
                   <span key={partIndex}>{part.text}</span>
                 ) : (
-                  <ExplainChip key={partIndex} id={part.id} signals={signals} onSignalLink={onSignalLink} />
+                  <CoverageChip
+                    key={partIndex}
+                    id={part.id}
+                    signals={signals}
+                    address={address}
+                    allIds={allIds}
+                    onSignalLink={onSignalLink}
+                  />
                 ),
               )}
             </li>
           ))}
         </ul>
       )}
-      {droppedClaims > 0 ? (
+      {dropped === null ? null : (
         <p data-testid="explain-dropped" className="quiet" style={{ margin: "8px 0 0" }}>
-          {droppedClaims} unsupported {droppedClaims === 1 ? "claim" : "claims"} dropped.
+          {dropped}
         </p>
-      ) : null}
+      )}
     </div>
   );
 }
 
-function ExplainChip({
-  id,
-  signals,
-  onSignalLink,
-}: {
-  readonly id: string;
-  readonly signals: readonly Signal[];
-  readonly onSignalLink: (key: string) => void;
-}): JSX.Element {
-  const key = evidenceSignalKey(signals, id);
-  const label = id.startsWith("signal:") ? id.slice("signal:".length) : id;
-  if (key === null) {
-    return (
-      <span className="tool-chip" style={{ margin: "2px 4px 2px 0" }}>
-        {label}
-      </span>
-    );
-  }
-  return (
-    <button
-      type="button"
-      className="chip mono"
-      data-evidence={id}
-      style={{ margin: "2px 4px 2px 0" }}
-      onClick={() => onSignalLink(key)}
-    >
-      {label}
-    </button>
-  );
-}
+const NOTHING_FOUND_LINE =
+  "No owner power found in the code we could read. That is not the same as safe.";
 
-// User-facing fallback when every model sentence failed the evidence
-// check: the deterministic template claims stand in for the dropped
-// overlay, never the developer message. Inert React text only, with a
-// quiet retry that re-runs the same overlay request.
+// User-facing fallback when no model sentence survived: with claims,
+// the deterministic template claims stand in; without claims, the
+// verdict sentence stands. Inert React text only, with a quiet retry
+// that re-runs the same overlay request.
 export function ExplainFallback({
+  verdict,
   claims,
   onRetry,
 }: {
+  readonly verdict: string;
   readonly claims: readonly ExplanationClaim[];
   readonly onRetry: () => void;
 }): JSX.Element {
   return (
     <div data-testid="explain-fallback">
-      <p style={{ margin: 0 }}>We could not explain this with Muse. Here is what the analysis found:</p>
       {claims.length > 0 ? (
-        <ul className="muse-sentences" style={{ margin: "8px 0 0", paddingLeft: 20 }}>
-          {claims.map((claim, index) => (
-            <li key={index}>{claim.text}</li>
-          ))}
-        </ul>
-      ) : null}
+        <>
+          <p style={{ margin: 0 }}>
+            Muse couldn&apos;t back its answer with evidence, so we hid it. Here is what the analysis
+            says:
+          </p>
+          <ul className="muse-sentences" style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+            {claims.map((claim, index) => (
+              <li key={index}>{claim.text}</li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <>
+          <p style={{ margin: 0 }}>{verdict}</p>
+          {verdict.includes("No owner power found") ? null : (
+            <p style={{ margin: "8px 0 0" }}>{NOTHING_FOUND_LINE}</p>
+          )}
+        </>
+      )}
       <div style={{ marginTop: 8 }}>
         <button type="button" className="button-ghost" onClick={onRetry}>
           Try again
@@ -125,6 +218,9 @@ export function ExplainPanel({
   source,
   signals,
   claims,
+  allIds,
+  verdict,
+  checkCount,
   onSignalLink,
   onRetry,
 }: {
@@ -133,6 +229,9 @@ export function ExplainPanel({
   readonly source: Extract<ExplainSource, "explain" | "rug">;
   readonly signals: readonly Signal[];
   readonly claims: readonly ExplanationClaim[];
+  readonly allIds: readonly string[];
+  readonly verdict: string;
+  readonly checkCount: number;
   readonly onSignalLink: (key: string) => void;
   readonly onRetry: () => void;
 }): JSX.Element {
@@ -159,12 +258,17 @@ export function ExplainPanel({
   }, [address, apiKey, source]);
 
   if (state === null) {
-    return <ScanStatus text="Reading the frozen result…" />;
+    return (
+      <ScanStatus
+        text={checkCount > 0 ? `Muse is reading ${checkCount} check results…` : "Muse is reading the check results…"}
+      />
+    );
   }
   if (state.status === "not-configured") {
-    return <p style={{ margin: 0 }}>Explanations are not configured on this server.</p>;
+    return <p style={{ margin: 0 }}>Muse is not available for this result. The analysis above stands.</p>;
   }
   if (state.status === "ready") {
+    const dropped = droppedLine(state.droppedClaims);
     return (
       <div>
         <p className="muse-result-label" style={{ margin: "0 0 8px" }}>
@@ -172,18 +276,20 @@ export function ExplainPanel({
         </p>
         {state.narrative.length === 0 ? (
           <div>
-            <ExplainFallback claims={claims} onRetry={onRetry} />
-            {state.droppedClaims > 0 ? (
+            <ExplainFallback verdict={verdict} claims={claims} onRetry={onRetry} />
+            {dropped === null ? null : (
               <p data-testid="explain-dropped" className="quiet" style={{ margin: "8px 0 0" }}>
-                {state.droppedClaims} unsupported {state.droppedClaims === 1 ? "claim" : "claims"} dropped.
+                {dropped}
               </p>
-            ) : null}
+            )}
           </div>
         ) : (
           <ExplainSentences
             narrative={state.narrative}
             droppedClaims={state.droppedClaims}
             signals={signals}
+            address={address}
+            allIds={allIds}
             onSignalLink={onSignalLink}
           />
         )}
@@ -191,7 +297,7 @@ export function ExplainPanel({
     );
   }
   if (state.status === "fallback") {
-    return <p style={{ margin: 0 }}>The deterministic explanation stands.</p>;
+    return <p style={{ margin: 0 }}>Muse had nothing to add. The analysis above stands.</p>;
   }
   return (
     <div>

@@ -144,7 +144,7 @@ test("s125_investigation_timeline_chips", async ({ page, browser }) => {
 
   // Evidence chips are buttons in step order; the first one moves focus
   // to the linked signal and expands it.
-  const chips = graph.locator('button.chip[data-evidence="signal:owner-blacklist"]');
+  const chips = graph.locator('button.muse-chip[data-evidence="signal:owner-blacklist"]');
   expect(await chips.count()).toBeGreaterThanOrEqual(2);
   await chips.first().click();
   // With the tabs gone the chip moves focus straight to the linked
@@ -157,7 +157,7 @@ test("s125_investigation_timeline_chips", async ({ page, browser }) => {
 
   // Narrative citations render as the same chips.
   await expect(page.locator("text=The frozen evidence shows the transfer guard.")).toBeVisible();
-  await expect(page.locator('section[aria-label="Investigation"] button.chip[data-evidence]').first()).toBeVisible();
+  await expect(page.locator('section[aria-label="Investigation"] button.muse-chip[data-evidence]').first()).toBeVisible();
 
   // Under reduced motion the steps appear instantly with no animation.
   const reduced = await browser.newContext({ reducedMotion: "reduce" });

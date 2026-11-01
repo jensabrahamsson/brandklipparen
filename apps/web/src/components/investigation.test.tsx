@@ -18,8 +18,9 @@ describe("investigation panel provider badge", () => {
           forcedConclusion: false,
         }}
         score={84}
-        availability="available"
         signals={[]}
+        address="0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        allIds={[]}
         onSignalLink={() => undefined}
         onRequest={() => undefined}
       />,
@@ -43,8 +44,9 @@ describe("investigation panel provider badge", () => {
           forcedConclusion: true,
         }}
         score={84}
-        availability="available"
         signals={[]}
+        address="0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        allIds={[]}
         onSignalLink={() => undefined}
         onRequest={() => undefined}
       />,
@@ -66,13 +68,30 @@ describe("investigation panel provider badge", () => {
           forcedConclusion: false,
         }}
         score={84}
-        availability="available"
         signals={[]}
+        address="0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        allIds={[]}
         onSignalLink={() => undefined}
         onRequest={() => undefined}
       />,
     );
     expect(html).toContain("did not cite collected evidence, so it is not shown");
-    expect(html).toContain("2 claims dropped by citation checking (1 uncited, 1 with unknown ids).");
+    expect(html).toContain("2 sentences removed: 1 cited nothing, 1 cited an unknown id.");
+  });
+
+  test("idle_starts_the_run_with_no_second_button", () => {
+    const html = renderToString(
+      <InvestigationPanel
+        state={{ status: "idle" }}
+        score={84}
+        signals={[]}
+        address="0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        allIds={[]}
+        onSignalLink={() => undefined}
+        onRequest={() => undefined}
+      />,
+    );
+    expect(html).toContain("Investigating");
+    expect(html).not.toContain("Request investigation");
   });
 });

@@ -71,6 +71,9 @@ function consoleHtml(
       question={question}
       onQuestionChange={() => undefined}
       onQuestionClear={() => undefined}
+      allIds={[]}
+      verdict="Low risk. No owner power found in the code we could read. That is not the same as safe."
+      checkCount={0}
     />,
   );
 }
@@ -134,6 +137,9 @@ describe("muse console (W-3)", () => {
         signals={[]}
         claims={[]}
         onSignalLink={() => undefined}
+        allIds={[]}
+        verdict="Low risk. Nothing found."
+        checkCount={0}
         question=""
         onQuestionChange={() => undefined}
         onQuestionClear={() => undefined}

@@ -626,6 +626,9 @@ function AssessedView({
         signals={sorted}
         claims={result.explanation.claims}
         onSignalLink={jumpToSignal}
+        allIds={heroIds}
+        verdict={verdictSentence}
+        checkCount={heroPluginViews.length}
         question={question}
         onQuestionChange={onQuestionChange}
         onQuestionClear={onQuestionClear}

@@ -198,7 +198,7 @@ test("w3_explain_renders_sentences_dropped_count_and_advisory", async ({ page })
   await expect(output.getByTestId("explain-sentences")).toContainText(
     "The owner can stop chosen wallets from sending tokens.",
   );
-  await expect(output.getByTestId("explain-dropped")).toContainText("2 unsupported claims dropped.");
+  await expect(output.getByTestId("explain-dropped")).toContainText("2 sentences removed: they cited no evidence.");
   await expect(output.getByTestId("muse-advisory")).toContainText("Advisory. The score above did not change.");
   // Scores, gauges and hero text are byte-identical before and after Explain.
   expect(await hero.innerText()).toBe(before);

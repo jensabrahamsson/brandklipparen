@@ -1,9 +1,9 @@
 import type { JSX } from "react";
 import type { InvestigationState, InvestigationStep, Signal } from "../types.ts";
-import type { Availability } from "../lib/capabilities.ts";
-import { evidenceSignalKey, splitNarrative } from "../lib/investigation.ts";
+import { splitNarrative } from "../lib/investigation.ts";
 import { providerDisplayName } from "../lib/providers.ts";
 import { Explain } from "./Explain.tsx";
+import { CoverageChip } from "./ExplainPanel.tsx";
 import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
 import { ScanStatus } from "./ScanStatus.tsx";
 
@@ -16,42 +16,37 @@ import { ScanStatus } from "./ScanStatus.tsx";
 //
 // The trace renders as a static vertical timeline (S-125): one numbered
 // node per step joined by a static connector. Evidence ids and narrative
-// citations become chips that move focus to the linked signal and expand
-// it. No transforms, no rotation, and the connector never animates.
+// citations become lamp chips that move focus to the linked finding;
+// unknown ids render nothing, never a raw id. No transforms, no
+// rotation, and the connector never animates.
 function EvidenceChips({
   evidenceIds,
   signals,
+  address,
+  allIds,
   onSignalLink,
 }: {
   readonly evidenceIds: readonly string[];
   readonly signals: readonly Signal[];
+  readonly address: string;
+  readonly allIds: readonly string[];
   readonly onSignalLink: (key: string) => void;
-}): JSX.Element {
+}): JSX.Element | null {
   if (evidenceIds.length === 0) {
     return <span className="muted">none</span>;
   }
   return (
     <>
-      {evidenceIds.map((id) => {
-        const key = evidenceSignalKey(signals, id);
-        const label = id.startsWith("signal:") ? id.slice("signal:".length) : id;
-        return key === null ? (
-          <span key={id} className="tool-chip" style={{ margin: "2px 4px 2px 0" }}>
-            {label}
-          </span>
-        ) : (
-          <button
-            key={id}
-            type="button"
-            className="chip mono"
-            data-evidence={id}
-            style={{ margin: "2px 4px 2px 0" }}
-            onClick={() => onSignalLink(key)}
-          >
-            {label}
-          </button>
-        );
-      })}
+      {evidenceIds.map((id) => (
+        <CoverageChip
+          key={id}
+          id={id}
+          signals={signals}
+          address={address}
+          allIds={allIds}
+          onSignalLink={onSignalLink}
+        />
+      ))}
     </>
   );
 }
@@ -59,10 +54,14 @@ function EvidenceChips({
 function StepGraph({
   steps,
   signals,
+  address,
+  allIds,
   onSignalLink,
 }: {
   readonly steps: readonly InvestigationStep[];
   readonly signals: readonly Signal[];
+  readonly address: string;
+  readonly allIds: readonly string[];
   readonly onSignalLink: (key: string) => void;
 }): JSX.Element | null {
   if (steps.length === 0) {
@@ -84,7 +83,14 @@ function StepGraph({
               {step.rationale}
             </p>
             <p className="quiet" style={{ margin: 0 }}>
-              Evidence: <EvidenceChips evidenceIds={step.evidenceIds} signals={signals} onSignalLink={onSignalLink} />
+              Evidence:{" "}
+              <EvidenceChips
+                evidenceIds={step.evidenceIds}
+                signals={signals}
+                address={address}
+                allIds={allIds}
+                onSignalLink={onSignalLink}
+              />
             </p>
           </div>
         </li>
@@ -96,10 +102,14 @@ function StepGraph({
 function CheckedNarrative({
   narrative,
   signals,
+  address,
+  allIds,
   onSignalLink,
 }: {
   readonly narrative: string;
   readonly signals: readonly Signal[];
+  readonly address: string;
+  readonly allIds: readonly string[];
   readonly onSignalLink: (key: string) => void;
 }): JSX.Element {
   return (
@@ -108,64 +118,84 @@ function CheckedNarrative({
         part.kind === "text" ? (
           <span key={index}>{part.text}</span>
         ) : (
-          <EvidenceChips key={index} evidenceIds={[part.id]} signals={signals} onSignalLink={onSignalLink} />
+          <EvidenceChips
+            key={index}
+            evidenceIds={[part.id]}
+            signals={signals}
+            address={address}
+            allIds={allIds}
+            onSignalLink={onSignalLink}
+          />
         ),
       )}
     </p>
   );
 }
 
+// Spec wording for removed sentences (UI v2 §1.2): the count plus the
+// reason in plain words, with the uncited vs unknown-id split when the
+// report carries it.
+function removedLine(
+  droppedClaims: number,
+  dropReasons: { readonly uncited: number; readonly unknownId: number } | undefined,
+): string {
+  if (droppedClaims <= 0) {
+    return "Every cited claim matched collected evidence.";
+  }
+  if (droppedClaims === 1) {
+    return "1 sentence removed: it cited no evidence.";
+  }
+  if (dropReasons !== undefined) {
+    const parts: string[] = [];
+    if (dropReasons.uncited > 0) {
+      parts.push(`${dropReasons.uncited} cited nothing`);
+    }
+    if (dropReasons.unknownId > 0) {
+      parts.push(`${dropReasons.unknownId} cited an unknown id`);
+    }
+    if (parts.length > 0) {
+      return `${droppedClaims} sentences removed: ${parts.join(", ")}.`;
+    }
+  }
+  return `${droppedClaims} sentences removed: they cited no evidence.`;
+}
+
 export function InvestigationPanel({
   state,
   score,
-  availability,
   signals,
+  address,
+  allIds,
   onSignalLink,
   onRequest,
 }: {
   readonly state: InvestigationState;
   readonly score: number;
-  readonly availability: Availability;
   readonly signals: readonly Signal[];
+  readonly address: string;
+  readonly allIds: readonly string[];
   readonly onSignalLink: (key: string) => void;
   readonly onRequest: () => void;
 }): JSX.Element {
   void score;
   // No card of its own (UI v2 §1.2): the Muse console owns the frame and
-  // this block renders inside its output area.
+  // this block renders inside its output area. The console starts the
+  // run the moment the visitor presses Investigate, so there is no idle
+  // explainer and no second button here.
   return (
     <section aria-label="Investigation">
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Investigate with Muse</h2>
-      {state.status === "idle" ? (
-        availability === "unavailable" ? (
-          <FeatureUnavailable
-            title="Investigation"
-            reason="AI investigation is not configured on this server."
-            actionLabel="Request investigation"
-          />
-        ) : (
-          <div>
-            <p className="muted">
-              Run the opt-in investigation loop on open weights over the frozen result. The model chooses
-              deterministic checks step by step and cites the evidence it collects. The deterministic score,
-              signals and evidence stay unchanged.
-            </p>
-            <button type="button" className="button" onClick={onRequest}>
-              Request investigation
-            </button>
-          </div>
-        )
-      ) : null}
+      {state.status === "idle" ? <ScanStatus text="Investigating… steps stream in below." /> : null}
       {state.status === "loading" ? (
         <div>
           <ScanStatus text="Investigating… steps stream in below." />
-          <StepGraph steps={state.steps} signals={signals} onSignalLink={onSignalLink} />
+          <StepGraph steps={state.steps} signals={signals} address={address} allIds={allIds} onSignalLink={onSignalLink} />
         </div>
       ) : null}
       {state.status === "not-configured" ? (
         <FeatureUnavailable
           title="Investigation"
-          reason="AI investigation is not configured on this server."
+          reason="Investigation is not available on this server."
           actionLabel="Request investigation"
         />
       ) : null}
@@ -177,7 +207,7 @@ export function InvestigationPanel({
           <p className="muted" style={{ marginTop: 0 }}>
             {state.message}
           </p>
-          <StepGraph steps={state.steps} signals={signals} onSignalLink={onSignalLink} />
+          <StepGraph steps={state.steps} signals={signals} address={address} allIds={allIds} onSignalLink={onSignalLink} />
           <button type="button" className="button-ghost" onClick={onRequest}>
             Run again
           </button>
@@ -191,7 +221,7 @@ export function InvestigationPanel({
           <p className="muted" style={{ marginTop: 0 }}>
             {state.message}
           </p>
-          <StepGraph steps={state.steps} signals={signals} onSignalLink={onSignalLink} />
+          <StepGraph steps={state.steps} signals={signals} address={address} allIds={allIds} onSignalLink={onSignalLink} />
           <button type="button" className="button-ghost" onClick={onRequest}>
             Try again
           </button>
@@ -210,23 +240,19 @@ export function InvestigationPanel({
               Muse concluded at the step limit.
             </p>
           ) : null}
-          <StepGraph steps={state.steps} signals={signals} onSignalLink={onSignalLink} />
+          <StepGraph steps={state.steps} signals={signals} address={address} allIds={allIds} onSignalLink={onSignalLink} />
           <h3 style={{ fontSize: 16, margin: "12px 0 4px" }}>
             <span>Checked narrative</span> <Explain explainKey="investigation:narrative" label="Checked narrative" />
           </h3>
           {state.narrative.length > 0 ? (
-            <CheckedNarrative narrative={state.narrative} signals={signals} onSignalLink={onSignalLink} />
+            <CheckedNarrative narrative={state.narrative} signals={signals} address={address} allIds={allIds} onSignalLink={onSignalLink} />
           ) : (
             <p className="muted" style={{ margin: "0 0 4px" }}>
               Muse&apos;s conclusion did not cite collected evidence, so it is not shown.
             </p>
           )}
           <p className="quiet" style={{ margin: 0 }}>
-            {state.droppedClaims === 0
-              ? "Every cited claim matched collected evidence."
-              : state.dropReasons === undefined
-                ? `${state.droppedClaims} uncited claim${state.droppedClaims === 1 ? "" : "s"} dropped by citation checking.`
-                : `${state.droppedClaims} claim${state.droppedClaims === 1 ? "" : "s"} dropped by citation checking (${state.dropReasons.uncited} uncited, ${state.dropReasons.unknownId} with unknown ids).`}
+            {removedLine(state.droppedClaims, state.dropReasons)}
           </p>
           <button type="button" className="button-ghost" onClick={onRequest} style={{ marginTop: 8 }}>
             Run again

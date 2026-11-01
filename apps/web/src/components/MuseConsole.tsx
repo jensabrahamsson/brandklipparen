@@ -68,6 +68,9 @@ export function MuseConsole({
   question,
   onQuestionChange,
   onQuestionClear,
+  allIds,
+  verdict,
+  checkCount,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -85,6 +88,9 @@ export function MuseConsole({
   readonly question: string;
   readonly onQuestionChange: (text: string) => void;
   readonly onQuestionClear: () => void;
+  readonly allIds: readonly string[];
+  readonly verdict: string;
+  readonly checkCount: number;
 }): JSX.Element {
   const explainSource = pickExplainSource(health);
   const showExplain =
@@ -194,6 +200,9 @@ export function MuseConsole({
               source={request.source}
               signals={signals}
               claims={claims}
+              allIds={allIds}
+              verdict={verdict}
+              checkCount={checkCount}
               onSignalLink={onSignalLink}
               onRetry={onExplain}
             />
@@ -203,6 +212,8 @@ export function MuseConsole({
               pending={chatPending}
               chat={chat}
               signals={signals}
+              address={address}
+              allIds={allIds}
               onSignalLink={onSignalLink}
               onRetry={onAsk}
             />
@@ -211,8 +222,9 @@ export function MuseConsole({
             <InvestigationPanel
               state={investigation}
               score={score}
-              availability={availability.investigation}
               signals={signals}
+              address={address}
+              allIds={allIds}
               onSignalLink={onSignalLink}
               onRequest={onInvestigate}
             />
@@ -230,12 +242,16 @@ function ChatOutput({
   pending,
   chat,
   signals,
+  address,
+  allIds,
   onSignalLink,
   onRetry,
 }: {
   readonly pending: boolean;
   readonly chat: ChatState | null;
   readonly signals: readonly Signal[];
+  readonly address: string;
+  readonly allIds: readonly string[];
   readonly onSignalLink: (key: string) => void;
   readonly onRetry: () => void;
 }): JSX.Element {
@@ -246,11 +262,11 @@ function ChatOutput({
     return <ScanStatus text="Asking Muse…" />;
   }
   if (chat.status === "not-configured") {
-    return <p style={{ margin: 0 }}>Ask is not configured on this server.</p>;
+    return <p style={{ margin: 0 }}>Muse is not available for this question. The analysis above stands.</p>;
   }
   if (chat.status === "ready") {
     if (chat.answers.length === 0) {
-      return <p style={{ margin: 0 }}>The deterministic explanation stands.</p>;
+      return <p style={{ margin: 0 }}>Muse had nothing to add. The analysis above stands.</p>;
     }
     return (
       <div>
@@ -261,13 +277,15 @@ function ChatOutput({
           narrative={chat.answers}
           droppedClaims={chat.droppedClaims}
           signals={signals}
+          address={address}
+          allIds={allIds}
           onSignalLink={onSignalLink}
         />
       </div>
     );
   }
   if (chat.status === "fallback") {
-    return <p style={{ margin: 0 }}>The deterministic explanation stands.</p>;
+    return <p style={{ margin: 0 }}>Muse had nothing to add. The analysis above stands.</p>;
   }
   return (
     <div>

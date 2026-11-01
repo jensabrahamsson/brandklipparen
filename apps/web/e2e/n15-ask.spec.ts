@@ -140,7 +140,7 @@ test("n15_ask_renders_sentences_dropped_count_and_advisory", async ({ page }) =>
   await page.getByTestId("ask-submit").click();
   const output = page.getByTestId("muse-output");
   await expect(output.getByText("The owner can stop chosen wallets from sending tokens.").first()).toBeVisible();
-  await expect(output.getByTestId("explain-dropped")).toContainText("2 unsupported claims dropped.");
+  await expect(output.getByTestId("explain-dropped")).toContainText("2 sentences removed: they cited no evidence.");
   await expect(output.getByTestId("muse-advisory")).toContainText("Advisory. The score above did not change.");
   // The fulfilled answer proves the route ran, so the count is settled.
   expect(chatPosts.count).toBe(1);
