@@ -1,8 +1,9 @@
 // S-116: signals have unique keys and human titles. The mocked response
 // carries 7 signals with only 3 distinct ids (6 share 2 ids), like the
-// audited live token. One click must toggle exactly one signal, DOM ids
-// must be unique, and no title, gauge reason or recent-row text may show
-// hex. Every signal's template line must mention its own risk kind.
+// audited live token. One click must toggle exactly one row disclosure,
+// DOM ids must be unique, and no title, gauge reason or recent-row text
+// may show hex. Every row sentence must mention its own risk kind, with
+// the severity matching the row tag (R2-6, D-5).
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -103,20 +104,21 @@ async function mockRest(page: Page): Promise<void> {
 test("s116_duplicate_signal_ids_toggle_one_each", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  const section = page.locator('section[aria-label="Signals"]');
+  const section = page.locator('section[aria-label="Why this score"]');
   await expect(section).toBeVisible();
-  const toggles = section.locator("article > button[aria-expanded]");
+  const toggles = section.locator("article details > summary");
   await expect(toggles).toHaveCount(7);
 
   // Collapse whatever starts open, then open exactly the second signal.
   for (const toggle of await toggles.all()) {
-    if ((await toggle.getAttribute("aria-expanded")) === "true") {
+    const isOpen = await toggle.evaluate((node) => node.closest("details")?.hasAttribute("open") ?? false);
+    if (isOpen) {
       await toggle.click();
     }
   }
-  await expect(section.locator('article > button[aria-expanded="true"]')).toHaveCount(0);
+  await expect(section.locator("article details[open]")).toHaveCount(0);
   await toggles.nth(1).click();
-  await expect(section.locator('article > button[aria-expanded="true"]')).toHaveCount(1);
+  await expect(section.locator("article details[open]")).toHaveCount(1);
 
   // No duplicate DOM ids anywhere on the page.
   const duplicates = await page.evaluate(() => {
@@ -135,7 +137,7 @@ test("s116_duplicate_signal_ids_toggle_one_each", async ({ page }) => {
 
   // No hex in titles, gauge reasons or recent rows.
   const hex = /0x[0-9a-f]{16,}/i;
-  const titles = await section.locator("article > button").allTextContents();
+  const titles = await section.locator("article .why-title").allTextContents();
   expect(titles.length).toBe(7);
   for (const title of titles) {
     expect(title).not.toMatch(hex);
@@ -153,14 +155,20 @@ test("s116_duplicate_signal_ids_toggle_one_each", async ({ page }) => {
     expect(text).not.toMatch(hex);
   }
 
-  // Each signal's own template line mentions its own risk kind.
+  // Each row sentence mentions its own risk kind, and the severity in
+  // the sentence always matches the row tag (R2-6, D-5).
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(section).toBeVisible();
   for (const article of await section.locator("article").all()) {
-    const meta = (await article.locator("p.quiet").first().textContent()) ?? "";
-    const risk = meta.split("·")[0]?.trim() ?? "";
-    expect(["rug-pull", "honeypot", "bot-pump"]).toContain(risk);
-    const template = (await article.getByText(/^Template:/).textContent()) ?? "";
-    expect(template.toLowerCase()).toContain(risk);
+    const sentence = (await article.locator(".claim-text").textContent()) ?? "";
+    const risk = ["rug-pull", "honeypot", "bot-pump"].find((kind) =>
+      sentence.toLowerCase().includes(kind),
+    );
+    expect(risk).toBeDefined();
+    const tag = (await article.locator(".sev").first().textContent()) ?? "";
+    const severity = tag === "HIGH" ? "high" : tag === "LOW" ? "low" : "medium";
+    if (sentence.includes("(severity")) {
+      expect(sentence).toContain(`(severity ${severity})`);
+    }
   }
 });

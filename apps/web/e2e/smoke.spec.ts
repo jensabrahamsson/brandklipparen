@@ -146,11 +146,12 @@ test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await expect(page.getByText("91%", { exact: true })).toBeVisible();
   await expect(page.getByText("What bytecode alone cannot tell you")).toBeVisible();
   await expect(page.getByText("The owner can stop you from selling.").first()).toBeVisible();
-  // The template version is Expert-only detail (S-131): plain in Simple.
-  await expect(page.getByLabel(/Template explanation/)).not.toContainText("v1.0.0");
+  // The scored-patterns version is Expert-only detail (S-131): plain in Simple.
+  const whyCard = page.locator('section[aria-label="Why this score"]');
+  await expect(whyCard).not.toContainText("v1.0.0");
   await page.getByTestId("expert-switch").click();
   await expect(page.getByTestId("expert-switch")).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByLabel(/Template explanation/)).toContainText("v1.0.0");
+  await expect(whyCard).toContainText("v1.0.0");
 });
 
 test("k305_console_shows_not_connected_when_nothing_configured", async ({ page }) => {
@@ -222,7 +223,7 @@ test("k507_hostile_signal_renders_as_text_only", async ({ page }) => {
   });
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByText("<img src=x onerror=alert(1)>").first()).toBeVisible();
-  expect(await page.locator("section[aria-label='Signals'] img").count()).toBe(0);
+  expect(await page.locator("section[aria-label='Why this score'] img").count()).toBe(0);
 });
 
 test("design_review_skip_link_keeps_hash", async ({ page }) => {

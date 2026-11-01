@@ -232,7 +232,7 @@ test("motion_switch_off_is_static_without_emulation", async ({ page }) => {
   // animate or transition while the switch is off.
   await cards.first().hover();
   await page.locator('[data-testid="explain-score:combined"]').focus();
-  await page.locator('section[aria-label="Signals"] article > button[aria-expanded]').first().click();
+  await page.locator('section[aria-label="Why this score"] article details > summary').first().click();
   await page.getByRole("button", { name: "Investigate", exact: true }).click();
   const graph = page.locator('ol[aria-label="Investigation steps"]');
   await expect(graph.locator("li")).toHaveCount(2);
@@ -269,7 +269,7 @@ test("investigation_graph_runs_no_animations", async ({ page }) => {
   await expect(cards.first()).toBeVisible();
   await cards.first().hover();
   await page.locator('[data-testid="explain-score:combined"]').focus();
-  await page.locator('section[aria-label="Signals"] article > button[aria-expanded]').first().click();
+  await page.locator('section[aria-label="Why this score"] article details > summary').first().click();
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
 
   await page.getByRole("button", { name: "Investigate", exact: true }).click();

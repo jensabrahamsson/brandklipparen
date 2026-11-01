@@ -1,9 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 import { renderToString } from "react-dom/server";
 import { ExplanationList } from "./ExplanationList.tsx";
-import { SignalList } from "./SignalList.tsx";
+import { SignalRows } from "./SignalList.tsx";
 import type { Signal } from "../types.ts";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
+import type { BoardTile } from "./plugins/PluginBoard.tsx";
 
 vi.mock("./CopyButton.tsx", async () => {
   const React = await import("react");
@@ -12,6 +13,16 @@ vi.mock("./CopyButton.tsx", async () => {
       React.createElement("button", { type: "button", "aria-label": label, "data-copy-value": value }, "Copy"),
   };
 });
+
+vi.mock("./plugins/EvidenceRow.tsx", async () => {
+  const React = await import("react");
+  return {
+    EvidenceRow: ({ displayName, selector }: { readonly displayName: string; readonly selector: string }) =>
+      React.createElement("li", { className: "evidence-row" }, `${displayName} ${selector}`),
+  };
+});
+
+const ADDRESS = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
 const SIGNALS: readonly Signal[] = [
   {
@@ -24,21 +35,199 @@ const SIGNALS: readonly Signal[] = [
   },
 ];
 
-function openAll(): {
-  open: Set<string>;
-  onToggle: (key: string) => void;
-  templateLine: (index: number) => string | undefined;
-} {
+const NAMES = new Map([
+  ["0x44337ea1", { signature: "approve(address,uint256)", name: "approve" }],
+]);
+
+function extendedTile(slug: string, title: string): BoardTile {
   return {
-    open: new Set(["0-capability-honeypot"]),
-    onToggle: () => undefined,
-    templateLine: (index: number) =>
-      index === 0 ? "The owner can stop you from selling." : undefined,
+    pluginId: `dev.brandklipparen.${slug}`,
+    slug,
+    copy: {
+      slug,
+      title,
+      question: `Can the owner ${slug}?`,
+      pictogram: "owner",
+      group: "owner",
+      foundLine: () => title,
+      limits: "Test limit.",
+    },
+    state: "extended",
+    severity: "medium",
+    payloads: [],
+    evidenceCount: 0,
+    orderIndex: 0,
   };
 }
 
-describe("template explanation (design review P0-4)", () => {
-  test("design_review_renders_all_claims_with_version_label", () => {
+describe("merged score card (R2-6, D-5)", () => {
+  test("r26_single_card_merges_claim_and_signal_with_severity_rail", () => {
+    const html = renderToString(
+      <ExplanationList
+        claims={[
+          {
+            text: "The owner can stop you from selling. This raises the honeypot risk (severity medium).",
+            signalLinks: ["owner-blacklist"],
+            temporality: { kind: "can-change" },
+          },
+        ]}
+        signals={SIGNALS}
+        templateVersion="1.0.0"
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        extendedTiles={[]}
+        allIds={[]}
+      />,
+    );
+    expect(html).toContain('aria-label="Why this score"');
+    expect(html).toContain("Owner can block transfers");
+    expect(html).toContain("The owner can stop you from selling.");
+    // The claim severity follows the signal: one field, one word.
+    expect(html).toContain("(severity high)");
+    expect(html).not.toContain("(severity medium)");
+    // Rail colour comes from the same severity field.
+    expect(html).toContain("why-row sev-high");
+    // No prototype strings and no raw backticks anywhere on the card.
+    expect(html).not.toContain("Template");
+    expect(html).not.toContain("deepening");
+    expect(html).not.toContain("Open in bytecode");
+    expect(html).not.toContain("`");
+    // Copy evidence stays; the bytecode shortcut is gone.
+    expect(html).toContain("Copy evidence");
+  });
+
+  test("r26_inline_code_renders_without_backticks", () => {
+    const html = renderToString(
+      <SignalRows
+        signals={SIGNALS}
+        claims={[
+          {
+            text: "Transfers call `approve(address,uint256)` first. This raises the honeypot risk (severity high).",
+            signalLinks: [],
+            temporality: { kind: "applies-now" },
+          },
+        ]}
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+      />,
+    );
+    expect(html).not.toContain("`");
+    expect(html).toContain('<code class="inline-code">approve(address,uint256)</code>');
+  });
+
+  test("r26_evidence_disclosure_names_functions_with_places", () => {
+    const html = renderToString(
+      <SignalRows
+        signals={SIGNALS}
+        claims={[
+          {
+            text: "The owner can stop you from selling. This raises the honeypot risk (severity high).",
+            signalLinks: [],
+            temporality: { kind: "applies-now" },
+          },
+        ]}
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+      />,
+    );
+    expect(html).toMatch(/Evidence ·.*?1.*?place/s);
+    expect(html).toContain("approve(address,uint256)");
+    // One Explain trigger on the card, none on the rows.
+    const card = renderToString(
+      <ExplanationList
+        claims={[
+          {
+            text: "The owner can stop you from selling.",
+            signalLinks: [],
+            temporality: { kind: "applies-now" },
+          },
+        ]}
+        signals={SIGNALS}
+        templateVersion="1.0.0"
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        extendedTiles={[]}
+        allIds={[]}
+      />,
+    );
+    expect(card.match(/explain-trigger/g)?.length ?? 0).toBeLessThanOrEqual(1);
+  });
+
+  test("r26_empty_state_names_extended_findings_with_links", () => {
+    const tiles = [extendedTile("blacklist", "Blacklist"), extendedTile("transfer-limits", "Transfer limits")];
+    const html = renderToString(
+      <ExplanationList
+        claims={[]}
+        signals={[]}
+        templateVersion="1.0.0"
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        extendedTiles={tiles}
+        allIds={["dev.brandklipparen.blacklist", "dev.brandklipparen.transfer-limits"]}
+      />,
+    );
+    expect(html).toContain('aria-label="Why this score"');
+    expect(html).toMatch(/Extended analysis found.*?2.*?more \(not in score\):/s);
+    expect(html).toContain("Blacklist");
+    expect(html).toContain("Transfer limits");
+    expect(html).toContain("plugins/blacklist");
+    expect(html).toContain("plugins/transfer-limits");
+    expect(html).not.toContain("Template");
+    expect(html).not.toContain("No signals");
+  });
+
+  test("r26_empty_state_without_extended_stays_honest", () => {
+    const html = renderToString(
+      <ExplanationList
+        claims={[]}
+        signals={[]}
+        templateVersion="1.0.0"
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        extendedTiles={[]}
+        allIds={[]}
+      />,
+    );
+    expect(html).toContain("No scored pattern found in the code we could read.");
+  });
+
+  test("r26_signal_without_claim_falls_back_to_plain_reason", () => {
+    const html = renderToString(
+      <SignalRows
+        signals={SIGNALS}
+        claims={[]}
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+      />,
+    );
+    expect(html).toContain("The owner can stop you from selling.");
+    expect(html).toContain("why-row sev-high");
+  });
+});
+
+describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
+  test("design_review_renders_all_claims_with_scored_label", () => {
     const html = renderToString(
       <ExplanationList
         claims={[
@@ -48,10 +237,15 @@ describe("template explanation (design review P0-4)", () => {
         signals={SIGNALS}
         templateVersion="1.0.0"
         expert
-        onSignalLink={() => undefined}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        extendedTiles={[]}
+        allIds={[]}
       />,
     );
-    expect(html).toContain("Template explanation · v1.0.0");
+    expect(html).toContain("Scored patterns · v1.0.0");
     expect(html).toContain("The owner can stop you from selling.");
     expect(html).toContain("Launch mechanics were fair at deployment.");
     expect(html).toContain("Owner can change this");
@@ -61,7 +255,7 @@ describe("template explanation (design review P0-4)", () => {
     expect(html).toContain("Owner can block transfers");
   });
 
-  test("s131_simple_mode_explanation_hides_template_version", () => {
+  test("s131_simple_mode_card_hides_template_version", () => {
     const html = renderToString(
       <ExplanationList
         claims={[
@@ -70,7 +264,12 @@ describe("template explanation (design review P0-4)", () => {
         signals={SIGNALS}
         templateVersion="1.0.0"
         expert={false}
-        onSignalLink={() => undefined}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        extendedTiles={[]}
+        allIds={[]}
       />,
     );
     expect(html).toContain("The owner can stop you from selling.");
@@ -90,7 +289,12 @@ describe("template explanation (design review P0-4)", () => {
         signals={[]}
         templateVersion="1.1.0"
         expert={false}
-        onSignalLink={() => undefined}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        extendedTiles={[]}
+        allIds={[]}
       />,
     );
     expect(html).toContain("Possible in code · no controlling account found");
@@ -114,7 +318,12 @@ describe("template explanation (design review P0-4)", () => {
         signals={[]}
         templateVersion="1.0.0"
         expert={false}
-        onSignalLink={() => undefined}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        extendedTiles={[]}
+        allIds={[]}
       />,
     );
     expect(html).toContain(checksummed);
@@ -125,52 +334,5 @@ describe("template explanation (design review P0-4)", () => {
     expect(html).toContain(`data-copy-value="${checksummed}"`);
     expect(html).toContain("can change this");
     expect(html).not.toContain("Owner can turn this on later");
-  });
-});
-
-describe("expanded signal evidence (design review P0-5)", () => {
-  test("design_review_snippet_slot_is_honest_while_pending", () => {
-    const { open, onToggle, templateLine } = openAll();
-    const html = renderToString(
-      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="pending" expert={false} open={open} onToggle={onToggle} templateLine={templateLine} />,
-    );
-    expect(html).toContain("Snippet arrives with deepening");
-    expect(html).not.toContain("function ");
-  });
-
-  test("design_review_snippet_slot_names_contract_gap_when_unavailable", () => {
-    const { open, onToggle, templateLine } = openAll();
-    const html = renderToString(
-      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="unavailable" expert open={open} onToggle={onToggle} templateLine={templateLine} />,
-    );
-    expect(html).toContain("contract gap");
-  });
-
-  test("s131_simple_mode_snippet_slot_stays_plain", () => {
-    const { open, onToggle, templateLine } = openAll();
-    const html = renderToString(
-      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="unavailable" expert={false} open={open} onToggle={onToggle} templateLine={templateLine} />,
-    );
-    expect(html).toContain("No decompiled snippet is available");
-    expect(html).not.toContain("contract gap");
-    expect(html).not.toContain("REST");
-  });
-
-  test("design_review_copy_and_bytecode_slots", () => {
-    const { open, onToggle, templateLine } = openAll();
-    const html = renderToString(
-      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="pending" expert={false} open={open} onToggle={onToggle} templateLine={templateLine} />,
-    );
-    expect(html).toContain("Copy evidence");
-    expect(html).toContain("Open in bytecode");
-    expect(html).toContain("no bytecode pane");
-  });
-
-  test("design_review_per_signal_template_line", () => {
-    const { open, onToggle, templateLine } = openAll();
-    const html = renderToString(
-      <SignalList signals={SIGNALS} target="0xabc" codeHash="0xhash" deepening="pending" expert={false} open={open} onToggle={onToggle} templateLine={templateLine} />,
-    ).replace(/<!-- -->/g, "");
-    expect(html).toContain("Template: The owner can stop you from selling.");
   });
 });

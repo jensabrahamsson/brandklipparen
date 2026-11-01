@@ -187,7 +187,7 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
 
   await reducedPage.locator(".card").first().hover();
   await reducedPage.locator('[data-testid="explain-score:combined"]').focus();
-  await reducedPage.locator('section[aria-label="Signals"] article > button[aria-expanded]').first().click();
+  await reducedPage.locator('section[aria-label="Why this score"] article details > summary').first().click();
   await reducedPage.getByRole("button", { name: "Investigate", exact: true }).click();
   const graph = reducedPage.locator('ol[aria-label="Investigation steps"]');
   await expect(graph.locator("li")).toHaveCount(2);

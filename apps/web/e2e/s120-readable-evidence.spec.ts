@@ -247,7 +247,7 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  const explanation = page.locator('section[aria-label^="Template explanation"]');
+  const explanation = page.locator('section[aria-label="Why this score"]');
   await expect(explanation).toBeVisible();
 
   // Simple-mode height stays within budget on a wide viewport. The
@@ -275,7 +275,7 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
 
   // Evidence lives in a disclosure that opens and closes from the keyboard.
   const evidence = explanation.locator("details").first();
-  await expect(evidence.locator("summary")).toContainText("Evidence · 26 locations");
+  await expect(evidence.locator("summary")).toContainText("Evidence · 5 places");
   const summary = evidence.locator("summary");
   await summary.focus();
   await expect(evidence).not.toHaveAttribute("open", "");

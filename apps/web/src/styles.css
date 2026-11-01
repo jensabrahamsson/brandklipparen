@@ -1216,44 +1216,11 @@ a {
   cursor: not-allowed;
 }
 
-/* S-120: ghost buttons that read as inline text (signal title toggles,
-   mid-sentence signal links) keep the compact look on wider screens and
-   gain the 44 px touch target through an invisible hit area (absolute,
-   so layout and line rhythm never move) instead of a real min-height:
-   three claims no longer each add a 44 px row to the page. On narrow
-   screens (<= 640 px) they keep the real 44 px box from the touch-target
-   rule, which s119 measures. Standalone action buttons (Back, Copy
-   evidence, Apply, expand) keep the real 44 px box. No transform, static
-   under prefers-reduced-motion. */
-@media (min-width: 641px) {
-  .signal-toggle,
-  .signal-link {
-    min-height: 0;
-    min-width: 0;
-    position: relative;
-  }
-
-  .signal-toggle::after,
-  .signal-link::after {
-    content: "";
-    position: absolute;
-  }
-
-  .signal-toggle::after {
-    inset: -12px -12px;
-  }
-
-  .signal-link::after {
-    inset: -13px -12px;
-  }
-}
-
-@media (max-width: 640px) {
-  .signal-toggle,
-  .signal-link {
-    min-height: 44px;
-  }
-}
+/* R2-6: the merged score rows have no inline-text buttons, so the old
+   signal toggle hit-area rules are gone. Every row control (the
+   evidence disclosure summary, Copy evidence, per-row copy buttons and
+   the expand control) keeps the real 44 px box on all widths. No
+   transform, static under prefers-reduced-motion. */
 
 .btn {
   background: var(--phosphor);
@@ -2047,7 +2014,8 @@ a {
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.06em;
-  padding: 2px 0;
+  padding: 2px 8px;
+  border-radius: 4px;
   text-align: center;
   text-transform: uppercase;
   white-space: nowrap;
@@ -2078,15 +2046,63 @@ a {
   margin-bottom: 8px;
 }
 
-/* The severity tag sits on its own line above the expandable title. */
-.signal > .sev {
+/* Merged score rows (R2-6, D-5): the left rail carries the severity,
+   so colour never means anything else. The tag sits on its own line
+   above the row title. */
+.why-rows {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.why-row {
+  border-bottom: 1px dashed var(--edge);
+  border-left: 3px solid var(--edge);
+  margin: 0 0 16px;
+  padding: 4px 0 12px 12px;
+}
+
+.why-row.sev-high {
+  border-left-color: var(--red);
+}
+
+.why-row.sev-medium {
+  border-left-color: var(--amber);
+}
+
+.why-row.sev-low {
+  border-left-color: var(--phosphor);
+}
+
+.why-article > .sev {
   display: table;
 }
 
-.signal > button {
-  display: block;
-  margin-top: 4px;
-  text-align: left;
+.why-title {
+  margin: 4px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.why-evidence {
+  margin-top: 8px;
+}
+
+.why-evidence > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--surface-2);
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: 0 6px;
+  overflow-wrap: anywhere;
 }
 
 /* The "??" marker shares the question line; the Needs line stays below. */
@@ -2401,22 +2417,8 @@ a:focus-visible {
   }
 }
 
-/* Restyled legacy signal cards keep their identity classes. */
-.signal {
-  border-bottom: 1px dashed var(--edge);
-  padding: 12px;
-  margin: 12px 0;
-}
-
-.signal-raises {
-  border-left: 3px solid var(--high);
-  padding-left: 12px;
-}
-
-.signal-lowers {
-  border-left: 3px solid var(--low);
-  padding-left: 12px;
-}
+/* R2-6: the merged why-rows above own the severity rails, so the old
+   raises/lowers rail classes are gone. */
 
 .cant-tell {
   border: 1px dashed var(--cant-tell);

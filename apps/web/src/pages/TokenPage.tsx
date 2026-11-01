@@ -25,15 +25,7 @@ import { clearStoredPriorities, readStoredPriorities, writeStoredPriorities } fr
 import { matchPriorities } from "../lib/matcher.ts";
 import { riskBand, riskWord } from "../lib/risk.ts";
 import { toAiAvailability, type AiFeatureAvailability, type Availability } from "../lib/capabilities.ts";
-import { assignTemplateLines } from "../lib/claims.ts";
-import {
-  emptyGaugeReason,
-  plainReason,
-  signalKey,
-  signalTitle,
-  sortByImpact,
-  strongestSignal,
-} from "../lib/signals.ts";
+import { emptyGaugeReason, plainReason, signalTitle, sortByImpact, strongestSignal } from "../lib/signals.ts";
 import { PowersStrip } from "../components/PowersStrip.tsx";
 import { StreamView } from "../components/StreamView.tsx";
 import { MuseConsole } from "../components/MuseConsole.tsx";
@@ -43,7 +35,6 @@ import { Gauge } from "../components/Gauge.tsx";
 import { ScoreRing } from "../components/ScoreRing.tsx";
 import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
 import { ContractFacts } from "../components/ContractFacts.tsx";
-import { SignalList } from "../components/SignalList.tsx";
 import { Explain } from "../components/Explain.tsx";
 import type { AnalyzeResult, AssessmentState, HealthState, InvestigationState, InvestigationStep, ProviderInfo, RiskKind } from "../types.ts";
 import { RISK_SHORT } from "../lib/risk.ts";
@@ -96,7 +87,6 @@ export function TokenPage({
   const [question, setQuestion] = useState<string>(() => readStoredPriorities());
   const [attempt, setAttempt] = useState(0);
   const [elapsed, setElapsed] = useState<number | null>(null);
-  const [openSignals, setOpenSignals] = useState<ReadonlySet<string>>(new Set());
   // Live-list entry for the heading fallback (symbol/name, DEX and age):
   // matched by token address, null when the feed is off or silent.
   const [liveEntry, setLiveEntry] = useState<LiveTokenEntry | null>(null);
@@ -134,9 +124,6 @@ export function TokenPage({
         setElapsed((performance.now() - started) / 1000);
         setResult(value);
         if (value.kind === "assessed") {
-          setOpenSignals(
-            new Set(sortByImpact(value.signals).slice(0, 1).map((signal, index) => signalKey(signal, index))),
-          );
           recordRecent(value);
         }
       },
@@ -371,18 +358,6 @@ export function TokenPage({
     );
   }, [address, apiKey]);
 
-  const toggleSignal = useCallback((key: string) => {
-    setOpenSignals((previous) => {
-      const next = new Set(previous);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
-
   if (!isValidAddress(address)) {
     return (
       <div className="page">
@@ -468,8 +443,6 @@ export function TokenPage({
           onRequestAssessment={requestAssessment}
           investigation={investigation}
           onRunInvestigation={runInvestigation}
-          openSignals={openSignals}
-          onToggleSignal={toggleSignal}
           address={address}
           liveEntry={liveEntry}
           apiKey={apiKey}
@@ -501,8 +474,6 @@ function AssessedView({
   onRequestAssessment,
   investigation,
   onRunInvestigation,
-  openSignals,
-  onToggleSignal,
   address,
   liveEntry,
   apiKey,
@@ -521,49 +492,38 @@ function AssessedView({
   readonly onRequestAssessment: () => void;
   readonly investigation: InvestigationState;
   readonly onRunInvestigation: () => void;
-  readonly openSignals: ReadonlySet<string>;
-  readonly onToggleSignal: (key: string) => void;
   readonly address: string;
   readonly liveEntry: LiveTokenEntry | null;
   readonly apiKey: string;
   readonly view: TokenView;
 }): JSX.Element {
   const sorted = sortByImpact(result.signals);
-  // Template lines pair with signals by position and risk (S-116), never
-  // by signal id, so duplicate ids cannot misattribute evidence.
-  const templateLines = assignTemplateLines(sorted, result.explanation.claims);
-  const templateLine = (index: number): string | undefined => templateLines[index];
-  // Signal links from claims and investigation evidence arrive as stable
-  // position-derived keys, so the scroll target uses the same unique key
-  // as the article DOM id. Focus follows the scroll so keyboard users land
-  // on the linked signal (S-125).
-  const jumpToSignal = useCallback(
-    (key: string) => {
-      if (!openSignals.has(key)) {
-        onToggleSignal(key);
+  // Console and investigation links arrive as stable position-derived
+  // keys, so the scroll target uses the same unique key as the article
+  // DOM id. The native evidence disclosure opens, then focus follows the
+  // scroll so keyboard users land on the linked signal (S-125).
+  const jumpToSignal = useCallback((key: string) => {
+    // The signal article may not exist yet on the first console click,
+    // so retry until it commits, then scroll and focus it.
+    // getElementById takes the literal id: no CSS escaping (an escaped
+    // leading digit would never match).
+    let attempts = 0;
+    const reveal = (): void => {
+      const target = document.getElementById(`signal-${key}`);
+      if (target === null && attempts < 10) {
+        attempts += 1;
+        window.setTimeout(reveal, 50);
+        return;
       }
-      // The signal article may not exist yet on the first console click,
-      // so retry until it commits, then scroll and focus it.
-      // getElementById takes the literal id: no CSS escaping (an escaped
-      // leading digit would never match).
-      let attempts = 0;
-      const reveal = (): void => {
-        const target = document.getElementById(`signal-${key}`);
-        if (target === null && attempts < 10) {
-          attempts += 1;
-          window.setTimeout(reveal, 50);
-          return;
-        }
-        target?.scrollIntoView({ block: "start" });
-        const control = target?.querySelector(":scope > button");
-        if (control instanceof HTMLElement) {
-          control.focus();
-        }
-      };
-      window.setTimeout(reveal, 0);
-    },
-    [onToggleSignal, openSignals],
-  );
+      target?.querySelector("details")?.setAttribute("open", "");
+      target?.scrollIntoView({ block: "start" });
+      const control = target?.querySelector(":scope summary");
+      if (control instanceof HTMLElement) {
+        control.focus();
+      }
+    };
+    window.setTimeout(reveal, 0);
+  }, []);
   // Summary strip visibility (UI v2 §1): with the tabs gone the strip no
   // longer depends on any tab. It stays unmounted while the combined
   // score ring is in view and pins to the viewport top once the ring has
@@ -737,10 +697,8 @@ function AssessedView({
         apiKey={apiKey}
         onchainAvailability={availability.onchain}
         sorted={sorted}
-        templateLine={templateLine}
-        openSignals={openSignals}
-        onToggleSignal={onToggleSignal}
-        onSignalLink={jumpToSignal}
+        extendedTiles={heroBoard.ownerTiles.filter((tile) => tile.state === "extended")}
+        allIds={heroIds}
         liveEntry={liveEntry}
       />
       {mode === "expert" ? <StreamView address={address} apiKey={apiKey} /> : null}
@@ -763,10 +721,8 @@ export function OverviewSections({
   onchainAvailability,
   question,
   sorted,
-  templateLine,
-  openSignals,
-  onToggleSignal,
-  onSignalLink,
+  extendedTiles,
+  allIds,
   liveEntry,
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
@@ -777,13 +733,10 @@ export function OverviewSections({
   readonly onchainAvailability: Availability;
   readonly question: string;
   readonly sorted: Extract<AnalyzeResult, { kind: "assessed" }>["signals"];
-  readonly templateLine: (index: number) => string | undefined;
-  readonly openSignals: ReadonlySet<string>;
-  readonly onToggleSignal: (key: string) => void;
-  readonly onSignalLink: (key: string) => void;
+  readonly extendedTiles: readonly BoardTile[];
+  readonly allIds: readonly string[];
   readonly liveEntry: LiveTokenEntry | null;
 }): JSX.Element {
-  const jumpToSignal = onSignalLink;
   // The deterministic "Show standard order" choice (K-035): the third-party
   // fallback orders matched cards first through the local match; the
   // visitor can always go back to the untouched registry order. Typing a
@@ -825,7 +778,17 @@ export function OverviewSections({
   // renders a separate score section. The local match only highlights
   // tiles and orders the third-party fallback; it never reorders the
   // overview.
-  const shownSections = plan.filter((sectionId) => sectionId !== "score");
+  // R2-6 (D-5): the scored patterns merge into the single "Why this
+  // score" card. The plan still emits both ids, so map the old signals
+  // position onto the merged card and render it once at the earliest
+  // spot: first for high risk, right after the hero otherwise.
+  const decompilerFindings =
+    pluginViews.find((view) => view.pluginId === "dev.brandklipparen.decompiler")?.findings ?? [];
+  const selectorNames = buildSelectorNames(decompilerFindings);
+  const shownSections = plan
+    .filter((sectionId) => sectionId !== "score")
+    .map((sectionId) => (sectionId === "signals" ? "explanation" : sectionId))
+    .filter((sectionId, index, all) => all.indexOf(sectionId) === index);
   const personalized = !showStandard && match.orderedIds.length > 0;
   const blocks: Record<string, JSX.Element> = {
     explanation: (
@@ -834,28 +797,13 @@ export function OverviewSections({
         signals={sorted}
         templateVersion={result.explanation.templateVersion}
         expert={mode === "expert"}
-        onSignalLink={jumpToSignal}
+        address={address}
+        codeHash={result.codeHash}
+        apiKey={apiKey}
+        names={selectorNames}
+        extendedTiles={extendedTiles}
+        allIds={allIds}
       />
-    ),
-    signals: (
-      <section className="card" aria-label="Signals" style={{ marginBottom: 20 }}>
-        <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
-          <span>Signals</span> <Explain explainKey="evidence:selector" label="Signals" />
-        </h2>
-        <p className="quiet numeric" style={{ margin: "0 0 8px" }}>
-          {result.signals.length} found · sorted by impact on the score
-        </p>
-        <SignalList
-          signals={sorted}
-          target={result.target}
-          codeHash={result.codeHash}
-          deepening={result.deepening}
-          expert={mode === "expert"}
-          open={openSignals}
-          onToggle={onToggleSignal}
-          templateLine={templateLine}
-        />
-      </section>
     ),
     "plugin-findings": (
       <div style={{ marginBottom: 20 }}>

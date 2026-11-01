@@ -120,7 +120,7 @@ test("phosphor_reduced_motion_is_fully_static_on_start_and_analysis", async ({ p
   // Full interaction script: hover, tooltip focus, signal expand, console.
   await page.locator(".card").first().hover();
   await page.locator('[data-testid="explain-score:combined"]').focus();
-  await page.locator('section[aria-label="Signals"] article > button[aria-expanded]').first().click();
+  await page.locator('section[aria-label="Why this score"] article details > summary').first().click();
   await page.getByRole("button", { name: "Explain this result" }).click();
   await page.waitForTimeout(600);
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
@@ -302,7 +302,7 @@ test("phosphor_motion_switch_off_gives_zero_animations", async ({ page }) => {
   // expand, console open. Nothing may animate or transition.
   await page.locator(".card").first().hover();
   await page.locator('[data-testid="explain-score:combined"]').focus();
-  await page.locator('section[aria-label="Signals"] article > button[aria-expanded]').first().click();
+  await page.locator('section[aria-label="Why this score"] article details > summary').first().click();
   await page.getByRole("button", { name: "Explain this result" }).click();
   await page.waitForTimeout(600);
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);

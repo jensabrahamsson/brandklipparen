@@ -248,7 +248,7 @@ test("k519_critical_finding_visible_with_unrelated_question", async ({ page }) =
   await page.getByLabel("Ask about this token").fill("What a nice day for a walk");
   await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toHaveCount(0);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  await expect(page.locator('section[aria-label="Signals"]')).toContainText("Owner can block transfers");
+  await expect(page.locator('section[aria-label="Why this score"]')).toContainText("Owner can block transfers");
   await expect(page.getByTestId("plugin-tile-capability")).toBeVisible();
   await expect(page.getByTestId("plugin-tile-clone-match")).toBeVisible();
   // The section order never moves for a question (Option A): the overview
@@ -256,7 +256,7 @@ test("k519_critical_finding_visible_with_unrelated_question", async ({ page }) =
   const sections = await page.locator("div.token-grid div[data-section]").evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute("data-section")),
   );
-  expect(sections[0]).toBe("signals");
+  expect(sections[0]).toBe("explanation");
   expect(sections[1]).toBe("plugin-findings");
 });
 

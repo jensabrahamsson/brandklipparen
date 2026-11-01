@@ -182,12 +182,10 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
   });
   expect(trackRatio).toBeGreaterThanOrEqual(3);
 
-  // "Open in bytecode" is visibly distinct from its enabled neighbours.
-  const signalToggle = page.locator('section[aria-label="Signals"] article > button[aria-expanded]').first();
-  if ((await signalToggle.getAttribute("aria-expanded")) === "false") {
-    await signalToggle.click();
-  }
-  const bytecode = page.getByRole("button", { name: /Open .* in bytecode/ });
-  await expect(bytecode).toBeDisabled();
-  expect(await bytecode.evaluate((element) => getComputedStyle(element).opacity)).toBe("0.5");
+  // R2-6 removed the dead "Open in bytecode" shortcut: the merged card
+  // carries evidence rows with names instead of a disabled shortcut.
+  const summary = page.locator('section[aria-label="Why this score"] article details > summary').first();
+  await summary.click();
+  await expect(page.getByRole("button", { name: /Open .* in bytecode/ })).toHaveCount(0);
+  await expect(page.locator('section[aria-label="Why this score"]')).not.toContainText("Open in bytecode");
 });

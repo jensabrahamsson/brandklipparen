@@ -1,157 +1,100 @@
-// Readable template explanation (S-120, S-134, P-1): every claim renders
-// as one short summary first, labelled with its template version.
-// Temporality reads per kind: "Applies now", "Owner <account> can change
-// this" with the controlling account in full plus copy, or the neutral
-// "Possible in code · no controlling account found" when no account is
-// proven. The raw locations sit in a keyboard-operable disclosure grouped
-// by selector. Signal links expand and scroll to their signal in
-// SignalList. Everything renders as React text only, so hostile content
-// stays inert: no HTML sinks anywhere.
+// The single score card (round-2 review D-5): every scored pattern in
+// one place with its severity rail, plain sentence and evidence rows.
+// The card owns at most one Explain trigger, on the heading. When the
+// analysis scores nothing, the card names the extended findings with
+// links to their detail views instead of showing two empty cards.
+// Everything renders as React text only, so hostile content stays
+// inert: no HTML sinks anywhere.
 import type { JSX } from "react";
-import { toChecksumAddress } from "../lib/checksumAddress.ts";
-import { signalKey, signalTitle } from "../lib/signals.ts";
-import { claimSummary, evidenceLocationCount, extractAccount, extractEvidenceGroups } from "../lib/claims.ts";
+import type { SelectorName } from "../lib/selectorNames.ts";
 import type { ExplanationClaim, Signal } from "../types.ts";
+import { pluginHref } from "../lib/pluginCopy.ts";
+import type { BoardTile } from "./plugins/PluginBoard.tsx";
 import { Explain } from "./Explain.tsx";
-import { CopyButton } from "./CopyButton.tsx";
-
-function AccountChip({ address }: { readonly address: string }): JSX.Element {
-  const checksummed = toChecksumAddress(address);
-  return (
-    <span className="mono numeric" style={{ fontSize: 13 }}>
-      Account{" "}
-      <span className="addr-full" data-testid="claim-account-full">
-        {checksummed}
-      </span>{" "}
-      <CopyButton value={checksummed} label="Copy account address" />
-    </span>
-  );
-}
-
-function ClaimEvidence({ text }: { readonly text: string }): JSX.Element | null {
-  const groups = extractEvidenceGroups(text);
-  if (groups.length === 0) {
-    return null;
-  }
-  const locations = evidenceLocationCount(groups);
-  return (
-    <details style={{ marginTop: 8 }}>
-      <summary>
-        Evidence · {locations} {locations === 1 ? "location" : "locations"}
-      </summary>
-      <ul className="mono" style={{ listStyle: "none", padding: 0, fontSize: 13 }}>
-        {groups.map((group) => (
-          <li key={`${group.selector}|${group.line ?? ""}|${group.snippet ?? ""}`} style={{ marginBottom: 8 }}>
-            <span>{group.selector}</span>
-            {group.offsets.length > 0 ? (
-              <span className="quiet">
-                {" "}
-                · offsets {group.offsets.map((offset) => `0x${offset.toString(16)}`).join(", ")}
-              </span>
-            ) : null}
-            {group.hasNoOffset ? <span className="quiet"> · no byte offset</span> : null}
-            {group.snippet === null || group.line === null ? null : (
-              <div className="quiet">
-                decompiled line {group.line} reads &quot;{group.snippet}&quot;
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
-    </details>
-  );
-}
+import { SignalRows } from "./SignalList.tsx";
 
 export function ExplanationList({
   claims,
   signals,
   templateVersion,
   expert,
-  onSignalLink,
+  address,
+  codeHash,
+  apiKey,
+  names,
+  extendedTiles,
+  allIds,
 }: {
   readonly claims: readonly ExplanationClaim[];
   readonly signals: readonly Signal[];
   readonly templateVersion: string;
   readonly expert: boolean;
-  readonly onSignalLink: (key: string) => void;
+  readonly address: string;
+  readonly codeHash: string;
+  readonly apiKey: string;
+  readonly names: ReadonlyMap<string, SelectorName>;
+  readonly extendedTiles: readonly BoardTile[];
+  readonly allIds: readonly string[];
 }): JSX.Element {
-  const versionLine =
-    expert === true
-      ? `Template explanation · v${templateVersion}`
-      : "Template explanation";
+  if (signals.length === 0 && claims.length === 0) {
+    return (
+      <EmptyWhyScore address={address} extendedTiles={extendedTiles} allIds={allIds} />
+    );
+  }
+  const count = signals.length;
+  const noun = count === 1 ? "pattern" : "patterns";
+  const subline = expert ? `Scored patterns · v${templateVersion} · ${count} ${noun}` : `${count} scored ${noun}`;
   return (
-    <section className="card" aria-label={versionLine} style={{ marginBottom: 20 }}>
+    <section className="card" aria-label="Why this score" style={{ marginBottom: 20 }}>
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
-        <span>Why this score</span> <Explain explainKey="explanation:claim" label="Template claims" />
+        <span>Why this score</span> <Explain explainKey="explanation:claim" label="Why this score" />
       </h2>
       <p className="quiet numeric" style={{ margin: "0 0 12px" }}>
-        {versionLine} · {claims.length} {claims.length === 1 ? "claim" : "claims"}
+        {subline}
       </p>
-      {claims.length === 0 ? (
+      <SignalRows
+        signals={signals}
+        claims={claims}
+        expert={expert}
+        address={address}
+        codeHash={codeHash}
+        apiKey={apiKey}
+        names={names}
+      />
+    </section>
+  );
+}
+
+function EmptyWhyScore({
+  address,
+  extendedTiles,
+  allIds,
+}: {
+  readonly address: string;
+  readonly extendedTiles: readonly BoardTile[];
+  readonly allIds: readonly string[];
+}): JSX.Element {
+  const extended = extendedTiles.filter((tile) => tile.state === "extended");
+  return (
+    <section className="card" aria-label="Why this score" style={{ marginBottom: 20 }}>
+      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
+        <span>Why this score</span> <Explain explainKey="explanation:claim" label="Why this score" />
+      </h2>
+      {extended.length === 0 ? (
         <p className="muted" style={{ margin: 0 }}>
-          No template claims for this result.
+          No scored pattern found in the code we could read.
         </p>
       ) : (
-        <ul style={{ margin: 0, paddingLeft: 20 }}>
-          {claims.map((claim, index) => {
-            const account = extractAccount(claim.text);
-            return (
-              <li key={`${claim.text.slice(0, 32)}-${index}`} style={{ marginBottom: 12 }}>
-                <div className="claim-text">{claimSummary(claim.text)}</div>
-                <div className="quiet" style={{ marginTop: 4 }}>
-                  {claim.temporality.kind === "applies-now" ? (
-                    account === null ? (
-                      "Applies now"
-                    ) : (
-                      <>
-                        Applies now
-                        {" · "}
-                        <span className="chip">
-                          Owner <AccountChip address={account} /> can change this
-                        </span>
-                      </>
-                    )
-                  ) : claim.temporality.kind === "can-change-unknown" ? (
-                    "Possible in code · no controlling account found"
-                  ) : account === null ? (
-                    <span className="chip">Owner can change this</span>
-                  ) : (
-                    <span className="chip">
-                      Owner <AccountChip address={account} /> can change this
-                    </span>
-                  )}
-                  {claim.signalLinks.length > 0 ? (
-                    <>
-                      {" · signals: "}
-                      {claim.signalLinks.map((signalId, linkIndex) => {
-                        const targetIndex = signals.findIndex((signal) => signal.id === signalId);
-                        if (targetIndex < 0) {
-                          return null;
-                        }
-                        const target = signals[targetIndex] as Signal;
-                        const key = signalKey(target, targetIndex);
-                        return (
-                          <span key={`${signalId}-${linkIndex}`}>
-                            {linkIndex > 0 ? ", " : null}
-                            <button
-                              type="button"
-                              className="button-ghost signal-link"
-                              style={{ border: "none", padding: 0, fontSize: 12 }}
-                              onClick={() => onSignalLink(key)}
-                            >
-                              {signalTitle(target)}
-                            </button>
-                          </span>
-                        );
-                      })}
-                    </>
-                  ) : null}
-                </div>
-                <ClaimEvidence text={claim.text} />
-              </li>
-            );
-          })}
-        </ul>
+        <p className="muted" style={{ margin: 0 }}>
+          No scored pattern. Extended analysis found {extended.length} more (not in score):{" "}
+          {extended.map((tile, index) => (
+            <span key={tile.pluginId}>
+              {index > 0 ? ", " : null}
+              <a href={pluginHref(address, tile.pluginId, allIds)}>{tile.copy.title}</a>
+            </span>
+          ))}
+          .
+        </p>
       )}
     </section>
   );

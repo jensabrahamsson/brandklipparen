@@ -149,8 +149,8 @@ test("s125_investigation_timeline_chips", async ({ page, browser }) => {
   await chips.first().click();
   // With the tabs gone the chip moves focus straight to the linked
   // signal article and expands it in place.
-  const signalArticle = page.locator('section[aria-label="Signals"] article').first();
-  await expect(signalArticle.locator("> button[aria-expanded='true']")).toBeVisible();
+  const signalArticle = page.locator('section[aria-label="Why this score"] article').first();
+  await expect(signalArticle.locator("details[open]")).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => document.activeElement?.closest("article") !== null), { timeout: 3000 })
     .toBe(true);

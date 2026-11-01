@@ -111,7 +111,7 @@ test("s121_elevation_tokens_cover_surfaces", async ({ page, browser }) => {
   expect(tooltipShadow).not.toBe("none");
 
   await page.evaluate(() => {
-    document.querySelector('section[aria-label="Signals"]')?.scrollIntoView(true);
+    document.querySelector('section[aria-label="Why this score"]')?.scrollIntoView(true);
   });
   const strip = page.locator(".compact-strip");
   await expect(strip).toBeVisible();

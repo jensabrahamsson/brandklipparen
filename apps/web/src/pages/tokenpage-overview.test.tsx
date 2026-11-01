@@ -152,10 +152,8 @@ function renderOverview(question: string, mode: "simple" | "expert" = "simple"):
       mode={mode}
       question={question}
       sorted={result.signals}
-      templateLine={() => "The owner can stop you from selling."}
-      openSignals={new Set<string>()}
-      onToggleSignal={() => undefined}
-      onSignalLink={() => undefined}
+      extendedTiles={[]}
+      allIds={[]}
       liveEntry={null}
       apiKey=""
       onchainAvailability="available"
@@ -171,13 +169,18 @@ function expectedPlan(): readonly string[] {
   const result = assessedResult();
   // R2-2: the hero always owns the gauges, so the overview never renders
   // the score section even though the deterministic plan still emits it.
+  // R2-6: the signals position maps onto the merged "Why this score"
+  // card, rendered once at the earliest spot.
   return planLayout({
     score: result.score,
     signalCount: result.signals.length,
     severeSignalCount: result.signals.filter((signal) => signal.severity === "high").length,
     pluginFindingCount: 2,
     cantTellCount: result.cantTell.length,
-  }).filter((sectionId) => sectionId !== "score");
+  })
+    .filter((sectionId) => sectionId !== "score")
+    .map((sectionId) => (sectionId === "signals" ? "explanation" : sectionId))
+    .filter((sectionId, index, all) => all.indexOf(sectionId) === index);
 }
 
 describe("deterministic section order (W-8 option A)", () => {

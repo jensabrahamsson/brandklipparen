@@ -98,7 +98,7 @@ test("result_summary_strip_follows_ring_visibility", async ({ page }) => {
   // Scroll until the combined score section is fully out of view: the strip
   // appears, with the score exactly once plus short probs and the hash.
   await page.evaluate(() => {
-    document.querySelector('section[aria-label="Signals"]')?.scrollIntoView(true);
+    document.querySelector('section[aria-label="Why this score"]')?.scrollIntoView(true);
   });
   await expect(ring).not.toBeInViewport();
   await expect(strip).toBeVisible();
@@ -141,7 +141,7 @@ test("result_summary_probs_carry_full_text_as_title_on_narrow_phones", async ({ 
   // appears on narrow phones.
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
   await page.evaluate(() => {
-    document.querySelector('section[aria-label="Signals"]')?.scrollIntoView(true);
+    document.querySelector('section[aria-label="Why this score"]')?.scrollIntoView(true);
   });
   await expect(page.getByTestId("result-summary")).toBeVisible();
   const probs = page.locator(".compact-strip-probs");

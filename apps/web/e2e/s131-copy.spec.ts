@@ -179,9 +179,14 @@ test("s131_simple_mode_copy_has_no_dev_strings", async ({ page }) => {
   }
   await expect(cantTell).toContainText("Needs a liquidity-lock registry");
 
-  // The snippet placeholder is plain in Simple mode. The top signal
-  // starts expanded, so the slot reads without a click.
-  await expect(page.locator("article")).toContainText("No decompiled snippet is available");
+  // R2-6 (D-5): the merged score card shows the claim with its
+  // evidence disclosure and no prototype strings.
+  const whyScore = page.locator('section[aria-label="Why this score"]');
+  await expect(whyScore).toBeVisible();
+  await expect(whyScore).toContainText("Evidence · 1 place");
+  await expect(whyScore).not.toContainText("Template");
+  await expect(whyScore).not.toContainText("deepening");
+  await expect(whyScore).not.toContainText("Open in bytecode");
   expect(bannedIn(await page.locator("body").innerHTML())).toEqual([]);
 
   // Stream view and the bot/API blocks stay Expert-only.
@@ -203,5 +208,7 @@ test("s131_expert_mode_keeps_relocated_detail", async ({ page }) => {
   await expect(page.locator("section[aria-label='Stream view']")).toBeVisible();
   await expect(page.getByText("Calibration report")).toBeVisible();
   await expect(page.getByText("Use this result in your bot")).toBeVisible();
-  await expect(page.locator("article")).toContainText("contract gap");
+  // R2-6 (D-5): the prototype "contract gap" snippet copy is gone;
+  // Expert mode keeps the PC-offset evidence line in the merged card.
+  await expect(page.locator('section[aria-label="Why this score"] article')).toContainText("PC 0x64");
 });
