@@ -54,8 +54,8 @@ export function Gauge({
       <div className="gauge-top">
         <h3 className="lab" style={{ margin: "0 0 4px" }}>
           <span className="t">{TITLES[kind]}</span>
-          <span className="band">{band.word.toUpperCase()}</span>
         </h3>
+        <span className="band">{band.word.toUpperCase()}</span>
         <Explain explainKey={`score:gauge:${kind}`} label={`${TITLES[kind]} gauge`} />
       </div>
       <div className="pct numeric" role="img" aria-label={`${percent} percent probability`}>

@@ -158,8 +158,11 @@ test("n15_ask_not_configured_hides_the_form", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Explain this result" })).toBeVisible();
   await expect(page.getByLabel("Ask about this token")).toHaveCount(0);
   await expect(page.getByTestId("ask-submit")).toHaveCount(0);
-  // The deterministic score stands untouched beside the console.
-  await expect(page.locator('section[aria-label="Combined score"]')).toContainText("84 High");
+  // The deterministic score stands untouched beside the console: the
+  // dial keeps the number and the band word (W-9 removed the repeated
+  // score line).
+  await expect(page.locator('section[aria-label="Combined score"] .score-dial .num')).toHaveText("84");
+  await expect(page.locator('section[aria-label="Combined score"] .score-dial .bandtag')).toHaveText("HIGH");
 });
 
 test("n15_ask_failure_offers_retry_without_moving_score", async ({ page }) => {

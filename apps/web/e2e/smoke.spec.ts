@@ -138,7 +138,10 @@ test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  await expect(page.locator('section[aria-label="Combined score"]')).toContainText("84 High");
+  // W-9: the hero no longer repeats the score line; the dial keeps the
+  // number and the band word, and the gauges own the percents.
+  await expect(page.locator('section[aria-label="Combined score"] .score-dial .num')).toHaveText("84");
+  await expect(page.locator('section[aria-label="Combined score"] .score-dial .bandtag')).toHaveText("HIGH");
   await expect(page.getByText("Honeypot", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("91%", { exact: true })).toBeVisible();
   await expect(page.getByText("What bytecode alone cannot tell you")).toBeVisible();

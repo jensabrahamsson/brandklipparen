@@ -136,6 +136,8 @@ test("s101_explain_panel_renders_checked_sentences_as_inert_text", async ({ page
   expect(await output.locator("script").count()).toBe(0);
   await expect(page.getByTestId("explain-dropped")).toContainText("2 unsupported claims dropped.");
   await expect(output.getByTestId("muse-advisory")).toContainText("Advisory. The score above did not change.");
-  // Scores stand unchanged beside the console.
-  await expect(page.locator('section[aria-label="Combined score"]')).toContainText("84 High");
+  // Scores stand unchanged beside the console: the dial keeps the
+  // number and the band word (W-9 removed the repeated score line).
+  await expect(page.locator('section[aria-label="Combined score"] .score-dial .num')).toHaveText("84");
+  await expect(page.locator('section[aria-label="Combined score"] .score-dial .bandtag')).toHaveText("HIGH");
 });

@@ -3,6 +3,7 @@ import {
   combinedScoreLine,
   emptyGaugeReason,
   plainReason,
+  powersSummaryCopy,
   signalKey,
   signalTitle,
   sortByImpact,
@@ -73,6 +74,37 @@ describe("signal descriptions (K-021)", () => {
     expect(plainReason(SIGNALS[0] as Signal)).toBe("The owner can stop you from selling.");
     expect(plainReason(SIGNALS[1] as Signal)).toBe("The owner can create new tokens and dilute you.");
     expect(emptyGaugeReason()).toBe("Base rate for new tokens; no specific pattern found.");
+  });
+
+  test("w9_base_rate_wording_only_when_no_signal_at_all", () => {
+    expect(emptyGaugeReason(false)).toBe("Base rate for new tokens; no specific pattern found.");
+    expect(emptyGaugeReason(true)).toBe("No pattern found for this risk.");
+    expect(emptyGaugeReason(true)).not.toContain("Base rate");
+  });
+
+  test("w9_powers_summary_found_extended_and_cant_tell", () => {
+    expect(powersSummaryCopy({ found: 2, extended: 0, cantTell: 0 })).toBe("2 found.");
+    expect(powersSummaryCopy({ found: 2, extended: 2, cantTell: 0 })).toBe(
+      "2 found. 2 more found by extended analysis (not in score).",
+    );
+    expect(powersSummaryCopy({ found: 1, extended: 1, cantTell: 1 })).toBe(
+      "1 found. 1 more found by extended analysis (not in score). 1 can't tell.",
+    );
+  });
+
+  test("w9_powers_summary_no_scored_pattern_names_extended", () => {
+    expect(powersSummaryCopy({ found: 0, extended: 1, cantTell: 0 })).toBe(
+      "No scored pattern. 1 more found by extended analysis (not in score).",
+    );
+    expect(powersSummaryCopy({ found: 0, extended: 2, cantTell: 0 })).toBe(
+      "No scored pattern. 2 more found by extended analysis (not in score).",
+    );
+    expect(powersSummaryCopy({ found: 0, extended: 0, cantTell: 2 })).toBe(
+      "No scored pattern. 2 checks could not be fully read.",
+    );
+    expect(powersSummaryCopy({ found: 0, extended: 0, cantTell: 0 })).toBe(
+      "No owner powers found in the code we could read.",
+    );
   });
 
   test("design_review_combined_line_relates_score_to_max_probability", () => {

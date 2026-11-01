@@ -25,15 +25,14 @@ import { riskBand, riskWord } from "../lib/risk.ts";
 import { toAiAvailability, type AiFeatureAvailability, type Availability } from "../lib/capabilities.ts";
 import { assignTemplateLines } from "../lib/claims.ts";
 import {
-  combinedScoreLine,
   emptyGaugeReason,
   plainReason,
-  riskLabel,
   signalKey,
   signalTitle,
   sortByImpact,
   strongestSignal,
 } from "../lib/signals.ts";
+import { PowersStrip } from "../components/PowersStrip.tsx";
 import { StreamView } from "../components/StreamView.tsx";
 import { MuseConsole } from "../components/MuseConsole.tsx";
 import { CantTellPanel } from "../components/CantTellPanel.tsx";
@@ -575,6 +574,12 @@ function AssessedView({
   // screens keep the previous stacked layout untouched, so the dial stays
   // beside the verdict copy and fully visible without scrolling.
   const heroBreakdown = useMediaQuery("(min-width: 1100px)");
+  // Owner-powers strip (UI v2 §1.1, W-9): the same board model as the
+  // plugin board below, so the hero chips and the tiles never disagree.
+  const heroPluginViews = result.pluginResults === undefined ? [] : toPluginResultViews(result.pluginResults);
+  const heroBoard = buildBoardModel(plugins, heroPluginViews);
+  const heroIds = (plugins ?? []).map((entry) => entry.id);
+  const heroHasSignals = result.signals.length > 0;
   // Plugin detail view (UI v2 §1.3 level 2): a route, not a modal. The
   // analysis above stays mounted on the same state; only the rendered
   // level changes, so entering never refetches.
@@ -645,19 +650,7 @@ function AssessedView({
               </span>
               <span>{meaningSentence(result)}</span> <Explain explainKey="score:combined" label="Combined score" />
             </p>
-            <p className="muted" style={{ margin: "0 0 8px" }}>
-              {combinedScoreLine(result.score, result.probabilities)}
-            </p>
-            <p className="quiet numeric hero-meta" data-testid="hero-score-meta" style={{ marginBlock: 0 }}>
-              <span className="meta-item">
-                {result.score} {riskWord(result.score)}
-              </span>
-              {RISKS.map((risk) => (
-                <span key={risk} className="meta-item">
-                  {RISK_SHORT[risk]} {Math.round(result.probabilities[risk] * 100)}%
-                </span>
-              ))}
-            </p>
+            <PowersStrip address={address} allIds={heroIds} tiles={heroBoard.ownerTiles} />
             {mode === "expert" ? (
               <p className="quiet" style={{ margin: "4px 0 0" }}>
                 Calibration report: see the model card. The v1 REST response carries no calibration numbers, so none
@@ -677,7 +670,7 @@ function AssessedView({
                         kind={risk}
                         probability={result.probabilities[risk]}
                         signalCount={count}
-                        reason={top === undefined ? emptyGaugeReason() : plainReason(top)}
+                        reason={top === undefined ? emptyGaugeReason(heroHasSignals) : plainReason(top)}
                       />
                     );
                   })}
@@ -839,7 +832,7 @@ export function OverviewSections({
                 kind={risk}
                 probability={result.probabilities[risk]}
                 signalCount={count}
-                reason={top === undefined ? emptyGaugeReason() : plainReason(top)}
+                reason={top === undefined ? emptyGaugeReason(result.signals.length > 0) : plainReason(top)}
               />
             );
           })}
@@ -1030,24 +1023,29 @@ function topRisk(result: Extract<AnalyzeResult, { kind: "assessed" }>): RiskKind
   return best;
 }
 
-// One true sentence under the ring (S-117): the band word always comes
-// from the score, never from a probability. The clause comes from the
-// strongest fired signal for the top-probability risk; with no signal for
-// that risk the sentence says so instead of asserting an unproven claim.
+// Verdict sentence (UI v2 §1.1, W-9): the band word always comes from
+// the score, never from a probability. The clause is the strongest
+// fired signal in plain words, with no percent and no repeated risk
+// name. With no signal at all the sentence says what was checked
+// instead of asserting an unproven claim.
 export function meaningSentence(result: Extract<AnalyzeResult, { kind: "assessed" }>): string {
-  let topRiskValue: RiskKind = "rug-pull";
-  let topValue = -1;
-  for (const risk of RISKS) {
-    const value = result.probabilities[risk];
-    if (value > topValue) {
-      topValue = value;
-      topRiskValue = risk;
-    }
-  }
-  const percent = Math.round(topValue * 100);
   const word = riskWord(result.score);
-  const label = riskLabel(topRiskValue);
-  const strongest = strongestSignal(result.signals, topRiskValue);
-  const clause = strongest === undefined ? `no specific ${topRiskValue} pattern found` : plainReason(strongest);
-  return `${word} risk (${percent}% ${topRiskValue}): ${label} — ${clause}`;
+  const [top] = sortByImpact(result.signals);
+  if (top === undefined) {
+    return `${word} risk. No owner power found in the code we could read. That is not the same as safe.`;
+  }
+  const clause = withFullStop(stripSeverityWord(plainReason(top)));
+  return `${word} risk. ${clause}`;
+}
+
+// Pattern-titled findings carry their severity in parens ("Honeypot
+// pattern (high)"): the verdict band already names the band, so the
+// clause drops it instead of stuttering.
+function stripSeverityWord(clause: string): string {
+  return clause.replace(/\s*\((low|medium|high)\)\s*\.?$/i, "");
+}
+
+function withFullStop(clause: string): string {
+  const trimmed = clause.trim();
+  return trimmed.endsWith(".") ? trimmed : `${trimmed}.`;
 }

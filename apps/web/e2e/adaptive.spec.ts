@@ -180,17 +180,26 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByTestId("expert-detail")).toHaveCount(0);
-  const simpleScore = await page.locator('section[aria-label="Combined score"]').innerText();
+  const scoreSection = page.locator('section[aria-label="Combined score"]');
+  // W-9 removed the hero's static score repeat, so the dial (1.7 s
+  // count-up) and gauges (1.5 s) own these strings: wait for the
+  // animation to settle before the one-shot read.
+  await expect(scoreSection).toContainText("84");
+  await expect(scoreSection).toContainText("91%");
+  const simpleScore = await scoreSection.innerText();
   await page.getByRole("switch", { name: "Expert view" }).click();
   await expect(page.getByTestId("expert-detail")).toContainText("0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF");
   await expect(page.getByTestId("expert-detail")).toContainText("0xabc");
   await expect(page.getByTestId("expert-selectors")).toContainText("0x44337ea1");
   await expect(page.getByTestId("expert-selectors")).toContainText("PC 0xa3f");
   await expect(page.getByTestId("raw-plugin-payloads")).toContainText('"capability":"call"');
-  const expertScore = await page.locator('section[aria-label="Combined score"]').innerText();
+  await expect(scoreSection).toContainText("91%");
+  const expertScore = await scoreSection.innerText();
   // The score numbers never move between modes; Expert only adds the
-  // calibration detail (S-131).
-  for (const line of ["84 High", "Rug 62%", "Honey 91%", "Bot 34%"]) {
+  // calibration detail (S-131). W-9: the hero no longer repeats the
+  // score line, so the dial owns "84"/"HIGH" and the gauges own the
+  // percents and risk names.
+  for (const line of ["84", "HIGH", "Rug pull", "62%", "Honeypot", "91%", "Bot-pump", "34%"]) {
     expect(simpleScore).toContain(line);
     expect(expertScore).toContain(line);
   }

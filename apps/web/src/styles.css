@@ -1659,10 +1659,11 @@ a {
   gap: 12px;
 }
 
-.gauge .lab .band {
+.gauge .band {
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .gauge .pct {
@@ -1727,6 +1728,148 @@ a {
 
 .gauge.low .pct {
   text-shadow: 0 0 14px var(--glow);
+}
+
+/* W-9 compact gauge rows (<640 px): title, percent, bar and band share
+   one text line; the reason and signal count rest (the card keeps them
+   on wider screens). Opacity, colour and glow only, never movement. */
+@media (max-width: 639px) {
+  .gauge {
+    display: flex;
+    align-items: center;
+    column-gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .gauge-top {
+    display: contents;
+  }
+
+  .gauge .lab {
+    order: 1;
+  }
+
+  .gauge .t {
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  .gauge .pct {
+    order: 2;
+    margin: 0;
+    font-size: 17px;
+  }
+
+  .gauge .bar20 {
+    order: 3;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .gauge .band {
+    order: 4;
+  }
+
+  .gauge-top .explain {
+    order: 5;
+  }
+
+  .gauge .why,
+  .gauge .cnt {
+    display: none;
+  }
+}
+
+/* Owner-powers strip (UI v2 §1.1, W-9): a kicker, wrapping 44 px chips
+   and a summary count under the verdict. Dashed borders mark outside
+   the score (extended, can't tell); glow stays token-based. */
+.powers {
+  margin: 12px 0 0;
+}
+
+.powers-kicker {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.powers-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.powers-chips li {
+  margin: 0;
+  padding: 0;
+}
+
+.power-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 14px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--glass-2);
+  color: var(--phosphor);
+  text-decoration: none;
+  box-shadow: var(--elev-1);
+}
+
+.power-chip:hover {
+  border-color: var(--phosphor);
+  color: var(--phosphor-hi);
+  box-shadow: var(--elev-2);
+}
+
+.power-chip:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.power-chip.state-extended,
+.power-chip.state-cant-tell {
+  border-style: dashed;
+}
+
+.power-chip .power-lamp {
+  display: inline-flex;
+  color: var(--dim);
+}
+
+.power-chip.state-found-scored .power-lamp {
+  color: var(--phosphor);
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
+.power-chip.state-extended .power-lamp {
+  color: var(--phosphor);
+}
+
+.power-chip .power-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.power-chip .power-tag {
+  font-size: 12px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.powers-summary {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dim);
 }
 
 /* Signals: inverted severity tags, evidence as terminal lines. */
@@ -2625,6 +2768,7 @@ details[open] > *:not(summary) {
 .button,
 .button-ghost,
 .chip,
+.power-chip,
 .tab,
 .explain-trigger,
 .copy-btn {

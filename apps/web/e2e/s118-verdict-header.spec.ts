@@ -97,7 +97,13 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
       expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(viewport.height);
     }
     await expect(header.locator("h1")).toContainText("0xdead");
-    await expect(header).toContainText("Honey 91%");
+    // W-9: the hero no longer repeats the breakdown, so "Honey 91%" is
+    // gone from the verdict card. The dial keeps the score and the
+    // gauges own the percents.
+    await expect(page.getByText("Rug pull", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Honeypot", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Bot-pump", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("91%", { exact: true }).first()).toBeVisible();
     // The dial number counts up once to the score; the badge names the band.
     await expect(header.locator(".score-dial .num")).toHaveText("84");
     await expect(header.locator(".score-dial .bandtag")).toHaveText("HIGH");
@@ -166,4 +172,134 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     await expect(page.getByTestId("expert-switch")).toHaveAttribute("aria-checked", "true");
     await expect(page.getByTestId("expert-detail")).toBeVisible();
   }
+});
+
+// W-9: PEPE-like fixture, 0 signals plus 1 extended finding. The strip
+// names the unscored pattern ("No scored pattern. 1 more found by
+// extended analysis") so the quiet signal list never contradicts it,
+// and every chip is a 44 px link to the detail view.
+const PEPE_PLUGINS = {
+  plugins: [
+    "ownership",
+    "pause",
+    "blacklist",
+    "mint",
+    "transfer-fee",
+    "transfer-limits",
+    "sell-block",
+    "transfer-hooks",
+    "proxy-upgrade",
+  ].map((slug) => ({
+    id: `dev.brandklipparen.${slug}`,
+    kind: "detector",
+    weight: 1,
+    version: "1.0.0",
+    displayName: `${slug} detector`,
+    description: `Reports ${slug}.`,
+    frontmatter: { tags: ["holder"], audience: ["holder"], severity: { min: "low", max: "high" } },
+  })),
+};
+
+const PEPE_ANALYZE = {
+  kind: "assessed",
+  target: ADDRESS,
+  block: 18000000,
+  proxy: { kind: "none" },
+  codeHash: "0xabc",
+  modelVersion: "0.1.0",
+  artifactChecksum: "checksum",
+  indexVersion: "1.0.0",
+  templateVersion: "1.0.0",
+  assessedAt: 1700000000000,
+  probabilities: { "rug-pull": 0.26, honeypot: 0.2, "bot-pump": 0.12 },
+  score: 19,
+  signals: [],
+  explanation: { kind: "template", templateVersion: "1.0.0", claims: [] },
+  cantTell: [],
+  pluginResults: [
+    "ownership",
+    "pause",
+    "blacklist",
+    "transfer-fee",
+    "transfer-limits",
+    "sell-block",
+    "transfer-hooks",
+    "proxy-upgrade",
+  ].map((slug) => ({
+    pluginId: `dev.brandklipparen.${slug}`,
+    pluginVersion: "1.0.0",
+    outcome: "ok",
+    findings: [],
+  })).concat([
+    {
+      pluginId: "dev.brandklipparen.mint",
+      pluginVersion: "1.0.0",
+      outcome: "ok",
+      findings: [
+        {
+          id: "dev.brandklipparen.mint:mint-extended",
+          title: "Mint, extended",
+          payload: { fact: "mint", proof: "extended", capped: false },
+          evidence: [{ selector: "0x40c10f19", offset: 100 }],
+        },
+      ],
+    },
+  ]),
+};
+
+async function mockPepeRest(page: Page): Promise<void> {
+  await page.route("**/health", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
+  });
+  await page.route("**/v1/analyze*", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PEPE_ANALYZE) });
+  });
+  await page.route("**/v1/plugins", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PEPE_PLUGINS) });
+  });
+  await page.route("**/v1/live-tokens*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ source: "none", status: "live", updatedAt: 0, items: [] }),
+    });
+  });
+}
+
+test("s118_pepe_like_quiet_signals_with_extended_strip", async ({ page }) => {
+  await mockPepeRest(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.goto(`/#/token/${ADDRESS}`);
+  const header = page.locator('section[aria-label="Combined score"]');
+  await expect(header).toBeVisible();
+
+  // The dial, number, band tag and verdict stay fully in the viewport.
+  for (const target of [
+    page.getByRole("img", { name: /Combined score 19 of 100, Low risk/ }),
+    header.locator(".score-dial .num"),
+    header.locator(".score-dial .bandtag"),
+    header.locator(".risk-meaning"),
+  ]) {
+    const box = await target.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box?.y ?? -1).toBeGreaterThanOrEqual(0);
+    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(844);
+  }
+  await expect(header.locator(".score-dial .num")).toHaveText("19");
+  await expect(header.locator(".score-dial .bandtag")).toHaveText("LOW");
+  await expect(header.locator(".risk-meaning")).toContainText("Low risk.");
+
+  // The strip names the unscored pattern with its not-in-score label,
+  // and the chip is a 44 px link to the mint detail view.
+  const strip = page.getByTestId("powers-strip");
+  await expect(strip).toContainText("No scored pattern. 1 more found by extended analysis");
+  await expect(strip).toContainText("not in score");
+  const chip = page.getByTestId("power-chip-mint");
+  await expect(chip).toBeVisible();
+  expect(await chip.getAttribute("href")).toContain("/plugins/mint");
+  const chipBox = await chip.boundingBox();
+  expect(chipBox).not.toBeNull();
+  expect(chipBox?.width ?? 0).toBeGreaterThanOrEqual(44);
+  expect(chipBox?.height ?? 0).toBeGreaterThanOrEqual(44);
 });

@@ -32,8 +32,48 @@ export function plainReason(signal: Signal): string {
   return SIGNAL_PLAIN[signal.id] ?? signalTitle(signal);
 }
 
-export function emptyGaugeReason(): string {
+export function emptyGaugeReason(hasSignals = false): string {
+  // The "Base rate" wording belongs only to a truly quiet analysis.
+  // When other risks fired but this one did not, the gauge says so
+  // without invoking the population base rate.
+  if (hasSignals) {
+    return "No pattern found for this risk.";
+  }
   return "Base rate for new tokens; no specific pattern found.";
+}
+
+// Owner-powers strip summary (UI v2 §1.1, D9): counts per detector
+// state, never a "·" row (the meta-separator scan owns middots). The
+// extended count always carries its "not in score" label, and the
+// no-scored-pattern form names the extended count so a quiet signal
+// list never contradicts the extended finding below it.
+export type PowersSummaryCounts = {
+  readonly found: number;
+  readonly extended: number;
+  readonly cantTell: number;
+};
+
+export function powersSummaryCopy({ found, extended, cantTell }: PowersSummaryCounts): string {
+  if (found > 0) {
+    const parts = [`${found} found`];
+    if (extended > 0) {
+      parts.push(`${extended} more found by extended analysis (not in score)`);
+    }
+    if (cantTell > 0) {
+      parts.push(`${cantTell} can't tell`);
+    }
+    return `${parts.join(". ")}.`;
+  }
+  if (extended > 0) {
+    const more = extended === 1 ? "1 more" : `${extended} more`;
+    const cant = cantTell > 0 ? ` ${cantTell} more could not be fully read.` : "";
+    return `No scored pattern. ${more} found by extended analysis (not in score).${cant}`;
+  }
+  if (cantTell > 0) {
+    const checks = cantTell === 1 ? "1 check" : `${cantTell} checks`;
+    return `No scored pattern. ${checks} could not be fully read.`;
+  }
+  return "No owner powers found in the code we could read.";
 }
 
 // Impact order (design review: the "sorted by impact" claim must hold):

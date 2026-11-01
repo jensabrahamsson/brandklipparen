@@ -567,16 +567,16 @@ test("brief40_mobile_separators_found_generically", async ({ page }) => {
   await page.goto("/#/token/" + TOKEN_A);
   await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
   const analysisScan = await genericScan(page, ['section[aria-label="Combined score"]']);
-  // W-3 §1 removes the analysis-complete meta row from the hero, leaving 2 separator rows.
-  expect(analysisScan.rowCount).toBeGreaterThanOrEqual(2);
+  // W-9 removes the repeated hero score line alongside the earlier W-3
+  // analysis-complete removal, leaving the token meta as the hero's only
+  // separator row. (The owner-powers strip summary uses sentence stops,
+  // never middots, so it stays out of this scan.)
+  expect(analysisScan.rowCount).toBeGreaterThanOrEqual(1);
   expect(analysisScan.failures, analysisScan.failures.join("; ")).toEqual([]);
   expect(analysisScan.wrapped).toBe(true);
 
-  // The hero score line shares the token meta left edge. (The retired
-  // analysis-complete line was removed with the W-3 hero compaction.)
-  const tokenLeft = await expectRowAligned(page, ".token-meta", 0);
-  const scoreLeft = await expectRowAligned(page, '[data-testid="hero-score-meta"]', 0);
-  expect(Math.abs(scoreLeft - tokenLeft), "score hero shares token meta edge").toBeLessThanOrEqual(0.5);
+  // The token meta keeps its own left edge inside the hero.
+  await expectRowAligned(page, ".token-meta", 0);
 
   // No horizontal scroll at 390 px.
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -609,7 +609,9 @@ test("brief40_desktop_separators_stay_visible_between_items", async ({ page }) =
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + TOKEN_A);
   await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
-  for (const selector of [".token-meta", '[data-testid="hero-score-meta"]']) {
+  // W-9 removed the repeated hero score line, so only the token meta
+  // keeps separators on desktop.
+  for (const selector of [".token-meta"]) {
     const items = await itemCount(page, selector, 0);
     expect(items).toBeGreaterThanOrEqual(2);
     let painted = 0;

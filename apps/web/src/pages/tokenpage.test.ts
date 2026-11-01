@@ -63,8 +63,8 @@ function capability(id: string, risk: "rug-pull" | "honeypot" | "bot-pump", seve
   };
 }
 
-describe("headline agrees with the score (S-117)", () => {
-  test("s117_headline_band_matches_ring_at_24_30_60", () => {
+describe("verdict sentence (UI v2 §1.1, W-9)", () => {
+  test("w9_verdict_band_matches_ring_at_24_30_60", () => {
     const honeypotHigh = capability("owner-blacklist", "honeypot", "high");
     const byScore: Array<{ score: number; word: string }> = [
       { score: 24, word: "Low" },
@@ -80,26 +80,11 @@ describe("headline agrees with the score (S-117)", () => {
       if (result.kind !== "assessed") {
         throw new Error("fixture must assess");
       }
-      expect(meaningSentence(result).startsWith(`${word} risk (62% rug-pull):`)).toBe(true);
+      expect(meaningSentence(result).startsWith(`${word} risk.`)).toBe(true);
     }
   });
 
-  test("s117_no_owner_funds_claim_without_rug_pull_signal", () => {
-    const result = assessed({
-      score: 24,
-      probabilities: { "rug-pull": 0.62, honeypot: 0.35, "bot-pump": 0.1 },
-      signals: [capability("owner-blacklist", "honeypot", "high")],
-    });
-    if (result.kind !== "assessed") {
-      throw new Error("fixture must assess");
-    }
-    const sentence = meaningSentence(result);
-    expect(sentence.startsWith("Low risk (62% rug-pull):")).toBe(true);
-    expect(sentence).not.toContain("owner can move or mint");
-    expect(sentence).toContain("no specific rug-pull pattern found");
-  });
-
-  test("s117_clause_comes_from_the_strongest_fired_signal", () => {
+  test("w9_verdict_clause_comes_from_the_strongest_fired_signal", () => {
     const result = assessed({
       score: 84,
       probabilities: { "rug-pull": 0.62, honeypot: 0.91, "bot-pump": 0.34 },
@@ -108,9 +93,62 @@ describe("headline agrees with the score (S-117)", () => {
     if (result.kind !== "assessed") {
       throw new Error("fixture must assess");
     }
+    expect(meaningSentence(result)).toBe("High risk. The owner can stop you from selling.");
+  });
+
+  test("w9_verdict_severity_wins_over_input_order", () => {
+    const result = assessed({
+      score: 45,
+      probabilities: { "rug-pull": 0.4, honeypot: 0.45, "bot-pump": 0.1 },
+      signals: [capability("mintable", "rug-pull", "medium"), capability("owner-blacklist", "honeypot", "high")],
+    });
+    if (result.kind !== "assessed") {
+      throw new Error("fixture must assess");
+    }
+    expect(meaningSentence(result)).toBe("Elevated risk. The owner can stop you from selling.");
+  });
+
+  test("w9_verdict_names_no_pattern_when_quiet", () => {
+    const result = assessed({
+      score: 19,
+      probabilities: { "rug-pull": 0.26, honeypot: 0.2, "bot-pump": 0.12 },
+      signals: [],
+    });
+    if (result.kind !== "assessed") {
+      throw new Error("fixture must assess");
+    }
     expect(meaningSentence(result)).toBe(
-      "High risk (91% honeypot): Honeypot — The owner can stop you from selling.",
+      "Low risk. No owner power found in the code we could read. That is not the same as safe.",
     );
+  });
+
+  test("w9_verdict_never_repeats_the_risk_name_or_a_percent", () => {
+    const risks = ["rug-pull", "honeypot", "bot-pump"] as const;
+    const labels = ["rug pull", "honeypot", "bot-pump"] as const;
+    for (let index = 0; index < risks.length; index += 1) {
+      const hex: Signal = {
+        kind: "capability",
+        id: `0x${"ab".repeat(32)}`,
+        risk: risks[index] as Signal["risk"],
+        direction: "raises",
+        severity: "high",
+        evidence: [{ selector: "0x44337ea1", offset: 2623 }],
+      };
+      const result = assessed({
+        score: 84,
+        probabilities: { "rug-pull": 0.62, honeypot: 0.91, "bot-pump": 0.34 },
+        signals: [hex],
+      });
+      if (result.kind !== "assessed") {
+        throw new Error("fixture must assess");
+      }
+      const sentence = meaningSentence(result);
+      expect(sentence).not.toContain("%");
+      expect(sentence).not.toMatch(/\((low|medium|high)\)/i);
+      const label = labels[index] as string;
+      const repeats = sentence.toLowerCase().split(label).length - 1;
+      expect(repeats).toBeLessThanOrEqual(1);
+    }
   });
 });
 
