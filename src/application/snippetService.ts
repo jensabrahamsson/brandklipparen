@@ -17,6 +17,10 @@ export type SnippetLine = {
   readonly selector: string;
   readonly lineNumber: number;
   readonly text: string;
+  // Exact instruction PCs of the printed statement (VS-B1): an evidence
+  // offset maps to exactly the line whose pcs include it. Structural
+  // lines (header, braces, comments) carry no PCs.
+  readonly pcs: readonly number[];
 };
 
 export type Snippet = {
@@ -60,10 +64,26 @@ export function snippetForSelector(
   if (end >= lines.length) {
     return { ok: false, error: "selector-not-decompiled" };
   }
+  // Body lines map one-to-one onto the function's statements, so each
+  // quoted body line carries its statement's PCs; the header and the
+  // closing brace are structural and carry none. A pipeline whose text
+  // and statements disagree (foreign decompile injection) quotes text
+  // only, with empty PCs rather than a guessed mapping.
+  const body = lines.slice(start + 1, end);
+  const aligned = body.length === fn.statements.length;
   const quoted: SnippetLine[] = [];
-  for (const [index, text] of lines.slice(start, end + 1).entries()) {
-    quoted.push(Object.freeze({ selector: fn.selector, lineNumber: index + 1, text }));
+  quoted.push(
+    Object.freeze({ selector: fn.selector, lineNumber: 1, text: lines[start] ?? "", pcs: Object.freeze([]) }),
+  );
+  for (const [index, text] of body.entries()) {
+    const pcs = aligned ? (fn.statements[index]?.pcs ?? []) : [];
+    quoted.push(
+      Object.freeze({ selector: fn.selector, lineNumber: index + 2, text, pcs: Object.freeze(pcs.slice()) }),
+    );
   }
+  quoted.push(
+    Object.freeze({ selector: fn.selector, lineNumber: body.length + 2, text: lines[end] ?? "}", pcs: Object.freeze([]) }),
+  );
   return {
     ok: true,
     value: Object.freeze({ selector: fn.selector, entryPc: fn.entryPc, lines: Object.freeze(quoted) }),

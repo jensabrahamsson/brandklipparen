@@ -6,6 +6,7 @@
 // bytecode, no addresses, no network.
 import { describe, expect, test } from "vitest";
 import { Bytecode } from "../../../src/domain/types.ts";
+import { disassemble } from "../../../src/domain/selectors.ts";
 import { explainExtendedProof } from "../../../src/plugins/detectors/extendedProof.ts";
 import type { ExtendedProof } from "../../../src/plugins/detectors/extendedProof.ts";
 import {
@@ -527,6 +528,73 @@ describe("extended-proof diagnostics (P-11 follow-up)", () => {
     expect(mint.steps[3]?.detail).toContain("stored");
   });
 
+describe("proof step code locations (VS-B1)", () => {
+  function realPcs(bytecodeHex: string): Set<number> {
+    const parsed = Bytecode.parse(bytecodeHex);
+    if (!parsed.ok) {
+      throw new Error("fixture bytecode must parse");
+    }
+    return new Set(disassemble(parsed.value).map((ins) => ins.pc));
+  }
+
+  test("proved pause steps carry real instruction locations", () => {
+    const bytecodeHex = `0x${Buffer.from(maskedPackedPauseToken()).toString("hex")}`;
+    const [pause, blacklist] = explainOf(bytecodeHex);
+    if (pause === undefined || blacklist === undefined) {
+      throw new Error("expected one report per extended detector");
+    }
+    for (const entry of pause.steps) {
+      expect(entry.ok).toBe(true);
+    }
+    const pcs = realPcs(bytecodeHex);
+    // The owner check, the write, the gate and the reverting jump each
+    // name their selector and a real instruction PC.
+    for (const entry of [pause.steps[0], pause.steps[3], pause.steps[4], pause.steps[5], pause.steps[6]]) {
+      expect(typeof entry?.selector).toBe("string");
+      expect(typeof entry?.pc).toBe("number");
+      expect(pcs.has(entry?.pc ?? -1)).toBe(true);
+    }
+    // Aggregate steps prove no single line and carry no location.
+    expect(pause.steps[1]?.selector).toBeUndefined();
+    expect(pause.steps[1]?.pc).toBeUndefined();
+    expect(pause.steps[2]?.selector).toBeUndefined();
+    expect(pause.steps[2]?.pc).toBeUndefined();
+    // The unproven tail on the sibling report carries no locations.
+    const failedIndex = blacklist.steps.findIndex((entry) => !entry.ok);
+    expect(failedIndex).toBeGreaterThan(-1);
+    for (const entry of blacklist.steps.slice(failedIndex)) {
+      expect(entry.selector).toBeUndefined();
+      expect(entry.pc).toBeUndefined();
+    }
+  });
+
+  test("proved blacklist steps carry real instruction locations", () => {
+    const bytecodeHex = `0x${Buffer.from(packedMappingBlacklistToken()).toString("hex")}`;
+    const [pause, blacklist] = explainOf(bytecodeHex);
+    if (pause === undefined || blacklist === undefined) {
+      throw new Error("expected one report per extended detector");
+    }
+    for (const entry of blacklist.steps) {
+      expect(entry.ok).toBe(true);
+    }
+    const pcs = realPcs(bytecodeHex);
+    for (const entry of [blacklist.steps[0], blacklist.steps[3], blacklist.steps[4], blacklist.steps[5], blacklist.steps[6]]) {
+      expect(typeof entry?.selector).toBe("string");
+      expect(typeof entry?.pc).toBe("number");
+      expect(pcs.has(entry?.pc ?? -1)).toBe(true);
+    }
+    expect(blacklist.steps[1]?.selector).toBeUndefined();
+    expect(blacklist.steps[1]?.pc).toBeUndefined();
+    expect(blacklist.steps[2]?.selector).toBeUndefined();
+    expect(blacklist.steps[2]?.pc).toBeUndefined();
+    const failedIndex = pause.steps.findIndex((entry) => !entry.ok);
+    expect(failedIndex).toBeGreaterThan(-1);
+    for (const entry of pause.steps.slice(failedIndex)) {
+      expect(entry.selector).toBeUndefined();
+      expect(entry.pc).toBeUndefined();
+    }
+  });
+
   test("holder burn fails mint at the increase proof", () => {
     const bytecode = tokenBytecode([
       {
@@ -572,4 +640,5 @@ describe("extended-proof diagnostics (P-11 follow-up)", () => {
     // but the SUB-driven value never proves an increase.
     expect(firstFailed(mint)).toBe("increase-proof");
   });
+});
 });

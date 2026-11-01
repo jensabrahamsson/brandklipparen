@@ -13,10 +13,17 @@ import { dispatcherTopology, findFunctionEntries } from "./evmFlow.ts";
 import type { FunctionEntry } from "./evmFlow.ts";
 import { resolveFunctionNames } from "./evmNames.ts";
 import type { Expr } from "./ownerControl.ts";
-import { exprConstValue, interpretRegionExprs } from "./ownerControl.ts";
+import {
+  TRANSFER_FROM_SELECTOR,
+  TRANSFER_SELECTOR,
+  exprConstValue,
+  interpretRegionExprs,
+} from "./ownerControl.ts";
 import type { Selector as SelectorType } from "./types.ts";
 import { decompileContract } from "./evmSsa.ts";
-import type { DecompiledContract, StructuredFunction, SsaStatement } from "./evmSsa.ts";
+import type { BodyPart, DecompiledContract, StructuredFunction, SsaStatement } from "./evmSsa.ts";
+import { functionBodyParts } from "./evmSsa.ts";
+import { eventNameForTopic0 } from "./eventNames.ts";
 
 const MASK256 = (1n << 256n) - 1n;
 const MASK160 = (1n << 160n) - 1n;
@@ -125,13 +132,13 @@ type Effect =
   | { kind: "call"; flavor: string; to: Expr; value: Expr; pc: number }
   | { kind: "selfdestruct"; pc: number };
 type Term =
-  | { kind: "halt"; action: "stop" | "return" | "revert"; value: Expr | null }
-  | { kind: "jump"; dest: Expr }
-  | { kind: "jumpi"; cond: Expr; dest: Expr }
+  | { kind: "halt"; action: "stop" | "return" | "revert"; value: Expr | null; pc: number }
+  | { kind: "jump"; dest: Expr; pc: number }
+  | { kind: "jumpi"; cond: Expr; dest: Expr; pc: number }
   | { kind: "fall" }
   | { kind: "end" };
 type Sim = { stack: Expr[]; mem: Map<bigint, Expr>; lastStore: Expr | null };
-type BlockResult = { exit: Sim; effects: Effect[]; term: Term };
+type BlockResult = { exit: Sim; effects: Effect[]; term: Term; loads: Expr[] };
 
 const BINOPS: Readonly<Record<number, string>> = {
   0x01: "ADD", 0x02: "MUL", 0x03: "SUB", 0x04: "DIV", 0x06: "MOD", 0x0a: "EXP",
@@ -161,6 +168,7 @@ function genericEffect(opcode: number): { pops: number; pushes: number } | null 
 function simulateBlock(block: CfgBlock, entry: Sim): BlockResult {
   const sim: Sim = { stack: [...entry.stack], mem: new Map(entry.mem), lastStore: entry.lastStore };
   const effects: Effect[] = [];
+  const loads: Expr[] = [];
   const pop = (): Expr => sim.stack.pop() ?? UNKNOWN;
   const push = (e: Expr): void => { if (sim.stack.length >= 64) sim.stack.shift(); sim.stack.push(e); };
   for (const ins of block.instructions) {
@@ -191,7 +199,7 @@ function simulateBlock(block: CfgBlock, entry: Sim): BlockResult {
     if (ENV0[oc] !== undefined) { push(Object.freeze({ kind: "op", name: ENV0[oc] ?? "", args: Object.freeze([]) }) as Expr); continue; }
     if (oc === 0x51) { const a = pop(); const k = exprConstValue(a); push(k !== null ? (sim.mem.get(k) ?? UNKNOWN) : UNKNOWN); continue; }
     if (oc === 0x52 || oc === 0x53) { const off = pop(); const val = pop(); const k = exprConstValue(off); if (oc === 0x52) { sim.lastStore = val; if (k !== null) sim.mem.set(k, val); } continue; }
-    if (oc === 0x54) { const slot = pop(); push(sloadExpr(slot)); continue; }
+    if (oc === 0x54) { const slot = pop(); loads.push(slot); push(sloadExpr(slot)); continue; }
     if (oc === 0x55) { const slot = pop(); const val = pop(); effects.push({ kind: "store", slot, value: val, pc: ins.pc }); continue; }
     if (oc === 0x20) {
       const off = pop(); const sz = pop();
@@ -211,19 +219,19 @@ function simulateBlock(block: CfgBlock, entry: Sim): BlockResult {
       effects.push({ kind: "call", flavor: oc === 0xf1 ? "call" : oc === 0xf4 ? "delegatecall" : oc === 0xfa ? "staticcall" : "callcode", to, value: val, pc: ins.pc });
       push(UNKNOWN); continue;
     }
-    if (oc === 0x00) return { exit: sim, effects, term: { kind: "halt", action: "stop", value: null } };
-    if (oc === 0xf3) { const off = pop(); const sz = pop(); const k = exprConstValue(off); const v = k !== null && exprConstValue(sz) === 0x20n ? (sim.mem.get(k) ?? null) : null; return { exit: sim, effects, term: { kind: "halt", action: "return", value: v } }; }
-    if (oc === 0xfd || oc === 0xfe) return { exit: sim, effects, term: { kind: "halt", action: "revert", value: null } };
-    if (oc === 0xff) { pop(); effects.push({ kind: "selfdestruct", pc: ins.pc }); return { exit: sim, effects, term: { kind: "halt", action: "stop", value: null } }; }
-    if (oc === 0x56) { const dest = pop(); return { exit: sim, effects, term: { kind: "jump", dest } }; }
-    if (oc === 0x57) { const dest = pop(); const cond = pop(); return { exit: sim, effects, term: { kind: "jumpi", cond, dest } }; }
+    if (oc === 0x00) return { exit: sim, effects, term: { kind: "halt", action: "stop", value: null, pc: ins.pc }, loads };
+    if (oc === 0xf3) { const off = pop(); const sz = pop(); const k = exprConstValue(off); const v = k !== null && exprConstValue(sz) === 0x20n ? (sim.mem.get(k) ?? null) : null; return { exit: sim, effects, term: { kind: "halt", action: "return", value: v, pc: ins.pc }, loads }; }
+    if (oc === 0xfd || oc === 0xfe) return { exit: sim, effects, term: { kind: "halt", action: "revert", value: null, pc: ins.pc }, loads };
+    if (oc === 0xff) { pop(); effects.push({ kind: "selfdestruct", pc: ins.pc }); return { exit: sim, effects, term: { kind: "halt", action: "stop", value: null, pc: ins.pc }, loads }; }
+    if (oc === 0x56) { const dest = pop(); return { exit: sim, effects, term: { kind: "jump", dest, pc: ins.pc }, loads }; }
+    if (oc === 0x57) { const dest = pop(); const cond = pop(); return { exit: sim, effects, term: { kind: "jumpi", cond, dest, pc: ins.pc }, loads }; }
     const g = genericEffect(oc);
-    if (g === null) return { exit: sim, effects, term: { kind: "halt", action: "stop", value: null } };
+    if (g === null) return { exit: sim, effects, term: { kind: "halt", action: "stop", value: null, pc: ins.pc }, loads };
     for (let i = 0; i < g.pops; i += 1) pop();
     for (let i = 0; i < g.pushes; i += 1) push(UNKNOWN);
   }
-  if (block.terminal === "fall") return { exit: sim, effects, term: { kind: "fall" } };
-  return { exit: sim, effects, term: { kind: "end" } };
+  if (block.terminal === "fall") return { exit: sim, effects, term: { kind: "fall" }, loads };
+  return { exit: sim, effects, term: { kind: "end" }, loads };
 }
 
 // ---- naming context ----
@@ -233,6 +241,9 @@ type Ctx = {
   fieldIsBool: ReadonlySet<string>;
   slotNames: ReadonlyMap<number, string>;
   mappingNames: ReadonlyMap<number, string>;
+  // Usage-derived gate notes for mappings no getter names (VS-B1): base ->
+  // "<writer> gate". Only set when unambiguous; the slot name is kept.
+  mappingComments: ReadonlyMap<number, string>;
 };
 function fieldKey(slot: number, byte: number): string { return `${slot}:${byte}`; }
 
@@ -329,13 +340,20 @@ function mappingAccess(slot: Expr, ctx: Ctx): string | null {
   const base = exprConstValue(inner);
   if (base !== null && base <= 0xffffffffn) {
     const name = ctx.mappingNames.get(Number(base)) ?? `mapping${Number(base)}`;
-    return `${name}[${printValue(key, ctx, 0)}]`;
+    return `${name}[${printValue(key, ctx, 0)}]${mappingComment(Number(base), ctx)}`;
   }
   if (inner.kind === "keccak") {
     const nested = mappingAccess(inner, ctx);
     if (nested !== null) return `${nested}[${printValue(key, ctx, 0)}]`;
   }
   return null;
+}
+function mappingComment(base: number, ctx: Ctx): string {
+  // Only unnamed mappings carry a usage note; named ones speak for
+  // themselves. Unknown usage stays silent: never a guessed name.
+  if (ctx.mappingNames.has(base)) return "";
+  const note = ctx.mappingComments.get(base);
+  return note === undefined ? "" : ` /* ${note} */`;
 }
 function slotTarget(slot: Expr, ctx: Ctx): string {
   const m = mappingAccess(slot, ctx);
@@ -628,33 +646,38 @@ function substituteStoreValue(e: Expr, counter: { next: number }): Expr {
   if (e.kind === "op") return Object.freeze({ kind: "op", name: e.name, args: Object.freeze(e.args.map((a) => substituteStoreValue(a, counter))) }) as Expr;
   return e;
 }
-function synthesizeFromRegion(bytecode: BytecodeType, selector: string, ctx: Ctx): string[] {
+function synthesizeFromRegion(bytecode: BytecodeType, selector: string, ctx: Ctx): BodyPart[] {
   const exprs = interpretRegionExprs(bytecode, selector as SelectorType);
-  const lines: string[] = [];
+  const parts: BodyPart[] = [];
   const jumpis = [...exprs.jumpis.entries()].sort((a, b) => a[0] - b[0]);
-  for (const [, cond] of jumpis) {
+  for (const [pc, cond] of jumpis) {
     if (containsUnknown(cond)) continue;
     if (isValidationCond(cond)) continue;
     const text = printBool(cond, ctx);
     if (text === "true" || text === "false" || text.includes("unknown")) continue;
     if (/^(.+) == \1$/.test(text)) continue;
-    lines.push(`  ${REQUIRE}(${text});`);
+    parts.push(Object.freeze({ text: `  ${REQUIRE}(${text});`, pcs: Object.freeze([pc]) }));
   }
   const counter = { next: 0 };
   const stores = [...exprs.stores.entries()].sort((a, b) => a[0] - b[0]);
-  for (const [, record] of stores) {
+  for (const [pc, record] of stores) {
     const slot = substituteUnknowns(record.slot, counter);
     const value = substituteStoreValue(record.value, counter);
-    lines.push(`  ${storeLine(slot, value, ctx)}`);
+    parts.push(Object.freeze({ text: `  ${storeLine(slot, value, ctx)}`, pcs: Object.freeze([pc]) }));
   }
-  return lines.slice(0, MAX_LINES);
+  return parts.slice(0, MAX_LINES);
 }
 function effectLine(eff: Effect, ctx: Ctx): string | null {
   if (eff.kind === "store") return storeLine(eff.slot, eff.value, ctx);
   if (eff.kind === "log") {
     const t0 = eff.topics[0];
     const tv = t0 !== undefined ? exprConstValue(t0) : null;
-    if (tv !== null) return `emit 0x${tv.toString(16).padStart(64, "0")}();`;
+    if (tv !== null) {
+      const hex = `0x${tv.toString(16).padStart(64, "0")}`;
+      const named = eventNameForTopic0(hex);
+      if (named !== null) return `emit ${named}();`;
+      return `emit ${hex}();`;
+    }
     return "emit log();";
   }
   if (eff.kind === "call") {
@@ -675,8 +698,8 @@ function findFieldIn(e: Expr): { slot: number; byte: number } | null {
   if (e.kind === "calldata") return findFieldIn(e.offset);
   return null;
 }
-function collectFunction(cfg: ControlFlowGraph, entryBlock: number): { stores: Effect[]; returns: (Expr | null)[]; hasStore: boolean; candidates: Expr[] } {
-  const stores: Effect[] = []; const returns: (Expr | null)[] = []; const candidates: Expr[] = [];
+function collectFunction(cfg: ControlFlowGraph, entryBlock: number): { stores: Effect[]; loads: Expr[]; returns: (Expr | null)[]; hasStore: boolean; candidates: Expr[] } {
+  const stores: Effect[] = []; const loads: Expr[] = []; const returns: (Expr | null)[] = []; const candidates: Expr[] = [];
   const seen = new Set<number>(); const queue: { idx: number; state: Sim }[] = [{ idx: entryBlock, state: { stack: [], mem: new Map(), lastStore: null } }];
   let visits = 0;
   while (queue.length > 0 && visits < MAX_BLOCK_VISITS) {
@@ -686,13 +709,14 @@ function collectFunction(cfg: ControlFlowGraph, entryBlock: number): { stores: E
     const r = simulateBlock(block, item.state);
     candidates.push(...r.exit.stack, ...r.exit.mem.values(), ...(r.exit.lastStore !== null ? [r.exit.lastStore] : []));
     for (const e of r.effects) { if (e.kind === "store") { stores.push(e); candidates.push(e.value, e.slot); } }
+    loads.push(...r.loads);
     if (r.term.kind === "halt" && r.term.action === "return") returns.push(r.term.value ?? r.exit.lastStore);
     const targets: number[] = [];
     for (const edge of block.successors) { targets.push(edge.to); if (edge.kind === "conditional") targets.push(edge.fallThrough); }
     if (r.term.kind === "jump") { const d = exprConstValue(r.term.dest); if (d !== null) { const t = cfg.blocks.find((b) => b.range.startPc === Number(d)); if (t !== undefined) targets.push(t.index); } }
     for (const t of targets) if (!seen.has(t)) queue.push({ idx: t, state: r.exit });
   }
-  return { stores, returns, hasStore: stores.length > 0, candidates };
+  return { stores, loads, returns, hasStore: stores.length > 0, candidates };
 }
 
 function sigTypes(signature: string | null): string[] {
@@ -718,10 +742,13 @@ function decompileV2Inner(bytecode: BytecodeType): DecompiledContract {
   // Naming pass.
   const fieldNames = new Map<string, string>(); const fieldIsBool = new Set<string>();
   const slotNames = new Map<number, string>(); const mappingNames = new Map<number, string>();
+  type Usage = { selector: string; name: string; signature: string | null; stores: Effect[]; loads: Expr[] };
+  const usage: Usage[] = [];
   // Known bool-typed getters: a no-arg getter whose name suggests a flag.
   for (const entry of named) {
     const types = sigTypes(entry.named.signature);
     const info = collectFunction(cfg, entry.entryBlock);
+    usage.push({ selector: entry.selector, name: entry.named.name, signature: entry.named.signature, stores: info.stores, loads: info.loads });
     const usableName = !entry.named.name.startsWith("function_") && entry.named.name !== "fallback" ? entry.named.name : null;
     if (usableName === null) continue;
     if (types.length === 0 && !info.hasStore) {
@@ -761,31 +788,71 @@ function decompileV2Inner(bytecode: BytecodeType): DecompiledContract {
       }
     }
   }
+  // Usage-derived gate notes for mappings no getter names: a mapping is
+  // annotated only when the usage is unambiguous — read in the transfer
+  // gate and written by exactly one named non-transfer function. The slot
+  // name is kept; the note is a comment, never a guessed name.
+  const mappingComments = new Map<number, string>();
+  {
+    const readBy = new Map<number, Set<string>>();
+    const writtenBy: { base: number; selector: string; name: string }[] = [];
+    for (const u of usage) {
+      for (const eff of u.stores) {
+        if (eff.kind !== "store") continue;
+        const base = mappingBaseOf(eff.slot);
+        if (base !== null) writtenBy.push({ base, selector: u.selector, name: u.name });
+      }
+      for (const load of u.loads) {
+        const base = mappingBaseOf(load);
+        if (base === null) continue;
+        let readers = readBy.get(base);
+        if (readers === undefined) { readers = new Set<string>(); readBy.set(base, readers); }
+        readers.add(u.selector);
+      }
+    }
+    for (const [base, readers] of readBy) {
+      if (mappingNames.has(base)) continue;
+      const readsTransfer = [...readers].some(
+        (selector) => selector === (TRANSFER_SELECTOR as string) || selector === (TRANSFER_FROM_SELECTOR as string),
+      );
+      if (!readsTransfer) continue;
+      const writers = writtenBy.filter(
+        (w) =>
+          w.base === base &&
+          w.selector !== (TRANSFER_SELECTOR as string) &&
+          w.selector !== (TRANSFER_FROM_SELECTOR as string) &&
+          usage.some((u) => u.selector === w.selector && u.signature !== null),
+      );
+      const uniq = [...new Map(writers.map((w) => [w.selector, w])).values()];
+      if (uniq.length === 1) {
+        const only = uniq[0];
+        if (only !== undefined) mappingComments.set(base, `${only.name} gate`);
+      }
+    }
+  }
   // Per-function fallback: an empty v2 body keeps the v1 lines for that
   // selector so no function ever renders worse than v1.
-  const v1Text = decompileContract(bytecode).text;
-  const v1LinesFor = (selector: string): string[] => {
-    const all = v1Text.split("\n");
-    const start = all.findIndex((l) => l.includes(`/* selector ${selector} */`));
-    if (start === -1) return [];
-    const body: string[] = [];
-    for (let i = start + 1; i < all.length && all[i] !== "}"; i += 1) body.push(all[i] ?? "");
-    return body.filter((l) => l.trim().length > 0);
-  };
+  const v1BySelector = new Map(decompileContract(bytecode).functions.map((fn) => [fn.selector, fn]));
   const functions: StructuredFunction[] = [];
   for (const entry of named) {
-    const ctx: Ctx = { argTypes: sigTypes(entry.named.signature), fieldNames, fieldIsBool, slotNames, mappingNames };
+    const ctx: Ctx = { argTypes: sigTypes(entry.named.signature), fieldNames, fieldIsBool, slotNames, mappingNames, mappingComments };
     const emitted = emitFunction(cfg, entry, ctx);
-    let lines = emitted.lines;
-    if (lines.length === 0) lines = synthesizeFromRegion(bytecode, entry.selector, ctx);
-    if (lines.length === 0) lines = v1LinesFor(entry.selector);
-    const hasReturn = lines.some((l) => l.trim().startsWith("return"));
-    const statements: SsaStatement[] = lines.map((line, i) => {
-      const range = Object.freeze({ startPc: entry.entryPc + i, endPc: entry.entryPc + i + 1 });
-      const t = line.trim();
-      if (t.startsWith(REQUIRE) && t.slice(REQUIRE.length).startsWith("(")) return Object.freeze({ kind: "require", condition: t.slice(REQUIRE.length + 1, -2), range }) as SsaStatement;
-      if (t.startsWith("return")) return Object.freeze({ kind: "return", value: t === "return;" ? null : t.slice(7, -1), range }) as SsaStatement;
-      return Object.freeze({ kind: "effect", text: t, range }) as SsaStatement;
+    let parts: readonly BodyPart[] = emitted.lines;
+    if (parts.length === 0) parts = synthesizeFromRegion(bytecode, entry.selector, ctx);
+    if (parts.length === 0) {
+      const v1fn = v1BySelector.get(entry.selector);
+      parts = v1fn === undefined ? [] : functionBodyParts(v1fn);
+    }
+    const hasReturn = parts.some((p) => p.text.trim().startsWith("return"));
+    const statements: SsaStatement[] = parts.map((part) => {
+      const pcs = Object.freeze(part.pcs.slice());
+      const range = part.pcs.length > 0
+        ? Object.freeze({ startPc: Math.min(...part.pcs), endPc: Math.max(...part.pcs) + 1 })
+        : Object.freeze({ startPc: entry.entryPc, endPc: entry.entryPc + 1 });
+      const t = part.text.trim();
+      if (t.startsWith(REQUIRE) && t.slice(REQUIRE.length).startsWith("(")) return Object.freeze({ kind: "require", condition: t.slice(REQUIRE.length + 1, -2), range, pcs }) as SsaStatement;
+      if (t.startsWith("return")) return Object.freeze({ kind: "return", value: t === "return;" ? null : t.slice(7, -1), range, pcs }) as SsaStatement;
+      return Object.freeze({ kind: "effect", text: t, range, pcs }) as SsaStatement;
     });
     functions.push(Object.freeze({
       selector: entry.selector, name: entry.named.name, signature: entry.named.signature, entryPc: entry.entryPc,
@@ -828,8 +895,11 @@ function isRevertBlock(cfg: ControlFlowGraph, idx: number, state: Sim, depth: nu
   return false;
 }
 
-function emitFunction(cfg: ControlFlowGraph, entry: FunctionEntry & { named: { name: string; signature: string | null } }, ctx: Ctx): { lines: string[]; endPc: number } {
-  const out: string[] = [];
+function emitFunction(cfg: ControlFlowGraph, entry: FunctionEntry & { named: { name: string; signature: string | null } }, ctx: Ctx): { lines: BodyPart[]; endPc: number } {
+  const out: BodyPart[] = [];
+  const push = (text: string, pcs: readonly number[]): void => {
+    if (out.length < MAX_LINES) out.push(Object.freeze({ text, pcs: Object.freeze(pcs.slice()) }));
+  };
   let visits = 0;
   let endPc = entry.entryPc;
   const emitBlock = (idx: number, state: Sim, visited: ReadonlySet<number>, depth: number, indent: string, retStack: readonly number[] = []): void => {
@@ -840,7 +910,7 @@ function emitFunction(cfg: ControlFlowGraph, entry: FunctionEntry & { named: { n
     if (block.range.endPc > endPc) endPc = block.range.endPc;
     const seen = new Set(visited); seen.add(idx);
     const r = simulateBlock(block, state);
-    for (const eff of r.effects) { const line = effectLine(eff, ctx); if (line !== null && out.length < MAX_LINES) out.push(`${indent}${line}`); }
+    for (const eff of r.effects) { const line = effectLine(eff, ctx); if (line !== null) push(`${indent}${line}`, [eff.pc]); }
     if (r.term.kind === "halt") {
       if (r.term.action === "return") {
         let v = r.term.value;
@@ -848,9 +918,9 @@ function emitFunction(cfg: ControlFlowGraph, entry: FunctionEntry & { named: { n
           const pool = [...(r.exit.lastStore !== null ? [r.exit.lastStore] : []), ...r.exit.mem.values(), ...[...r.exit.stack].reverse()];
           v = pool.find((e) => containsSload(e) || e.kind === "calldata" || (e.kind === "op" && e.args.length > 0)) ?? null;
         }
-        out.push(v !== null ? `${indent}return ${printValue(v, ctx, 0)};` : `${indent}return;`);
+        push(v !== null ? `${indent}return ${printValue(v, ctx, 0)};` : `${indent}return;`, [r.term.pc]);
       }
-      else if (r.term.action === "revert") out.push(`${indent}revert();`);
+      else if (r.term.action === "revert") push(`${indent}revert();`, [r.term.pc]);
       return;
     }
     if (r.term.kind === "fall" || r.term.kind === "end") {
@@ -889,25 +959,26 @@ function emitFunction(cfg: ControlFlowGraph, entry: FunctionEntry & { named: { n
     const taken = edge.to, fall = edge.fallThrough;
     const takenReverts = isRevertBlock(cfg, taken, r.exit, 0);
     const fallReverts = isRevertBlock(cfg, fall, r.exit, 0);
+    const jumpiPc = r.term.pc;
     const pushRequire = (cond: string): void => {
       if (cond === "false" || cond === "true") return;
       if (/^(.+) == address\(\1\)$/.test(cond)) return;
       if (/^(.+) == \1$/.test(cond)) return;
       if (/^(.+) != \1$/.test(cond)) return;
-      out.push(`${indent}${REQUIRE}(${cond});`);
+      push(`${indent}${REQUIRE}(${cond});`, [jumpiPc]);
     };
     if (takenReverts && !fallReverts) { pushRequire(negatedBool(r.term.cond, ctx)); emitBlock(fall, r.exit, seen, depth, indent, retStack); return; }
     if (fallReverts && !takenReverts) { pushRequire(printBool(r.term.cond, ctx)); emitBlock(taken, r.exit, seen, depth, indent, retStack); return; }
-    if (depth >= MAX_IF_DEPTH) { out.push(`${indent}if (${printBool(r.term.cond, ctx)}) { /* ... */ }`); return; }
-    out.push(`${indent}if (${printBool(r.term.cond, ctx)}) {`);
+    if (depth >= MAX_IF_DEPTH) { push(`${indent}if (${printBool(r.term.cond, ctx)}) { /* ... */ }`, [jumpiPc]); return; }
+    push(`${indent}if (${printBool(r.term.cond, ctx)}) {`, [jumpiPc]);
     const before = out.length;
     emitBlock(taken, r.exit, seen, depth + 1, `${indent}  `, retStack);
-    if (out.length === before) out.push(`${indent}  // ...`);
-    out.push(`${indent}} else {`);
+    if (out.length === before) push(`${indent}  // ...`, []);
+    push(`${indent}} else {`, []);
     const before2 = out.length;
     emitBlock(fall, r.exit, seen, depth + 1, `${indent}  `, retStack);
-    if (out.length === before2) out.push(`${indent}  // ...`);
-    out.push(`${indent}}`);
+    if (out.length === before2) push(`${indent}  // ...`, []);
+    push(`${indent}}`, []);
   };
   emitBlock(entry.entryBlock, { stack: [], mem: new Map(), lastStore: null }, new Set(), 0, "  ");
   return { lines: out.slice(0, MAX_LINES), endPc };

@@ -20,6 +20,7 @@ import { createEtherscanLogsAdapter } from "../adapters/lpFeed/etherscanLogsAdap
 import { createRpcLogsAdapter } from "../adapters/lpFeed/rpcLogsAdapter.ts";
 import { createMarketFeedAdapter } from "../adapters/market/dexscreenerAdapter.ts";
 import { createMarketService } from "../application/marketService.ts";
+import { createProofService } from "../application/proofService.ts";
 import type { MarketNewReader } from "../ports/marketFeed.ts";
 import { loadLiveTokensFile, saveLiveTokensFile } from "../adapters/liveTokens/liveTokensFile.ts";
 import { systemLiveTokensTimers } from "../adapters/liveTokens/systemTimers.ts";
@@ -322,6 +323,10 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
   // contract code through the bound chain port, so a composed server
   // answers `/v1/snippet` instead of the not-available branch.
   const snippetRpc = deps.ports.rpc;
+  // Extended-proof diagnostics (VS-B1, main spec B-3): the application
+  // proof service with its bounded per-code-hash memo, injected into the
+  // REST driving adapter so interfaces never import plugins directly.
+  const proofService = createProofService();
   // On-chain feature reads (session A): serving-mode reads through the
   // bound chain port with the operator-configured canonical WETH (null
   // when unset, in which case WETH-quoted pools do not qualify).
@@ -368,6 +373,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     personalizePromptVersion:
       personalizePromptVersion === undefined ? undefined : personalizePromptVersion.value,
     snippetRpc,
+    proofService,
     onchain,
     rateLimit: rateLimit.value,
     liveTokens,

@@ -17,6 +17,7 @@ import {
   analyzeOwnerControl,
   callGraphBodyPcs,
   constSlotLoadNearFlavor,
+  exprConstValue,
   exprMappingBase,
   hasRevertingGateAfter,
   hasRevertingSide,
@@ -35,6 +36,7 @@ import {
   supplySlotOf,
 } from "../../domain/ownerControl.ts";
 import type {
+  Expr,
   OwnerControlView,
   RegionFacts,
   RegionExprs,
@@ -58,10 +60,21 @@ import {
 
 // One proof step: the stable step id, whether it held, and a short
 // English detail naming the concrete values (slots, bases, selectors).
+// VS-B1: each step optionally carries the code location it proved — the
+// writer or transfer selector with the exact PC of the owner check,
+// write, gate or reverting JUMPI — so a later code view can light the
+// step's line. A step that proved no location carries neither field.
 export type ExtendedProofStep = {
   readonly step: string;
   readonly ok: boolean;
   readonly detail: string;
+  readonly selector?: SelectorType;
+  readonly pc?: number;
+};
+
+export type StepLocation = {
+  readonly selector?: SelectorType;
+  readonly pc?: number;
 };
 
 // The per-detector report: the detector id with its ordered steps. The
@@ -88,12 +101,88 @@ const SUPPLY_WRITE = "supply-write";
 const BALANCE_CREDIT = "balance-credit";
 const INCREASE_PROOF = "increase-proof";
 
-function step(name: string, ok: boolean, detail: string): ExtendedProofStep {
-  return Object.freeze({ step: name, ok, detail });
+function step(name: string, ok: boolean, detail: string, loc?: StepLocation): ExtendedProofStep {
+  if (loc === undefined || (loc.selector === undefined && loc.pc === undefined)) {
+    return Object.freeze({ step: name, ok, detail });
+  }
+  return Object.freeze({
+    step: name,
+    ok,
+    detail,
+    ...(loc.selector === undefined ? {} : { selector: loc.selector }),
+    ...(loc.pc === undefined ? {} : { pc: loc.pc }),
+  });
 }
 
 function blockedTail(firstFailed: string, names: readonly string[]): ExtendedProofStep[] {
   return names.map((name) => step(name, false, `not evaluated: ${firstFailed} failed`));
+}
+
+// A condition loads the owner slot when it reads an SLOAD of that
+// constant slot anywhere inside it.
+function condLoadsOwnerSlot(cond: Expr, ownerSlot: number): boolean {
+  if (cond.kind === "sload") {
+    return exprConstValue(cond.slot) === BigInt(ownerSlot);
+  }
+  if (cond.kind === "op") {
+    return cond.args.some((arg) => condLoadsOwnerSlot(arg, ownerSlot));
+  }
+  if (cond.kind === "keccak") {
+    return cond.words.some((word) => condLoadsOwnerSlot(word, ownerSlot));
+  }
+  if (cond.kind === "calldata") {
+    return condLoadsOwnerSlot(cond.offset, ownerSlot);
+  }
+  return false;
+}
+
+// The owner-check JUMPI inside one writer region (VS-B1): the first
+// region JUMPI whose proven condition reads the owner slot. Only the
+// proven guard counts, so a caller passes expr-proven regions only.
+export function ownerCheckJumpiPc(
+  bytecode: BytecodeType,
+  writer: SelectorType,
+  ownerSlot: number,
+): number | null {
+  const exprs = interpretRegionExprs(bytecode, writer);
+  const pcs = [...exprs.jumpis.keys()].sort((left, right) => left - right);
+  for (const pc of pcs) {
+    const cond = exprs.jumpis.get(pc);
+    if (cond !== undefined && condLoadsOwnerSlot(cond, ownerSlot)) {
+      return pc;
+    }
+  }
+  return null;
+}
+
+// Attach the owner-check location to the shared owner-slot step once the
+// best chain names its writer (VS-B1): the writer selector with its
+// guard JUMPI. Nothing is guessed: without a proven JUMPI the step keeps
+// no location.
+function attachOwnerCheck(
+  steps: ExtendedProofStep[],
+  bytecode: BytecodeType,
+  writer: SelectorType,
+  ownerSlot: number | null,
+  exprProven: boolean,
+  target: string = OWNER_SLOT,
+): void {
+  if (ownerSlot === null || !exprProven) {
+    return;
+  }
+  const pc = ownerCheckJumpiPc(bytecode, writer, ownerSlot);
+  if (pc === null) {
+    return;
+  }
+  const index = steps.findIndex((entry) => entry.step === target);
+  if (index === -1) {
+    return;
+  }
+  const found = steps[index];
+  if (found === undefined) {
+    return;
+  }
+  steps[index] = step(found.step, found.ok, found.detail, { selector: writer, pc });
 }
 
 // Leading ok count of a step chain: stages run in order, so progress
@@ -318,9 +407,9 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
   }
   const orderedSlots = [...candidates].sort((left, right) => left - right);
   steps.push(step(CANDIDATE_SLOTS, true, `candidate flag slots: ${orderedSlots.join(", ")}`));
-  const chains: StepChain[] = [];
-  const consider = (chain: StepChain): void => {
-    chains.push(chain);
+  const chains: { readonly chain: StepChain; readonly writer: SelectorType }[] = [];
+  const consider = (chain: StepChain, writer: SelectorType): void => {
+    chains.push(Object.freeze({ chain, writer }));
   };
   for (const slot of orderedSlots) {
     for (const writer of writers) {
@@ -339,7 +428,7 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
             step(TRANSFER_GATE, false, `not evaluated: no writer store for slot ${slot}`),
             step(SAME_SLOT_AND_BIT, false, `not evaluated: no writer store for slot ${slot}`),
             step(REVERTING_JUMPI, false, `not evaluated: no writer store for slot ${slot}`),
-          ]);
+          ], writer.region.selector);
           continue;
         }
         writePc = first;
@@ -360,6 +449,7 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
         packedWrite !== null
           ? `packed bool write to slot ${slot} by ${writerName} (bit ${packedWrite.shift === null ? "unknown position" : packedWrite.shift} via ${packedWrite.via})`
           : `constant flag write to slot ${slot} by ${writerName} (via window)`,
+        { selector: writer.region.selector, pc: writePc },
       );
       const orderedTransfers = [TRANSFER_SELECTOR, TRANSFER_FROM_SELECTOR]
         .filter((selector) => selector !== writer.region.selector)
@@ -389,14 +479,16 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
               step(TRANSFER_GATE, false, `no packed gate reading slot ${slot} on transfer ${transferName}`),
               step(SAME_SLOT_AND_BIT, false, `not evaluated: no packed gate on transfer ${transferName}`),
               step(REVERTING_JUMPI, false, `not evaluated: no packed gate on transfer ${transferName}`),
-            ]);
+            ], writer.region.selector);
             continue;
           }
+          const gateLoc: StepLocation = { selector: transferSelector, pc: gate.loadPc };
           const pairOk = gate.shift === packedWrite.shift;
           const gateStep = step(
             TRANSFER_GATE,
             true,
             `packed gate on transfer ${transferName} reads slot ${slot} bit ${gate.shift} via ${gate.via}`,
+            gateLoc,
           );
           const pairStep = step(
             SAME_SLOT_AND_BIT,
@@ -404,6 +496,7 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
             pairOk
               ? `gate bit ${gate.shift} matches writer bit ${packedWrite.shift} via ${gate.via}`
               : `gate bit ${gate.shift} differs from writer bit ${packedWrite.shift}`,
+            gateLoc,
           );
           // The expr gate names its JUMPI directly; the window gate
           // names its compare, so the legacy search finds the JUMPI.
@@ -424,8 +517,9 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
                 : pairOk
                   ? "no reverting jump after the compare"
                   : "not evaluated: slot and bit differ",
+              pairOk ? gateLoc : undefined,
             ),
-          ]);
+          ], writer.region.selector);
         } else {
           const gate = gatedFlagReadPrecise(transfer, slot);
           if (gate === null) {
@@ -434,32 +528,34 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
               step(TRANSFER_GATE, false, `no gate reading slot ${slot} on transfer ${transferName}`),
               step(SAME_SLOT_AND_BIT, false, `not evaluated: no gate on transfer ${transferName}`),
               step(REVERTING_JUMPI, false, `not evaluated: no gate on transfer ${transferName}`),
-            ]);
+            ], writer.region.selector);
             continue;
           }
           const revertOk = hasRevertingGateAfter(bytecode, code, gateMember, gate.cmpPc);
+          const windowLoc: StepLocation = { selector: transferSelector, pc: gate.loadPc };
           consider([
             writeStep,
-            step(TRANSFER_GATE, true, `beside-window gate on transfer ${transferName} reads slot ${slot}`),
-            step(SAME_SLOT_AND_BIT, true, `gate reads slot ${slot}`),
+            step(TRANSFER_GATE, true, `beside-window gate on transfer ${transferName} reads slot ${slot}`, windowLoc),
+            step(SAME_SLOT_AND_BIT, true, `gate reads slot ${slot}`, windowLoc),
             step(
               REVERTING_JUMPI,
               revertOk,
               revertOk
                 ? "blocked side reverts after the compare via window"
                 : "no reverting jump after the compare",
+              windowLoc,
             ),
-          ]);
+          ], writer.region.selector);
         }
       }
     }
   }
-  let best: StepChain | null = null;
+  let best: { readonly chain: StepChain; readonly writer: SelectorType } | null = null;
   let bestProgress = -1;
-  for (const chain of chains) {
-    const progress = chainProgress([chain[0].ok, chain[1].ok, chain[2].ok, chain[3].ok]);
+  for (const entry of chains) {
+    const progress = chainProgress([entry.chain[0].ok, entry.chain[1].ok, entry.chain[2].ok, entry.chain[3].ok]);
     if (progress > bestProgress) {
-      best = chain;
+      best = entry;
       bestProgress = progress;
     }
   }
@@ -470,7 +566,15 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
     );
     return done(steps);
   }
-  steps.push(best[0], best[1], best[2], best[3]);
+  const won = best;
+  steps.push(won.chain[0], won.chain[1], won.chain[2], won.chain[3]);
+  attachOwnerCheck(
+    steps,
+    bytecode,
+    won.writer,
+    view.ownerSlot,
+    writers.some((writer) => writer.region.selector === won.writer && writer.guardVia === "expr"),
+  );
   return done(steps);
 }
 
@@ -540,9 +644,9 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
       `candidate writer bases: ${candidateWrites.map((write) => `base ${write.base} by ${write.selector as string} (via ${write.via})`).join(", ")}`,
     ),
   );
-  const chains: StepChain[] = [];
-  const consider = (chain: StepChain): void => {
-    chains.push(chain);
+  const chains: { readonly chain: StepChain; readonly writer: SelectorType }[] = [];
+  const consider = (chain: StepChain, writer: SelectorType): void => {
+    chains.push(Object.freeze({ chain, writer }));
   };
   for (const write of candidateWrites) {
     const writeName = write.selector as string;
@@ -555,6 +659,7 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
       writePacked
         ? `packed read-modify-write to base ${write.base} by ${writeName}`
         : `plain mapping store to base ${write.base} by ${writeName}`,
+      { selector: write.selector, pc: write.writePc },
     );
     const orderedTransfers = [TRANSFER_SELECTOR, TRANSFER_FROM_SELECTOR]
       .filter((selector) => selector !== write.selector)
@@ -585,42 +690,49 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
         packed !== null && hasRevertingGateAfter(bytecode, code, gateMember, packed.cmpPc);
       const packedProves = packed !== null && packed.base === write.base && packedRevert;
       if (preciseProves && precise !== null && preciseBase !== null) {
+        const preciseLoc: StepLocation = { selector: transferSelector, pc: precise.loadPc };
         consider([
           writeStep,
-          step(TRANSFER_GATE, true, `beside-window mapping gate on transfer ${transferName} reads base ${preciseBase} via window`),
-          step(SAME_BASE, true, `gate base ${preciseBase} matches writer base ${write.base} via window`),
-          step(REVERTING_JUMPI, true, "blocked side reverts after the compare via window"),
-        ]);
+          step(TRANSFER_GATE, true, `beside-window mapping gate on transfer ${transferName} reads base ${preciseBase} via window`, preciseLoc),
+          step(SAME_BASE, true, `gate base ${preciseBase} matches writer base ${write.base} via window`, preciseLoc),
+          step(REVERTING_JUMPI, true, "blocked side reverts after the compare via window", preciseLoc),
+        ], write.selector);
       } else if (exprProves && exprGate !== null) {
+        const exprLoc: StepLocation = { selector: transferSelector, pc: exprGate.jumpiPc };
         consider([
           writeStep,
           step(
             TRANSFER_GATE,
             true,
             `packed shift-and-mask gate on transfer ${transferName} reads base ${exprGate.base} (shift ${exprGate.shift} via expr)`,
+            exprLoc,
           ),
-          step(SAME_BASE, true, `gate base ${exprGate.base} matches writer base ${write.base} via expr`),
-          step(REVERTING_JUMPI, true, "blocked side reverts after the compare via expr"),
-        ]);
+          step(SAME_BASE, true, `gate base ${exprGate.base} matches writer base ${write.base} via expr`, exprLoc),
+          step(REVERTING_JUMPI, true, "blocked side reverts after the compare via expr", exprLoc),
+        ], write.selector);
       } else if (packedProves && packed !== null) {
+        const packedLoc: StepLocation = { selector: transferSelector, pc: packed.loadPc };
         consider([
           writeStep,
           step(
             TRANSFER_GATE,
             true,
             `packed shift-and-mask gate on transfer ${transferName} reads base ${packed.base} (shift ${packed.shift} via window)`,
+            packedLoc,
           ),
-          step(SAME_BASE, true, `gate base ${packed.base} matches writer base ${write.base} via window`),
-          step(REVERTING_JUMPI, true, "blocked side reverts after the compare via window"),
-        ]);
+          step(SAME_BASE, true, `gate base ${packed.base} matches writer base ${write.base} via window`, packedLoc),
+          step(REVERTING_JUMPI, true, "blocked side reverts after the compare via window", packedLoc),
+        ], write.selector);
       } else if (precise !== null) {
         const pairOk = preciseBase !== null && preciseBase === write.base;
+        const preciseLoc: StepLocation = { selector: transferSelector, pc: precise.loadPc };
         consider([
           writeStep,
           step(
             TRANSFER_GATE,
             true,
             `beside-window mapping gate on transfer ${transferName} reads base ${preciseBase === null ? "unknown" : preciseBase}`,
+            preciseLoc,
           ),
           step(
             SAME_BASE,
@@ -628,6 +740,7 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
             pairOk
               ? `gate base ${preciseBase} matches writer base ${write.base}`
               : `gate base ${preciseBase === null ? "unknown" : preciseBase} differs from writer base ${write.base}`,
+            preciseLoc,
           ),
           step(
             REVERTING_JUMPI,
@@ -637,16 +750,19 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
                 ? "blocked side reverts after the compare"
                 : "no reverting jump after the compare"
               : "not evaluated: bases differ",
+            pairOk ? preciseLoc : undefined,
           ),
-        ]);
+        ], write.selector);
       } else if (packed !== null) {
         const pairOk = packed.base === write.base;
+        const packedLoc: StepLocation = { selector: transferSelector, pc: packed.loadPc };
         consider([
           writeStep,
           step(
             TRANSFER_GATE,
             true,
             `packed shift-and-mask gate on transfer ${transferName} reads base ${packed.base} (shift ${packed.shift})`,
+            packedLoc,
           ),
           step(
             SAME_BASE,
@@ -654,6 +770,7 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
             pairOk
               ? `gate base ${packed.base} matches writer base ${write.base}`
               : `gate base ${packed.base} differs from writer base ${write.base}`,
+            packedLoc,
           ),
           step(
             REVERTING_JUMPI,
@@ -663,24 +780,25 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
                 ? "blocked side reverts after the compare"
                 : "no reverting jump after the compare"
               : "not evaluated: bases differ",
+            pairOk ? packedLoc : undefined,
           ),
-        ]);
+        ], write.selector);
       } else {
         consider([
           writeStep,
           step(TRANSFER_GATE, false, `no mapping gate on transfer ${transferName}`),
           step(SAME_BASE, false, `not evaluated: no gate on transfer ${transferName}`),
           step(REVERTING_JUMPI, false, `not evaluated: no gate on transfer ${transferName}`),
-        ]);
+        ], write.selector);
       }
     }
   }
-  let best: StepChain | null = null;
+  let best: { readonly chain: StepChain; readonly writer: SelectorType } | null = null;
   let bestProgress = -1;
-  for (const chain of chains) {
-    const progress = chainProgress([chain[0].ok, chain[1].ok, chain[2].ok, chain[3].ok]);
+  for (const entry of chains) {
+    const progress = chainProgress([entry.chain[0].ok, entry.chain[1].ok, entry.chain[2].ok, entry.chain[3].ok]);
     if (progress > bestProgress) {
-      best = chain;
+      best = entry;
       bestProgress = progress;
     }
   }
@@ -691,7 +809,15 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
     );
     return done(steps);
   }
-  steps.push(best[0], best[1], best[2], best[3]);
+  const won = best;
+  steps.push(won.chain[0], won.chain[1], won.chain[2], won.chain[3]);
+  attachOwnerCheck(
+    steps,
+    bytecode,
+    won.writer,
+    view.ownerSlot,
+    writers.some((writer) => writer.region.selector === won.writer && writer.guardVia === "expr"),
+  );
   return done(steps);
 }
 
@@ -731,9 +857,9 @@ function explainFee(bytecode: BytecodeType): ExtendedProof {
   const orderedSlots = [...candidates].sort((left, right) => left - right);
   steps.push(step(CANDIDATE_SLOTS, true, `candidate rate slots: ${orderedSlots.join(", ")}`));
   type FeeChain = readonly [ExtendedProofStep, ExtendedProofStep];
-  const chains: FeeChain[] = [];
-  const consider = (chain: FeeChain): void => {
-    chains.push(chain);
+  const chains: { readonly chain: FeeChain; readonly writer: SelectorType }[] = [];
+  const consider = (chain: FeeChain, writer: SelectorType): void => {
+    chains.push(Object.freeze({ chain, writer }));
   };
   const memberOf = (selector: SelectorType): ((pc: number) => boolean) => {
     return (pc: number): boolean => attribution.holdersOf(pc).includes(selector);
@@ -776,7 +902,7 @@ function explainFee(bytecode: BytecodeType): ExtendedProof {
           consider([
             step(TRANSFER_USE, false, `no MUL/DIV use of slot ${slot} on transfer ${transferName}`),
             step(SUBTRACTION, false, `not evaluated: no rate use on transfer ${transferName}`),
-          ]);
+          ], writer.region.selector);
           continue;
         }
         let capDetail = "no second guarded slot";
@@ -791,27 +917,28 @@ function explainFee(bytecode: BytecodeType): ExtendedProof {
                 : `${capDetail}, ${store.slot.value}`;
           }
         }
-        const useStep = step(TRANSFER_USE, true, `${useDetail} (${capDetail})`);
+        const useLoc: StepLocation = { selector: transferSelector, pc: usePc };
+        const useStep = step(TRANSFER_USE, true, `${useDetail} (${capDetail})`, useLoc);
         if (!transfer.hasSub) {
           consider([
             useStep,
             step(SUBTRACTION, false, `no subtraction on transfer ${transferName}; the fee is never deducted`),
-          ]);
+          ], writer.region.selector);
           continue;
         }
         consider([
           useStep,
-          step(SUBTRACTION, true, `transfer ${transferName} subtracts the fee from the amount`),
-        ]);
+          step(SUBTRACTION, true, `transfer ${transferName} subtracts the fee from the amount`, { selector: transferSelector }),
+        ], writer.region.selector);
       }
     }
   }
-  let best: FeeChain | null = null;
+  let best: { readonly chain: FeeChain; readonly writer: SelectorType } | null = null;
   let bestProgress = -1;
-  for (const chain of chains) {
-    const progress = chainProgress([chain[0].ok, chain[1].ok]);
+  for (const entry of chains) {
+    const progress = chainProgress([entry.chain[0].ok, entry.chain[1].ok]);
     if (progress > bestProgress) {
-      best = chain;
+      best = entry;
       bestProgress = progress;
     }
   }
@@ -822,7 +949,15 @@ function explainFee(bytecode: BytecodeType): ExtendedProof {
     );
     return done(steps);
   }
-  steps.push(best[0], best[1]);
+  const won = best;
+  steps.push(won.chain[0], won.chain[1]);
+  attachOwnerCheck(
+    steps,
+    bytecode,
+    won.writer,
+    ownerSlot,
+    writers.some((writer) => writer.region.selector === won.writer && writer.guardVia === "expr"),
+  );
   return done(steps);
 }
 
@@ -882,9 +1017,9 @@ function explainLimits(bytecode: BytecodeType): ExtendedProof {
   const orderedSlots = [...candidates].sort((left, right) => left - right);
   steps.push(step(CANDIDATE_SLOTS, true, `candidate limit slots: ${orderedSlots.join(", ")}`));
   type LimitsChain = readonly [ExtendedProofStep, ExtendedProofStep, ExtendedProofStep];
-  const chains: LimitsChain[] = [];
-  const consider = (chain: LimitsChain): void => {
-    chains.push(chain);
+  const chains: { readonly chain: LimitsChain; readonly writer: SelectorType }[] = [];
+  const consider = (chain: LimitsChain, writer: SelectorType): void => {
+    chains.push(Object.freeze({ chain, writer }));
   };
   for (const slot of orderedSlots) {
     for (const writer of writers) {
@@ -908,7 +1043,7 @@ function explainLimits(bytecode: BytecodeType): ExtendedProof {
             ),
             step(SAME_SLOT, false, `not evaluated: slot ${slot} prices a fee`),
             step(REVERTING_JUMPI, false, `not evaluated: slot ${slot} prices a fee`),
-          ]);
+          ], writer.region.selector);
           continue;
         }
         const gateExprs = interpretRegionExprs(bytecode, transferSelector);
@@ -918,27 +1053,29 @@ function explainLimits(bytecode: BytecodeType): ExtendedProof {
             step(TRANSFER_GATE, false, `no reverting amount-or-balance compare loading slot ${slot} on transfer ${transferName}`),
             step(SAME_SLOT, false, `not evaluated: no gate on transfer ${transferName}`),
             step(REVERTING_JUMPI, false, `not evaluated: no gate on transfer ${transferName}`),
-          ]);
+          ], writer.region.selector);
           continue;
         }
+        const gateLoc: StepLocation = { selector: transferSelector, pc: gate.loadPc };
         consider([
           step(
             TRANSFER_GATE,
             true,
             `reverting amount-or-balance compare loads slot ${slot} on transfer ${transferName}`,
+            gateLoc,
           ),
-          step(SAME_SLOT, true, `gate slot ${slot} matches the writer slot by ${writerName}`),
-          step(REVERTING_JUMPI, true, "blocked side reverts after the compare"),
-        ]);
+          step(SAME_SLOT, true, `gate slot ${slot} matches the writer slot by ${writerName}`, gateLoc),
+          step(REVERTING_JUMPI, true, "blocked side reverts after the compare", gateLoc),
+        ], writer.region.selector);
       }
     }
   }
-  let best: LimitsChain | null = null;
+  let best: { readonly chain: LimitsChain; readonly writer: SelectorType } | null = null;
   let bestProgress = -1;
-  for (const chain of chains) {
-    const progress = chainProgress([chain[0].ok, chain[1].ok, chain[2].ok]);
+  for (const entry of chains) {
+    const progress = chainProgress([entry.chain[0].ok, entry.chain[1].ok, entry.chain[2].ok]);
     if (progress > bestProgress) {
-      best = chain;
+      best = entry;
       bestProgress = progress;
     }
   }
@@ -949,7 +1086,15 @@ function explainLimits(bytecode: BytecodeType): ExtendedProof {
     );
     return done(steps);
   }
-  steps.push(best[0], best[1], best[2]);
+  const won = best;
+  steps.push(won.chain[0], won.chain[1], won.chain[2]);
+  attachOwnerCheck(
+    steps,
+    bytecode,
+    won.writer,
+    view.ownerSlot,
+    writers.some((writer) => writer.region.selector === won.writer && writer.guardVia === "expr"),
+  );
   return done(steps);
 }
 
@@ -1022,9 +1167,9 @@ function explainMint(bytecode: BytecodeType): ExtendedProof {
     ]);
   }
   type MintChain = readonly [ExtendedProofStep, ExtendedProofStep, ExtendedProofStep];
-  const chains: MintChain[] = [];
-  const consider = (chain: MintChain): void => {
-    chains.push(chain);
+  const chains: { readonly chain: MintChain; readonly writer: SelectorType }[] = [];
+  const consider = (chain: MintChain, writer: SelectorType): void => {
+    chains.push(Object.freeze({ chain, writer }));
   };
   for (const writer of writers) {
     const writerName = writer.region.selector as string;
@@ -1053,18 +1198,19 @@ function explainMint(bytecode: BytecodeType): ExtendedProof {
         step(SUPPLY_WRITE, false, `no store to supply slot ${supply} by ${writerName}`),
         step(BALANCE_CREDIT, false, `not evaluated: no supply store by ${writerName}`),
         step(INCREASE_PROOF, false, `not evaluated: no supply store by ${writerName}`),
-      ]);
+      ], writer.region.selector);
       continue;
     }
     const credit = credits[0];
     for (const store of supplyStores) {
-      const writeStep = step(SUPPLY_WRITE, true, `supply store to slot ${supply} by ${writerName}`);
+      const writeLoc: StepLocation = { selector: writer.region.selector, pc: store.pc };
+      const writeStep = step(SUPPLY_WRITE, true, `supply store to slot ${supply} by ${writerName}`, writeLoc);
       if (credit === undefined) {
         consider([
           writeStep,
           step(BALANCE_CREDIT, false, `no balance mapping credit by ${writerName}`),
           step(INCREASE_PROOF, false, `not evaluated: no balance credit by ${writerName}`),
-        ]);
+        ], writer.region.selector);
         continue;
       }
       const recipient = creditRecipient(code, body, exprs.stores.get(credit.pc)?.slot, credit.pc);
@@ -1072,6 +1218,7 @@ function explainMint(bytecode: BytecodeType): ExtendedProof {
         BALANCE_CREDIT,
         true,
         `balance mapping credit by ${writerName} to ${recipient === "argument" ? "an argument" : "a stored"} account`,
+        { selector: writer.region.selector, pc: credit.pc },
       );
       const value = exprs.stores.get(store.pc)?.value;
       if (!supplyIncrease(code, body, slotOf, value, store.pc, supply)) {
@@ -1079,7 +1226,7 @@ function explainMint(bytecode: BytecodeType): ExtendedProof {
           writeStep,
           creditStep,
           step(INCREASE_PROOF, false, `no addition growing supply slot ${supply} by ${writerName}`),
-        ]);
+        ], writer.region.selector);
         continue;
       }
       const capped = writerCapped(writer.region, exprs.jumpis, supply);
@@ -1090,16 +1237,17 @@ function explainMint(bytecode: BytecodeType): ExtendedProof {
           INCREASE_PROOF,
           true,
           `supply slot ${supply} grows by addition${capped ? " under a cap compare" : ""} by ${writerName}`,
+          writeLoc,
         ),
-      ]);
+      ], writer.region.selector);
     }
   }
-  let best: MintChain | null = null;
+  let best: { readonly chain: MintChain; readonly writer: SelectorType } | null = null;
   let bestProgress = -1;
-  for (const chain of chains) {
-    const progress = chainProgress([chain[0].ok, chain[1].ok, chain[2].ok]);
+  for (const entry of chains) {
+    const progress = chainProgress([entry.chain[0].ok, entry.chain[1].ok, entry.chain[2].ok]);
     if (progress > bestProgress) {
-      best = chain;
+      best = entry;
       bestProgress = progress;
     }
   }
@@ -1110,7 +1258,24 @@ function explainMint(bytecode: BytecodeType): ExtendedProof {
     );
     return done(steps);
   }
-  steps.push(best[0], best[1], best[2]);
+  const won = best;
+  steps.push(won.chain[0], won.chain[1], won.chain[2]);
+  attachOwnerCheck(
+    steps,
+    bytecode,
+    won.writer,
+    view.ownerSlot,
+    view.ownerSlot !== null &&
+      ownerCheckVia(
+        code,
+        (pc) => attribution.holdersOf(pc).includes(won.writer),
+        view.ownerSlot,
+        (pc) => interpretRegionSlots(bytecode, won.writer).get(pc),
+        interpretRegionExprs(bytecode, won.writer).jumpis,
+        bytecode,
+      ) === "expr",
+    WRITER_REGIONS,
+  );
   return done(steps);
 }
 

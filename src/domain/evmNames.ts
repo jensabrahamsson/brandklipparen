@@ -20,9 +20,10 @@ export type FunctionName = {
 
 // Published selector table: name with canonical signature. The ERC-20
 // rows resolve the standard token behavior; the ownership, pausable,
-// access-control, mint and blacklist rows resolve the common admin
-// functions the detectors gate on. Every selector below is the first
-// four bytes of keccak256 over its signature, pinned by the unit test.
+// access-control, mint, blacklist, fee, limit, trading, upgrade and
+// rely/deny rows resolve the common admin functions the detectors gate
+// on. Every selector below is the first four bytes of keccak256 over its
+// signature, pinned by the unit test.
 const SELECTOR_TABLE: Readonly<Record<string, { name: string; signature: string }>> = Object.freeze({
   "0x06fdde03": Object.freeze({ name: "name", signature: "name()" }),
   "0x095ea7b3": Object.freeze({ name: "approve", signature: "approve(address,uint256)" }),
@@ -49,6 +50,30 @@ const SELECTOR_TABLE: Readonly<Record<string, { name: string; signature: string 
     name: "permit",
     signature: "permit(address,address,uint256,uint256,uint8,bytes32,bytes32)",
   }),
+  "0x404e5129": Object.freeze({ name: "blacklist", signature: "blacklist(address,bool)" }),
+  "0xe4997dc5": Object.freeze({ name: "removeBlackList", signature: "removeBlackList(address)" }),
+  "0xf3bdc228": Object.freeze({ name: "destroyBlackFunds", signature: "destroyBlackFunds(address)" }),
+  "0x59bf1abe": Object.freeze({ name: "getBlackListStatus", signature: "getBlackListStatus(address)" }),
+  "0x3aa633aa": Object.freeze({ name: "setRule", signature: "setRule(bool,address,uint256,uint256)" }),
+  "0xcc872b66": Object.freeze({ name: "issue", signature: "issue(uint256)" }),
+  "0xdb006a75": Object.freeze({ name: "redeem", signature: "redeem(uint256)" }),
+  "0xc0324c77": Object.freeze({ name: "setParams", signature: "setParams(uint256,uint256)" }),
+  "0xa0712d68": Object.freeze({ name: "mint", signature: "mint(uint256)" }),
+  "0x42966c68": Object.freeze({ name: "burn", signature: "burn(uint256)" }),
+  "0x9dc29fac": Object.freeze({ name: "burn", signature: "burn(address,uint256)" }),
+  "0x79cc6790": Object.freeze({ name: "burnFrom", signature: "burnFrom(address,uint256)" }),
+  "0x69fe0e2d": Object.freeze({ name: "setFee", signature: "setFee(uint256)" }),
+  "0x061c82d0": Object.freeze({ name: "setTaxFeePercent", signature: "setTaxFeePercent(uint256)" }),
+  "0x8ee88c53": Object.freeze({ name: "setLiquidityFeePercent", signature: "setLiquidityFeePercent(uint256)" }),
+  "0x437823ec": Object.freeze({ name: "excludeFromFee", signature: "excludeFromFee(address)" }),
+  "0xec28438a": Object.freeze({ name: "setMaxTxAmount", signature: "setMaxTxAmount(uint256)" }),
+  "0x5d0044ca": Object.freeze({ name: "setMaxWallet", signature: "setMaxWallet(uint256)" }),
+  "0x8a8c523c": Object.freeze({ name: "enableTrading", signature: "enableTrading()" }),
+  "0xc9567bf9": Object.freeze({ name: "openTrading", signature: "openTrading()" }),
+  "0x3659cfe6": Object.freeze({ name: "upgradeTo", signature: "upgradeTo(address)" }),
+  "0x4f1ef286": Object.freeze({ name: "upgradeToAndCall", signature: "upgradeToAndCall(address,bytes)" }),
+  "0x65fae35e": Object.freeze({ name: "rely", signature: "rely(address)" }),
+  "0x9c52a7f1": Object.freeze({ name: "deny", signature: "deny(address)" }),
   "0xdd62ed3e": Object.freeze({ name: "allowance", signature: "allowance(address,address)" }),
   "0xf2fde38b": Object.freeze({ name: "transferOwnership", signature: "transferOwnership(address)" }),
 });

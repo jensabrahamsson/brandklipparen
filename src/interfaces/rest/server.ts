@@ -34,6 +34,7 @@ import { envelopeMeanings } from "../../application/modelMeanings.ts";
 import { ExplainInput } from "../../ports/explainModel.ts";
 import { snippetForSelector } from "../../application/snippetService.ts";
 import type { SnippetDecompile } from "../../application/snippetService.ts";
+import type { ProofService } from "../../application/proofService.ts";
 import { decompilePreferV2 } from "../../domain/decompileV2.ts";
 import { CHAT_PROMPT_VERSION, serializeChatOutcome } from "../../application/chatService.ts";
 import type { ChatService } from "../../application/chatService.ts";
@@ -170,6 +171,11 @@ export type RestServerOptions = {
   // to the local `decompileContract` pipeline. Tests inject a counting
   // wrapper to prove unknown selectors fail before any pipeline call.
   readonly snippetDecompile?: SnippetDecompile | undefined;
+  // Extended-proof diagnostics (VS-B1, main spec B-3): the application
+  // proof service built in the composition root, carrying the bounded
+  // per-code-hash memo. Absent service means proof diagnostics are not
+  // available on this server (the route answers 500).
+  readonly proofService?: ProofService | undefined;
   // Chat service for opt-in follow-up questions over the frozen analysis
   // (S-096, K-302). Absent service means the overlay stays off: the route
   // answers the not-configured envelope with zero provider calls and the
@@ -1070,6 +1076,10 @@ export function createRestServer(options: RestServerOptions): RestServer {
   const pluginWeights: PluginWeightMapping = options.pluginWeights ?? {};
   const pluginDocs: PluginDocsMap = options.pluginDocs ?? new Map();
   const pluginAudits: StoredAuditReportMap = options.pluginAudits ?? new Map();
+  // Extended-proof diagnostics (VS-B1, main spec B-3): the per-code-hash
+  // memo lives in the injected application proof service, so this driving
+  // adapter never imports the plugin modules directly. Never part of
+  // /v1/analyze; never in the score.
 
   app.get("/v1/plugins", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     const requestId = issueRequestId();
@@ -1617,7 +1627,8 @@ export function createRestServer(options: RestServerOptions): RestServer {
   // then the local decompilation pipeline. A malformed selector fails
   // before any fetch; an unknown selector fails before any pipeline call.
   // The quoted lines come from the pipeline's own emission for the
-  // selector, each carrying its selector, 1-based line number and text.
+  // selector, each carrying its selector, 1-based line number, text and
+  // exact instruction PCs (VS-B1).
   async function handleSnippet(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
     const requestId = issueRequestId();
     const gated = gateRequest(request, rawInput, requestId);
@@ -1684,8 +1695,65 @@ export function createRestServer(options: RestServerOptions): RestServer {
               selector: line.selector,
               lineNumber: line.lineNumber,
               text: line.text,
+              pcs: line.pcs.slice(),
             })),
           },
+        }),
+      );
+  }
+
+  // Extended-proof diagnostics (VS-B1, main spec B-3): the same key
+  // and address gate as the analyze routes, then one bytecode fetch,
+  // then the local proof walk over the frozen code. The response carries
+  // the five per-detector reports with their code locations; it is never
+  // part of /v1/analyze and never enters the score. Cached by code hash.
+  async function handleProof(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
+    const requestId = issueRequestId();
+    const gated = gateRequest(request, rawInput, requestId);
+    if (!gated.ok) {
+      return sendError(reply, gated.error);
+    }
+    const rpc = options.snippetRpc;
+    if (rpc === undefined) {
+      return sendError(reply, requestError(500, "internal-error", "Proof diagnostics are not available on this server.", requestId));
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const fetched = await rpc.getCode(gated.value.address, {
+      requestId,
+      deadline: deadline.value,
+      block: gated.value.block,
+    });
+    if (!fetched.ok) {
+      if (fetched.error.kind === "no-code") {
+        return sendError(reply, notFound(requestId));
+      }
+      return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
+    }
+    const codeHash = CodeHash.of(fetched.value.bytecode);
+    if (!codeHash.ok) {
+      return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
+    }
+    const proofService = options.proofService;
+    if (proofService === undefined) {
+      return sendError(reply, requestError(500, "internal-error", "Proof diagnostics are not available on this server.", requestId));
+    }
+    const proofs = proofService.proofsFor(fetched.value.bytecode, codeHash.value as string);
+    return reply
+      .code(200)
+      .header(REQUEST_ID_HEADER, requestId)
+      .type("application/json")
+      .send(
+        JSON.stringify({
+          status: "ok",
+          apiVersion: API_VERSION,
+          codeHash: codeHash.value as string,
+          proofs: proofs.map((report) => ({
+            detector: report.detector,
+            steps: report.steps.map((entry) => ({ ...entry })),
+          })),
         }),
       );
   }
@@ -1913,6 +1981,10 @@ export function createRestServer(options: RestServerOptions): RestServer {
 
   app.post("/v1/snippet", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
     return handleSnippet(request, reply, request.body);
+  });
+
+  app.get("/v1/proof", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {
+    return handleProof(request, reply, request.query);
   });
 
   app.get("/v1/chat", async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {

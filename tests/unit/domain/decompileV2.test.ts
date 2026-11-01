@@ -72,6 +72,26 @@ function fixtureInternalOwner(): string {
   return asm.build();
 }
 
+function fixtureUsageGate(): string {
+  const asm = new Asm();
+  dispatcher(asm, [["0ecb93c0", "addBlackList"], ["a9059cbb", "transfer"]]);
+  // addBlackList: mapping base 1 store, no getter anywhere.
+  asm.label("addBlackList").op(0x5b);
+  asm.push1(0x04).op(0x35); asm.push1(0x00).op(0x52);
+  asm.push1(0x01); asm.push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20);
+  asm.push1(0x01); asm.op(0x90, 0x55); asm.op(0x00);
+  // transfer: require the base-1 entry is zero, then stop.
+  asm.label("transfer").op(0x5b);
+  asm.push1(0x04).op(0x35); asm.push1(0x00).op(0x52);
+  asm.push1(0x01); asm.push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.label("trev").op(0x5b); asm.push1(0x00).push1(0x00).op(0xfd);
+  asm.label("tok").op(0x5b); asm.op(0x00);
+  return asm.build();
+}
+
 function fixtureMappingWrite(): string {
   const asm = new Asm();
   dispatcher(asm, [["70a08231", "balanceOf"], ["0ecb93c0", "addBlackList"]]);
@@ -116,6 +136,15 @@ describe("decompiler v2", () => {
     expect(out.text).toContain("function addBlackList(address arg0) /* selector 0x0ecb93c0 */ {");
     expect(out.text).toContain("balances[arg0] = 1;");
     expect(out.text).toContain("return balances[arg0];");
+  });
+
+  test("unnamed mapping read in the transfer gate keeps its slot name with a gate note", () => {
+    const out = decompileContractV2(bc(fixtureUsageGate()));
+    // No getter names base 1, a single named writer stores it, and
+    // transfer reads it: the slot name stays, annotated, never guessed.
+    expect(out.text).toContain("mapping1[arg0] /* addBlackList gate */ = 1;");
+    expect(out.text).toContain("require(mapping1[arg0] /* addBlackList gate */ == 0);");
+    expect(out.text).not.toContain("isBlackListed");
   });
 
   test("bitwise and prints as & and masks become casts", () => {

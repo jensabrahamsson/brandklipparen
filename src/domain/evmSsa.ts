@@ -17,13 +17,16 @@ import { resolveFunctionNames } from "./evmNames.ts";
 
 // One emitted statement with its exact source range (D-06, M-45): the
 // range is mandatory, so an item without a range cannot be constructed.
+// VS-B1: every statement also carries the exact instruction PCs it was
+// printed from, so a `/v1/snippet` line maps an evidence offset to exactly
+// one line without synthetic ranges.
 export type SsaStatement =
-  | { kind: "assign"; target: string; expr: string; range: ByteRange }
-  | { kind: "effect"; text: string; range: ByteRange }
-  | { kind: "require"; condition: string; range: ByteRange }
-  | { kind: "return"; value: string | null; range: ByteRange }
-  | { kind: "revert"; range: ByteRange }
-  | { kind: "fallback"; label: string; range: ByteRange };
+  | { kind: "assign"; target: string; expr: string; range: ByteRange; pcs: readonly number[] }
+  | { kind: "effect"; text: string; range: ByteRange; pcs: readonly number[] }
+  | { kind: "require"; condition: string; range: ByteRange; pcs: readonly number[] }
+  | { kind: "return"; value: string | null; range: ByteRange; pcs: readonly number[] }
+  | { kind: "revert"; range: ByteRange; pcs: readonly number[] }
+  | { kind: "fallback"; label: string; range: ByteRange; pcs: readonly number[] };
 
 export type FunctionCause = "no-plain-return" | "unexpected-control-flow";
 
@@ -196,7 +199,7 @@ function liftBlock(
         // MSTORE pops the offset first, then the value.
         const slot = stack.pop() ?? `unknown_${counter.next++}`;
         const value = stack.pop() ?? `unknown_${counter.next++}`;
-        statements.push({ kind: "effect", text: `memory[${slot}] = ${value};`, range });
+        statements.push({ kind: "effect", text: `memory[${slot}] = ${value};`, range, pcs: Object.freeze([entry.pc]) });
         break;
       }
       case 0x54: {
@@ -208,7 +211,7 @@ function liftBlock(
         // SSTORE pops the key first, then the value.
         const slot = stack.pop() ?? `unknown_${counter.next++}`;
         const value = stack.pop() ?? `unknown_${counter.next++}`;
-        statements.push({ kind: "effect", text: `storage[${slot}] = ${value};`, range });
+        statements.push({ kind: "effect", text: `storage[${slot}] = ${value};`, range, pcs: Object.freeze([entry.pc]) });
         break;
       }
       case 0x5c: {
@@ -219,7 +222,7 @@ function liftBlock(
       case 0x5d: {
         const slot = stack.pop() ?? `unknown_${counter.next++}`;
         const value = stack.pop() ?? `unknown_${counter.next++}`;
-        statements.push({ kind: "effect", text: `transient[${slot}] = ${value};`, range });
+        statements.push({ kind: "effect", text: `transient[${slot}] = ${value};`, range, pcs: Object.freeze([entry.pc]) });
         break;
       }
       case 0x5e: {
@@ -227,7 +230,7 @@ function liftBlock(
         const dest = stack.pop() ?? `unknown_${counter.next++}`;
         const source = stack.pop() ?? `unknown_${counter.next++}`;
         const length = stack.pop() ?? `unknown_${counter.next++}`;
-        statements.push({ kind: "effect", text: `memory.copy(${dest}, ${source}, ${length});`, range });
+        statements.push({ kind: "effect", text: `memory.copy(${dest}, ${source}, ${length});`, range, pcs: Object.freeze([entry.pc]) });
         break;
       }
       case 0x56: {
@@ -239,25 +242,25 @@ function liftBlock(
         const taken = stack.pop();
         const condition = stack.pop() ?? `unknown_${counter.next++}`;
         const takenPc = taken !== undefined && /^0x[0-9a-fA-F]+$/.test(taken) ? Number.parseInt(taken, 16) : null;
-        statements.push({ kind: "require", condition, range });
+        statements.push({ kind: "require", condition, range, pcs: Object.freeze([entry.pc]) });
         return { kind: "jump", takenPc, condition };
       }
       case 0xf3: {
         // RETURN pops the offset first, then the size.
         const offset = stack.pop() ?? `unknown_${counter.next++}`;
         const size = stack.pop() ?? `unknown_${counter.next++}`;
-        statements.push({ kind: "return", value: `memory[${offset} : +${size}]`, range });
+        statements.push({ kind: "return", value: `memory[${offset} : +${size}]`, range, pcs: Object.freeze([entry.pc]) });
         return { kind: "halted", returned: true };
       }
       case 0xfd:
-        statements.push({ kind: "revert", range });
+        statements.push({ kind: "revert", range, pcs: Object.freeze([entry.pc]) });
         return { kind: "halted", returned: false };
       case 0xff:
-        statements.push({ kind: "effect", text: "selfdestruct(recipient);", range });
+        statements.push({ kind: "effect", text: "selfdestruct(recipient);", range, pcs: Object.freeze([entry.pc]) });
         return { kind: "halted", returned: false };
       default: {
         const name = `v${counter.next++}`;
-        statements.push({ kind: "assign", target: name, expr: `op_${entry.opcode.toString(16)}()`, range });
+        statements.push({ kind: "assign", target: name, expr: `op_${entry.opcode.toString(16)}()`, range, pcs: Object.freeze([entry.pc]) });
         pushValue(name);
         break;
       }
@@ -348,6 +351,44 @@ function renderFunction(entry: FunctionEntry, named: { name: string; signature: 
   return lines.join("\n");
 }
 
+// One body line with the exact PCs of the statement that printed it
+// (VS-B1): annotation and cause comment lines carry no PCs, every real
+// statement carries its own. The text matches `renderFunction` line for
+// line, so text slicing and statement walking stay in sync.
+export type BodyPart = {
+  readonly text: string;
+  readonly pcs: readonly number[];
+};
+
+export function functionBodyParts(fn: StructuredFunction): readonly BodyPart[] {
+  const parts: BodyPart[] = [];
+  for (const annotation of fn.annotations) {
+    parts.push(Object.freeze({ text: `  // ${annotation}`, pcs: Object.freeze([]) }));
+  }
+  for (const statement of fn.statements) {
+    parts.push(
+      Object.freeze({ text: renderStatement(statement, "  "), pcs: statement.pcs }),
+    );
+  }
+  if (fn.cause === "unexpected-control-flow") {
+    parts.push(
+      Object.freeze({
+        text: "  // cause: unexpected-control-flow (dynamic jump left as a labelled region)",
+        pcs: Object.freeze([]),
+      }),
+    );
+  }
+  if (fn.cause === "no-plain-return") {
+    parts.push(
+      Object.freeze({
+        text: "  // cause: no-plain-return (body carries no plain return info)",
+        pcs: Object.freeze([]),
+      }),
+    );
+  }
+  return Object.freeze(parts);
+}
+
 // Decompile one contract: entries resolve to named functions, each body
 // walks its blocks under the stopping rules, and the text renders every
 // function in entry order. Equal bytecode gives bit-identical output.
@@ -408,7 +449,7 @@ export function decompileContract(bytecode: BytecodeType): DecompiledContract {
       );
       if (takenEdge === undefined) {
         const range = Object.freeze({ startPc: block.range.endPc - 1, endPc: block.range.endPc });
-        statements.push({ kind: "fallback", label: `unresolved jump at ${block.range.endPc - 1}`, range });
+        statements.push({ kind: "fallback", label: `unresolved jump at ${block.range.endPc - 1}`, range, pcs: Object.freeze([block.range.endPc - 1]) });
         fallbackCount += 1;
         cause = "unexpected-control-flow";
         break;
