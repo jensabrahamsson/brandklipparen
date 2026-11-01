@@ -70,8 +70,11 @@ export function Gauge({
           />
         ))}
       </div>
-      <p className="why">{reason}</p>
-      <p className="cnt numeric">{signalCount === 0 ? "no signals" : `${signalCount} ${signalWord}`}</p>
+      {/* A quiet gauge carries no count line and no reason line: on a
+          quiet analysis the TokenPage call site prints the usual-rate
+          line on one gauge only, never "no signals" (R3 D-11). */}
+      {reason === "" ? null : <p className="why">{reason}</p>}
+      {signalCount === 0 ? null : <p className="cnt numeric">{`${signalCount} ${signalWord}`}</p>}
     </section>
   );
 }

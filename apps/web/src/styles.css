@@ -2253,6 +2253,19 @@ a {
   display: table;
 }
 
+/* D-11: below a High token band no tag carries a filled red background;
+   the rail keeps the severity colour. The swap is display-only, so no
+   motion runs and reduced motion needs no override. */
+.why-article > .sev.ghost {
+  background: none;
+  animation: none;
+}
+
+.why-article > .sev.ghost.high {
+  color: var(--red);
+  border: 1px solid var(--red);
+}
+
 .why-title {
   margin: 4px 0;
   font-size: 16px;
@@ -2266,8 +2279,30 @@ a {
 .why-evidence > summary {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-height: 44px;
   cursor: pointer;
+}
+
+/* D-11: the disclosure glyph swaps between two static pictograms (no
+   transform, so no motion token runs and reduced motion needs no
+   override). */
+.why-evidence .chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--dim);
+}
+
+.why-evidence .chev-open {
+  display: none;
+}
+
+.why-evidence[open] .chev-open {
+  display: inline-flex;
+}
+
+.why-evidence[open] .chev-closed {
+  display: none;
 }
 
 .inline-code {

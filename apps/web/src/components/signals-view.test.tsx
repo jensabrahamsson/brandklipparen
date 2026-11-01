@@ -61,18 +61,18 @@ describe("merged score card (R2-6, D-5)", () => {
     expect(html).toContain('aria-label="Why this score"');
     expect(html).toContain("Owner can block transfers");
     expect(html).toContain("The owner can stop you from selling.");
-    // The claim severity follows the signal: one field, one word.
-    expect(html).toContain("(severity high)");
-    expect(html).not.toContain("(severity medium)");
-    // Rail colour comes from the same severity field.
+    // The sentence never repeats the severity note: the tag owns it.
+    expect(html).not.toContain("(severity");
+    // The tag names the risk and the strength; the rail keeps the colour.
+    expect(html).toContain("Honeypot · strong signal");
     expect(html).toContain("why-row sev-high");
     // No prototype strings and no raw backticks anywhere on the card.
     expect(html).not.toContain("Template");
     expect(html).not.toContain("deepening");
     expect(html).not.toContain("Open in bytecode");
     expect(html).not.toContain("`");
-    // Copy evidence stays; the bytecode shortcut is gone.
-    expect(html).toContain("Copy evidence");
+    // Evidence copy is Expert-only, so Simple mode shows no copy control.
+    expect(html).not.toContain("Copy evidence");
   });
 
   test("r26_inline_code_renders_without_backticks", () => {
@@ -201,7 +201,9 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
     expect(html).toContain("Owner can change this");
     expect(html).not.toContain("Owner can turn this on later");
     expect(html).toContain("Applies now");
-    expect(html).not.toContain("owner-blacklist");
+    // The signal id may travel in the Expert copy payload attribute, but
+    // it never renders as visible copy.
+    expect(html).not.toContain(">owner-blacklist<");
     expect(html).toContain("Owner can block transfers");
   });
 
@@ -243,7 +245,7 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
         names={NAMES}
       />,
     );
-    expect(html).toContain("Possible in code · no controlling account found");
+    expect(html).toContain("Owner-controlled · owner not read yet");
     expect(html).not.toContain("Owner can turn this on later");
     expect(html).not.toContain("claim-account-full");
   });
@@ -278,5 +280,80 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
     expect(html).toContain(`data-copy-value="${checksummed}"`);
     expect(html).toContain("can change this");
     expect(html).not.toContain("Owner can turn this on later");
+  });
+});
+
+describe("why this score rows (R3 D-11)", () => {
+  const HEX_SIGNAL: Signal = {
+    kind: "capability",
+    id: `0x${"cd".repeat(32)}`,
+    risk: "bot-pump",
+    direction: "raises",
+    severity: "low",
+    evidence: [{ selector: "0xabcdef01", offset: 7 }],
+  };
+
+  test("r3_d11_plain_titles_tags_chevron_and_no_simple_copy", () => {
+    const html = renderToString(
+      <SignalRows
+        signals={SIGNALS}
+        claims={[
+          {
+            text: "The owner can stop you from selling. This raises the honeypot risk (severity medium).",
+            signalLinks: ["owner-blacklist"],
+            temporality: { kind: "can-change" },
+          },
+        ]}
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+      />,
+    );
+    // No title carries a "pattern (" suffix and no sentence repeats a
+    // severity note.
+    expect(html).not.toMatch(/pattern \(/);
+    expect(html).not.toContain("(severity");
+    // The tag names the risk and the strength, outlined below High band.
+    expect(html).toContain("Honeypot · strong signal");
+    expect(html).toContain("sev high ghost");
+    // The evidence disclosure shows a chevron glyph.
+    expect(html).toContain("<svg");
+    // Simple mode has no evidence copy.
+    expect(html).not.toContain("Copy evidence");
+  });
+
+  test("r3_d11_body_omitted_when_it_repeats_the_title", () => {
+    const html = renderToString(
+      <SignalRows
+        signals={[HEX_SIGNAL]}
+        claims={[]}
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+      />,
+    );
+    expect(html).toContain("Bot-pump risk");
+    expect(html).not.toContain("claim-text");
+  });
+
+  test("r3_d11_high_band_keeps_filled_tags_and_expert_copies", () => {
+    const html = renderToString(
+      <SignalRows
+        signals={SIGNALS}
+        claims={[]}
+        expert
+        bandHigh
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+      />,
+    );
+    expect(html).not.toContain("ghost");
+    expect(html).toContain('aria-label="Copy evidence JSON"');
   });
 });

@@ -28,7 +28,9 @@ describe("gauge segments (phosphor console)", () => {
       // Under reduced motion the fill renders final at once.
       const zero = renderToString(<Gauge kind="rug-pull" probability={0} signalCount={0} reason="x" />);
       expect(zero.match(/class="lit"/g) ?? []).toHaveLength(0);
-      expect(zero).toContain("no signals");
+      // A quiet gauge carries no count line and never says "no signals".
+      expect(zero).not.toContain("no signals");
+      expect(zero).not.toContain('class="cnt"');
       const full = renderToString(<Gauge kind="rug-pull" probability={1} signalCount={2} reason="x" />);
       expect(full.match(/class="lit"/g) ?? []).toHaveLength(20);
       expect(full).toContain("2 signals");
@@ -36,6 +38,9 @@ describe("gauge segments (phosphor console)", () => {
       const partial = renderToString(<Gauge kind="bot-pump" probability={0.22} signalCount={0} reason="x" />);
       expect(partial.match(/class="lit"/g) ?? []).toHaveLength(4);
       expect(partial).toContain("LOW");
+      // An empty reason renders no reason line at all.
+      const quiet = renderToString(<Gauge kind="honeypot" probability={0.1} signalCount={0} reason="" />);
+      expect(quiet).not.toContain('class="why"');
     } finally {
       vi.unstubAllGlobals();
     }

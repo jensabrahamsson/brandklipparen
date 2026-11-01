@@ -20,6 +20,7 @@ export function ExplanationList({
   codeHash,
   apiKey,
   names,
+  bandHigh,
 }: {
   readonly claims: readonly ExplanationClaim[];
   readonly signals: readonly Signal[];
@@ -29,6 +30,9 @@ export function ExplanationList({
   readonly codeHash: string;
   readonly apiKey: string;
   readonly names: ReadonlyMap<string, SelectorName>;
+  // True when the token band is High: filled severity tags stay reserved
+  // for High tokens (round-3 review D-11).
+  readonly bandHigh?: boolean | undefined;
 }): JSX.Element {
   if (signals.length === 0 && claims.length === 0) {
     return <EmptyWhyScore />;
@@ -52,6 +56,7 @@ export function ExplanationList({
         codeHash={codeHash}
         apiKey={apiKey}
         names={names}
+        bandHigh={bandHigh}
       />
     </section>
   );

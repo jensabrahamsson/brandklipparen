@@ -33,13 +33,14 @@ export function plainReason(signal: Signal): string {
 }
 
 export function emptyGaugeReason(hasSignals = false): string {
-  // The "Base rate" wording belongs only to a truly quiet analysis.
+  // The usual-rate wording belongs only to a truly quiet analysis and
+  // renders on one gauge only (the TokenPage call site gates the rest).
   // When other risks fired but this one did not, the gauge says so
   // without invoking the population base rate.
   if (hasSignals) {
     return "No pattern found for this risk.";
   }
-  return "Base rate for new tokens; no specific pattern found.";
+  return "Usual rate for new tokens.";
 }
 
 // Owner-powers strip summary (UI v2 §1.1, D9): counts per detector
@@ -144,8 +145,11 @@ export function signalKey(signal: Signal, index: number): string {
   return `${index}-${signal.kind}-${signal.risk}`;
 }
 
+// Unknown ids read as a plain risk title with no severity paren: the
+// row tag already carries the severity, so the title never repeats it
+// and never matches "pattern (" (round-3 review D-11).
 function riskPatternTitle(signal: Signal): string {
-  return `${riskLabel(signal.risk)} pattern (${signal.severity ?? "medium"})`;
+  return `${riskLabel(signal.risk)} risk`;
 }
 
 export function signalTitle(signal: Signal): string {

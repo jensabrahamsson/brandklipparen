@@ -73,11 +73,11 @@ describe("signal descriptions (K-021)", () => {
   test("design_review_plain_reason_maps_known_and_empty_gauge", () => {
     expect(plainReason(SIGNALS[0] as Signal)).toBe("The owner can stop you from selling.");
     expect(plainReason(SIGNALS[1] as Signal)).toBe("The owner can create new tokens and dilute you.");
-    expect(emptyGaugeReason()).toBe("Base rate for new tokens; no specific pattern found.");
+    expect(emptyGaugeReason()).toBe("Usual rate for new tokens.");
   });
 
   test("w9_base_rate_wording_only_when_no_signal_at_all", () => {
-    expect(emptyGaugeReason(false)).toBe("Base rate for new tokens; no specific pattern found.");
+    expect(emptyGaugeReason(false)).toBe("Usual rate for new tokens.");
     expect(emptyGaugeReason(true)).toBe("No pattern found for this risk.");
     expect(emptyGaugeReason(true)).not.toContain("Base rate");
   });
@@ -130,9 +130,9 @@ describe("signal identity (S-116)", () => {
       evidence: [{ selector: "0x44337ea1", offset: 2623 }],
     };
     expect(signalTitle(hex)).not.toMatch(/0x[0-9a-f]{16,}/i);
-    expect(signalTitle(hex)).toBe("Honeypot pattern (high)");
+    expect(signalTitle(hex)).toBe("Honeypot risk");
     const rugHex: Signal = { ...hex, id: hexId, risk: "rug-pull", severity: "medium" };
-    expect(signalTitle(rugHex)).toBe("Rug pull pattern (medium)");
+    expect(signalTitle(rugHex)).toBe("Rug pull risk");
     expect(plainReason(hex)).not.toMatch(/0x[0-9a-f]{16,}/i);
   });
 

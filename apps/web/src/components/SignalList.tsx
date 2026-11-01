@@ -1,10 +1,11 @@
-import { useState, type JSX, type ReactNode } from "react";
-import { plainReason, signalKey, signalTitle } from "../lib/signals.ts";
+import type { JSX, ReactNode } from "react";
+import { plainReason, riskLabel, signalKey, signalTitle } from "../lib/signals.ts";
 import { selectorDisplayName, selectorShortName, type SelectorName } from "../lib/selectorNames.ts";
 import type { ExplanationClaim, Signal } from "../types.ts";
 import { claimSummary, extractAccount } from "../lib/claims.ts";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { CopyButton } from "./CopyButton.tsx";
+import { Pictogram } from "./Pictogram.tsx";
 import { EvidenceRow } from "./plugins/EvidenceRow.tsx";
 
 // Merged score rows (round-2 review D-5): one row per scored signal with
@@ -28,21 +29,25 @@ export function severityClass(severity: Signal["severity"]): "high" | "medium" |
   return "medium";
 }
 
-export function severityWord(severity: Signal["severity"]): string {
-  const level = severityClass(severity);
-  if (level === "high") {
-    return "HIGH";
-  }
-  if (level === "low") {
-    return "LOW";
-  }
-  return "MED";
+// The claim sentence carries a severity note; strip it so the sentence
+// never repeats what the row tag already says (round-3 review D-11).
+// Row severity still parses from the raw claim text via
+// severityFromClaim, so stripping here loses no information.
+export function withSignalSeverity(sentence: string): string {
+  return sentence.replace(/ \(severity (low|medium|high)\)/gi, "");
 }
 
-// The claim sentence carries its own severity note; rewrite it to the
-// row signal severity so the title and the sentence can never disagree.
-export function withSignalSeverity(sentence: string, severity: Signal["severity"]): string {
-  return sentence.replace(/\(severity (low|medium|high)\)/i, `(severity ${severityClass(severity)})`);
+// Plain-language strength for the row tag (round-3 review D-11): the
+// tag names the risk and the strength, never a bare severity word.
+export function signalStrengthWord(severity: Signal["severity"]): string {
+  const level = severityClass(severity);
+  if (level === "high") {
+    return "Strong signal";
+  }
+  if (level === "low") {
+    return "Weak signal";
+  }
+  return "Moderate signal";
 }
 
 // Inline code spans: split on backticks and wrap the fenced parts in
@@ -141,7 +146,7 @@ function Temporality({ claim }: { readonly claim: ExplanationClaim }): JSX.Eleme
           </>
         )
       ) : claim.temporality.kind === "can-change-unknown" ? (
-        "Possible in code · no controlling account found"
+        "Owner-controlled · owner not read yet"
       ) : account === null ? (
         <span className="chip">Owner can change this</span>
       ) : (
@@ -161,6 +166,7 @@ export function SignalRows({
   codeHash,
   apiKey,
   names,
+  bandHigh,
 }: {
   readonly signals: readonly Signal[];
   readonly claims: readonly ExplanationClaim[];
@@ -169,35 +175,23 @@ export function SignalRows({
   readonly codeHash: string;
   readonly apiKey: string;
   readonly names: ReadonlyMap<string, SelectorName>;
+  // True when the token band is High. A red fill reads as the token's
+  // own alarm, so filled severity tags render only on High tokens;
+  // Low and Elevated tokens get outline tags (round-3 review D-11).
+  readonly bandHigh?: boolean | undefined;
 }): JSX.Element {
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const filled = bandHigh === true;
   const rows = pairRows(signals, claims);
-
-  const copyEvidence = async (key: string, signal: Signal): Promise<void> => {
-    const payload = JSON.stringify(
-      { address, codeHash, signal: signal.id, evidence: signal.evidence },
-      null,
-      2,
-    );
-    try {
-      await navigator.clipboard.writeText(payload);
-      setCopiedId(key);
-    } catch {
-      // Clipboard is a convenience only; the JSON stays readable in-view.
-    }
-  };
 
   return (
     <div>
-      <p aria-live="polite" className="quiet" style={{ position: "absolute", left: -9999 }}>
-        {copiedId === null ? "" : `Evidence for ${copiedId} copied.`}
-      </p>
       <ol className="why-rows">
         {rows.map((row, index) => {
           const signal = row.signal;
           const claim = row.claim;
           const severity = signal?.severity ?? (claim === null ? "medium" : severityFromClaim(claim.text));
           const sevClass = severityClass(severity);
+          const strength = signalStrengthWord(severity);
           const key = signal === null ? `claim-${index}` : signalKey(signal, row.signalIndex);
           const title = signal === null ? null : signalTitle(signal);
           const sentence =
@@ -205,19 +199,32 @@ export function SignalRows({
               ? signal === null
                 ? ""
                 : plainReason(signal)
-              : withSignalSeverity(claimSummary(claim.text), severity);
+              : withSignalSeverity(claimSummary(claim.text));
+          // A fallback sentence that only repeats the title adds noise
+          // (round-3 review D-11), so the body renders only when it says
+          // more than the title.
+          const body = sentence === "" || sentence === title ? null : sentence;
+          const tag = signal === null ? strength : `${riskLabel(signal.risk)} · ${strength.toLowerCase()}`;
           const entries = signal?.evidence ?? [];
           return (
             <li key={key} className={`why-row sev-${sevClass}`}>
               <article id={`signal-${key}`} className="why-article">
-                <span className={`sev ${sevClass}`}>{severityWord(severity)}</span>
+                <span className={`sev ${sevClass}${filled ? "" : " ghost"}`}>{tag}</span>
                 {title === null ? null : <p className="why-title">{title}</p>}
-                <p className="claim-text">{renderInlineCode(sentence)}</p>
+                {body === null ? null : <p className="claim-text">{renderInlineCode(body)}</p>}
                 {claim === null ? null : <Temporality claim={claim} />}
                 {entries.length === 0 ? null : (
                   <details className="why-evidence">
                     <summary>
-                      Evidence · {entries.length} {entries.length === 1 ? "place" : "places"}
+                      <span className="chev chev-closed" aria-hidden="true">
+                        <Pictogram name="chevron-right" size={18} />
+                      </span>
+                      <span className="chev chev-open" aria-hidden="true">
+                        <Pictogram name="chevron-down" size={18} />
+                      </span>
+                      <span>
+                        Evidence · {entries.length} {entries.length === 1 ? "place" : "places"}
+                      </span>
                     </summary>
                     <ol className="evidence-list">
                       {entries.map((entry, entryIndex) => (
@@ -237,11 +244,16 @@ export function SignalRows({
                     </ol>
                   </details>
                 )}
-                {signal === null ? null : (
+                {signal === null || expert !== true ? null : (
                   <div style={{ marginTop: 8 }}>
-                    <button type="button" className="button-ghost" onClick={() => void copyEvidence(key, signal)}>
-                      Copy evidence
-                    </button>
+                    <CopyButton
+                      value={JSON.stringify(
+                        { address, codeHash, signal: signal.id, evidence: signal.evidence },
+                        null,
+                        2,
+                      )}
+                      label="Copy evidence JSON"
+                    />
                   </div>
                 )}
               </article>

@@ -166,7 +166,7 @@ test("s116_duplicate_signal_ids_toggle_one_each", async ({ page }) => {
     );
     expect(risk).toBeDefined();
     const tag = (await article.locator(".sev").first().textContent()) ?? "";
-    const severity = tag === "HIGH" ? "high" : tag === "LOW" ? "low" : "medium";
+    const severity = tag.includes("strong") ? "high" : tag.includes("weak") ? "low" : "medium";
     if (sentence.includes("(severity")) {
       expect(sentence).toContain(`(severity ${severity})`);
     }

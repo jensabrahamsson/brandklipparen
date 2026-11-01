@@ -603,16 +603,24 @@ function AssessedView({
                 <span>Risk breakdown</span> <Explain explainKey="score:gauges" label="Risk breakdown" />
               </h2>
               <div className="gauges gauges-hero">
-                {RISKS.map((risk) => {
+                {RISKS.map((risk, riskIndex) => {
                   const top = strongestSignal(result.signals, risk);
                   const count = result.signals.filter((signal) => signal.risk === risk).length;
+                  // A quiet analysis prints the usual-rate line on the
+                  // first gauge only, never three times (R3 D-11).
+                  const reason =
+                    top === undefined
+                      ? !heroHasSignals && riskIndex > 0
+                        ? ""
+                        : emptyGaugeReason(heroHasSignals)
+                      : plainReason(top);
                   return (
                     <Gauge
                       key={risk}
                       kind={risk}
                       probability={result.probabilities[risk]}
                       signalCount={count}
-                      reason={top === undefined ? emptyGaugeReason(heroHasSignals) : plainReason(top)}
+                      reason={reason}
                     />
                   );
                 })}
@@ -776,6 +784,7 @@ export function OverviewSections({
         signals={sorted}
         templateVersion={result.explanation.templateVersion}
         expert={mode === "expert"}
+        bandHigh={riskBand(result.score).word === "High"}
         address={address}
         codeHash={result.codeHash}
         apiKey={apiKey}
