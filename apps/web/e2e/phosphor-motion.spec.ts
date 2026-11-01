@@ -136,6 +136,9 @@ test("phosphor_running_animations_use_only_allowed_properties_with_bounded_cycle
   await page.waitForTimeout(3500);
 
   const report = await page.evaluate(() => {
+    // Owner-approved X-1/X-2 (addendum §A4): grid-template-rows on the
+    // disclosure wrapper (transitions only, at most 0.3 s) and
+    // background-position for the .detail-head::after sweep only.
     const allowed = new Set([
       "opacity",
       "color",
@@ -144,6 +147,8 @@ test("phosphor_running_animations_use_only_allowed_properties_with_bounded_cycle
       "box-shadow",
       "text-shadow",
       "filter",
+      "background-position",
+      "grid-template-rows",
     ]);
     const bad: string[] = [];
     const seen: string[] = [];

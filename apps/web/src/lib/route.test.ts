@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseHash } from "./route.ts";
+import { codeHref, parseHash } from "./route.ts";
 
 describe("hash routing (design review P1-13)", () => {
   test("design_review_parse_token_route", () => {
@@ -71,5 +71,77 @@ describe("plugin routes (UI v2 §1.3)", () => {
       address,
       view: { kind: "main" },
     });
+  });
+});
+
+describe("code view routes (addendum §A1.1)", () => {
+  const address = "0xabc";
+
+  test("decompiler view and pc segments parse", () => {
+    expect(parseHash(`#/token/${address}/plugins/decompiler/0x0ecb93c0`)).toEqual({
+      name: "token",
+      address,
+      view: { kind: "plugin", slug: "decompiler", fn: "0x0ecb93c0" },
+    });
+    expect(parseHash(`#/token/${address}/plugins/decompiler/0x0ecb93c0/decompiled`)).toEqual({
+      name: "token",
+      address,
+      view: { kind: "plugin", slug: "decompiler", fn: "0x0ecb93c0", view: "decompiled" },
+    });
+    expect(parseHash(`#/token/${address}/plugins/decompiler/0x0ecb93c0/source`)).toEqual({
+      name: "token",
+      address,
+      view: { kind: "plugin", slug: "decompiler", fn: "0x0ecb93c0", view: "source" },
+    });
+    expect(parseHash(`#/token/${address}/plugins/decompiler/0x0ecb93c0/decompiled/0x2140`)).toEqual({
+      name: "token",
+      address,
+      view: { kind: "plugin", slug: "decompiler", fn: "0x0ecb93c0", view: "decompiled", pc: 0x2140 },
+    });
+    expect(parseHash(`#/token/${address}/plugins/decompiler/0x0ecb93c0/source/8512`)).toEqual({
+      name: "token",
+      address,
+      view: { kind: "plugin", slug: "decompiler", fn: "0x0ecb93c0", view: "source", pc: 8512 },
+    });
+  });
+
+  test("unknown view or pc segments fall back to the function", () => {
+    expect(parseHash(`#/token/${address}/plugins/decompiler/0x0ecb93c0/bytecode`)).toEqual({
+      name: "token",
+      address,
+      view: { kind: "plugin", slug: "decompiler", fn: "0x0ecb93c0" },
+    });
+    expect(parseHash(`#/token/${address}/plugins/decompiler/0x0ecb93c0/decompiled/not-a-pc`)).toEqual({
+      name: "token",
+      address,
+      view: { kind: "plugin", slug: "decompiler", fn: "0x0ecb93c0", view: "decompiled" },
+    });
+    expect(parseHash(`#/token/${address}/plugins/decompiler/0x0ecb93c0/decompiled/0x2140/extra`)).toEqual({
+      name: "token",
+      address,
+      view: { kind: "plugin", slug: "decompiler", fn: "0x0ecb93c0", view: "decompiled" },
+    });
+  });
+
+  test("legacy three-segment and plugin forms are unchanged", () => {
+    expect(parseHash(`#/token/${address}/plugins/decompiler/0x0ecb93c0`)).toEqual({
+      name: "token",
+      address,
+      view: { kind: "plugin", slug: "decompiler", fn: "0x0ecb93c0" },
+    });
+    expect(parseHash(`#/token/${address}/plugins/blacklist`)).toEqual({
+      name: "token",
+      address,
+      view: { kind: "plugin", slug: "blacklist" },
+    });
+  });
+
+  test("codeHref builds an honest deep link", () => {
+    expect(codeHref(address, "0x0ecb93c0", "decompiled", 0x2140)).toBe(
+      `#/token/${address}/plugins/decompiler/0x0ecb93c0/decompiled/0x2140`,
+    );
+    expect(codeHref(address, "0x0ecb93c0")).toBe(
+      `#/token/${address}/plugins/decompiler/0x0ecb93c0/decompiled`,
+    );
   });
 });

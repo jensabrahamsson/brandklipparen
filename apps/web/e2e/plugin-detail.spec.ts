@@ -193,6 +193,20 @@ async function mockRest(page: Page, snippetCalls: string[]): Promise<void> {
     const count = selector.toLowerCase() === "0x44337ea1" ? 40 : 10;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(snippetBody(selector, count)) });
   });
+  // The code view (VS-1) also reads /v1/source in the expanded
+  // decompiler body; report none so the test stays off the network.
+  await page.route("**/v1/source*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: "ok",
+        apiVersion: "v1",
+        codeHash: "0xabc",
+        source: { status: "none", provider: "Sourcify", match: null, compiler: null, files: [], functions: [] },
+      }),
+    });
+  });
 }
 
 test("plugin_detail_focuses_heading_sets_title_and_states_provenance", async ({ page }) => {
@@ -259,6 +273,22 @@ test("plugin_detail_snippet_expands_once_per_selector_with_numbered_lines", asyn
   await page.getByRole("button", { name: "Show all 40 lines" }).click();
   await expect(lines).toHaveCount(40);
   await expect(page.locator(".snippet-no").last()).toHaveText("40");
+});
+
+test("plugin_detail_decompiler_row_expands_into_the_code_view", async ({ page }) => {
+  // W-6 follow-up (VS-1): the expanded decompiler body now holds the
+  // code view (tabs/panes, badges, copy) instead of raw snippet lines.
+  const snippetCalls: string[] = [];
+  await mockRest(page, snippetCalls);
+  await page.goto(`/#/token/${ADDRESS}/plugins/decompiler/0x44337ea1/decompiled`);
+  await expect(page.locator(".code-view").first()).toBeVisible();
+  await expect(page.getByText("Decompiled from bytecode").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy decompiled addBlackList(address)" })).toBeVisible();
+  // The mocked snippet carries no pcs, so the view links by function.
+  await expect(page.getByText("Linked by function. Line-level links need a newer server.").first()).toBeVisible();
+  // The source lookup reports none: the empty state names the provider.
+  await expect(page.getByText("No verified source").first()).toBeVisible();
+  await expect(page.locator("ol.code .code-line").first()).toBeVisible();
 });
 
 test("plugin_detail_layout_contract_with_stacked_evidence", async ({ page }) => {

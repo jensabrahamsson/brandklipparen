@@ -3,10 +3,18 @@
 // refetches, TokenPage stays mounted and the analysis state is kept.
 // `<slug>` is the last dot segment of the plugin id when it is unique,
 // otherwise the full id, URL-encoded.
+export type CodePaneView = "decompiled" | "source";
+
 export type TokenView =
   | { readonly kind: "main" }
   | { readonly kind: "plugins" }
-  | { readonly kind: "plugin"; readonly slug: string; readonly fn?: string | undefined };
+  | {
+      readonly kind: "plugin";
+      readonly slug: string;
+      readonly fn?: string | undefined;
+      readonly view?: CodePaneView | undefined;
+      readonly pc?: number | undefined;
+    };
 
 export type Route =
   | { readonly name: "start" }
@@ -66,10 +74,67 @@ export function parseHash(hash: string): Route {
   if (parts.length === 2) {
     return { name: "token", address, view: { kind: "plugin", slug } };
   }
-  // Only the decompiler detail takes a third segment (the selector to
-  // expand and focus); anything deeper falls back to the plugin view.
-  if (slug === "decompiler" && parts.length === 3 && (parts[2] ?? "") !== "") {
-    return { name: "token", address, view: { kind: "plugin", slug, fn: parts[2] } };
+  // The decompiler detail takes the selector to expand and focus,
+  // then the optional code pane view and the optional offset whose line
+  // to target (addendum §A1.1): `…/<selector>[/decompiled|source[/<pc>]]`.
+  // Unknown trailing segments fall back to the function without view or
+  // pc, so shared deep links stay honest about what they point at.
+  if (slug === "decompiler" && parts.length >= 3 && (parts[2] ?? "") !== "") {
+    const fn = parts[2] as string;
+    if (parts.length === 3) {
+      return { name: "token", address, view: { kind: "plugin", slug, fn } };
+    }
+    const maybeView = parts[3] ?? "";
+    const view: CodePaneView | undefined = maybeView === "decompiled" || maybeView === "source" ? maybeView : undefined;
+    const pcText = view === undefined ? maybeView : (parts[4] ?? "");
+    if (parts.length === 4 && view !== undefined) {
+      return { name: "token", address, view: { kind: "plugin", slug, fn, view } };
+    }
+    const pc = parsePcSegment(pcText);
+    if (pc === null) {
+      return view === undefined
+        ? { name: "token", address, view: { kind: "plugin", slug, fn } }
+        : { name: "token", address, view: { kind: "plugin", slug, fn, view } };
+    }
+    if ((view === undefined && parts.length === 4) || (view !== undefined && parts.length === 5)) {
+      return view === undefined
+        ? { name: "token", address, view: { kind: "plugin", slug, fn, pc } }
+        : { name: "token", address, view: { kind: "plugin", slug, fn, view, pc } };
+    }
+    return view === undefined
+      ? { name: "token", address, view: { kind: "plugin", slug, fn } }
+      : { name: "token", address, view: { kind: "plugin", slug, fn, view } };
   }
   return { name: "token", address, view: { kind: "plugin", slug } };
+}
+
+function parsePcSegment(segment: string | undefined): number | null {
+  if (segment === undefined || segment === "") {
+    return null;
+  }
+  if (/^0x[0-9a-fA-F]+$/.test(segment)) {
+    const value = Number.parseInt(segment, 16);
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+  if (/^[0-9]+$/.test(segment)) {
+    const value = Number.parseInt(segment, 10);
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+  return null;
+}
+
+// Deep link to the code view (addendum §A1.1): the function expanded
+// with the offset's line targeted. Honest about its target: view and
+// pc ride along only when known.
+export function codeHref(
+  address: string,
+  selector: string,
+  view: CodePaneView = "decompiled",
+  pc: number | null = null,
+): string {
+  const base = `#/token/${encodeURIComponent(address)}/plugins/decompiler/${encodeURIComponent(selector)}/${view}`;
+  if (pc === null || !Number.isSafeInteger(pc) || (pc as number) < 0) {
+    return base;
+  }
+  return `${base}/0x${(pc as number).toString(16)}`;
 }

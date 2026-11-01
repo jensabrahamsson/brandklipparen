@@ -61,6 +61,9 @@ export type PictogramName =
   | "muse"
   | "fn"
   | "partial"
+  | "verified"
+  | "source"
+  | "note"
   | "copy"
   | "check"
   | "cross"
@@ -341,6 +344,31 @@ export const PICTOGRAMS: Record<PictogramName, { readonly label: string; readonl
         ["circle", { cx: 12, cy: 12, r: 8.25 }],
         ["path", { d: "M12 3.75v16.5" }],
         ["path", { d: "M12 3.75a8.25 8.25 0 0 1 0 16.5Z", fill: true }],
+      ] as const),
+    },
+    verified: {
+      label: "Verified",
+      nodes: Object.freeze([
+        ["path", { d: "M12 3 19 6v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6Z" }],
+        ["path", { d: "m9 12 2.2 2.2 4.3-4.2" }],
+      ] as const),
+    },
+    source: {
+      label: "Source",
+      nodes: Object.freeze([
+        ["path", { d: "M6 2.75h8.25L18 6.5v14.75H6Z" }],
+        ["path", { d: "M14 2.75v4h4" }],
+        ["path", { d: "M9 8.5h2" }],
+        ["path", { d: "M9 12h6" }],
+        ["path", { d: "M9 15.5h6" }],
+      ] as const),
+    },
+    note: {
+      label: "Note",
+      nodes: Object.freeze([
+        ["path", { d: "M12 3.5Q13 11 20.5 12 13 13 12 20.5 11 13 3.5 12 11 11 12 3.5Z" }],
+        ["path", { d: "M19 3.5v3" }],
+        ["path", { d: "M17.5 5h3" }],
       ] as const),
     },
     copy: {

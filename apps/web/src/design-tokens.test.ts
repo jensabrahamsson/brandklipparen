@@ -102,7 +102,18 @@ test("phosphor_blinks_at_most_1hz_and_pulses_within_bounds", () => {
 });
 
 test("phosphor_keyframes_cover_only_opacity_colour_and_glow", () => {
-  const allowed = new Set(["opacity", "color", "background-color", "border-color", "box-shadow", "text-shadow", "filter"]);
+  // Owner-approved X-2 (addendum §A4 E-8): the single header scanline
+  // sweep animates background-position on .detail-head::after only.
+  const allowed = new Set([
+    "opacity",
+    "color",
+    "background-color",
+    "border-color",
+    "box-shadow",
+    "text-shadow",
+    "filter",
+    "background-position",
+  ]);
   const blocks = code.match(/@keyframes\s+[\w-]+\s*\{[\s\S]*?\n\}/g) ?? [];
   expect(blocks.length).toBeGreaterThan(0);
   const bad: string[] = [];

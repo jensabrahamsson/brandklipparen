@@ -4171,6 +4171,21 @@ a {
 
 .evidence-code-link {
   margin-top: 8px;
+  white-space: nowrap;
+}
+
+/* The code view reuses .evidence-top for a row whose third item is the
+   "Show in code" text button, not the 44 px copy/expand icon pair the
+   four-column grid was built for. Without this override the label is
+   squeezed into a 44 px track and clips at wide widths. */
+@media (min-width: 640px) {
+  .decompiler-evidence .evidence-top {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .decompiler-evidence .evidence-code-link {
+    margin-top: 0;
+  }
 }
 
 .decompiler-raw {
@@ -4200,6 +4215,387 @@ a {
 
 .decompiler-more {
   margin-top: 12px;
+}
+
+/* Code view per function (addendum §A1, VS-1). Phosphor Console: text
+   stays crisp (no text-shadow on code), motion is opacity/colour/glow
+   one-shots only (M-5 row stagger, E-6 rename fade, E-9 badge ignite)
+   plus element.animate pulses (E-2); the approved X-2 header sweep is
+   the only background-position animation. Reduced motion and
+   data-motion="off" render every end state statically. No inner
+   scroll anywhere: long lines wrap with a hanging indent. */
+:root {
+  --code-target-glow: 0 0 0 1px var(--phosphor-hi), inset 0 0 18px var(--glow-soft);
+  --code-target-rest: inset 2px 0 0 var(--phosphor-hi), inset 0 0 0 1px var(--edge);
+  --code-match-bg: rgb(141 255 182 / 6%);
+}
+
+.code-view {
+  margin-top: 12px;
+  border-top: 1px dashed var(--rule);
+  padding-top: 12px;
+}
+
+.code-head {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.code-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--phosphor-hi);
+  overflow-wrap: anywhere;
+}
+
+.code-selector {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--dim);
+}
+
+.code-name-chip,
+.code-mismatch-chip {
+  display: inline-block;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+  color: var(--dim);
+}
+
+.code-mismatch-chip {
+  border-style: dashed;
+  color: var(--phosphor-hi);
+}
+
+.code-meta {
+  margin: 0;
+  font-size: 13px;
+}
+
+.code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.code-consent {
+  margin: 0;
+  font-size: 12px;
+}
+
+.code-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.code-tab {
+  min-height: 44px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: normal;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+.code-tab:hover {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+}
+
+.code-tab:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.code-tab[aria-selected="true"] {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+  box-shadow: var(--elev-1);
+}
+
+.code-panel:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.code-panes {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 1100px) {
+  .code-panes {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.code-pane {
+  min-width: 0;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.code-pane-head {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.code-badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.code-badge-lamp {
+  display: inline-flex;
+  color: var(--phosphor);
+  animation: bk-ignite 700ms var(--ease-out) 1;
+}
+
+.code-badge.is-verified .code-badge-lamp {
+  color: var(--phosphor-hi);
+}
+
+.code-badge.is-missing .code-badge-lamp {
+  color: var(--dim);
+}
+
+.code-badge-word {
+  font-weight: 600;
+  color: var(--phosphor-hi);
+}
+
+.code-badge-line {
+  flex-basis: 100%;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.code-file,
+.code-honesty,
+.code-names {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.code-file {
+  font-family: var(--font-mono);
+}
+
+ol.code {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (min-width: 640px) {
+  ol.code {
+    font-size: 14px;
+  }
+}
+
+.code-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: 6px;
+  transition: background-color 120ms var(--ease-out);
+}
+
+.code-no {
+  flex: none;
+  width: 4ch;
+  text-align: right;
+  color: var(--dim);
+  user-select: none;
+}
+
+.code-lamp-slot {
+  flex: none;
+  width: 44px;
+  align-self: stretch;
+}
+
+.code-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-left: calc((var(--ind, 0) + 2) * 1ch);
+  text-indent: -2ch;
+}
+
+.code-text .tk-keyword {
+  color: #d6ffe6;
+  font-weight: 600;
+}
+
+.code-text .tk-builtin {
+  color: #d6ffe6;
+  text-decoration: underline dotted 1px var(--edge);
+}
+
+.code-text .tk-name {
+  color: #8dffb6;
+}
+
+.code-text .tk-literal {
+  color: #d6ffe6;
+}
+
+.code-text .tk-comment {
+  color: #4fb27a;
+  font-style: italic;
+}
+
+.code-text .tk-punctuation {
+  color: #4fb27a;
+}
+
+.code-text .tk-plain {
+  color: #8dffb6;
+}
+
+.code-text .tk-hidden {
+  color: #d6ffe6;
+  border: 1px dashed var(--edge);
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.code-text .tk-renamed {
+  animation: bk-rename 240ms var(--ease-out) 1;
+}
+
+@keyframes bk-rename {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.code-line.is-match {
+  background-color: var(--code-match-bg);
+}
+
+.code-line:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+/* The target rail means evidence; the match background means "same
+   code". Amber and red never appear in code views: they mean risk
+   severity elsewhere. */
+.code-line.is-evidence {
+  background-color: var(--code-evidence-bg);
+  box-shadow: inset 2px 0 0 var(--phosphor);
+}
+
+.code-line.is-target {
+  background-color: var(--glass-2);
+  box-shadow: var(--code-target-rest);
+}
+
+.code-empty {
+  border: 1px dashed var(--edge);
+  border-radius: 12px;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.code-empty-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--phosphor-hi);
+}
+
+.code-empty-line {
+  margin: 0;
+  font-size: 14px;
+}
+
+.code-context-link {
+  margin-top: 8px;
+}
+
+/* Detail entry sweep (addendum E-8, owner-approved X-2): one scanline
+   sweep across the plugin detail header, once per entry. Never in code
+   panes and never repeated on in-page changes. */
+.detail-head {
+  position: relative;
+}
+
+.detail-head::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent, var(--glow), transparent);
+  background-size: 100% 60px;
+  background-repeat: no-repeat;
+  background-position: 0 -60px;
+  opacity: 0;
+  animation: bk-sweep 500ms linear 1;
+  pointer-events: none;
+}
+
+@keyframes bk-sweep {
+  0% {
+    background-position: 0 -60px;
+    opacity: 1;
+  }
+
+  100% {
+    background-position: 0 110%;
+    opacity: 1;
+  }
+}
+
+/* Motion switch (UI v2 §5.6): data-motion="off" applies the same
+   static rules as prefers-reduced-motion: reduce. The switch itself
+   lands with W-10; the code view already honours the attribute. */
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after {
+  animation: none !important;
+  transition: none !important;
 }
 
 

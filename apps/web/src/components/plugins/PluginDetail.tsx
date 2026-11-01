@@ -16,6 +16,7 @@ import type { BoardTile } from "./PluginBoard.tsx";
 import { severityWord } from "./PluginTile.tsx";
 import type { PluginFindingView, PluginListEntry } from "../PluginsPanel.tsx";
 import { PLUGIN_STATE_WORD } from "../../lib/pluginState.ts";
+import { codeHref, type CodePaneView } from "../../lib/route.ts";
 import { temporalityLine } from "../../lib/pluginCopy.ts";
 import type { SelectorName } from "../../lib/selectorNames.ts";
 import { selectorDisplayName, selectorShortName } from "../../lib/selectorNames.ts";
@@ -89,6 +90,7 @@ function EvidenceSection({
               named={known}
               expert={expert}
               index={index}
+              showInCodeHref={codeHref(address, row.selector, "decompiled", row.offset)}
             />
           );
         })}
@@ -117,6 +119,8 @@ export function PluginDetailView({
   prev,
   next,
   fn,
+  codeView,
+  codePc,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -133,6 +137,10 @@ export function PluginDetailView({
   readonly next: BoardTile | null;
   // Route `<selector>` (UI v2 §1.3): the decompiler row to auto-expand.
   readonly fn?: string | undefined;
+  // Route view and pc (addendum §A1.1): the code view's initial pane and
+  // the offset whose line to target.
+  readonly codeView?: CodePaneView | undefined;
+  readonly codePc?: number | undefined;
 }): JSX.Element {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const title = tile?.copy.title ?? entry?.displayName ?? "Unknown check";
@@ -230,7 +238,15 @@ export function PluginDetailView({
         </section>
       )}
       {tile === null ? null : slug === "decompiler" ? (
-        <DecompilerList address={address} apiKey={apiKey} findings={findings} expert={expert} initialSelector={fn} />
+        <DecompilerList
+          address={address}
+          apiKey={apiKey}
+          findings={findings}
+          expert={expert}
+          initialSelector={fn}
+          initialView={codeView}
+          initialPc={codePc}
+        />
       ) : (
         <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} />
       )}

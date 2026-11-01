@@ -63,6 +63,7 @@ export function EvidenceRow({
   index,
   showInCodeId,
   onShowInCode,
+  showInCodeHref,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -81,6 +82,10 @@ export function EvidenceRow({
   // button that highlights and focuses it. Absent otherwise.
   readonly showInCodeId?: string | undefined;
   readonly onShowInCode?: (() => void) | null | undefined;
+  // Deep link to the code view at this function and offset (addendum
+  // §A1.1): opens the decompiler row with the line targeted. Rendered
+  // whenever the caller passes it, alongside the in-place button.
+  readonly showInCodeHref?: string | undefined;
 }): JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const [snippet, setSnippet] = useState<SnippetState>({ kind: "idle" });
@@ -145,6 +150,11 @@ export function EvidenceRow({
         <button type="button" id={showInCodeId} className="button-ghost evidence-code-link" onClick={onShowInCode}>
           Show in code
         </button>
+      ) : null}
+      {showInCodeHref !== undefined ? (
+        <a className="button-ghost evidence-code-link" href={showInCodeHref}>
+          Show in code
+        </a>
       ) : null}
       {expanded ? (
         <div className="evidence-snippet" id={regionId} role="region" aria-label={`Readable code for ${displayName} at ${offsetText}`}>

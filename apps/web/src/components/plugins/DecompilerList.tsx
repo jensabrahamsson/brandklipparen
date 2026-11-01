@@ -6,11 +6,12 @@
 // scanline flicker (M-6) and the approved 180 ms height expand (X-1);
 // static under prefers-reduced-motion. Sentence case throughout, and
 // the raw cause string never renders outside Expert raw.
-import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type JSX } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type JSX } from "react";
 import { Pictogram } from "../Pictogram.tsx";
-import { EvidenceRow } from "./EvidenceRow.tsx";
-import { fetchSnippet, type SnippetResult } from "../../lib/api.ts";
+import { CodeView } from "../code/CodeView.tsx";
+import { fetchSnippet } from "../../lib/api.ts";
 import { useCountUp, useReducedMotion } from "../../lib/motion.ts";
+import type { CodePaneView } from "../../lib/route.ts";
 import {
   annotationChipText,
   decompilerCountLine,
@@ -27,7 +28,6 @@ import {
 import type { PluginFindingView } from "../PluginsPanel.tsx";
 
 const ROW_LIMIT = 12;
-const SNIPPET_LIMIT = 30;
 
 function normalizeSelector(value: string | undefined): string | null {
   if (value === undefined) {
@@ -60,144 +60,46 @@ function statusClass(status: DecompilerFunction["status"]): string {
   return "is-complete";
 }
 
-type SnippetState =
-  | { readonly kind: "idle" }
-  | { readonly kind: "loading" }
-  | { readonly kind: "ready"; readonly result: SnippetResult }
-  | { readonly kind: "failed" };
-
-// Expanded function body: pseudo-code with pc-level line links plus the
-// entry evidence row (addendum §A1.4). The evidence offset highlights
-// its line through "Show in code" (rendered inside the evidence row),
-// and evidence lines carry a gutter lamp back to that button. Without
-// pcs every line is function-level only and the honest note names that.
-// Display text only; the raw cause never renders here.
+// Expanded function body: the code view (addendum §A1) with the
+// decompiled and verified-source panes, pc-level line links and the
+// entry evidence row. Display text only; the raw cause never renders
+// here (it stays in Expert raw below).
 function FunctionBody({
   address,
   apiKey,
   fn,
   expert,
-  showInCodeId,
+  codeView,
+  codePc,
+  onCopyWholeContract,
 }: {
   readonly address: string;
   readonly apiKey: string;
   readonly fn: DecompilerFunction;
   readonly expert: boolean;
-  readonly showInCodeId: string;
+  readonly codeView: CodePaneView | undefined;
+  readonly codePc: number | undefined;
+  readonly onCopyWholeContract: (() => Promise<string>) | undefined;
 }): JSX.Element {
-  const [snippet, setSnippet] = useState<SnippetState>({ kind: "idle" });
-  const [linesOpen, setLinesOpen] = useState(false);
-  const [targetLine, setTargetLine] = useState<number | null>(null);
-  const reduce = useReducedMotion();
-  const loading = useRef(false);
-  const lineRefs = useRef(new Map<number, HTMLLIElement>());
-
-  useEffect(() => {
-    if (snippet.kind !== "idle" || loading.current) {
-      return;
-    }
-    loading.current = true;
-    setSnippet({ kind: "loading" });
-    const key = apiKey.length === 0 ? null : apiKey;
-    fetchSnippet(address, fn.selector, key).then(
-      (result) => {
-        loading.current = false;
-        setSnippet({ kind: "ready", result });
-      },
-      () => {
-        loading.current = false;
-        setSnippet({ kind: "failed" });
-      },
-    );
-  }, [snippet, address, fn.selector, apiKey]);
-
-  if (snippet.kind === "loading") {
-    return (
-      <p role="status" className="scan-status">
-        {reduce ? "Loading…" : "Scanning…"}
-        {reduce ? null : <b className="cursor" aria-hidden="true" />}
-      </p>
-    );
-  }
-  if (snippet.kind === "failed" || snippet.kind === "idle") {
-    return <p className="muted">Readable code is not available for this function.</p>;
-  }
-  const lines = snippet.result.lines;
-  const hasPcs = lines.some((line) => line.pcs.length > 0);
-  const entryLine =
-    fn.entryPc === null ? null : (lines.find((line) => line.pcs.includes(fn.entryPc as number)) ?? null);
-  const shown = linesOpen ? lines : lines.slice(0, SNIPPET_LIMIT);
-  const showInCode = (): void => {
-    if (entryLine === null) {
-      return;
-    }
-    setTargetLine(entryLine.lineNumber);
-    lineRefs.current.get(entryLine.lineNumber)?.focus({ preventScroll: true });
-    lineRefs.current.get(entryLine.lineNumber)?.scrollIntoView({ block: "nearest" });
-  };
   const entryHex = fn.entryPc === null ? "unknown" : `0x${fn.entryPc.toString(16)}`;
   return (
     <div className="decompiler-code">
-      <ol className="snippet-lines code-lines">
-        {shown.map((line, index) => {
-          const isEvidence = entryLine !== null && entryLine.lineNumber === line.lineNumber;
-          const isTarget = targetLine === line.lineNumber;
-          return (
-            <li
-              key={line.lineNumber}
-              id={`${showInCodeId}-line-${line.lineNumber}`}
-              ref={(element) => {
-                if (element === null) {
-                  lineRefs.current.delete(line.lineNumber);
-                } else {
-                  lineRefs.current.set(line.lineNumber, element);
-                }
-              }}
-              tabIndex={-1}
-              className={`snippet-line code-line${isEvidence ? " is-evidence" : ""}${isTarget ? " is-target" : ""}`}
-              style={{ "--i": Math.min(index, 8) } as CSSProperties}
-            >
-              {isEvidence ? (
-                <button
-                  type="button"
-                  className="code-lamp"
-                  aria-label={`Evidence at ${entryHex}: back to the evidence row`}
-                  onClick={() => document.getElementById(showInCodeId)?.focus()}
-                >
-                  <Pictogram name="found" size={16} />
-                </button>
-              ) : null}
-              <span className="snippet-no" aria-hidden="true">
-                {line.lineNumber}
-              </span>{" "}
-              <span className="snippet-text">{line.text}</span>
-            </li>
-          );
-        })}
-      </ol>
-      {lines.length > SNIPPET_LIMIT && !linesOpen ? (
-        <button type="button" className="button-ghost snippet-more" onClick={() => setLinesOpen(true)}>
-          Show all {lines.length} lines
-        </button>
-      ) : null}
-      {!hasPcs || entryLine === null ? (
-        <p className="muted code-link-note">Linked by function. Line-level links need a newer server.</p>
-      ) : null}
-      <ol className="evidence-list decompiler-evidence">
-        <EvidenceRow
-          address={address}
-          apiKey={apiKey}
-          selector={fn.selector}
-          offset={fn.entryPc}
-          displayName={fn.displayName}
-          shortName={fn.name ?? fn.displayName}
-          named={fn.named}
-          expert={expert}
-          index={0}
-          showInCodeId={entryLine === null ? undefined : showInCodeId}
-          onShowInCode={entryLine === null ? null : showInCode}
-        />
-      </ol>
+      <CodeView
+        address={address}
+        apiKey={apiKey}
+        selector={fn.selector}
+        title={fn.displayName}
+        nameFrom={fn.named ? "table" : "unnamed"}
+        entryPc={fn.entryPc}
+        startPc={fn.startPc}
+        endPc={fn.endPc}
+        unresolvedJumps={fn.unresolvedJumps}
+        initialView={codeView}
+        initialPc={codePc}
+        expert={expert}
+        evidenceLabel={fn.entryPc === null ? null : `Evidence at ${entryHex}: back to the evidence row`}
+        onCopyWholeContract={onCopyWholeContract}
+      />
     </div>
   );
 }
@@ -219,6 +121,9 @@ function DecompilerRow({
   index,
   reduce,
   registerButton,
+  codeView,
+  codePc,
+  onCopyWholeContract,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -231,9 +136,11 @@ function DecompilerRow({
   readonly index: number;
   readonly reduce: boolean;
   readonly registerButton: (selector: string, element: HTMLButtonElement | null) => void;
+  readonly codeView: CodePaneView | undefined;
+  readonly codePc: number | undefined;
+  readonly onCopyWholeContract: (() => Promise<string>) | undefined;
 }): JSX.Element {
   const [grown, setGrown] = useState(false);
-  const showInCodeId = useId();
   useEffect(() => {
     if (!open || reduce) {
       setGrown(false);
@@ -287,7 +194,9 @@ function DecompilerRow({
                 apiKey={apiKey}
                 fn={fn}
                 expert={expert}
-                showInCodeId={showInCodeId}
+                codeView={codeView}
+                codePc={codePc}
+                onCopyWholeContract={onCopyWholeContract}
               />
               {expert ? (
                 <dl className="decompiler-raw" data-testid={`decompiler-raw-${fn.selector}`}>
@@ -349,6 +258,8 @@ export function DecompilerList({
   findings,
   expert,
   initialSelector,
+  initialView,
+  initialPc,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -356,6 +267,10 @@ export function DecompilerList({
   readonly expert: boolean;
   // Route `<selector>` (UI v2 §1.3): this row starts expanded and focused.
   readonly initialSelector?: string | undefined;
+  // Route view and pc (addendum §A1.1): the code view's initial pane and
+  // the offset whose line to target.
+  readonly initialView?: CodePaneView | undefined;
+  readonly initialPc?: number | undefined;
 }): JSX.Element {
   const all = useMemo(
     () => sortDecompilerFunctions(parseDecompilerFunctions(findings.map((finding) => finding.payload))),
@@ -390,6 +305,23 @@ export function DecompilerList({
 
   const visible = useMemo(() => filterDecompilerFunctions(all, query, segment), [all, query, segment]);
   const shown = showAll ? visible : visible.slice(0, ROW_LIMIT);
+  // Expert only: copy the whole decompiled contract as plain text, one
+  // cached snippet request per function, full hex and no notes.
+  const copyWholeContract = useCallback(async (): Promise<string> => {
+    const key = apiKey.length === 0 ? null : apiKey;
+    const parts: string[] = [];
+    for (const fn of all) {
+      try {
+        const result = await fetchSnippet(address, fn.selector, key);
+        parts.push(`// ${fn.selector} ${fn.displayName}\n${result.lines.map((line) => line.text).join("\n")}`);
+      } catch {
+        parts.push(`// ${fn.selector}: readable code is not available`);
+      }
+    }
+    const text = parts.join("\n\n");
+    await navigator.clipboard.writeText(text);
+    return text;
+  }, [all, address, apiKey]);
   const registerButton = (selector: string, element: HTMLButtonElement | null): void => {
     if (element === null) {
       buttons.current.delete(selector.toLowerCase());
@@ -472,6 +404,9 @@ export function DecompilerList({
                 index={index}
                 reduce={reduce}
                 registerButton={registerButton}
+                codeView={initialView}
+                codePc={initialPc}
+                onCopyWholeContract={copyWholeContract}
               />
             );
           })}
