@@ -2,13 +2,14 @@ import { useEffect, useState, type JSX } from "react";
 import { riskBand } from "../lib/risk.ts";
 import type { RiskKind } from "../types.ts";
 import { reducedMotionRequested, useCountUp } from "../lib/motion.ts";
-import { Explain } from "./Explain.tsx";
 
 // One risk gauge (Phosphor Console): probability as a 20-segment bar
 // that lights once (45 ms stagger, per-gauge offset), the percent
 // counting up once (1.5 s), plus signal count and one plain-text
 // reason. Number and band word travel together, so the reading never
-// depends on colour alone.
+// depends on colour alone. The gauge carries no "?" of its own (R2-5,
+// D-17): the reason line beside it already explains it, and the shared
+// help lives in the "Risk breakdown" heading popover.
 const TITLES: Record<RiskKind, string> = {
   "rug-pull": "Rug pull",
   honeypot: "Honeypot",
@@ -56,7 +57,6 @@ export function Gauge({
           <span className="t">{TITLES[kind]}</span>
         </h3>
         <span className="band">{band.word.toUpperCase()}</span>
-        <Explain explainKey={`score:gauge:${kind}`} label={`${TITLES[kind]} gauge`} />
       </div>
       <div className="pct numeric" role="img" aria-label={`${percent} percent probability`}>
         {shown}%

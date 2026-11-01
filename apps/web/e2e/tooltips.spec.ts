@@ -96,7 +96,9 @@ test("tooltips_show_same_text_on_hover_and_keyboard_focus", async ({ page }) => 
 test("tooltips_leave_numbers_readable", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  const trigger = page.getByTestId("explain-score:gauge:honeypot");
+  // R2-5 (D-17): the gauges share one "Risk breakdown" trigger; the
+  // per-gauge triggers are gone.
+  const trigger = page.getByTestId("explain-score:gauges");
   await trigger.hover();
   const tooltip = page.locator('[role="tooltip"]');
   await expect(tooltip).toBeVisible();

@@ -586,6 +586,13 @@ function AssessedView({
   const heroBoard = buildBoardModel(plugins, heroPluginViews);
   const heroIds = (plugins ?? []).map((entry) => entry.id);
   const heroHasSignals = result.signals.length > 0;
+  // R2-5 (D-17): glue the verdict "?" to the last headline word, so the
+  // trigger never wraps onto its own line. The head keeps a normal
+  // space so the line can still break before the final word.
+  const verdictSentence = meaningSentence(result, heroBoard.ownerTiles);
+  const verdictSplit = verdictSentence.lastIndexOf(" ");
+  const verdictHead = verdictSplit < 0 ? "" : verdictSentence.slice(0, verdictSplit);
+  const verdictTail = verdictSplit < 0 ? verdictSentence : verdictSentence.slice(verdictSplit + 1);
   // Plugin detail view (UI v2 §1.3 level 2): a route, not a modal. The
   // analysis above stays mounted on the same state; only the rendered
   // level changes, so entering never refetches.
@@ -649,12 +656,15 @@ function AssessedView({
           liveEntry={liveEntry}
         />
         <div className="score-ring-wrap">
-          <div className="hero-copy" style={{ flex: "1 1 240px" }}>
+          <div className="hero-copy">
             <p className="risk-meaning" style={{ margin: "0 0 8px" }}>
               <span className="headline-marker" aria-hidden="true">
                 &gt;{" "}
               </span>
-              <span>{meaningSentence(result, heroBoard.ownerTiles)}</span> <Explain explainKey="score:combined" label="Combined score" />
+              {verdictHead === "" ? null : <>{verdictHead} </>}
+              <span className="verdict-glued">
+                {verdictTail} <Explain explainKey="score:combined" label="Combined score" />
+              </span>
             </p>
             <PowersStrip address={address} allIds={heroIds} tiles={heroBoard.ownerTiles} />
             {mode === "expert" ? (
@@ -664,7 +674,9 @@ function AssessedView({
               </p>
             ) : null}
             <div className="hero-gauges">
-              <h2 style={{ margin: "12px 0 10px", fontSize: 20 }}>Risk breakdown</h2>
+              <h2 style={{ margin: "12px 0 10px", fontSize: 20 }}>
+                <span>Risk breakdown</span> <Explain explainKey="score:gauges" label="Risk breakdown" />
+              </h2>
               <div className="gauges gauges-hero">
                 {RISKS.map((risk) => {
                   const top = strongestSignal(result.signals, risk);

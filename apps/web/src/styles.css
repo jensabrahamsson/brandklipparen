@@ -60,6 +60,15 @@
   --radius-card: 14px;
   --radius-row: 10px;
   --radius-button: 6px;
+  /* Spacing scale (design spec §6): card padding is --s5 desktop. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
   --font-sans: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   /* Glow language: depth comes from phosphor glow, never lifted
@@ -1124,8 +1133,8 @@ a {
 
 .card.verdict {
   border-top: 1px solid var(--verdict-band, var(--edge));
-  padding-top: 16px;
-  padding-bottom: 16px;
+  padding-top: var(--s5);
+  padding-bottom: var(--s4);
 }
 
 .row-card {
@@ -1319,11 +1328,12 @@ a {
 
 .verdict {
   display: block;
+  padding-top: var(--s5);
 }
 
 .token-sym {
   margin: 0;
-  font-size: clamp(56px, 9vw, 104px);
+  font-size: clamp(40px, 7vw, 72px);
   line-height: 0.9;
   font-weight: 800;
   letter-spacing: -0.04em;
@@ -1485,13 +1495,37 @@ a {
   overflow-wrap: anywhere;
 }
 
-/* Verdict hero: copy stays top-aligned under the token meta with the
-   dial beside it, so the card is only as tall as its content needs. */
+/* Verdict hero (R2-5, D-6): one grid at every width. At >=640 px the
+   copy takes the left column and the dial the right one, so the dial
+   can never wrap under the copy and strand a void beside it. At >=1100
+   the copy stays top-aligned under the token meta (S-132); in the
+   640-1099 band the dial centres against the copy. Under 640 px the
+   grid collapses to one column (R2-2 phone order). */
 .score-ring-wrap {
-  display: flex;
-  gap: 48px;
-  align-items: flex-start;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(200px, 32vw, 400px);
+  gap: clamp(24px, 4vw, 48px);
+  align-items: start;
+}
+
+.score-ring-wrap > * {
+  min-width: 0;
+}
+
+/* The verdict "?" glues to the last headline word (D-17), so the
+   trigger never wraps onto its own line. */
+.verdict-glued {
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) and (max-width: 1099px) {
+  .score-ring-wrap {
+    align-items: center;
+  }
+
+  .score-ring-wrap > .score-dial {
+    align-self: center;
+  }
 }
 
 /* 50-tick score dial: ticks light in sequence through colour and
@@ -3279,8 +3313,8 @@ a {
    verdict and the strip; DOM order stays hero → gauges → Muse. */
 @media (max-width: 639px) {
   .score-ring-wrap {
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
     gap: 12px;
   }
 

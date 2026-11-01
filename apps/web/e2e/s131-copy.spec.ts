@@ -21,7 +21,7 @@ const BANNED_V1 = /(?<![A-Za-z0-9_.])v1(?![A-Za-z0-9_.])/;
 function bannedIn(html: string): string[] {
   const withoutScripts = html.replace(/<script[\s\S]*?<\/script>/g, "");
   // Test hooks are not rendered copy: explanation keys ride in
-  // data-testid values (for example "explain-score:gauge:honeypot"),
+  // data-testid values (for example "explain-score:gauges"),
   // so strip those attributes before scanning for dev strings.
   const withoutTestIds = withoutScripts.replace(/\sdata-testid="[^"]*"/g, "");
   const hits: string[] = [];

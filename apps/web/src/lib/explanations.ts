@@ -18,6 +18,7 @@ const UI_KEYS = [
   "score:gauge:rug-pull",
   "score:gauge:honeypot",
   "score:gauge:bot-pump",
+  "score:gauges",
   "score:band",
   "score:strip",
   "evidence:selector",
@@ -74,7 +75,23 @@ const FALLBACK: ExplanationEntry = Object.freeze({
   body: "This item carries no dedicated explanation yet. The score, signals and evidence beside it are unchanged.",
 });
 
+// R2-5 (D-17): the hero gauges share one popover on the "Risk breakdown"
+// heading instead of one trigger per gauge. The generated map stays the
+// single source for the per-gauge keys; this local entry combines their
+// help sentences so the heading popover carries the same meaning the
+// three removed triggers had.
+const LOCAL_ENTRIES: Readonly<Record<string, ExplanationEntry>> = Object.freeze({
+  "score:gauges": {
+    title: "Risk breakdown",
+    body: "Rug pull is the chance the people behind this token can take the money and leave, for example by creating new tokens or draining the pool. Honeypot is the chance you can buy this token but not sell it, for example because the owner can block wallets or freeze transfers. Bot pump is the chance the launch favours bots or insiders, so early buyers can dump on late ones. With nothing found, each shows the usual rate for new tokens.",
+  },
+});
+
 export function explanationFor(key: string): ExplanationEntry {
+  const local = LOCAL_ENTRIES[key];
+  if (local !== undefined) {
+    return local;
+  }
   const entry = (EXPLANATIONS as Readonly<Record<string, ExplanationEntry | undefined>>)[key];
   if (entry === undefined || entry.title.length === 0 || entry.body.length === 0) {
     return FALLBACK;

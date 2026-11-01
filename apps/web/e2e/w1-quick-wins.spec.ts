@@ -181,27 +181,32 @@ test("w1_long_text_never_inherits_uppercase", async ({ page }) => {
   }
 });
 
-test("w1_gauge_tooltips_use_the_new_copy", async ({ page }) => {
+test("w1_breakdown_tooltip_uses_the_new_copy", async ({ page }) => {
   await mockRest(page);
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto(`/#/token/${TOKEN_A}`);
-  const bodies: Record<string, string> = {
-    "score:gauge:rug-pull":
-      "The chance that the people behind this token can take the money and leave",
-    "score:gauge:honeypot": "The chance that you can buy this token but not sell it",
-    "score:gauge:bot-pump": "The chance that the launch favours bots or insiders",
-  };
-  for (const [key, sentence] of Object.entries(bodies)) {
-    const trigger = page.getByTestId(`explain-${key}`);
-    await expect(trigger).toBeVisible();
-    await trigger.focus();
-    const tooltip = page.locator('[role="tooltip"]');
-    await expect(tooltip).toBeVisible();
+  // R2-5 (D-17): the three per-gauge triggers are gone. The single
+  // "Risk breakdown" trigger carries the same help for all three gauges.
+  const trigger = page.getByTestId("explain-score:gauges");
+  await expect(trigger).toBeVisible();
+  await trigger.focus();
+  const tooltip = page.locator('[role="tooltip"]');
+  await expect(tooltip).toBeVisible();
+  await expect(tooltip).toContainText("Risk breakdown");
+  for (const sentence of [
+    "take the money and leave",
+    "buy this token but not sell it",
+    "favours bots or insiders",
+  ]) {
     await expect(tooltip).toContainText(sentence);
-    await expect(tooltip).not.toContainText("gauge");
-    await expect(tooltip).not.toContainText("arc");
-    await page.keyboard.press("Escape");
-    await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
+  }
+  await expect(tooltip).not.toContainText("gauge");
+  await expect(tooltip).not.toContainText("arc");
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
+  // No per-gauge trigger survives beside the gauges.
+  for (const key of ["score:gauge:rug-pull", "score:gauge:honeypot", "score:gauge:bot-pump"]) {
+    await expect(page.getByTestId(`explain-${key}`)).toHaveCount(0);
   }
 });
 
