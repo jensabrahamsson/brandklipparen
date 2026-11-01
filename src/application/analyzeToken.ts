@@ -46,6 +46,7 @@ import type {
   TemplateVersion as TemplateVersionType,
   Timestamp as TimestampType,
 } from "../domain/types.ts";
+import { hasCodeAfterMetadata } from "../domain/metadata.ts";
 import { withCountedRpc } from "./observability.ts";
 import type { RequestCounterSink } from "./observability.ts";
 import { CAPABILITY_KEYS, Signal } from "../domain/signals.ts";
@@ -1186,6 +1187,16 @@ export async function analyzeToken(
         outcome.error.kind === "resource-limit" ||
         outcome.error.kind === "output-too-large";
     }
+  }
+  // Forged metadata footer (F-3, part 1): the bytecode carries a strictly
+  // valid metadata-shaped region with referenced code at or past it, so the
+  // footer cut was refused and the tail is analysed as code. The shape is
+  // deterministic per bytecode, so the cause converts to a scored
+  // `obfuscated-structure` signal like any decompiler-error cause. Only a
+  // clean decompilation run gains it: a decompiler failure keeps its own
+  // cause (and a wall-clock failure keeps its transient no-cache status).
+  if (decompilerCause === null && hasCodeAfterMetadata(analysisBytecode)) {
+    decompilerCause = "obfuscated-structure";
   }
   // Single detection run through the registry (S-043 step 1, S-044 step 2,
   // S-047 step 5): every registered detector runs behind the registry

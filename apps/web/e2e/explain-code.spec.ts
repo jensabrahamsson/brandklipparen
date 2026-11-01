@@ -375,6 +375,11 @@ test("notes interleave at 390 and stand in the margin at 1600", async ({ page })
   // code line changes height compared with before the explanation.
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.goto(`/#/token/${ADDRESS}/plugins/decompiler/${ADD}/decompiled`);
+  // Same-URL hash navigation keeps the mounted 390 tabs view: the flip
+  // to side-by-side panes (and interleaved rows to margin notes) lands
+  // asynchronously, so settle before snapshotting line heights.
+  await expect(page.locator(".code-panes")).toHaveCount(1);
+  await expect(page.locator(".code-note-row")).toHaveCount(0);
   await expect(page.locator(".code-pane ol.code > li.code-line").first()).toBeVisible();
   const before = await page.locator(".code-pane ol.code > li.code-line").evaluateAll((elements) =>
     elements.map((element) => element.getBoundingClientRect().height),
