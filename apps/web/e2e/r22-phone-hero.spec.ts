@@ -313,3 +313,55 @@ test("r22_hero_gauges_muse_dom_order", async ({ page }) => {
     expect(order?.gaugesBeforeMuse).toBe(true);
   }
 });
+
+test("u2_phone_risk_rows_single_line_no_card", async ({ page }) => {
+  // D-3 layout contract: phone gauge rows read as one line each with no
+  // card-in-card frame, so labels never ellipsize and numbers clear the bar.
+  for (const [target, score] of [
+    [USDT, 29],
+    [PEPE, 19],
+  ] as const) {
+    for (const width of [320, 390, 639]) {
+      await page.setViewportSize({ width, height: 844 });
+      await openToken(page, target, score);
+      const rows = await page.evaluate(() => {
+        const rectOf = (element: Element): Box => {
+          const box = element.getBoundingClientRect();
+          return { x: box.x, y: box.y, width: box.width, height: box.height };
+        };
+        return [...document.querySelectorAll('section[aria-label="Combined score"] .gauge')].map(
+          (gauge) => {
+            const label = gauge.querySelector(".t");
+            const pct = gauge.querySelector(".pct");
+            const bar = gauge.querySelector(".bar20");
+            const style = window.getComputedStyle(gauge);
+            return {
+              height: gauge.getBoundingClientRect().height,
+              clipped:
+                label === null ? null : label.scrollWidth - label.clientWidth,
+              pct: pct === null ? null : rectOf(pct),
+              bar: bar === null ? null : rectOf(bar),
+              borderTop: style.borderTopWidth,
+              borderLeft: style.borderLeftWidth,
+              shadow: style.boxShadow,
+            };
+          },
+        );
+      });
+      expect(rows.length).toBe(3);
+      for (const row of rows) {
+        expect(row.clipped).not.toBeNull();
+        expect(row.clipped ?? 1).toBeLessThanOrEqual(0);
+        expect(row.height).toBeLessThanOrEqual(44);
+        expect(row.borderTop).toBe("0px");
+        expect(row.borderLeft).toBe("0px");
+        expect(row.shadow).toBe("none");
+        expect(row.pct).not.toBeNull();
+        expect(row.bar).not.toBeNull();
+        if (row.pct !== null && row.bar !== null) {
+          expect(intersects(row.pct, row.bar)).toBe(false);
+        }
+      }
+    }
+  }
+});
