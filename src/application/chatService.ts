@@ -11,6 +11,7 @@
 // Scores, evidence and finding text are untouched: this service reads the
 // frozen envelope and returns a separate overlay.
 import type { ChatAnswer, ChatInput, ChatModelOutcome, ChatModelPort } from "../ports/chatModel.ts";
+import { withCitationMarkers } from "./citationMarkers.ts";
 import type { OverlayBudget } from "./overlayBudget.ts";
 
 
@@ -20,7 +21,7 @@ export const MAX_CHAT_CITATIONS_PER_ANSWER = 8;
 // Versioned identifier of the chat prompt and evidence format. The overlay
 // cache key (a later story) carries code hash, this version, provider and
 // model id.
-export const CHAT_PROMPT_VERSION = "chat-2";
+export const CHAT_PROMPT_VERSION = "chat-3";
 
 // Meta-statements about grounding or evidence carry no holder impact:
 // drop any answer talking about being grounded, frozen evidence or
@@ -45,7 +46,9 @@ export type CheckedChat = {
 // Pure citation check over collected evidence ids: keep an answer only
 // when it is not a meta-statement, every citation names a collected id
 // and at least one citation is present. Uncited factual answers drop like
-// uncollected citations and meta-statements do.
+// uncollected citations and meta-statements do. Kept answers carry one
+// `[E:<id>]` marker per validated citation (appended when the model text
+// has none) so the web renders the citation chips.
 export function checkChatCitations(
   answers: readonly ChatAnswer[],
   collectedIds: ReadonlySet<string>,
@@ -72,7 +75,7 @@ export function checkChatCitations(
       droppedClaims += 1;
       continue;
     }
-    kept.push(answer.text);
+    kept.push(withCitationMarkers(answer.text, answer.citations));
   }
   return Object.freeze({ answers: Object.freeze(kept.slice()), droppedClaims });
 }

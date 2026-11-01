@@ -33,7 +33,7 @@ describe("explain service (S-094)", () => {
       ],
       new Set(["signal:first", "signal:second"]),
     );
-    expect(checked.narrative).toEqual(["Cited and collected."]);
+    expect(checked.narrative).toEqual(["Cited and collected. [E:signal:first]"]);
     expect(checked.droppedClaims).toBe(2);
   });
 
@@ -70,7 +70,7 @@ describe("explain service (S-094)", () => {
       ],
       collected,
     );
-    expect(checked.narrative).toEqual(["The token is unsafe to buy."]);
+    expect(checked.narrative).toEqual(["The token is unsafe to buy. [E:analysis:summary]"]);
     expect(checked.droppedClaims).toBe(5);
   });
 
@@ -83,7 +83,10 @@ describe("explain service (S-094)", () => {
       ],
       collected,
     );
-    expect(checked.narrative).toEqual(["Ownership was renounced.", "The token is safe to buy."]);
+    expect(checked.narrative).toEqual([
+      "Ownership was renounced. [E:signal:first]",
+      "The token is safe to buy. [E:signal:first] [E:analysis:summary]",
+    ]);
     expect(checked.droppedClaims).toBe(0);
   });
 
@@ -102,7 +105,7 @@ describe("explain service (S-094)", () => {
     if (outcome.kind !== "ok") {
       throw new Error(`expected ok, got ${outcome.kind}`);
     }
-    expect(outcome.narrative).toEqual(["The analysis reports a capability."]);
+    expect(outcome.narrative).toEqual(["The analysis reports a capability. [E:signal:first]"]);
     expect(outcome.droppedClaims).toBe(2);
   });
 
@@ -126,8 +129,8 @@ describe("explain service (S-094)", () => {
       collected,
     );
     expect(checked.narrative).toEqual([
-      "Checked code intent, which bytecode cannot tell.",
-      "Coverage summary holds.",
+      "Checked code intent, which bytecode cannot tell. [E:cant-tell:code-intent]",
+      "Coverage summary holds. [E:analysis:summary]",
     ]);
     expect(checked.droppedClaims).toBe(1);
   });

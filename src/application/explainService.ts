@@ -13,6 +13,7 @@
 import type { ExplainInput, ExplainModelOutcome, ExplainModelPort, ExplainSentence } from "../ports/explainModel.ts";
 import type { CantTellQuestion } from "../domain/cantTell.ts";
 import { ANALYSIS_SUMMARY_COVERAGE_ID, DECOMPILE_INCOMPLETE_COVERAGE_ID } from "./modelMeanings.ts";
+import { withCitationMarkers } from "./citationMarkers.ts";
 import type { OverlayBudget } from "./overlayBudget.ts";
 
 
@@ -22,7 +23,7 @@ export const MAX_EXPLAIN_CITATIONS_PER_SENTENCE = 8;
 // Versioned identifier of the explain prompt and evidence format. The
 // overlay cache key (a later story) carries code hash, this version,
 // provider and model id.
-export const EXPLAIN_PROMPT_VERSION = "explain-3";
+export const EXPLAIN_PROMPT_VERSION = "explain-4";
 
 // Reassurance terms (C-19): words that read as a clean bill of health.
 // A sentence carrying one survives only when it cites a `signal:`
@@ -106,7 +107,9 @@ export function isExplainCoverageId(id: string): boolean {
 // sentences (safe, legitimate, risk-free, renounced) survive only with a
 // `signal:` citation, never on a coverage limit entry alone. Uncited
 // factual sentences drop like uncollected citations, unknown shapes and
-// meta-statements do.
+// meta-statements do. Kept sentences carry one `[E:<id>]` marker per
+// validated citation (appended when the model text has none) so the web
+// renders the citation chips.
 export function checkExplainCitations(
   sentences: readonly ExplainSentence[],
   collectedIds: ReadonlySet<string>,
@@ -141,7 +144,7 @@ export function checkExplainCitations(
       droppedClaims += 1;
       continue;
     }
-    narrative.push(sentence.text);
+    narrative.push(withCitationMarkers(sentence.text, sentence.citations));
   }
   return Object.freeze({ narrative: Object.freeze(narrative.slice()), droppedClaims });
 }

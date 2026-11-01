@@ -258,6 +258,7 @@ function buildSystemPrompt(input: {
   readonly shape: string;
   readonly limits: string;
   readonly extra?: readonly string[] | undefined;
+  readonly citationExampleId?: string | undefined;
 }): string {
   const modelId = input.modelId as string;
   return [
@@ -273,6 +274,12 @@ function buildSystemPrompt(input: {
     input.limits,
     ...(input.extra ?? []),
     "Every entry must carry at least one citation copied verbatim from the evidence id list; never invent, recompute, shorten or reformat an id.",
+    'End the "text" of every entry with one citation marker per cited id in the exact form [E:<id>], with the id copied verbatim from the evidence id list, and list the same ids in the entry citations.',
+    ...(input.citationExampleId === undefined
+      ? []
+      : [
+          `Worked example: an entry citing ${input.citationExampleId} reads "The owner can block sales. [E:${input.citationExampleId}]" with citations ["${input.citationExampleId}"].`,
+        ]),
   ].join("\n");
 }
 
@@ -517,6 +524,7 @@ export class MetaModelApiExplainAdapter implements ExplainModelPort {
       extra: [
         "Coverage ids name what was checked even when no `signal:` id is present: `cant-tell:<question>` for each open question, `check:<detector>:not-found` when a detector checked and found nothing, `check:<detector>:could-not-check` when a detector could not read, `analysis:summary` for the coverage facts, and `analysis:decompile-incomplete` when decompilation was incomplete. When no `signal:` id is present, explain what was checked, what could not be read and why, citing exactly those coverage ids; say plainly that no pattern found is not safe.",
       ],
+      citationExampleId: input.evidenceIds[0],
     });
     const content = await callOverlay(
       this.resolved,
@@ -565,6 +573,7 @@ export class MetaModelApiChatAdapter implements ChatModelPort {
       shape: "answers",
       limits:
         'The "answers" value must be an array of at most 8 entries; each entry carries exactly "text" (a non-empty string of at most 1000 characters) and "citations" (an array of at most 8 evidence id strings).',
+      citationExampleId: input.evidenceIds[0],
     });
     const content = await callOverlay(
       this.resolved,
@@ -614,6 +623,7 @@ export class MetaModelApiRugAdapter implements RugModelPort {
       shape: "sentences",
       limits:
         'The "sentences" value must be an array of at most 8 entries; each entry carries exactly "text" (a non-empty string of at most 1000 characters) and "citations" (an array of at most 8 evidence id strings).',
+      citationExampleId: input.evidenceIds[0],
     });
     const content = await callOverlay(
       this.resolved,

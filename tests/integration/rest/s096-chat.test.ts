@@ -157,7 +157,9 @@ describe("AI chat plugin over REST (S-096)", () => {
         chat: { kind: string; answers: string[]; droppedClaims: number; provider: string; modelId: string };
       };
       expect(body.chat.kind).toBe("ok");
-      expect(body.chat.answers).toEqual(["The analysis reports a capability."]);
+      expect(body.chat.answers).toEqual([
+        "The analysis reports a capability. [E:signal:0xd91d8833a67c9cf9a803c254a4b791c269758c4ec839613b958152707872d410]",
+      ]);
       expect(body.chat.droppedClaims).toBe(2);
       expect(typeof body.chat.provider).toBe("string");
       expect(typeof body.chat.modelId).toBe("string");

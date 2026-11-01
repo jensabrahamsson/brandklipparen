@@ -202,7 +202,9 @@ describe("AI explain plugin over REST (S-094)", () => {
         explain: { kind: string; narrative: string[]; droppedClaims: number; provider: string; modelId: string };
       };
       expect(body.explain.kind).toBe("ok");
-      expect(body.explain.narrative).toEqual(["The analysis reports a capability."]);
+      expect(body.explain.narrative).toEqual([
+        "The analysis reports a capability. [E:signal:0xd91d8833a67c9cf9a803c254a4b791c269758c4ec839613b958152707872d410]",
+      ]);
       expect(body.explain.droppedClaims).toBe(2);
       expect(typeof body.explain.provider).toBe("string");
       expect(typeof body.explain.modelId).toBe("string");
@@ -250,7 +252,7 @@ describe("AI explain plugin over REST (S-094)", () => {
         explain: { kind: string; narrative: string[]; droppedClaims: number };
       };
       expect(body.explain.kind).toBe("ok");
-      expect(body.explain.narrative).toEqual(["The analysis reports a capability."]);
+      expect(body.explain.narrative).toEqual(["The analysis reports a capability. [E:analysis:summary]"]);
       expect(body.explain.droppedClaims).toBe(0);
       const analyzed = await server.inject({
         method: "GET",
@@ -274,7 +276,9 @@ describe("AI explain plugin over REST (S-094)", () => {
         explain: { kind: string; narrative: string[]; droppedClaims: number };
       };
       expect(body.explain.kind).toBe("ok");
-      expect(body.explain.narrative).toEqual(["The deterministic analysis lists only proved patterns."]);
+      expect(body.explain.narrative).toEqual([
+        "The deterministic analysis lists only proved patterns. [E:analysis:summary]",
+      ]);
       expect(body.explain.droppedClaims).toBe(2);
     } finally {
       await server.close();

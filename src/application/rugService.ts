@@ -12,6 +12,7 @@
 // untouched: this service reads the frozen envelope and returns a separate
 // overlay.
 import type { RugInput, RugModelOutcome, RugModelPort, RugSentence } from "../ports/rugModel.ts";
+import { withCitationMarkers } from "./citationMarkers.ts";
 import type { OverlayBudget } from "./overlayBudget.ts";
 
 
@@ -21,7 +22,7 @@ export const MAX_RUG_CITATIONS_PER_SENTENCE = 8;
 // Versioned identifier of the rug prompt and evidence format. The overlay
 // cache key (a later story) carries code hash, this version, provider and
 // model id.
-export const RUG_PROMPT_VERSION = "rug-2";
+export const RUG_PROMPT_VERSION = "rug-3";
 
 // Meta-statements about grounding or evidence carry no holder impact:
 // drop any sentence talking about being grounded, frozen evidence or
@@ -46,7 +47,9 @@ export type CheckedRug = {
 // Pure citation check over collected evidence ids: keep a sentence only
 // when it is not a meta-statement, every citation names a collected id
 // and at least one citation is present. Uncited factual sentences drop
-// like uncollected citations and meta-statements do.
+// like uncollected citations and meta-statements do. Kept sentences
+// carry one `[E:<id>]` marker per validated citation (appended when the
+// model text has none) so the web renders the citation chips.
 export function checkRugCitations(
   sentences: readonly RugSentence[],
   collectedIds: ReadonlySet<string>,
@@ -73,7 +76,7 @@ export function checkRugCitations(
       droppedClaims += 1;
       continue;
     }
-    narrative.push(sentence.text);
+    narrative.push(withCitationMarkers(sentence.text, sentence.citations));
   }
   return Object.freeze({ narrative: Object.freeze(narrative.slice()), droppedClaims });
 }

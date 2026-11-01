@@ -285,7 +285,7 @@ describe("overlay Meta answers", () => {
     if (outcome.kind !== "ok") {
       throw new Error(`expected ok, got ${outcome.kind}`);
     }
-    expect(outcome.narrative).toEqual(["The analysis reports a capability."]);
+    expect(outcome.narrative).toEqual(["The analysis reports a capability. [E:signal:first]"]);
     expect(outcome.droppedClaims).toBe(0);
     expect(outcome.provider).toBe("meta-model-api");
     expect(outcome.modelId).toBe("muse-spark-1.3");
@@ -313,7 +313,7 @@ describe("overlay Meta answers", () => {
     if (outcome.kind !== "ok") {
       throw new Error(`expected ok, got ${outcome.kind}`);
     }
-    expect(outcome.answers).toEqual(["The analysis reports a capability."]);
+    expect(outcome.answers).toEqual(["The analysis reports a capability. [E:signal:first]"]);
     expect(outcome.droppedClaims).toBe(0);
     expect(healthCapabilities({ chatService: built.value })).toMatchObject({
       chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
@@ -342,7 +342,7 @@ describe("overlay Meta answers", () => {
     if (outcome.kind !== "ok") {
       throw new Error(`expected ok, got ${outcome.kind}`);
     }
-    expect(outcome.narrative).toEqual(["The top risk capability is present."]);
+    expect(outcome.narrative).toEqual(["The top risk capability is present. [E:signal:first]"]);
     expect(outcome.topRisk).toBe("rug-pull");
     expect(healthCapabilities({ rugService: built.value })).toMatchObject({
       rug: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
@@ -627,6 +627,60 @@ describe("overlay meanings and meta-statement guard", () => {
     expect(meanings[0]).toMatchObject({ id: "signal:synth-owner" });
   });
 
+  test("ask1_chat_prompt_carries_evidence_ids_and_the_exact_marker_format", async () => {
+    const config = loadOverlayEnv("CHAT");
+    const calls: CapturedCall[] = [];
+    const built = createChatServiceFromConfig(config, {
+      chatTransport: fakeTransport(
+        calls,
+        chatEnvelope({
+          provider: "meta-model-api",
+          modelId: "muse-spark-1.3",
+          answers: [
+            {
+              text: "Yes. The owner can stop you selling by blocking your wallet. [E:signal:owner-blacklist]",
+              citations: ["signal:owner-blacklist"],
+            },
+          ],
+        }),
+      ),
+    });
+    if (!built.ok || built.value === undefined) {
+      throw new Error("expected a configured chat service");
+    }
+    const created = ChatInput.create({
+      codeHash: "code-hash-for-unit-suite",
+      evidenceIds: ["signal:owner-blacklist", "signal:pausable"],
+      question: "Can the owner stop me selling?",
+      promptVersion: "chat-3",
+      meanings: [synthMeaning],
+    });
+    if (created === null) {
+      throw new Error("expected valid chat input");
+    }
+    const outcome = await built.value.chat(created);
+    expect(calls.length).toBe(1);
+    const { system, user } = requestBody(calls[0] as CapturedCall);
+    // The evidence ids given to the model travel in the user message.
+    expect(user["evidenceIds"]).toEqual(["signal:owner-blacklist", "signal:pausable"]);
+    expect(user["question"]).toBe("Can the owner stop me selling?");
+    // The system prompt names the exact marker form the web parser
+    // accepts (`[E:<id>]`, see splitNarrative) and works an example from
+    // the first collected id.
+    expect(system).toContain("[E:<id>]");
+    expect(system).toContain("[E:signal:owner-blacklist]");
+    const markers = [...system.matchAll(/\[E:[^\]]+\]/g)].map((entry) => entry[0]);
+    expect(markers).toContain("[E:<id>]");
+    expect(markers).toContain("[E:signal:owner-blacklist]");
+    // A realistic cited answer survives with its marker intact.
+    if (outcome.kind !== "ok") {
+      throw new Error(`expected ok, got ${outcome.kind}`);
+    }
+    expect(outcome.answers).toEqual([
+      "Yes. The owner can stop you selling by blocking your wallet. [E:signal:owner-blacklist]",
+    ]);
+  });
+
   test("rug prompt carries meanings and the non-expert instruction", async () => {
     const config = loadOverlayEnv("RUG");
     const calls: CapturedCall[] = [];
@@ -691,7 +745,7 @@ describe("overlay meanings and meta-statement guard", () => {
       ],
       ids,
     );
-    expect(explained.narrative).toEqual(["The owner can block sales."]);
+    expect(explained.narrative).toEqual(["The owner can block sales. [E:signal:first]"]);
     expect(explained.droppedClaims).toBe(1);
     const chatted = checkChatCitations(
       [
@@ -700,7 +754,7 @@ describe("overlay meanings and meta-statement guard", () => {
       ],
       ids,
     );
-    expect(chatted.answers).toEqual(["The owner can block sales."]);
+    expect(chatted.answers).toEqual(["The owner can block sales. [E:signal:first]"]);
     expect(chatted.droppedClaims).toBe(1);
     const rugged = checkRugCitations(
       [
@@ -709,7 +763,7 @@ describe("overlay meanings and meta-statement guard", () => {
       ],
       ids,
     );
-    expect(rugged.narrative).toEqual(["The owner can block sales."]);
+    expect(rugged.narrative).toEqual(["The owner can block sales. [E:signal:first]"]);
     expect(rugged.droppedClaims).toBe(1);
   });
 });

@@ -156,7 +156,9 @@ describe("AI rug narrative plugin over REST (S-097)", () => {
         rug: { kind: string; narrative: string[]; droppedClaims: number; provider: string; modelId: string };
       };
       expect(body.rug.kind).toBe("ok");
-      expect(body.rug.narrative).toEqual(["The top risk capability is present."]);
+      expect(body.rug.narrative).toEqual([
+        "The top risk capability is present. [E:signal:0xd91d8833a67c9cf9a803c254a4b791c269758c4ec839613b958152707872d410]",
+      ]);
       expect(body.rug.droppedClaims).toBe(2);
       expect(["rug-pull", "honeypot", "bot-pump"]).toContain(body.topRisk);
       expect(fake.calls[0]?.topRisk).toBe(body.topRisk);
