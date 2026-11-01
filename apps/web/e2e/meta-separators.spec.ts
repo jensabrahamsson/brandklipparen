@@ -567,13 +567,15 @@ test("brief40_mobile_separators_found_generically", async ({ page }) => {
   await page.goto("/#/token/" + TOKEN_A);
   await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
   const analysisScan = await genericScan(page, ['section[aria-label="Combined score"]']);
-  // W-9 removes the repeated hero score line alongside the earlier W-3
-  // analysis-complete removal, leaving the token meta as the hero's only
-  // separator row. (The owner-powers strip summary uses sentence stops,
-  // never middots, so it stays out of this scan.)
+  // R2-4: the hero address is a separator-free block (label row plus the
+  // grouped value, wrapping between groups) and the DEX meta is one
+  // unbreakable unit, so no hero separator row wraps. The scan still
+  // finds the DEX line through its interior separators and must report
+  // no stranded or missing separators. (The owner-powers strip summary
+  // uses sentence stops, never middots, so it stays out of this scan.)
   expect(analysisScan.rowCount).toBeGreaterThanOrEqual(1);
   expect(analysisScan.failures, analysisScan.failures.join("; ")).toEqual([]);
-  expect(analysisScan.wrapped).toBe(true);
+  expect(analysisScan.wrapped).toBe(false);
 
   // The token meta keeps its own left edge inside the hero.
   await expectRowAligned(page, ".token-meta", 0);
@@ -588,7 +590,7 @@ test("brief40_mobile_separators_found_generically", async ({ page }) => {
   await headerCopy.focus();
   const copyBox = await headerCopy.evaluate((element) => {
     const rect = (element as HTMLElement).getBoundingClientRect();
-    const row = (element as HTMLElement).closest(".token-meta") as HTMLElement | null;
+    const row = (element as HTMLElement).closest(".token-addr") as HTMLElement | null;
     return {
       height: rect.height,
       left: rect.left,
@@ -609,24 +611,12 @@ test("brief40_desktop_separators_stay_visible_between_items", async ({ page }) =
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + TOKEN_A);
   await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
-  // W-9 removed the repeated hero score line, so only the token meta
-  // keeps separators on desktop.
-  for (const selector of [".token-meta"]) {
-    const items = await itemCount(page, selector, 0);
-    expect(items).toBeGreaterThanOrEqual(2);
-    let painted = 0;
-    for (let k = 1; k < items; k += 1) {
-      const sep = await sepStatus(page, selector, 0, k);
-      expect(sep.found).toBe(true);
-      expect(sep.beforeContent, `${selector} item ${k} separator`).toContain("·");
-      if (!sep.startsLine) {
-        expect(sep.hitIsItem, `${selector} item ${k} separator painted`).toBe(true);
-        painted += 1;
-      }
-    }
-    // Desktop rows keep separators visible between items.
-    expect(painted).toBeGreaterThanOrEqual(1);
-  }
+  // R2-4: the hero meta is a single DEX unit (the name rides the h1 and
+  // the address is a separator-free block), so no between-item
+  // separators remain; the interior separators stay visible on one line.
+  const heroItems = await itemCount(page, ".token-meta", 0);
+  expect(heroItems).toBe(1);
+  await expect(page.locator(".token-meta").first()).toContainText("·");
 
   // Accessible names are unchanged: copy controls keep their labels.
   await expect(page.locator('[data-testid="copy-contract-address"]').first()).toHaveAttribute(

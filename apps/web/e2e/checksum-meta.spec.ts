@@ -146,7 +146,7 @@ test("brief36_rejected_copy_reads_copy_failed", async ({ page }) => {
   await expect(headerCopy).toBeVisible();
   await headerCopy.click();
   await expect(headerCopy).toHaveAttribute("data-state", "failed");
-  await expect(page.locator(".token-meta .copy-wrap [role='tooltip']").first()).toHaveText("Copy failed");
-  const liveRegion = page.locator(".token-meta .copy-wrap [aria-live='polite']").first();
+  await expect(page.locator(".token-addr .copy-wrap [role='tooltip']").first()).toHaveText("Copy failed");
+  const liveRegion = page.locator(".token-addr .copy-wrap [aria-live='polite']").first();
   await expect(liveRegion).toHaveText("Copy failed.");
 });

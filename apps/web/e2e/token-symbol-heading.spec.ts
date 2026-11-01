@@ -1,7 +1,8 @@
 // Token page heading: the analysis response symbol/name wins, then the
 // live-list entry the visitor came from, then the short address. The
-// full contract address always rides the heading meta (S-134). DEX and
-// human age ride the heading meta when the live entry is known.
+// name rides the h1 as a subtitle and the full contract address rides
+// the hero address block (S-134). DEX and human age ride the heading
+// meta when the live entry is known.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -111,8 +112,10 @@ test("token_heading_prefers_analysis_symbol_then_live_entry_then_address", async
   ]);
   await page.goto("/#/token/" + ADDRESS);
   const heading = page.locator("h1").first();
-  await expect(heading).toHaveText("NEW");
-  await expect(page.getByText("New Token").first()).toBeVisible();
+  // R2-4: the name rides the h1 as a subtitle, so the heading reads
+  // both the symbol and the name.
+  await expect(heading).toContainText("NEW");
+  await expect(heading).toContainText("New Token");
   await expect(page.locator('[data-testid="token-address-full"]').first()).toHaveText(C_ADDRESS);
 });
 

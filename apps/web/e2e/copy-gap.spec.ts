@@ -138,8 +138,10 @@ async function mockToken(page: Page): Promise<void> {
   });
 }
 
-// Distance from the copy button's right edge to the start of the next
-// meta content after its wrap, plus the wrap's own reserved space.
+// R2-4: the copy button sits on the address label row, ahead of the
+// grouped value and the DEX meta below. The gap reads from the wrap to
+// the content that follows it, and the wrap itself reserves no space
+// for the tooltip bubble.
 async function headerGap(page: Page): Promise<{ gap: number; reserved: number }> {
   const result = await page.evaluate(() => {
     const button = document.querySelector('[data-testid="copy-contract-address"]') as HTMLElement | null;
@@ -163,7 +165,7 @@ async function headerGap(page: Page): Promise<{ gap: number; reserved: number }>
   return result as { gap: number; reserved: number };
 }
 
-test("copy_gap_header_meta_follows_button_with_live_announcement", async ({ page }) => {
+test("copy_gap_header_label_row_keeps_button_with_live_announcement", async ({ page }) => {
   await stubClipboard(page);
   await mockToken(page);
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -172,7 +174,7 @@ test("copy_gap_header_meta_follows_button_with_live_announcement", async ({ page
   await expect(page.locator('[data-testid="token-address-full"]').first()).toBeVisible();
 
   const headerCopy = page.locator('[data-testid="copy-contract-address"]').first();
-  const liveRegion = page.locator(".token-meta .copy-wrap [aria-live='polite']").first();
+  const liveRegion = page.locator(".token-addr .copy-wrap [aria-live='polite']").first();
   await expect(headerCopy).toBeVisible();
 
   // The live region is present and empty when idle.
@@ -185,7 +187,7 @@ test("copy_gap_header_meta_follows_button_with_live_announcement", async ({ page
   expect(statusBox.width).toBeLessThanOrEqual(2);
   expect(statusBox.height).toBeLessThanOrEqual(2);
 
-  // No reserved gap: the DEX and age meta follow the button directly.
+  // No reserved gap: the grouped value and the DEX meta follow the label row directly.
   const before = await headerGap(page);
   expect(before.reserved).toBeLessThanOrEqual(2);
   expect(before.gap).toBeLessThanOrEqual(24);
@@ -199,7 +201,7 @@ test("copy_gap_header_meta_follows_button_with_live_announcement", async ({ page
   await expect(liveRegion).toHaveText("Copied contract address.");
   await expect(headerCopy).toHaveAttribute("data-state", "copied");
   await expect(headerCopy).toHaveAttribute("aria-label", "Copy contract address");
-  await expect(page.locator(".token-meta .copy-wrap [role='tooltip']").first()).toHaveText("Copied");
+  await expect(page.locator(".token-addr .copy-wrap [role='tooltip']").first()).toHaveText("Copied");
 
   // The confirmation moves nothing: same button width, same gap.
   const widthAfter = await headerCopy.evaluate((element) => element.getBoundingClientRect().width);

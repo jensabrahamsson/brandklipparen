@@ -1338,7 +1338,7 @@ a {
   align-items: baseline;
   column-gap: calc(6px + 1.15em);
   row-gap: 2px;
-  margin: 14px 0 0;
+  margin: 8px 0 0;
   color: var(--dim);
   font-size: 14px;
   overflow-wrap: anywhere;
@@ -1427,6 +1427,45 @@ a {
 .meta-addr {
   white-space: normal;
   min-width: 0;
+}
+
+/* Hero identity address block (R2-4/D-7, UI v2 §3.1): the name rides
+   the h1 as a smaller subtitle; the contract address is a label row
+   (icon + "Contract" left, the 44 px copy icon right) with the grouped
+   value full width below, breaking only between groups. The label row
+   is space-between so the copy button stays on the label row at every
+   width, never on its own line under the value. No motion, no shadows:
+   depth comes from the card frame and the phosphor tones. */
+.token-sub {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: normal;
+  color: var(--phosphor);
+  margin-left: 16px;
+  overflow-wrap: anywhere;
+}
+
+.token-addr {
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.token-addr-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+}
+
+.token-addr-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--dim);
 }
 
 /* Verdict headline caret: takes the verdict's risk colour from

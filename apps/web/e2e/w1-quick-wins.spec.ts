@@ -116,11 +116,11 @@ test("w1_copy_tooltip_shifts_no_layout", async ({ page }) => {
   await expect(headerCopy).toBeVisible();
 
   // The tooltip is absolutely positioned inside .copy-wrap, so layout
-  // shift reads on the surrounding boxes: the meta paragraph and the
+  // shift reads on the surrounding boxes: the address label row and the
   // button itself must not move between idle, bubble and copied states.
   const boxesOf = (): Promise<{ meta: unknown; button: unknown } | null> =>
     page.evaluate(() => {
-      const meta = document.querySelector(".token-meta") as HTMLElement | null;
+      const meta = document.querySelector(".token-addr") as HTMLElement | null;
       const button = document.querySelector('[data-testid="copy-contract-address"]') as HTMLElement | null;
       if (meta === null || button === null) {
         return null;
@@ -137,13 +137,13 @@ test("w1_copy_tooltip_shifts_no_layout", async ({ page }) => {
 
   // Keyboard focus opens the absolutely positioned bubble.
   await headerCopy.focus();
-  await expect(page.locator(".token-meta .copy-wrap [role='tooltip']").first()).toHaveText("Copy");
+  await expect(page.locator(".token-addr .copy-wrap [role='tooltip']").first()).toHaveText("Copy");
   expect(await boxesOf()).toEqual(before);
 
   // Copy confirms through the same bubble; nothing around it moves.
   await page.keyboard.press("Enter");
   await expect(headerCopy).toHaveAttribute("data-state", "copied");
-  await expect(page.locator(".token-meta .copy-wrap [role='tooltip']").first()).toHaveText("Copied");
+  await expect(page.locator(".token-addr .copy-wrap [role='tooltip']").first()).toHaveText("Copied");
   expect(await boxesOf()).toEqual(before);
 });
 

@@ -1,12 +1,14 @@
 // Shared feed row (DX-1 §A3.2): one three-line design for both the
 // on-chain New pairs list and the DexScreener market list, at every
 // width. Line 1 carries the lamp, the symbol link, the name, the compact
-// age, the owner-power chip and the score; line 2 carries DEX, liquidity
-// and volume; line 3 carries the full EIP-55 token address with a copy
-// icon. The whole row is a link stretched over the row; the copy button
-// sits above it (stopPropagation in CopyButton) so a copy click never
-// navigates. Nothing here moves: insertion flashes run once through the
-// existing arrive glow, static under reduced motion.
+// age, the owner-power chip, the score and the copy icon on the right
+// before the chevron; line 2 carries DEX, liquidity and volume; line 3
+// carries the full EIP-55 token address alone, wrapping only between
+// its 4-character groups. The whole row is a link stretched over the
+// row; the copy button sits above it (stopPropagation in CopyButton) so
+// a copy click never navigates. Nothing here moves: insertion flashes
+// run once through the existing arrive glow, static under reduced
+// motion.
 import { Fragment, type JSX, type ReactNode } from "react";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { groupAddressChunks } from "./TokenHeader.tsx";
@@ -83,6 +85,7 @@ export function FeedRow({
         )}
         {chip}
         {score}
+        <CopyButton value={checksummed} label={copyLabel} />
         <span className="feed-go" aria-hidden="true">
           ›
         </span>
@@ -96,8 +99,7 @@ export function FeedRow({
               <span className="addr-chunk">{chunk}</span>
             </Fragment>
           ))}
-        </span>{" "}
-        <CopyButton value={checksummed} label={copyLabel} />
+        </span>
       </div>
     </li>
   );

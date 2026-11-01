@@ -641,7 +641,7 @@ function AssessedView({
         className="card verdict"
         aria-label="Combined score"
         ref={ringRef}
-        style={{ marginBottom: 20, "--verdict-band": verdictBandColor(result.score) } as CSSProperties}
+        style={{ marginBottom: 12, "--verdict-band": verdictBandColor(result.score) } as CSSProperties}
       >
         <TokenHeader
           address={result.target}

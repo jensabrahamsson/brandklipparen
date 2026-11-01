@@ -163,6 +163,20 @@ describe("contract facts rendering", () => {
     );
   });
 
+  test("every grouped chunk on the card is a whole group, never a tail", () => {
+    for (const expert of [false, true]) {
+      const chunks = [
+        ...htmlOf({ kind: "none" }, expert).matchAll(/<span class="addr-chunk">([^<]*)<\/span>/g),
+      ].map((match) => match[1] ?? "");
+      expect(chunks.length).toBeGreaterThan(0);
+      for (const chunk of chunks) {
+        // The 0x-prefixed first group carries six characters; every other
+        // group carries four. The old slicing left two-character tails.
+        expect([4, 6]).toContain(chunk.length);
+      }
+    }
+  });
+
   test("load on-chain reads action renders with its live tag contract", () => {
     const html = htmlOf({ kind: "none" });
     expect(html).toContain("Load on-chain reads");

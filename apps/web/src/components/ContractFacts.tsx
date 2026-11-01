@@ -396,7 +396,7 @@ export function ContractFacts({
                     </Fragment>
                   ))}
                   {" … "}
-                  {groupAddressChunks(result.codeHash.slice(-6)).map((chunk, index) => (
+                  {groupAddressChunks(result.codeHash.slice(-8)).map((chunk, index) => (
                     <Fragment key={index}>
                       {index === 0 ? null : <wbr />}
                       <span className="addr-chunk">{chunk}</span>

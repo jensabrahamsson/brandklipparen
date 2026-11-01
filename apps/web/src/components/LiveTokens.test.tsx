@@ -177,6 +177,19 @@ describe("live tokens list", () => {
     expect(html).not.toContain('aria-label="Copy pair address"');
   });
 
+  test("r2-4_copy_controls_ride_line_1_never_under_the_address", () => {
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} marketByToken={NO_MARKET} />);
+    // The copy control renders before the address line opens.
+    const copyAt = html.indexOf('aria-label="Copy contract address"');
+    const line3At = html.indexOf("feed-line3");
+    expect(copyAt).toBeGreaterThanOrEqual(0);
+    expect(line3At).toBeGreaterThan(copyAt);
+    // Line 3 carries the grouped address and no button of its own.
+    const line3 = (html.split("feed-line3")[1] ?? "").split("</div>")[0] ?? "";
+    expect(line3).toContain(toChecksumAddress(NEW.tokenAddress).slice(0, 6));
+    expect(line3).not.toContain("<button");
+  });
+
   test("s36_live_list_shows_checksummed_addresses_but_routes_on_raw", () => {
     const rawToken = "0x5ab1e0000000000000000000000000000000c001";
     const rawPair = "0x5ab1e0000000000000000000000000000000c0cc";

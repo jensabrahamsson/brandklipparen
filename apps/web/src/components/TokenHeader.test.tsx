@@ -45,11 +45,25 @@ describe("token heading fallbacks", () => {
     );
     expect(toChecksumAddress(address)).toBe(checksummed);
     expect(html).toContain("<h1");
-    expect(html).toContain(">NEW</h1>");
-    expect(html).toContain("New Token");
+    // The name rides the h1 as a subtitle, not as a meta item.
+    expect(html).toContain(">NEW");
+    expect(html).toContain('<span class="token-sub">New Token</span>');
+    expect(html).not.toContain("meta-addr");
     expect(html.replace(/<[^>]*>/g, "")).toContain(checksummed);
     expect(html).not.toContain(`>${address}<`);
     expect(html).toContain('aria-label="Copy contract address"');
+  });
+
+  test("the copy button sits on the label row ahead of the grouped value", () => {
+    const html = renderToString(
+      <TokenHeader address={address} identity={{ symbol: "NEW", name: "New Token" }} liveEntry={null} />,
+    );
+    expect(html).toContain("token-addr-top");
+    const copyAt = html.indexOf("copy-contract-address");
+    const valueAt = html.indexOf("token-address-full");
+    expect(copyAt).toBeGreaterThanOrEqual(0);
+    expect(valueAt).toBeGreaterThanOrEqual(0);
+    expect(copyAt).toBeLessThan(valueAt);
   });
 
   test("live entry supplies the symbol and DEX age meta as unbreakable items", () => {
@@ -126,12 +140,28 @@ describe("grouped address keeps the exact value (N-15)", () => {
   const address = "0x5ab1e0000000000000000000000000000000a001";
   const checksummed = "0x5ab1E0000000000000000000000000000000a001";
 
-  test("four-character groups join to the full EIP-55 string with no spaces", () => {
+  test("0x stays glued to the first group: ten groups, no orphan tail", () => {
     const chunks = groupAddressChunks(checksummed);
     expect(chunks.join("")).toBe(checksummed);
+    expect(chunks).toHaveLength(10);
+    expect(chunks[0]).toBe("0x5ab1");
     for (const chunk of chunks) {
       expect(chunk).not.toContain(" ");
-      expect(chunk.length).toBeLessThanOrEqual(4);
+      expect(chunk.length).toBeGreaterThanOrEqual(4);
+    }
+    for (const chunk of chunks.slice(1)) {
+      expect(chunk).toHaveLength(4);
+    }
+  });
+
+  test("hash input chunks the same way with no two-character group", () => {
+    const hash = "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
+    const chunks = groupAddressChunks(hash);
+    expect(chunks.join("")).toBe(hash);
+    expect(chunks).toHaveLength(16);
+    expect(chunks[0]).toBe("0x0102");
+    for (const chunk of chunks.slice(1)) {
+      expect(chunk).toHaveLength(4);
     }
   });
 

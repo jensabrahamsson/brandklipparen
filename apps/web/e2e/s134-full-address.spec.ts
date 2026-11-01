@@ -240,7 +240,7 @@ test("s134_token_page_header_sidebar_and_recent_show_full_address", async ({ pag
   await page.goto("/#/token/" + TOKEN_A);
   await expect(page.getByRole("img", { name: /Combined score 12 of 100, Low risk/ })).toBeVisible();
 
-  // Header meta carries the exact full address with a copy control.
+  // The hero address block carries the exact full address with a copy control.
   await expect(page.locator('[data-testid="token-address-full"]').first()).toHaveText(C_TOKEN_A);
   await expect(page.getByRole("button", { name: "Copy contract address" }).first()).toBeVisible();
 
