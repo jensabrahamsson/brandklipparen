@@ -11,7 +11,7 @@ import { useEffect, useState, type JSX } from "react";
 import { ScanStatus } from "./ScanStatus.tsx";
 import { fetchExplain, fetchRug } from "../lib/api.ts";
 import type { ExplainSource, ExplainState, RugState } from "../lib/api.ts";
-import type { Signal } from "../types.ts";
+import type { ExplanationClaim, Signal } from "../types.ts";
 import { evidenceSignalKey, splitNarrative } from "../lib/investigation.ts";
 
 export type ConsoleSentences = {
@@ -34,9 +34,7 @@ export function ExplainSentences({
 }): JSX.Element {
   return (
     <div data-testid="explain-sentences">
-      {narrative.length === 0 ? (
-        <p style={{ margin: 0 }}>Every model sentence failed the evidence check.</p>
-      ) : (
+      {narrative.length === 0 ? null : (
         <ul className="muse-sentences" style={{ margin: 0, paddingLeft: 20 }}>
           {narrative.map((sentence, index) => (
             <li key={index}>
@@ -91,18 +89,52 @@ function ExplainChip({
   );
 }
 
+// User-facing fallback when every model sentence failed the evidence
+// check: the deterministic template claims stand in for the dropped
+// overlay, never the developer message. Inert React text only, with a
+// quiet retry that re-runs the same overlay request.
+export function ExplainFallback({
+  claims,
+  onRetry,
+}: {
+  readonly claims: readonly ExplanationClaim[];
+  readonly onRetry: () => void;
+}): JSX.Element {
+  return (
+    <div data-testid="explain-fallback">
+      <p style={{ margin: 0 }}>We could not explain this with Muse. Here is what the analysis found:</p>
+      {claims.length > 0 ? (
+        <ul className="muse-sentences" style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+          {claims.map((claim, index) => (
+            <li key={index}>{claim.text}</li>
+          ))}
+        </ul>
+      ) : null}
+      <div style={{ marginTop: 8 }}>
+        <button type="button" className="button-ghost" onClick={onRetry}>
+          Try again
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ExplainPanel({
   address,
   apiKey,
   source,
   signals,
+  claims,
   onSignalLink,
+  onRetry,
 }: {
   readonly address: string;
   readonly apiKey: string;
   readonly source: Extract<ExplainSource, "explain" | "rug">;
   readonly signals: readonly Signal[];
+  readonly claims: readonly ExplanationClaim[];
   readonly onSignalLink: (key: string) => void;
+  readonly onRetry: () => void;
 }): JSX.Element {
   const [state, setState] = useState<ExplainState | RugState | null>(null);
 
@@ -138,12 +170,23 @@ export function ExplainPanel({
         <p className="muse-result-label" style={{ margin: "0 0 8px" }}>
           Explain · {state.modelId}
         </p>
-        <ExplainSentences
-          narrative={state.narrative}
-          droppedClaims={state.droppedClaims}
-          signals={signals}
-          onSignalLink={onSignalLink}
-        />
+        {state.narrative.length === 0 ? (
+          <div>
+            <ExplainFallback claims={claims} onRetry={onRetry} />
+            {state.droppedClaims > 0 ? (
+              <p data-testid="explain-dropped" className="quiet" style={{ margin: "8px 0 0" }}>
+                {state.droppedClaims} unsupported {state.droppedClaims === 1 ? "claim" : "claims"} dropped.
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <ExplainSentences
+            narrative={state.narrative}
+            droppedClaims={state.droppedClaims}
+            signals={signals}
+            onSignalLink={onSignalLink}
+          />
+        )}
       </div>
     );
   }
@@ -151,8 +194,13 @@ export function ExplainPanel({
     return <p style={{ margin: 0 }}>The deterministic explanation stands.</p>;
   }
   return (
-    <p role="alert" style={{ margin: 0 }}>
-      The explanation failed to load; the page result above stands.
-    </p>
+    <div>
+      <p role="alert" style={{ margin: "0 0 8px" }}>
+        The explanation failed to load; the page result above stands.
+      </p>
+      <button type="button" className="button-ghost" onClick={onRetry}>
+        Try again
+      </button>
+    </div>
   );
 }

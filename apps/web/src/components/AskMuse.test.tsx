@@ -52,4 +52,10 @@ describe("ask field (R2-8)", () => {
     expect(html).not.toContain("aria-disabled");
     expect(html).toContain("Asking");
   });
+
+  test("placeholder_stays_short_with_a_longer_example_below", () => {
+    const html = renderAsk("");
+    expect(html).toContain('placeholder="Ask about this token"');
+    expect(html).toContain("Example: Can the owner stop me selling?");
+  });
 });

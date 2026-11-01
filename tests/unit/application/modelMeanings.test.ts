@@ -9,7 +9,12 @@ import {
   catalogueOfEnvelope,
   frozenFactsOfEnvelope,
 } from "../../../src/application/investigationService.ts";
-import { envelopeMeanings } from "../../../src/application/modelMeanings.ts";
+import {
+  envelopeMeanings,
+  explainCoverageIds,
+  explainCoverageMeanings,
+} from "../../../src/application/modelMeanings.ts";
+import { capMeaningsForModel } from "../../../src/domain/modelMeanings.ts";
 import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 import { Evidence } from "../../../src/domain/evidence.ts";
 import type { Evidence as EvidenceType } from "../../../src/domain/evidence.ts";
@@ -168,5 +173,56 @@ describe("m02e envelope meanings for model input", () => {
     expect(blacklist?.description).toContain("dev.brandklipparen.blacklist:blacklist");
     expect(blacklist?.description).toContain("Privileged caller can set a mapping entry that gates the transfer path");
     expect(blacklist?.description).toContain("FOUND");
+  });
+
+  test("m02e_coverage_ids_name_what_was_checked_with_zero_findings", () => {
+    const rendered = mustOk(
+      renderExplanation({
+        signals: [],
+        templateVersion: SUPPORTED_TEMPLATE_VERSION,
+        observed: unknownObserved(),
+      }),
+    );
+    const envelope = {
+      signals: [],
+      explanation: rendered,
+      pluginResults: [
+        {
+          pluginId: "dev.brandklipparen.pause",
+          pluginVersion: "1.0.0",
+          apiVersion: "1.0",
+          outcome: "ok",
+          findings: [],
+        },
+        {
+          pluginId: "dev.brandklipparen.mint",
+          pluginVersion: "1.0.0",
+          apiVersion: "1.0",
+          outcome: "timeout",
+          findings: [],
+        },
+      ],
+      proxy: { kind: "none" },
+      cantTell: [
+        { question: "liquidity-locks", dataSource: "liquidity-lock-registry" },
+        { question: "code-intent", dataSource: "team-disclosure" },
+      ],
+      score: 19,
+      probabilities: { "rug-pull": 0, honeypot: 0, "bot-pump": 0 },
+    } as unknown as AssessmentEnvelope;
+    const ids = explainCoverageIds(envelope);
+    expect(ids).toContain("cant-tell:liquidity-locks");
+    expect(ids).toContain("cant-tell:code-intent");
+    expect(ids).toContain("check:dev.brandklipparen.pause:not-found");
+    expect(ids).toContain("check:dev.brandklipparen.mint:could-not-check");
+    expect(ids).toContain("analysis:summary");
+    const meanings = explainCoverageMeanings(envelope);
+    const summary = meanings.find((meaning) => meaning.id === "analysis:summary");
+    expect(summary?.meaning).toContain("0 scored signals found");
+    expect(summary?.meaning).toContain("1 detectors could not be read");
+    expect(summary?.meaning).toContain("proxy: none");
+    const combined = capMeaningsForModel([...envelopeMeanings(envelope), ...meanings]);
+    expect(combined.length).toBeLessThanOrEqual(MAX_MODEL_MEANINGS);
+    expect(combined.map((meaning) => meaning.id)).toContain("analysis:summary");
   });
 });

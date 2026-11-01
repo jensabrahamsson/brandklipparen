@@ -53,7 +53,7 @@ export function AskMuse({
             type="text"
             value={question}
             maxLength={500}
-            placeholder="Can the owner stop me selling?"
+            placeholder="Ask about this token"
             autoComplete="off"
             aria-invalid={showError && empty ? true : undefined}
             aria-describedby={showError && empty ? "ask-hint ask-consent" : "ask-consent"}
@@ -116,6 +116,9 @@ export function AskMuse({
       ) : null}
       <p id="ask-consent" className="quiet muse-ask-consent" style={{ margin: "4px 0 0" }}>
         Sends your question to {modelLabel}. Not the address.
+      </p>
+      <p className="quiet" style={{ margin: "4px 0 0" }}>
+        Example: Can the owner stop me selling?
       </p>
     </form>
   );

@@ -11,6 +11,7 @@
 // Scores, evidence and finding text are untouched: this service reads the
 // frozen envelope and returns a separate overlay.
 import type { ExplainInput, ExplainModelOutcome, ExplainModelPort, ExplainSentence } from "../ports/explainModel.ts";
+import type { CantTellQuestion } from "../domain/cantTell.ts";
 import type { OverlayBudget } from "./overlayBudget.ts";
 
 
@@ -20,7 +21,7 @@ export const MAX_EXPLAIN_CITATIONS_PER_SENTENCE = 8;
 // Versioned identifier of the explain prompt and evidence format. The
 // overlay cache key (a later story) carries code hash, this version,
 // provider and model id.
-export const EXPLAIN_PROMPT_VERSION = "explain-2";
+export const EXPLAIN_PROMPT_VERSION = "explain-3";
 
 // Meta-statements about grounding or evidence carry no holder impact:
 // drop any sentence talking about being grounded, frozen evidence or
@@ -42,10 +43,46 @@ export type CheckedExplanation = {
   readonly droppedClaims: number;
 };
 
+// Coverage citations the checker accepts beside collected `signal:`
+// ids: exactly `analysis:summary`, `cant-tell:<known question>` and
+// `check:<detector>:not-found|could-not-check`. Anything else keeps
+// the old rule: it must be a collected `signal:` id.
+const CANT_TELL_QUESTIONS: ReadonlySet<string> = Object.freeze(
+  new Set<string>([
+    "liquidity-locks",
+    "owner-shares",
+    "wallet-clusters",
+    "team-identity",
+    "code-intent",
+    "external-contracts",
+  ] satisfies readonly CantTellQuestion[]),
+);
+
+export function isExplainCoverageId(id: string): boolean {
+  if (id === "analysis:summary") {
+    return true;
+  }
+  if (id.startsWith("cant-tell:")) {
+    return CANT_TELL_QUESTIONS.has(id.slice("cant-tell:".length));
+  }
+  if (id.startsWith("check:")) {
+    const rest = id.slice("check:".length);
+    const split = rest.lastIndexOf(":");
+    if (split <= 0 || split === rest.length - 1) {
+      return false;
+    }
+    const outcome = rest.slice(split + 1);
+    return outcome === "not-found" || outcome === "could-not-check";
+  }
+  return false;
+}
+
 // Pure citation check over collected evidence ids: keep a sentence only
-// when it is not a meta-statement, every citation names a collected id
-// and at least one citation is present. Uncited factual sentences drop
-// like uncollected citations and meta-statements do.
+// when it is not a meta-statement, at least one citation is present and
+// every citation both names a collected id and carries a known shape (a
+// `signal:` id or exactly one of the coverage ids above). Uncited
+// factual sentences drop like uncollected citations, unknown shapes and
+// meta-statements do.
 export function checkExplainCitations(
   sentences: readonly ExplainSentence[],
   collectedIds: ReadonlySet<string>,
@@ -64,6 +101,10 @@ export function checkExplainCitations(
     let cited = true;
     for (const citation of sentence.citations) {
       if (!collectedIds.has(citation)) {
+        cited = false;
+        break;
+      }
+      if (!citation.startsWith("signal:") && !isExplainCoverageId(citation)) {
         cited = false;
         break;
       }

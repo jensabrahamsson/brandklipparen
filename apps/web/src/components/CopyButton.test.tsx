@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderToString } from "react-dom/server";
-import { CopyButton, copyStatusText } from "./CopyButton.tsx";
+import { CopyButton, copyStatusText, copyTipFlips } from "./CopyButton.tsx";
 
 const ADDRESS = "0x5ab1e0000000000000000000000000000000a001";
 
@@ -65,6 +65,16 @@ describe("copy button", () => {
     expect(rule).toMatch(/height:\s*44px/);
     expect(rule).toMatch(/min-width:\s*44px/);
     expect(rule).toMatch(/min-height:\s*44px/);
+  });
+
+  test("tooltip flips only when it would cross the right viewport edge", () => {
+    expect(copyTipFlips(16, 108, 390)).toBe(false);
+    expect(copyTipFlips(293, 108, 390)).toBe(true);
+    expect(copyTipFlips(283, 108, 390)).toBe(true);
+    expect(copyTipFlips(282, 108, 390)).toBe(false);
+    const flip = code.match(/\.copy-tip--flip\s*\{[^}]*\}/)?.[0] ?? "";
+    expect(flip).toMatch(/left:\s*auto/);
+    expect(flip).toMatch(/right:\s*-8px/);
   });
 
   test("never nests a button inside another button", () => {

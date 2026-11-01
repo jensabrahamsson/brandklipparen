@@ -8,7 +8,11 @@
 // region announces once per copy. Copy writes the exact unspaced
 // EIP-55 string, never the grouped display. Static under
 // prefers-reduced-motion (glyph swap only).
-import { useEffect, useId, useRef, useState, type JSX, type MouseEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type JSX, type MouseEvent } from "react";
+
+// Layout effect in the browser (flip before paint, so the bubble never
+// renders past the edge for a frame); plain effect during SSR.
+const useFlipEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 import { Pictogram } from "./Pictogram.tsx";
 
 // One announcement per copy through the button's polite live region.
@@ -21,6 +25,12 @@ export function copyStatusText(label: string, state: "idle" | "copied" | "failed
     return "Copy failed.";
   }
   return "";
+}
+
+// The bubble opens 8 px left of the button; it must flip to open
+// 8 px right-aligned when that would cross the viewport's right edge.
+export function copyTipFlips(buttonLeft: number, tipWidth: number, viewportWidth: number): boolean {
+  return buttonLeft - 8 + tipWidth > viewportWidth - 8;
 }
 
 function hoverAvailable(): boolean {
@@ -43,7 +53,10 @@ export function CopyButton({
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
   const [hoverTip, setHoverTip] = useState(false);
   const [focusTip, setFocusTip] = useState(false);
+  const [tipFlip, setTipFlip] = useState(false);
   const timer = useRef<number | null>(null);
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const tipRef = useRef<HTMLSpanElement | null>(null);
   const tipId = useId();
   // Last interaction modality: a tap fires focus (which must not pre-open
   // the idle bubble) before click, while keyboard focus must open it.
@@ -88,8 +101,26 @@ export function CopyButton({
   const tip = state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy";
   const showTip = state !== "idle" || hoverTip || focusTip;
 
+  useFlipEffect(() => {
+    if (!showTip) {
+      setTipFlip(false);
+      return;
+    }
+    const wrap = wrapRef.current;
+    const bubble = tipRef.current;
+    if (wrap === null || bubble === null) {
+      return;
+    }
+    const flips = copyTipFlips(
+      wrap.getBoundingClientRect().left,
+      bubble.offsetWidth,
+      document.documentElement.clientWidth,
+    );
+    setTipFlip((previous) => (previous === flips ? previous : flips));
+  }, [showTip, tip]);
+
   return (
-    <span className="copy-wrap">
+    <span className="copy-wrap" ref={wrapRef}>
       <button
         type="button"
         className="icon-btn copy-btn"
@@ -126,7 +157,7 @@ export function CopyButton({
         )}
       </button>
       {showTip ? (
-        <span role="tooltip" id={tipId} className="copy-tip">
+        <span role="tooltip" id={tipId} ref={tipRef} className={tipFlip ? "copy-tip copy-tip--flip" : "copy-tip"}>
           {tip}
         </span>
       ) : null}

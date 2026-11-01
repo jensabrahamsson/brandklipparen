@@ -28,7 +28,25 @@ export async function assertLayout(
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
-    expect(overflow, `horizontal overflow at ${width}px`).toBeLessThanOrEqual(1);
+    if (overflow > 1) {
+      const offenders = await page.evaluate(() => {
+        const limit = document.documentElement.clientWidth;
+        return Array.from(document.querySelectorAll("*"))
+          .map((element) => {
+            const node = element as HTMLElement;
+            const rect = node.getBoundingClientRect();
+            return { node, rect };
+          })
+          .filter(({ rect }) => rect.width > 0 && (rect.right > limit + 1 || rect.left < -1))
+          .sort((a, b) => b.rect.right - a.rect.right)
+          .slice(0, 6)
+          .map(
+            ({ node, rect }) =>
+              `${node.tagName.toLowerCase()}.${(node.className as string).toString().split(" ").join(".")} left=${Math.round(rect.left)} right=${Math.round(rect.right)} w=${Math.round(rect.width)} text=${(node.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, 60)}`,
+          );
+      });
+      expect(overflow, `horizontal overflow at ${width}px: ${offenders.join(" | ")}`).toBeLessThanOrEqual(1);
+    }
 
     // 2. Every visible control meets 44x44, except allowlisted links.
     const small = await page.evaluate(

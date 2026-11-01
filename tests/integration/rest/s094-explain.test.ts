@@ -164,6 +164,27 @@ describe("AI explain plugin over REST (S-094)", () => {
     }
   });
 
+  test("s094_explain_keeps_coverage_citations_when_nothing_was_found", async () => {
+    const { server, fake } = serverWithFake("coverage");
+    try {
+      const posted = await postExplain(server);
+      expect(posted.statusCode).toBe(200);
+      expect(fake.calls.length).toBe(1);
+      // The route collects citable coverage ids even with zero scored
+      // findings, so the model's coverage answer survives the check.
+      expect(fake.calls[0]?.evidenceIds).toContain("analysis:summary");
+      expect(fake.calls[0]?.evidenceIds.some((id) => id.startsWith("cant-tell:"))).toBe(true);
+      const body = posted.body as {
+        explain: { kind: string; narrative: string[]; droppedClaims: number };
+      };
+      expect(body.explain.kind).toBe("ok");
+      expect(body.explain.narrative.length).toBeGreaterThan(0);
+      expect(body.explain.droppedClaims).toBe(0);
+    } finally {
+      await server.close();
+    }
+  });
+
   test("s094_explain_leaves_score_and_evidence_unchanged", async () => {
     async function analyzeBody(server: RestServer): Promise<string> {
       const response = await server.inject({

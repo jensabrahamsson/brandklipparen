@@ -559,6 +559,39 @@ describe("overlay meanings and meta-statement guard", () => {
     });
   });
 
+  test("explain prompt names coverage ids for the nothing-found case", async () => {
+    const config = loadOverlayEnv("EXPLAIN");
+    const calls: CapturedCall[] = [];
+    const built = createExplainServiceFromConfig(config, {
+      explainTransport: fakeTransport(
+        calls,
+        chatEnvelope({
+          provider: "meta-model-api",
+          modelId: "muse-spark-1.3",
+          sentences: [{ text: "Checked what bytecode cannot tell.", citations: ["cant-tell:liquidity-locks"] }],
+        }),
+      ),
+    });
+    if (!built.ok || built.value === undefined) {
+      throw new Error("expected a configured explain service");
+    }
+    const created = ExplainInput.create({
+      codeHash: "code-hash-for-unit-suite",
+      evidenceIds: ["cant-tell:liquidity-locks", "analysis:summary"],
+      promptVersion: "explain-3",
+      meanings: [synthMeaning],
+    });
+    if (created === null) {
+      throw new Error("expected valid explain input");
+    }
+    await built.value.explain(created);
+    expect(calls.length).toBe(1);
+    const { system } = requestBody(calls[0] as CapturedCall);
+    expect(system).toContain("cant-tell:<question>");
+    expect(system).toContain("analysis:summary");
+    expect(system).toContain("no pattern found is not safe");
+  });
+
   test("chat prompt carries meanings and the non-expert instruction", async () => {
     const config = loadOverlayEnv("CHAT");
     const calls: CapturedCall[] = [];

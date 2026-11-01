@@ -257,6 +257,7 @@ function buildSystemPrompt(input: {
   readonly modelId: ModelIdType;
   readonly shape: string;
   readonly limits: string;
+  readonly extra?: readonly string[] | undefined;
 }): string {
   const modelId = input.modelId as string;
   return [
@@ -270,6 +271,7 @@ function buildSystemPrompt(input: {
     `The "provider" value must be exactly "${input.provider}".`,
     `The "modelId" value must be exactly "${modelId}".`,
     input.limits,
+    ...(input.extra ?? []),
     "Every entry must carry at least one citation copied verbatim from the evidence id list; never invent, recompute, shorten or reformat an id.",
   ].join("\n");
 }
@@ -512,6 +514,9 @@ export class MetaModelApiExplainAdapter implements ExplainModelPort {
       shape: "sentences",
       limits:
         'The "sentences" value must be an array of at most 16 entries; each entry carries exactly "text" (a non-empty string of at most 1000 characters) and "citations" (an array of at most 8 evidence id strings).',
+      extra: [
+        "Coverage ids name what was checked even when no `signal:` id is present: `cant-tell:<question>` for each open question, `check:<detector>:not-found` when a detector checked and found nothing, `check:<detector>:could-not-check` when a detector could not read, and `analysis:summary` for the coverage facts. When no `signal:` id is present, explain what was checked, what could not be read and why, citing exactly those coverage ids; say plainly that no pattern found is not safe.",
+      ],
     });
     const content = await callOverlay(
       this.resolved,

@@ -1,6 +1,6 @@
 // Muse console (UI v2 §1.2): one advisory card directly under the hero.
 // It replaces the bottom Explain panel, the assessment tab and the
-// investigate tab. One "Explain this result" button runs the fallback
+// investigate tab. One "Explain" button runs the fallback
 // chain (/v1/explain, then /v1/rug, then /v1/assessment, whichever
 // /health reports configured first); Ask posts one question to /v1/chat;
 // Investigate runs the existing loop. Every output renders inside the
@@ -13,6 +13,7 @@ import type { ChatState, ExplainSource } from "../lib/api.ts";
 import type { AiFeatureAvailability } from "../lib/capabilities.ts";
 import type {
   AssessmentState,
+  ExplanationClaim,
   HealthState,
   InvestigationState,
   ProviderInfo,
@@ -62,6 +63,7 @@ export function MuseConsole({
   investigation,
   onRunInvestigation,
   signals,
+  claims,
   onSignalLink,
   question,
   onQuestionChange,
@@ -78,6 +80,7 @@ export function MuseConsole({
   readonly investigation: InvestigationState;
   readonly onRunInvestigation: () => void;
   readonly signals: readonly Signal[];
+  readonly claims: readonly ExplanationClaim[];
   readonly onSignalLink: (key: string) => void;
   readonly question: string;
   readonly onQuestionChange: (text: string) => void;
@@ -153,8 +156,8 @@ export function MuseConsole({
       </p>
       <div className="muse-actions">
         {showExplain ? (
-          <button type="button" className="button" onClick={onExplain}>
-            Explain this result
+          <button type="button" className="button" aria-label="Explain this result" onClick={onExplain}>
+            Explain
           </button>
         ) : null}
         {showInvestigate ? (
@@ -190,7 +193,9 @@ export function MuseConsole({
               apiKey={apiKey}
               source={request.source}
               signals={signals}
+              claims={claims}
               onSignalLink={onSignalLink}
+              onRetry={onExplain}
             />
           ) : null}
           {request.kind === "chat" ? (
@@ -244,6 +249,9 @@ function ChatOutput({
     return <p style={{ margin: 0 }}>Ask is not configured on this server.</p>;
   }
   if (chat.status === "ready") {
+    if (chat.answers.length === 0) {
+      return <p style={{ margin: 0 }}>The deterministic explanation stands.</p>;
+    }
     return (
       <div>
         <p className="muse-result-label" style={{ margin: "0 0 8px" }}>

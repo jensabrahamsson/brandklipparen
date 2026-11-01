@@ -6,7 +6,7 @@
 // the network, the clock or the filesystem.
 import type { ExplainInput, ExplainModelOutcome, ExplainModelPort } from "../../src/ports/explainModel.ts";
 
-export type FakeExplainMode = "ok" | "mixed" | "not-configured" | "invalid-output";
+export type FakeExplainMode = "ok" | "mixed" | "coverage" | "not-configured" | "invalid-output";
 
 export class FakeExplainModelAdapter implements ExplainModelPort {
   readonly calls: ExplainInput[] = [];
@@ -41,6 +41,26 @@ export class FakeExplainModelAdapter implements ExplainModelPort {
           Object.freeze({ text: "An uncited claim states intent.", citations: Object.freeze([]) }),
           Object.freeze({ text: "A claim cites an uncollected id.", citations: Object.freeze(["signal:no-such-signal"]) }),
         ]),
+      });
+    }
+    // Zero-findings coverage: the model answers about what was checked,
+    // citing only the coverage ids the route collected (cant-tell,
+    // per-detector check and summary ids), never a signal id.
+    if (this.mode === "coverage") {
+      const coverage = input.evidenceIds.filter(
+        (id) => id.startsWith("cant-tell:") || id.startsWith("check:") || id === "analysis:summary",
+      );
+      const picked = coverage.slice(0, 3);
+      return Object.freeze({
+        kind: "ok",
+        sentences: Object.freeze(
+          picked.map((id) =>
+            Object.freeze({
+              text: `The analysis checked ${id}.`,
+              citations: Object.freeze([id]),
+            }),
+          ),
+        ),
       });
     }
     const first = input.evidenceIds[0] ?? "signal:absent";

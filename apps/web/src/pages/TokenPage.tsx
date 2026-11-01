@@ -624,6 +624,7 @@ function AssessedView({
         investigation={investigation}
         onRunInvestigation={onRunInvestigation}
         signals={sorted}
+        claims={result.explanation.claims}
         onSignalLink={jumpToSignal}
         question={question}
         onQuestionChange={onQuestionChange}

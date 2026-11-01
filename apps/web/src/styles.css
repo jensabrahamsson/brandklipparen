@@ -265,8 +265,16 @@ a {
   line-height: 1.4;
   color: var(--text);
   white-space: nowrap;
+  max-width: calc(100vw - 32px);
   box-shadow: var(--elev-3);
   animation: bk-fade 120ms var(--ease-out) 1;
+}
+
+/* Near the right viewport edge the bubble right-aligns to the button
+   instead of crossing the edge (CopyButton measures and flips). */
+.copy-tip--flip {
+  left: auto;
+  right: -8px;
 }
 
 .copy-status {
@@ -1888,12 +1896,15 @@ a {
 .powers-chips li {
   margin: 0;
   padding: 0;
+  min-width: 0;
 }
 
 .power-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
+  box-sizing: border-box;
   min-height: 44px;
   padding: 6px 14px;
   border: 1px solid var(--edge);
@@ -1938,6 +1949,9 @@ a {
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .power-chip .power-tag {
@@ -2619,6 +2633,9 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .muse-ask {
@@ -2731,6 +2748,9 @@ a:focus-visible {
   .muse-console .muse-actions .button,
   .muse-console .muse-actions .button-ghost {
     width: 100%;
+    min-width: 0;
+    padding-left: 12px;
+    padding-right: 12px;
   }
 }
 
@@ -2971,7 +2991,8 @@ p {
   left: -8px;
   z-index: 20;
   width: max-content;
-  max-width: 280px;
+  max-width: min(280px, calc(100vw - 32px));
+  overflow-wrap: anywhere;
   background: var(--surface-2);
   border: 1px solid var(--edge);
   border-radius: 8px;

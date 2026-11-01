@@ -66,6 +66,7 @@ function consoleHtml(
       investigation={IDLE_INVESTIGATION}
       onRunInvestigation={() => undefined}
       signals={[]}
+      claims={[]}
       onSignalLink={() => undefined}
       question={question}
       onQuestionChange={() => undefined}
@@ -92,6 +93,22 @@ describe("muse console (W-3)", () => {
     expect(html).not.toContain("disabled");
   });
 
+  test("explain_button_uses_the_short_label_with_the_full_accessible_name", () => {
+    const html = consoleHtml(EXPLAIN_HEALTH, EXPLAIN_ONLY);
+    expect(html).toContain('aria-label="Explain this result"');
+    expect(html).toContain(">Explain</button>");
+    expect(html).not.toContain(">Explain this result</button>");
+  });
+
+  test("ask_field_uses_the_short_placeholder_with_an_example_below", () => {
+    const html = consoleHtml(
+      { ...NOTHING_HEALTH, chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" } },
+      { ...NOTHING, chat: "available" },
+    );
+    expect(html).toContain('placeholder="Ask about this token"');
+    expect(html).toContain("Example: Can the owner stop me selling?");
+  });
+
   test("console_labels_itself_and_stays_sentence_case", () => {
     const html = consoleHtml(EXPLAIN_HEALTH, EXPLAIN_ONLY);
     expect(html).toContain('aria-label="Muse console"');
@@ -115,6 +132,7 @@ describe("muse console (W-3)", () => {
         investigation={IDLE_INVESTIGATION}
         onRunInvestigation={() => undefined}
         signals={[]}
+        claims={[]}
         onSignalLink={() => undefined}
         question=""
         onQuestionChange={() => undefined}

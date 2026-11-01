@@ -351,7 +351,12 @@ export function DecompilerList({
       }
     }
     const text = parts.join("\n\n");
-    await navigator.clipboard.writeText(text);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Clipboard is a convenience only; the caller still receives the
+      // text and the sweep stays quiet without a page error.
+    }
     return text;
   }, [all, address, apiKey]);
   const registerButton = (selector: string, element: HTMLButtonElement | null): void => {

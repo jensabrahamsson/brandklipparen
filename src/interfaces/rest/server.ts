@@ -32,7 +32,12 @@ import { EXPLAIN_PROMPT_VERSION, serializeExplainOutcome } from "../../applicati
 import type { ExplainService } from "../../application/explainService.ts";
 import { EXPLAIN_CODE_PROMPT_VERSION, serializeExplainCodeOutcome } from "../../application/explainCodeService.ts";
 import type { ExplainCodeService } from "../../application/explainCodeService.ts";
-import { envelopeMeanings } from "../../application/modelMeanings.ts";
+import {
+  envelopeMeanings,
+  explainCoverageIds,
+  explainCoverageMeanings,
+} from "../../application/modelMeanings.ts";
+import { capMeaningsForModel } from "../../domain/modelMeanings.ts";
 import { ExplainCodeInput } from "../../ports/explainCodeModel.ts";
 import { ExplainInput } from "../../ports/explainModel.ts";
 import { resolveAnalysisCode } from "../../application/resolveAnalysisCode.ts";
@@ -1549,7 +1554,9 @@ export function createRestServer(options: RestServerOptions): RestServer {
   // 200 with the outcome envelope: `not-configured` without a wired
   // service, `invalid-output` for malformed model output, and the checked
   // narrative otherwise. Citations name collected `signal:<id>` evidence
-  // only; anything else drops with a count. Scores, evidence and finding
+  // or exactly one of the coverage ids (`cant-tell:<question>`,
+  // `check:<detector>:not-found|could-not-check`, `analysis:summary`);
+  // anything else drops with a count. Scores, evidence and finding
   // text are untouched: the analysis runs first and stands beside the
   // overlay in every branch.
   async function handleExplain(request: FastifyRequest, reply: FastifyReply, rawInput: unknown): Promise<FastifyReply> {
@@ -1604,11 +1611,19 @@ export function createRestServer(options: RestServerOptions): RestServer {
         }),
       );
     }
+    // Coverage ids travel beside the signal ids so the model can cite
+    // what WAS checked even when nothing was found (zero scored
+    // findings still collect cant-tell, per-detector and summary ids).
+    // Scores, evidence and finding text stay untouched: only the model
+    // input widens.
     const input = ExplainInput.create({
       codeHash: envelope.codeHash as string,
-      evidenceIds: envelope.signals.map((signal) => `signal:${signal.id as string}`),
+      evidenceIds: [
+        ...envelope.signals.map((signal) => `signal:${signal.id as string}`),
+        ...explainCoverageIds(envelope),
+      ],
       promptVersion: EXPLAIN_PROMPT_VERSION,
-      meanings: envelopeMeanings(envelope),
+      meanings: capMeaningsForModel([...envelopeMeanings(envelope), ...explainCoverageMeanings(envelope)]),
     });
     if (input === null) {
       return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(
