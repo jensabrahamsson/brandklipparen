@@ -7,6 +7,7 @@
 // Total, bounded and deterministic: hostile input yields partial
 // output, never an exception.
 import type { Bytecode as BytecodeType } from "./types.ts";
+import { memoized } from "./engineMemo.ts";
 import { buildCfg, lift } from "./evmLift.ts";
 import { stackEffectOf } from "./opcodes.ts";
 import type { CfgBlock, ControlFlowGraph } from "./evmLift.ts";
@@ -1018,11 +1019,15 @@ function emitFunction(cfg: ControlFlowGraph, entry: FunctionEntry & { named: { n
   return { lines: out.slice(0, MAX_LINES), endPc };
 }
 
-// Prefer v2 output; fall back to v1 when v2 yields no functions.
+// Prefer v2 output; fall back to v1 when v2 yields no functions. One
+// decompilation per bytecode: the snippet route, the decompiler plugin
+// and the internal adapter share the same frozen contract.
 export function decompilePreferV2(bytecode: BytecodeType): DecompiledContract {
-  const v2 = decompileContractV2(bytecode);
-  if (v2.functions.length > 0 && v2.text.trim().length > 0) return v2;
-  return decompileContract(bytecode);
+  return memoized(bytecode, "decompile", () => {
+    const v2 = decompileContractV2(bytecode);
+    if (v2.functions.length > 0 && v2.text.trim().length > 0) return v2;
+    return decompileContract(bytecode);
+  });
 }
 
 

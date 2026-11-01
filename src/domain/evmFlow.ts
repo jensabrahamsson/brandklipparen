@@ -9,10 +9,11 @@
 // `./opcodes.ts`.
 import { err, ok } from "./result.ts";
 import type { Result } from "./result.ts";
+import { blockIndexAtPc, blockStartingAt, cfgOf, memoized, selectorsOf } from "./engineMemo.ts";
 import { extractSelectors } from "./selectors.ts";
 import type { Bytecode as BytecodeType, Selector as SelectorType } from "./types.ts";
 import type { ControlFlowGraph } from "./evmLift.ts";
-import { buildCfg, lift, resolveEntryReachV2 } from "./evmLift.ts";
+import { resolveEntryReachV2 } from "./evmLift.ts";
 
 // One resolved function entry: the dispatcher selector, its proven entry
 // PC, the entry block index, and whether the bounded forward walk from
@@ -128,15 +129,6 @@ export type FunctionAttribution = {
   readonly holdersOf: (pc: number) => readonly SelectorType[];
 };
 
-function blockAtPc(cfg: ControlFlowGraph, pc: number): number {
-  for (const block of cfg.blocks) {
-    if (pc >= block.range.startPc && pc < block.range.endPc) {
-      return block.index;
-    }
-  }
-  return -1;
-}
-
 function reachableFrom(cfg: ControlFlowGraph, from: number): ReadonlySet<number> {
   const seen = new Set<number>();
   const queue: number[] = [from];
@@ -164,22 +156,22 @@ function reachableFrom(cfg: ControlFlowGraph, from: number): ReadonlySet<number>
 
 export function attributeFunctions(bytecode: BytecodeType, options?: AttributionOptions): FunctionAttribution {
   const mode = options?.mode ?? "v1";
-  const cfg = buildCfg(lift(bytecode));
+  // One attribution per mode per bytecode: every detector and interpreter
+  // shares the same closures and the same reachability sets.
+  return memoized(bytecode, `attr:${mode}`, () => buildAttribution(bytecode, mode));
+}
+
+function buildAttribution(bytecode: BytecodeType, mode: AttributionMode): FunctionAttribution {
+  const cfg = cfgOf(bytecode);
   const reachers = new Map<number, SelectorType[]>();
   const entries: { readonly selector: SelectorType; readonly entryBlock: number }[] = [];
-  for (const candidate of extractSelectors(bytecode)) {
+  for (const candidate of selectorsOf(bytecode)) {
     if (candidate.kind !== "paired") {
       continue;
     }
     const selector = candidate.selector;
     const entryPc = candidate.target as number;
-    let entryBlock = -1;
-    for (const block of cfg.blocks) {
-      if (block.range.startPc === entryPc) {
-        entryBlock = block.index;
-        break;
-      }
-    }
+    const entryBlock = blockStartingAt(bytecode, entryPc);
     if (entryBlock === -1) {
       continue;
     }
@@ -210,7 +202,7 @@ export function attributeFunctions(bytecode: BytecodeType, options?: Attribution
     Object.freeze(holders);
   }
   const holderOf = (pc: number): SelectorType | null => {
-    const block = blockAtPc(cfg, pc);
+    const block = blockIndexAtPc(bytecode, pc);
     if (block === -1) {
       return null;
     }
@@ -221,7 +213,7 @@ export function attributeFunctions(bytecode: BytecodeType, options?: Attribution
     return holders[0] ?? null;
   };
   const holdersOf = (pc: number): readonly SelectorType[] => {
-    const block = blockAtPc(cfg, pc);
+    const block = blockIndexAtPc(bytecode, pc);
     if (block === -1) {
       return EMPTY_HOLDERS;
     }

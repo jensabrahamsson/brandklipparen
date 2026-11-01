@@ -14,7 +14,8 @@
 // unknown. Where the proof is incomplete the detectors emit no positive
 // finding rather than a guessed one.
 import { attributeFunctions, findFunctionEntries } from "./evmFlow.ts";
-import { V2_MAX_RETURN_TARGETS, buildCfg, lift, resolveEntryReachV2 } from "./evmLift.ts";
+import { blockIndexAtPc, blockStartingAt, cfgOf, dynIndexOf, memoized, selectorsOf } from "./engineMemo.ts";
+import { V2_MAX_RETURN_TARGETS, resolveEntryReachV2 } from "./evmLift.ts";
 import { stackEffectOf } from "./opcodes.ts";
 import type { CfgBlock, ControlFlowGraph } from "./evmLift.ts";
 import { nameForSelector } from "./evmNames.ts";
@@ -967,45 +968,37 @@ function v2SimulateBlock(
 // caller-shaped candidate at all, the caller must not guess.
 export const DYNAMIC_RETURN_MAX_TARGETS = 64;
 
+// Candidate continuations are memoised per (bytecode, block, mode): the
+// per-CFG shape comes from the engine memo's `dynIndex` slot, so repeated
+// queries over one analysis never rebuild the predecessor maps.
 function dynamicReturnTargets(
-  cfg: { readonly blocks: readonly CfgBlock[] },
+  bytecode: BytecodeType,
   dynamicBlock: number,
   nearestOnly = false,
 ): readonly number[] {
+  return memoized(bytecode, `dyn:${dynamicBlock}:${nearestOnly ? "1" : "0"}`, () =>
+    dynamicReturnTargetsUncached(bytecode, dynamicBlock, nearestOnly),
+  );
+}
+
+function dynamicReturnTargetsUncached(
+  bytecode: BytecodeType,
+  dynamicBlock: number,
+  nearestOnly: boolean,
+): readonly number[] {
+  const cfg = cfgOf(bytecode);
   const blocks = cfg.blocks;
-  const jumpDestByPc = new Map<number, number>();
-  for (const block of blocks) {
-    if (block.instructions[0]?.opcode === 0x5b) {
-      jumpDestByPc.set(block.range.startPc, block.index);
-    }
-  }
+  const index = dynIndexOf(bytecode);
+  const jumpDestByPc = index.jumpDestByPc;
+  const predecessors = index.predecessors;
   // Blocks that can reach the dynamic jump over proven edges (reverse
   // walk): the helper body containing the return jump lives in this set.
-  const predecessors = new Map<number, number[]>();
-  for (const block of blocks) {
-    for (const edge of block.successors) {
-      const targets = edge.kind === "conditional" ? [edge.to, edge.fallThrough] : [edge.to];
-      for (const to of targets) {
-        const list = predecessors.get(to) ?? [];
-        list.push(block.index);
-        predecessors.set(to, list);
-      }
-    }
-  }
   // Nearest helper entries on reverse paths from the dynamic jump: a
   // JUMPDEST block some other block statically jumps to. The search does
   // not expand past an entry (its predecessors are callers, not helper
   // body), so the first entries found are the helper the jump returns
   // from, not every helper that can reach it.
-  const isEntry = (index: number): boolean => {
-    const block = blocks[index];
-    if (block === undefined || block.instructions[0]?.opcode !== 0x5b) {
-      return false;
-    }
-    return blocks.some((caller) =>
-      caller.successors.some((edge) => edge.kind === "jump" && edge.to === index),
-    );
-  };
+  const isEntry = (entry: number): boolean => index.entryBlocks.has(entry);
   const entries: number[] = [];
   const seen = new Set<number>([dynamicBlock]);
   const queue = [dynamicBlock];
@@ -1024,11 +1017,9 @@ function dynamicReturnTargets(
   }
   const targetsOf = (entry: number): Set<number> => {
     const targets = new Set<number>();
-    for (const caller of blocks) {
-      const jumpsHere = caller.successors.some(
-        (edge) => edge.kind === "jump" && edge.to === entry,
-      );
-      if (!jumpsHere) {
+    for (const callerIndex of index.staticCallersOf.get(entry) ?? []) {
+      const caller = blocks[callerIndex];
+      if (caller === undefined) {
         continue;
       }
       for (const instruction of caller.instructions) {
@@ -1138,13 +1129,21 @@ function v2MergeState(known: V2State | undefined, incoming: V2State): { readonly
 // stays unknown), with per-store values and per-jump conditions.
 // Total: hostile bytecode yields partial maps, never an exception.
 export function interpretRegionExprs(bytecode: BytecodeType, selector: SelectorType): RegionExprs {
+  // One interpreter result per selector per bytecode: every detector and
+  // proof route shares the same maps, which are only ever read.
+  return memoized(bytecode, `exprs:${selector as string}`, () =>
+    interpretRegionExprsUncached(bytecode, selector),
+  );
+}
+
+function interpretRegionExprsUncached(bytecode: BytecodeType, selector: SelectorType): RegionExprs {
   const stores = new Map<number, ExprStoreRecord>();
   const loads = new Map<number, Expr>();
   const jumpis = new Map<number, Expr>();
   try {
-    const cfg = buildCfg(lift(bytecode));
+    const cfg = cfgOf(bytecode);
     let entryTarget: number | null = null;
-    for (const candidate of extractSelectors(bytecode)) {
+    for (const candidate of selectorsOf(bytecode)) {
       if (candidate.kind === "paired" && candidate.selector === (selector as string)) {
         entryTarget = candidate.target as number;
         break;
@@ -1153,13 +1152,7 @@ export function interpretRegionExprs(bytecode: BytecodeType, selector: SelectorT
     if (entryTarget === null) {
       return { stores, loads, jumpis };
     }
-    let entryBlock = -1;
-    for (const block of cfg.blocks) {
-      if (block.range.startPc === entryTarget) {
-        entryBlock = block.index;
-        break;
-      }
-    }
+    const entryBlock = blockStartingAt(bytecode, entryTarget);
     if (entryBlock < 0 || entryBlock >= cfg.blocks.length) {
       return { stores, loads, jumpis };
     }
@@ -1234,14 +1227,9 @@ export function interpretRegionExprs(bytecode: BytecodeType, selector: SelectorT
       if (v2IsDynamicJump(block)) {
         const destValue = exprConstValue(simulated.dest ?? EXPR_UNKNOWN);
         if (destValue !== null) {
-          for (const candidate of cfg.blocks) {
-            if (
-              candidate.range.startPc === Number(destValue) &&
-              candidate.instructions[0]?.opcode === 0x5b
-            ) {
-              preciseReturn = candidate.index;
-              break;
-            }
+          const atDest = blockStartingAt(bytecode, Number(destValue));
+          if (atDest >= 0 && cfg.blocks[atDest]?.instructions[0]?.opcode === 0x5b) {
+            preciseReturn = atDest;
           }
           if (preciseReturn >= 0) {
             const continuation = cfg.blocks[preciseReturn];
@@ -1256,7 +1244,7 @@ export function interpretRegionExprs(bytecode: BytecodeType, selector: SelectorT
         if (preciseReturn >= 0) {
           targets.push(preciseReturn);
         } else {
-          for (const candidate of dynamicReturnTargets(cfg, index)) {
+          for (const candidate of dynamicReturnTargets(bytecode, index)) {
             const continuation = cfg.blocks[candidate];
             if (
               continuation !== undefined &&
@@ -1299,6 +1287,13 @@ export function interpretRegionExprs(bytecode: BytecodeType, selector: SelectorT
 // consumers keep working while the detectors read the richer maps. A
 // known expression result always wins; unknown keeps the legacy unknown.
 export function interpretRegionSlots(bytecode: BytecodeType, selector: SelectorType): ReadonlyMap<number, SlotRef> {
+  return memoized(bytecode, `slots:${selector as string}`, () => interpretRegionSlotsUncached(bytecode, selector));
+}
+
+function interpretRegionSlotsUncached(
+  bytecode: BytecodeType,
+  selector: SelectorType,
+): ReadonlyMap<number, SlotRef> {
   const found = new Map<number, SlotRef>();
   try {
     const exprs = interpretRegionExprs(bytecode, selector);
@@ -2280,58 +2275,24 @@ function revertingSideFastPath(
 const REVERT_HEIGHT_IN_PROGRESS = -1;
 const REVERT_HEIGHT_FAIL = -2;
 
-// One CFG per bytecode object: every reverting-side call in an analysis
-// shares the callers' bytecode object, so the CFG is built once no
-// matter how many JUMPIs the gate loops try (C-12 moves this into the
-// engine memo).
-const revertingCfgByBytecode = new WeakMap<BytecodeType, ControlFlowGraph>();
-// One height array per CFG: heights are start-independent, so every side
-// proof reuses them (C-12 moves this to slot "revertHeight").
-const revertHeightByCfg = new WeakMap<ControlFlowGraph, Int32Array>();
-// One dynamic-return target list per CFG block: dynamicReturnTargets
-// walks the whole CFG per call, so each block resolves once.
-const revertDynByCfg = new WeakMap<ControlFlowGraph, Map<number, readonly number[]>>();
-
-function revertingCfgOf(bytecode: BytecodeType): ControlFlowGraph {
-  const hit = revertingCfgByBytecode.get(bytecode);
-  if (hit !== undefined) {
-    return hit;
-  }
-  const cfg = buildCfg(lift(bytecode));
-  revertingCfgByBytecode.set(bytecode, cfg);
-  return cfg;
-}
-
-function revertHeightsOf(cfg: ControlFlowGraph): Int32Array {
-  const hit = revertHeightByCfg.get(cfg);
-  if (hit !== undefined) {
-    return hit;
-  }
-  const heights = new Int32Array(cfg.blocks.length);
-  revertHeightByCfg.set(cfg, heights);
-  return heights;
-}
-
-function revertDynTargetsOf(cfg: ControlFlowGraph, block: number): readonly number[] {
-  let perBlock = revertDynByCfg.get(cfg);
-  if (perBlock === undefined) {
-    perBlock = new Map<number, readonly number[]>();
-    revertDynByCfg.set(cfg, perBlock);
-  }
-  const hit = perBlock.get(block);
-  if (hit !== undefined) {
-    return hit;
-  }
-  const targets = dynamicReturnTargets(cfg, block, true);
-  perBlock.set(block, targets);
-  return targets;
+// The reverting-side proof reads the shared engine memo: the CFG comes
+// from slot "cfg", the heights live in slot "revertHeight" (one array per
+// content, reused because heights are start-independent), and dynamic
+// continuations read the per-block "dyn" slot. No per-object tables: equal
+// content in different instances shares every entry.
+function revertHeightsOf(bytecode: BytecodeType): Int32Array {
+  return memoized(bytecode, "revertHeight", () => new Int32Array(cfgOf(bytecode).blocks.length));
 }
 
 // The successors every reverting path from this block must cross,
 // mirroring the old DFS: a proven jump edge first, else every
 // caller-pushed continuation of a dynamic return jump. Null when the
 // block proves nothing from here.
-function revertMustProve(cfg: ControlFlowGraph, index: number): readonly number[] | null {
+function revertMustProve(
+  bytecode: BytecodeType,
+  cfg: ControlFlowGraph,
+  index: number,
+): readonly number[] | null {
   const current = cfg.blocks[index];
   if (current === undefined) {
     return null;
@@ -2344,7 +2305,7 @@ function revertMustProve(cfg: ControlFlowGraph, index: number): readonly number[
     // Dynamic return jump: the helper was entered by a caller that
     // pushed its continuation, so every caller-pushed continuation
     // must reach the revert for the side to prove.
-    return revertDynTargetsOf(cfg, index);
+    return dynamicReturnTargets(bytecode, index, true);
   }
   if (current.terminal === "jumpi") {
     const conditional = current.successors.find((candidate) => candidate.kind === "conditional");
@@ -2377,7 +2338,12 @@ function revertMustProve(cfg: ControlFlowGraph, index: number): readonly number[
 // longest-path bound, so capping intermediate heights at the same bound
 // changes no verdict either: any path that long fails whatever prefix
 // precedes it.
-function revertHeightFrom(cfg: ControlFlowGraph, heights: Int32Array, start: number): number {
+function revertHeightFrom(
+  bytecode: BytecodeType,
+  cfg: ControlFlowGraph,
+  heights: Int32Array,
+  start: number,
+): number {
   const blocks = cfg.blocks;
   if (start < 0 || start >= blocks.length || start >= heights.length) {
     return REVERT_HEIGHT_FAIL;
@@ -2416,7 +2382,7 @@ function revertHeightFrom(cfg: ControlFlowGraph, heights: Int32Array, start: num
       stack.pop();
       continue;
     }
-    const mustProve = revertMustProve(cfg, top);
+    const mustProve = revertMustProve(bytecode, cfg, top);
     if (mustProve === null || mustProve.length === 0) {
       heights[top] = REVERT_HEIGHT_FAIL;
       stack.pop();
@@ -2468,12 +2434,19 @@ function revertingSideBounded(
   jumpiPc: number,
   side: "jump" | "fall",
 ): boolean {
-  const cfg = revertingCfgOf(bytecode);
+  const cfg = cfgOf(bytecode);
+  // The JUMPI's block through the O(1) index (identical to the old linear
+  // scan: blocks partition instruction PCs, so the containing block is the
+  // match exactly when it holds the JUMPI at that PC).
   let jumpBlock = -1;
-  for (const block of cfg.blocks) {
-    if (block.instructions.some((instruction) => instruction.pc === jumpiPc && instruction.opcode === 0x57)) {
-      jumpBlock = block.index;
-      break;
+  const atJump = blockIndexAtPc(bytecode, jumpiPc);
+  if (atJump >= 0) {
+    const block = cfg.blocks[atJump];
+    if (
+      block !== undefined &&
+      block.instructions.some((instruction) => instruction.pc === jumpiPc && instruction.opcode === 0x57)
+    ) {
+      jumpBlock = atJump;
     }
   }
   if (jumpBlock < 0 || jumpBlock >= cfg.blocks.length) {
@@ -2486,7 +2459,7 @@ function revertingSideBounded(
   }
   const start = side === "jump" ? edge.to : edge.fallThrough;
   try {
-    const height = revertHeightFrom(cfg, revertHeightsOf(cfg), start);
+    const height = revertHeightFrom(bytecode, cfg, revertHeightsOf(bytecode), start);
     return height !== REVERT_HEIGHT_FAIL && height <= REVERTING_SIDE_MAX_BLOCKS;
   } catch {
     return false;
@@ -4107,6 +4080,12 @@ export type OwnerControlOptions = {
 // rather than a guess.
 export function analyzeOwnerControl(bytecode: BytecodeType, options?: OwnerControlOptions): OwnerControlView {
   const reach = options?.reach ?? "v1";
+  // One view per mode per bytecode: detectors share the regions instead of
+  // rebuilding the interpreter state per region per detector.
+  return memoized(bytecode, `oc:${reach}`, () => analyzeOwnerControlUncached(bytecode, reach));
+}
+
+function analyzeOwnerControlUncached(bytecode: BytecodeType, reach: ReachMode): OwnerControlView {
   const code = disassemble(bytecode);
   const entries = extractSelectors(bytecode).filter(
     (entry): entry is Extract<SelectorEntry, { kind: "paired" }> => entry.kind === "paired",
@@ -4316,7 +4295,11 @@ export type ReachDiagnostics = {
 };
 
 export function diagnoseReachability(bytecode: BytecodeType): ReachDiagnostics {
-  const cfg = buildCfg(lift(bytecode));
+  return memoized(bytecode, "reach", () => diagnoseReachabilityUncached(bytecode));
+}
+
+function diagnoseReachabilityUncached(bytecode: BytecodeType): ReachDiagnostics {
+  const cfg = cfgOf(bytecode);
   const found = findFunctionEntries(bytecode, cfg);
   const resolved = new Set<number>();
   for (const entry of found) {
