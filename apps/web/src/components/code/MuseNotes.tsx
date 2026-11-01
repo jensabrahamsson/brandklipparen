@@ -118,15 +118,13 @@ export function MarginNotes({
   // Line number to offsetTop relative to the pane, null when unknown.
   readonly lineTop: (line: number) => number | null;
 }): JSX.Element {
-  const reduce = useReducedMotion();
+  // Stacking is layout, not motion: it always runs, so notes never
+  // overlap under reduced motion either. Reduced motion only removes
+  // the transition, which the global media query already disables.
   const [tops, setTops] = useState<ReadonlyMap<string, number> | null>(null);
   const asideRefs = useRef(new Map<string, HTMLElement>());
   const key = notes.map((note) => note.id).join(",");
   useEffect(() => {
-    if (reduce || !motionAllowed()) {
-      setTops(null);
-      return;
-    }
     // Two passes: first align to the cited lines, then stack any notes
     // that would overlap, using measured heights.
     const first = new Map<string, number>();
@@ -143,7 +141,7 @@ export function MarginNotes({
       floor = top + height + 8;
     }
     setTops(stacked);
-  }, [key, lineTop, reduce]);
+  }, [key, lineTop]);
   return (
     <div className="code-margin-notes" aria-label="Muse notes">
       {notes.map((note) => {

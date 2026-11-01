@@ -153,4 +153,14 @@ describe("decompiler list", () => {
     expect(html.match(/data-testid="decompiler-row-/g) ?? []).toHaveLength(2);
     expect(textOf(html)).toContain(`Unnamed ${selector}`);
   });
+
+  test("c22_deep_link_row_15_rendered_expanded", () => {
+    // Row 15 sits past the 12-row cap; a deep link to it renders the
+    // full list with that row expanded on the first pass.
+    const selector = hexOf(15);
+    const html = listHtml(thirtyTwo(), false, selector);
+    expect(html).toContain(`data-testid="decompiler-row-${selector}"`);
+    expect(html).toContain('aria-expanded="true"');
+    expect(textOf(html)).not.toContain("Show all");
+  });
 });

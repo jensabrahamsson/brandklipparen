@@ -152,6 +152,18 @@ export const MarketTokenItem = {
       }
       return ok(value);
     };
+    // The 24 h price move is signed: dumping tokens fall below zero.
+    // Out-of-range or non-finite values become null so the token stays
+    // listed instead of vanishing from the market feed.
+    const percent = (value: unknown): number | null => {
+      if (value === null || value === undefined) {
+        return null;
+      }
+      if (typeof value !== "number" || !Number.isFinite(value) || value < -100 || value > 1e6) {
+        return null;
+      }
+      return value;
+    };
     const liquidity = money(input.liquidityUsd);
     if (!liquidity.ok) {
       return err(liquidity.error);
@@ -164,10 +176,6 @@ export const MarketTokenItem = {
     if (!volume24h.ok) {
       return err(volume24h.error);
     }
-    const priceChange = money(input.priceChange24hPct);
-    if (!priceChange.ok) {
-      return err(priceChange.error);
-    }
     return ok(
       Object.freeze({
         tokenAddress: token.value as string,
@@ -179,7 +187,7 @@ export const MarketTokenItem = {
         liquidityUsd: liquidity.value,
         volume1hUsd: volume1h.value,
         volume24hUsd: volume24h.value,
-        priceChange24hPct: priceChange.value,
+        priceChange24hPct: percent(input.priceChange24hPct),
       }),
     );
   },

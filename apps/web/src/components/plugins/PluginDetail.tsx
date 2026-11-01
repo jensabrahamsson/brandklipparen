@@ -234,11 +234,17 @@ export function PluginDetailView({
         : tileQuietBody(tile.state);
   const typed = useTypewriter(sentence);
   const expert = mode === "expert";
+  // A deep-linked function row keeps focus: scrolling to top and
+  // focusing the heading would pull the visitor away from the row the
+  // route asked for. The document title still updates.
+  const hasDeepLink = typeof fn === "string" && fn.length > 0;
   useEffect(() => {
-    window.scrollTo(0, 0);
-    headingRef.current?.focus();
+    if (!hasDeepLink) {
+      window.scrollTo(0, 0);
+      headingRef.current?.focus();
+    }
     document.title = `${title} · ${symbol} · Brandklipparen`;
-  }, [title, symbol, slug, address]);
+  }, [title, symbol, slug, address, hasDeepLink]);
   return (
     <div>
       <div className="detail-toolbar">

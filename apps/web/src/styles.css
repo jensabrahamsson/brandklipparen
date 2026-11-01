@@ -3330,6 +3330,7 @@ details[open] > *:not(summary) {
 .fade-sec {
   animation: bk-fade var(--fade-sec) var(--ease-out) 1;
   animation-delay: calc(var(--sec-i, 0) * 110ms);
+  animation-fill-mode: both;
 }
 
 @media (prefers-reduced-motion: reduce) {

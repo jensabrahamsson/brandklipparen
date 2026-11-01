@@ -316,4 +316,59 @@ describe("dexscreener market feed adapter", () => {
     const bound = createMarketFeedAdapter("dexscreener", { transport: recordingTransport([]) });
     expect(bound).toBeInstanceOf(DexscreenerMarketFeedAdapter);
   });
+
+  test("c22_negative_price_change_keeps_token", async () => {
+    // A dumping token (h24 −35) stays listed instead of vanishing.
+    const adapter = new DexscreenerMarketFeedAdapter({
+      transport: async (url: string) => {
+        if (url.includes("/token-profiles/")) {
+          return { status: 200, bodyText: profilesBody() };
+        }
+        if (url.includes("/token-boosts/")) {
+          return { status: 200, bodyText: boostsBody() };
+        }
+        const priced = JSON.parse(pairsBody()) as Array<Record<string, unknown>>;
+        for (const pair of priced) {
+          if (pair["pairAddress"] === PAIR_A_NEW) {
+            pair["priceChange"] = { h24: -35 };
+          }
+        }
+        return { status: 200, bodyText: JSON.stringify(priced) };
+      },
+      now: () => 1700000100000,
+    });
+    const result = await adapter.fetchNewTokens({ chain: "ethereum" }, ctx());
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.items).toHaveLength(2);
+    expect(result.value.items[0]).toMatchObject({
+      tokenAddress: checksum(TOKEN_A),
+      priceChange24hPct: -35,
+    });
+  });
+
+  test("c22_out_of_range_price_change_becomes_null", async () => {
+    // Out-of-range and non-finite moves become null; the token is kept.
+    const { MarketTokenItem } = await import("../../../src/ports/marketFeed.ts");
+    for (const priceChange24hPct of [-150, 1e7, Number.NaN, "cold"]) {
+      const built = MarketTokenItem.create({
+        tokenAddress: TOKEN_A,
+        symbol: "ALPHA",
+        name: "Alpha Token",
+        pairAddress: PAIR_A_NEW,
+        dex: "uniswap",
+        createdAt: 1700000010000,
+        liquidityUsd: 2500,
+        volume1hUsd: 30,
+        volume24hUsd: 900,
+        priceChange24hPct,
+      });
+      expect(built.ok).toBe(true);
+      if (built.ok) {
+        expect(built.value.priceChange24hPct).toBeNull();
+      }
+    }
+  });
 });

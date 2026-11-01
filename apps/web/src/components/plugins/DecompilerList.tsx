@@ -315,7 +315,17 @@ export function DecompilerList({
   const countedPartly = useCountUp(summary.partlyRead, 600);
   const [query, setQuery] = useState("");
   const [segment, setSegment] = useState<DecompilerSegment>("all");
-  const [showAll, setShowAll] = useState(false);
+  const visible = useMemo(() => filterDecompilerFunctions(all, query, segment), [all, query, segment]);
+  // A deep link past the row cap starts with the full list, so the
+  // target row exists on the first render (effects never run under
+  // renderToString, and the focus effect below needs the button).
+  const [showAll, setShowAll] = useState(() => {
+    const initial = normalizeSelector(initialSelector);
+    if (initial === null) {
+      return false;
+    }
+    return visible.findIndex((fn) => fn.selector.toLowerCase() === initial) >= ROW_LIMIT;
+  });
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => {
     const initial = normalizeSelector(initialSelector);
     if (initial === null) {
@@ -326,17 +336,30 @@ export function DecompilerList({
   const filterId = useId();
   const listId = useId();
   const buttons = useRef(new Map<string, HTMLButtonElement>());
-
+  // Focus the deep-linked row once it is rendered, on the next frame
+  // so the button is mounted. Keyed on the shown rows because the
+  // target may arrive only after the cap is lifted; the guard keeps a
+  // later filter keystroke from stealing focus back.
+  const focusedInitial = useRef<string | null>(null);
   useEffect(() => {
     const initial = normalizeSelector(initialSelector);
-    if (initial === null) {
+    if (initial === null || focusedInitial.current === initial) {
       return;
     }
-    buttons.current.get(initial)?.focus();
-  }, [initialSelector]);
+    if (!visible.some((fn) => fn.selector.toLowerCase() === initial)) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      const target = buttons.current.get(initial);
+      if (target !== undefined) {
+        target.focus();
+        focusedInitial.current = initial;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [initialSelector, visible, showAll]);
 
-  const visible = useMemo(() => filterDecompilerFunctions(all, query, segment), [all, query, segment]);
-  const shown = showAll ? visible : visible.slice(0, ROW_LIMIT);
+  const shown = useMemo(() => (showAll ? visible : visible.slice(0, ROW_LIMIT)), [showAll, visible]);
   // Expert only: copy the whole decompiled contract as plain text, one
   // cached snippet request per function, full hex and no notes.
   const copyWholeContract = useCallback(async (): Promise<string> => {
