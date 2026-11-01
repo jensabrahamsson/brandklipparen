@@ -124,7 +124,9 @@ export function createLiveTokensService(options: LiveTokensServiceOptions): Live
   let seenKeys = new Set<string>();
   let pollInFlight = false;
   let analyzing = 0;
-  let running = false;
+  // Open until stop(): a direct pollOnce drives the queue (one-shots and
+  // tests), while pump starts nothing new once stop() latches this false.
+  let running = true;
   let backoffMs = LIVE_TOKENS_BACKOFF_BASE_MS;
   let notBeforeMs = 0;
   let cycles = 0;
@@ -236,8 +238,9 @@ export function createLiveTokensService(options: LiveTokensServiceOptions): Live
   }
 
   function pump(): void {
-    if (!running && analyzing > 0) {
-      // Draining after stop still finishes in-flight work only.
+    if (!running) {
+      // Stopped: in-flight work finishes, but nothing new starts.
+      return;
     }
     while (analyzing < concurrency) {
       const next = takeNewestQueued();
@@ -553,9 +556,12 @@ export function createLiveTokensService(options: LiveTokensServiceOptions): Live
       return;
     }
     running = true;
-    void pollOnce();
+    // Expected feed failures are already recorded in the snapshot by
+    // cycle(); the catch keeps an unexpected throw from escaping as an
+    // unhandled rejection and stopping the runtime.
+    void pollOnce().catch(() => undefined);
     cancelTimer = timers.every(pollIntervalMs, () => {
-      void pollOnce();
+      void pollOnce().catch(() => undefined);
     });
   }
 

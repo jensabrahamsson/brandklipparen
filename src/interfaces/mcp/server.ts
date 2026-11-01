@@ -732,35 +732,43 @@ export function createMcpServer(options: McpServerOptions): McpServer {
         requestId: "00000000-0000-4000-8000-000000000000",
       });
     }
-    if (findAnyTool(name) === null) {
+    try {
+      if (findAnyTool(name) === null) {
+        return err(unknownTool(name, requestId as string));
+      }
+      if (name === ASSESS_TOKEN_TOOL) {
+        return await runAssessToken(args, requestId, callOptions);
+      }
+      if (name === REQUEST_ASSESSMENT_TOOL) {
+        return await runRequestAssessment(args, requestId, callOptions);
+      }
+      if (name === LIST_PLUGINS_TOOL) {
+        return await runListPlugins(args, requestId, callOptions);
+      }
+      if (name === GET_PLUGIN_DOCS_TOOL) {
+        return await runGetPluginDocs(args, requestId, callOptions);
+      }
+      if (name === GET_PLUGIN_AUDIT_TOOL) {
+        return await runGetPluginAudit(args, requestId, callOptions);
+      }
+      if (name === INVESTIGATE_TOKEN_TOOL) {
+        return await runInvestigate(args, requestId, callOptions);
+      }
+      if (name === ONCHAIN_FEATURES_TOOL) {
+        return await runOnchainFeatures(args, requestId, callOptions);
+      }
+      const pluginId = pluginIdByToolName.get(name);
+      if (pluginId !== undefined) {
+        return await runPluginTool(pluginId, args, requestId, callOptions);
+      }
       return err(unknownTool(name, requestId as string));
+    } catch {
+      return err({
+        code: "internal-error",
+        message: "Internal error.",
+        requestId: requestId as string,
+      });
     }
-    if (name === ASSESS_TOKEN_TOOL) {
-      return runAssessToken(args, requestId, callOptions);
-    }
-    if (name === REQUEST_ASSESSMENT_TOOL) {
-      return runRequestAssessment(args, requestId, callOptions);
-    }
-    if (name === LIST_PLUGINS_TOOL) {
-      return runListPlugins(args, requestId, callOptions);
-    }
-    if (name === GET_PLUGIN_DOCS_TOOL) {
-      return runGetPluginDocs(args, requestId, callOptions);
-    }
-    if (name === GET_PLUGIN_AUDIT_TOOL) {
-      return runGetPluginAudit(args, requestId, callOptions);
-    }
-    if (name === INVESTIGATE_TOKEN_TOOL) {
-      return runInvestigate(args, requestId, callOptions);
-    }
-    if (name === ONCHAIN_FEATURES_TOOL) {
-      return runOnchainFeatures(args, requestId, callOptions);
-    }
-    const pluginId = pluginIdByToolName.get(name);
-    if (pluginId !== undefined) {
-      return runPluginTool(pluginId, args, requestId, callOptions);
-    }
-    return err(unknownTool(name, requestId as string));
   }
 
   function jsonRpcError(
@@ -857,7 +865,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
         const outcome = await callTool(toolName, toolArgs, auth === undefined ? undefined : { apiKey: auth });
         if (!outcome.ok) {
           const failure = outcome.error;
-          const code = failure.code === "unknown-tool" ? -32601 : -32602;
+          const code = failure.code === "unknown-tool" ? -32601 : failure.code === "internal-error" ? -32603 : -32602;
           const data: Record<string, unknown> = { code: failure.code, requestId: failure.requestId };
           if (failure.tool !== undefined) {
             data["tool"] = failure.tool;
@@ -889,6 +897,15 @@ export function serveStdio(server: McpServer): { readonly close: () => void } {
     void server.handleJsonRpc(line).then((response) => {
       if (!closed && response.length > 0) {
         process.stdout.write(`${response}\n`);
+      }
+    }).catch(() => {
+      if (!closed) {
+        const body = JSON.stringify({
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32603, message: "Internal error.", data: { code: "internal-error" } },
+        });
+        process.stdout.write(`${body}\n`);
       }
     });
   });

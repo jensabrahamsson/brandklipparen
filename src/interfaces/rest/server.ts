@@ -429,7 +429,12 @@ export function createRestServer(options: RestServerOptions): RestServer {
       return sendError(reply, requestTooLarge(requestId));
     }
     void request;
-    return sendError(reply, validationError("Invalid request: expected a JSON object with address and block.", requestId));
+    const code = typeof error.code === "string" ? error.code : "";
+    const validation = (error as { validation?: unknown }).validation;
+    if (validation !== undefined || code.startsWith("FST_ERR_VALIDATION") || code.startsWith("FST_ERR_CTP_")) {
+      return sendError(reply, validationError("Invalid request: expected a JSON object with address and block.", requestId));
+    }
+    return sendError(reply, requestError(500, "internal-error", "Internal error.", requestId));
   });
 
   app.setNotFoundHandler(async (request: FastifyRequest, reply: FastifyReply): Promise<FastifyReply> => {

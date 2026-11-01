@@ -314,4 +314,45 @@ describe("versioned REST API over the shared service (S-027)", () => {
     }
     expect(first).toBe(serializeAssessment(analysed.envelope));
   });
+
+  test("c23_unexpected_throw_is_500_internal_error", async () => {
+    const { services } = testServices();
+    const throwing = Object.freeze({
+      analyzeToken: async (): Promise<never> => {
+        throw new Error("synthetic service failure");
+      },
+      resolveProxy: services.resolveProxy,
+    });
+    const faulty = createRestServer({
+      detectors: mustDefaultDetectorSet(),
+      services: throwing,
+      ...testServerOptions(),
+    });
+    const faultyBase = await faulty.listen("127.0.0.1", 0);
+    try {
+      const response = await fetch(`${faultyBase}/v1/analyze?address=${TEST_ADDRESS}`, {
+        headers: { "x-api-key": TEST_API_KEY },
+      });
+      expect(response.status).toBe(500);
+      const body = (await response.json()) as Record<string, unknown>;
+      expect(body["code"]).toBe("internal-error");
+      expect(body["status"]).toBe(500);
+      expect(typeof body["requestId"]).toBe("string");
+      expect(response.headers.get("x-request-id")).toBe(String(body["requestId"]));
+      expect(JSON.stringify(body)).not.toContain("synthetic service failure");
+    } finally {
+      await faulty.close();
+    }
+  });
+
+  test("c23_malformed_json_still_400", async () => {
+    const response = await fetch(`${baseUrl}/v1/analyze`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": TEST_API_KEY },
+      body: '{"address":',
+    });
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body["code"]).toBe("validation-error");
+  });
 });

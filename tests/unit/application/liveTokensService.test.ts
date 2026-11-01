@@ -629,4 +629,72 @@ describe("live tokens service", () => {
     expect(service.snapshot().items.map((entry) => entry.block)).toEqual([799, 798]);
     service.stop();
   });
+
+  test("c23_poll_rejection_is_caught", async () => {
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown): void => {
+      rejections.push(reason);
+    };
+    process.on("unhandledRejection", onRejection);
+    let calls = 0;
+    const service = createLiveTokensService(
+      options({
+        timers: realLiveTokensTimers,
+        now: () => {
+          calls += 1;
+          if (calls > 1) {
+            throw new Error("synthetic clock failure");
+          }
+          return 1700000000000;
+        },
+      }),
+    );
+    try {
+      service.start();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(rejections).toEqual([]);
+    } finally {
+      service.stop();
+      process.removeListener("unhandledRejection", onRejection);
+    }
+  });
+
+  test("c23_pump_after_stop_starts_nothing", async () => {
+    const primary = new FakeFeed((input) =>
+      input.factory.toLowerCase() === FACTORY_V2.toLowerCase()
+        ? served(input, [
+            v2Creation(WETH, TOKEN_A, PAIR_A, 799, TX_ONE),
+            v2Creation(WETH, TOKEN_B, PAIR_B, 798, TX_TWO),
+          ])
+        : served(input, []),
+    );
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const service = createLiveTokensService(
+      options({
+        primary,
+        analyze: async () => {
+          await gate;
+          return doneResult(12);
+        },
+      }),
+    );
+    const polling = service.pollOnce();
+    await service.settled(50);
+    expect(service.snapshot().items.map((entry) => entry.state).sort()).toEqual([
+      "analyzing",
+      "queued",
+    ]);
+    service.stop();
+    release();
+    await polling;
+    await service.settled(50);
+    expect(service.snapshot().items.map((entry) => entry.state).sort()).toEqual([
+      "done",
+      "queued",
+    ]);
+    service.stop();
+  });
 });

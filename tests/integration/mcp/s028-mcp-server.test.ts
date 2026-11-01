@@ -26,7 +26,7 @@ import { FakeModelArtifactAdapter } from "../../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../../fakes/fakeRpc.ts";
 import { createRestServer } from "../../../src/interfaces/rest/server.ts";
 import type { RestServer } from "../../../src/interfaces/rest/server.ts";
-import { createMcpServer } from "../../../src/interfaces/mcp/server.ts";
+import { createMcpServer, serveStdio } from "../../../src/interfaces/mcp/server.ts";
 import type { McpServer } from "../../../src/interfaces/mcp/server.ts";
 import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 
@@ -241,5 +241,70 @@ describe("read-only MCP server over the shared service (S-028)", () => {
     expect(parsed.error?.data?.tool).toBe("no_such_tool");
     expect(parsed.error?.data?.code).toBe("unknown-tool");
     expect(analyzeCalls).toBe(before);
+  });
+
+  test("c23_tool_throw_returns_32603_and_server_survives", async () => {
+    const { services } = buildServices();
+    const throwing = Object.freeze({
+      analyzeToken: async (): Promise<never> => {
+        throw new Error("synthetic tool failure");
+      },
+      resolveProxy: services.resolveProxy,
+    });
+    const faulty = createMcpServer({
+      detectors: mustDefaultDetectorSet(),
+      services: throwing,
+      ...sharedOptions(),
+    });
+    const raw = await faulty.handleJsonRpc(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 7,
+        method: "tools/call",
+        params: { name: "assess_token", arguments: { address: TEST_ADDRESS } },
+      }),
+    );
+    const parsed = JSON.parse(raw) as {
+      id?: unknown;
+      error?: { code?: number; message?: string; data?: { code?: string; requestId?: string } };
+    };
+    expect(parsed.id).toBe(7);
+    expect(parsed.error?.code).toBe(-32603);
+    expect(parsed.error?.data?.code).toBe("internal-error");
+    expect(typeof parsed.error?.data?.requestId).toBe("string");
+    expect(raw).not.toContain("synthetic tool failure");
+    // The server survives the throw: a later frame still answers.
+    const listed = await faulty.handleJsonRpc(
+      JSON.stringify({ jsonrpc: "2.0", id: 8, method: "tools/list", params: {} }),
+    );
+    expect((JSON.parse(listed) as { result?: unknown }).result).toBeDefined();
+  });
+
+  test("c23_serveStdio_catches_rejection", async () => {
+    const originalWrite = process.stdout.write;
+    const chunks: string[] = [];
+    process.stdout.write = ((chunk: unknown): boolean => {
+      chunks.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+    const rejecting = {
+      handleJsonRpc: async (): Promise<string> => {
+        throw new Error("synthetic stdio failure");
+      },
+    } as unknown as McpServer;
+    const stdio = serveStdio(rejecting);
+    try {
+      process.stdin.emit("data", `${JSON.stringify({ jsonrpc: "2.0", id: 9, method: "ping" })}\n`);
+      const deadline = Date.now() + 2000;
+      while (!chunks.join("").includes("-32603") && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      const out = chunks.join("");
+      expect(out).toContain("-32603");
+      expect(JSON.parse(out.trim()) as unknown).toMatchObject({ id: null });
+    } finally {
+      stdio.close();
+      process.stdout.write = originalWrite;
+    }
   });
 });
