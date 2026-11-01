@@ -8,7 +8,7 @@
 // the raw cause string never renders outside Expert raw.
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type JSX } from "react";
 import { Pictogram } from "../Pictogram.tsx";
-import { CodeView } from "../code/CodeView.tsx";
+import { CodeView, type CodeFocusRequest, type ExplainContext, type ExplainEvidenceEntry } from "../code/CodeView.tsx";
 import { fetchSnippet } from "../../lib/api.ts";
 import { useCountUp, useReducedMotion } from "../../lib/motion.ts";
 import type { CodePaneView } from "../../lib/route.ts";
@@ -61,9 +61,9 @@ function statusClass(status: DecompilerFunction["status"]): string {
 }
 
 // Expanded function body: the code view (addendum §A1) with the
-// decompiled and verified-source panes, pc-level line links and the
-// entry evidence row. Display text only; the raw cause never renders
-// here (it stays in Expert raw below).
+// decompiled and verified-source panes, pc-level line links, the entry
+// evidence row and the VS-2 read-along. Display text only; the raw
+// cause never renders here (it stays in Expert raw below).
 function FunctionBody({
   address,
   apiKey,
@@ -71,6 +71,9 @@ function FunctionBody({
   expert,
   codeView,
   codePc,
+  explain,
+  focusRequest,
+  onFocusConsumed,
   onCopyWholeContract,
 }: {
   readonly address: string;
@@ -79,6 +82,9 @@ function FunctionBody({
   readonly expert: boolean;
   readonly codeView: CodePaneView | undefined;
   readonly codePc: number | undefined;
+  readonly explain: ExplainContext;
+  readonly focusRequest: CodeFocusRequest | null;
+  readonly onFocusConsumed: () => void;
   readonly onCopyWholeContract: (() => Promise<string>) | undefined;
 }): JSX.Element {
   const entryHex = fn.entryPc === null ? "unknown" : `0x${fn.entryPc.toString(16)}`;
@@ -98,6 +104,9 @@ function FunctionBody({
         initialPc={codePc}
         expert={expert}
         evidenceLabel={fn.entryPc === null ? null : `Evidence at ${entryHex}: back to the evidence row`}
+        explain={explain}
+        focusRequest={focusRequest}
+        onFocusConsumed={onFocusConsumed}
         onCopyWholeContract={onCopyWholeContract}
       />
     </div>
@@ -123,6 +132,9 @@ function DecompilerRow({
   registerButton,
   codeView,
   codePc,
+  explain,
+  focusRequest,
+  onFocusConsumed,
   onCopyWholeContract,
 }: {
   readonly address: string;
@@ -138,6 +150,9 @@ function DecompilerRow({
   readonly registerButton: (selector: string, element: HTMLButtonElement | null) => void;
   readonly codeView: CodePaneView | undefined;
   readonly codePc: number | undefined;
+  readonly explain: ExplainContext;
+  readonly focusRequest: CodeFocusRequest | null;
+  readonly onFocusConsumed: () => void;
   readonly onCopyWholeContract: (() => Promise<string>) | undefined;
 }): JSX.Element {
   const [grown, setGrown] = useState(false);
@@ -196,6 +211,9 @@ function DecompilerRow({
                 expert={expert}
                 codeView={codeView}
                 codePc={codePc}
+                explain={explain}
+                focusRequest={focusRequest}
+                onFocusConsumed={onFocusConsumed}
                 onCopyWholeContract={onCopyWholeContract}
               />
               {expert ? (
@@ -252,6 +270,27 @@ const SEGMENTS: readonly { id: DecompilerSegment; label: string }[] = Object.fre
   { id: "named", label: "Named" },
 ]);
 
+// Short display name for a cross-function citation chip: `transfer()`.
+function shortFunctionName(fn: DecompilerFunction): string {
+  if (fn.name !== null && fn.name.length > 0) {
+    return `${fn.name}()`;
+  }
+  if (fn.signature !== null) {
+    const name = fn.signature.replace(/\(.*$/, "");
+    if (name.length > 0) {
+      return `${name}()`;
+    }
+  }
+  return `Function ${fn.selector}`;
+}
+
+export type ExplainFocusTarget = {
+  readonly key: string;
+  readonly view: CodePaneView;
+  readonly line: number;
+  readonly nonce: number;
+};
+
 export function DecompilerList({
   address,
   apiKey,
@@ -260,6 +299,8 @@ export function DecompilerList({
   initialSelector,
   initialView,
   initialPc,
+  explainAvailable,
+  evidenceIndex,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -271,6 +312,13 @@ export function DecompilerList({
   // the offset whose line to target.
   readonly initialView?: CodePaneView | undefined;
   readonly initialPc?: number | undefined;
+  // VS-2: false when /health reports the code-explain feature
+  // unavailable (no buttons, no dead control). Defaults to available
+  // so older callers keep the explicit-request behaviour.
+  readonly explainAvailable?: boolean | undefined;
+  // VS-2 evidence chips: every plugin finding of this analysis, id to
+  // label plus the code locations that prove it.
+  readonly evidenceIndex?: ReadonlyMap<string, ExplainEvidenceEntry> | undefined;
 }): JSX.Element {
   const all = useMemo(
     () => sortDecompilerFunctions(parseDecompilerFunctions(findings.map((finding) => finding.payload))),
@@ -342,6 +390,36 @@ export function DecompilerList({
     });
   };
 
+  // VS-2 cross-function chips: every function of this contract resolves
+  // by lower-cased selector to its short name. A chip press expands the
+  // target row (when collapsed) and focuses the cited line with one
+  // E-2 pulse; the row clears the request once its CodeView takes over.
+  const explainFunctions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const fn of all) {
+      map.set(fn.selector.toLowerCase(), shortFunctionName(fn));
+    }
+    return map;
+  }, [all]);
+  const [focusTarget, setFocusTarget] = useState<ExplainFocusTarget | null>(null);
+  const onFunctionCite = useCallback((targetSelector: string, targetView: CodePaneView, line: number): void => {
+    const key = targetSelector.toLowerCase();
+    setExpanded((previous) => (previous.has(key) ? previous : new Set(previous).add(key)));
+    setFocusTarget({ key, view: targetView, line, nonce: Date.now() });
+  }, []);
+  const clearFocusTarget = useCallback((): void => {
+    setFocusTarget(null);
+  }, []);
+  const explain: ExplainContext = useMemo(
+    () => ({
+      available: explainAvailable ?? true,
+      functions: explainFunctions,
+      evidence: evidenceIndex ?? new Map(),
+      onFunctionCite,
+    }),
+    [explainAvailable, explainFunctions, evidenceIndex, onFunctionCite],
+  );
+
   return (
     <section className="card detail-decompiler" aria-label="Functions">
       <h2>Functions</h2>
@@ -406,6 +484,13 @@ export function DecompilerList({
                 registerButton={registerButton}
                 codeView={initialView}
                 codePc={initialPc}
+                explain={explain}
+                focusRequest={
+                  focusTarget !== null && focusTarget.key === key
+                    ? { view: focusTarget.view, line: focusTarget.line, nonce: focusTarget.nonce }
+                    : null
+                }
+                onFocusConsumed={clearFocusTarget}
                 onCopyWholeContract={copyWholeContract}
               />
             );

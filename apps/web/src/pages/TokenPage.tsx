@@ -8,6 +8,7 @@ import { isValidAddress } from "../lib/validate.ts";
 import type { TokenView } from "../lib/route.ts";
 import { PluginBoard, buildBoardModel } from "../components/plugins/PluginBoard.tsx";
 import { PluginDetailView } from "../components/plugins/PluginDetail.tsx";
+import type { ExplainEvidenceEntry } from "../components/code/CodeView.tsx";
 import { copyForPluginId, slugForPluginId } from "../lib/pluginCopy.ts";
 import { buildSelectorNames } from "../lib/selectorNames.ts";
 import { planLayout } from "../lib/layout.ts";
@@ -139,6 +140,7 @@ export function TokenPage({
     explain: "available",
     chat: "available",
     rug: "available",
+    explainCode: "available",
     onchain: "available",
   });
   // Raw /health for the console's Explain fallback chain (UI v2 §1.2):
@@ -248,6 +250,7 @@ export function TokenPage({
             explain: "unavailable",
             chat: "unavailable",
             rug: "unavailable",
+            explainCode: "unavailable",
             onchain: "unavailable",
           });
         }
@@ -792,6 +795,17 @@ function AssessedView({
     const decompilerFindings =
       detailViews.find((view) => view.pluginId === "dev.brandklipparen.decompiler")?.findings ?? [];
     const names = buildSelectorNames(decompilerFindings);
+    // VS-2 evidence chips: every plugin finding of this analysis, id to
+    // label plus the code locations that prove it.
+    const evidenceIndex = new Map<string, ExplainEvidenceEntry>();
+    for (const resultView of detailViews) {
+      for (const finding of resultView.findings) {
+        evidenceIndex.set(finding.id, {
+          label: finding.title,
+          targets: finding.evidence.map((entry) => ({ selector: entry.selector, offset: entry.offset })),
+        });
+      }
+    }
     return (
       <PluginDetailView
         address={address}
@@ -810,6 +824,8 @@ function AssessedView({
         fn={view.fn}
         codeView={view.view}
         codePc={view.pc}
+        availability={availability}
+        evidenceIndex={evidenceIndex}
       />
     );
   }

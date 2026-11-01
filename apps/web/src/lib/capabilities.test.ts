@@ -1,6 +1,6 @@
 // Capability mapping (S-123): /health decides AI availability up front.
 import { describe, expect, test } from "vitest";
-import { toAiAvailability, toAvailability, toMarketAvailability } from "./capabilities.ts";
+import { toAiAvailability, toAvailability, toExplainCodeAvailability, toMarketAvailability } from "./capabilities.ts";
 import type { HealthState } from "../types.ts";
 
 const BASE: HealthState = {
@@ -20,6 +20,7 @@ describe("ai capabilities", () => {
       explain: "unavailable",
       chat: "available",
       rug: "available",
+      explainCode: "available",
       onchain: "unavailable",
     });
   });
@@ -42,6 +43,7 @@ describe("ai capabilities", () => {
       explain: "available",
       chat: "available",
       rug: "available",
+      explainCode: "available",
       onchain: "available",
     });
   });
@@ -61,6 +63,7 @@ describe("ai capabilities", () => {
       explain: "available",
       chat: "available",
       rug: "available",
+      explainCode: "available",
       onchain: "available",
     });
     expect(toAiAvailability(null)).toEqual({
@@ -68,7 +71,26 @@ describe("ai capabilities", () => {
       explain: "available",
       chat: "available",
       rug: "available",
+      explainCode: "available",
       onchain: "available",
     });
+  });
+
+  test("vs2_explain_code_follows_the_health_explain_code_field", () => {
+    expect(toExplainCodeAvailability(null)).toBe("available");
+    expect(toExplainCodeAvailability({ assessment: { disabled: true } })).toBe("available");
+    expect(toExplainCodeAvailability({ assessment: { disabled: true }, explainCode: { disabled: true } })).toBe(
+      "unavailable",
+    );
+    expect(
+      toExplainCodeAvailability({
+        assessment: { disabled: true },
+        explainCode: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
+      }),
+    ).toBe("available");
+    // A disabled feature hides the button instead of a dead control.
+    expect(
+      toAiAvailability({ assessment: { disabled: true }, explainCode: { disabled: true } }).explainCode,
+    ).toBe("unavailable");
   });
 });

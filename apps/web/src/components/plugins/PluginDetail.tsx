@@ -14,6 +14,8 @@ import { EvidenceRow } from "./EvidenceRow.tsx";
 import { OwnerChip } from "./OwnerChip.tsx";
 import type { BoardTile } from "./PluginBoard.tsx";
 import { severityWord } from "./PluginTile.tsx";
+import type { ExplainEvidenceEntry } from "../code/CodeView.tsx";
+import type { AiFeatureAvailability } from "../../lib/capabilities.ts";
 import type { PluginFindingView, PluginListEntry } from "../PluginsPanel.tsx";
 import { PLUGIN_STATE_WORD } from "../../lib/pluginState.ts";
 import { codeHref, type CodePaneView } from "../../lib/route.ts";
@@ -121,6 +123,8 @@ export function PluginDetailView({
   fn,
   codeView,
   codePc,
+  availability,
+  evidenceIndex,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -141,6 +145,11 @@ export function PluginDetailView({
   // the offset whose line to target.
   readonly codeView?: CodePaneView | undefined;
   readonly codePc?: number | undefined;
+  // VS-2: AI availability (the code-explain button hides when the
+  // feature is unavailable) and every finding of this analysis for
+  // evidence chips. Both optional so older callers keep working.
+  readonly availability?: AiFeatureAvailability | undefined;
+  readonly evidenceIndex?: ReadonlyMap<string, ExplainEvidenceEntry> | undefined;
 }): JSX.Element {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const title = tile?.copy.title ?? entry?.displayName ?? "Unknown check";
@@ -246,6 +255,8 @@ export function PluginDetailView({
           initialSelector={fn}
           initialView={codeView}
           initialPc={codePc}
+          explainAvailable={(availability?.explainCode ?? "available") === "available"}
+          evidenceIndex={evidenceIndex}
         />
       ) : (
         <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} />

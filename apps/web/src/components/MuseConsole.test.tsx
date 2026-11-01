@@ -24,6 +24,7 @@ const NOTHING: AiFeatureAvailability = {
   explain: "unavailable",
   chat: "unavailable",
   rug: "unavailable",
+  explainCode: "unavailable",
   onchain: "unavailable",
 };
 

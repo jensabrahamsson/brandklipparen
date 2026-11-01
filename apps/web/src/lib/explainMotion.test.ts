@@ -4,7 +4,16 @@
 // first. Node environment: the window, document and animated elements
 // are stubs, matching the motion.test.ts pattern.
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { finishAll, motionAllowed, pulseKeyframes, runSequence } from "./explainMotion.ts";
+import {
+  finishAll,
+  motionAllowed,
+  pulseKeyframes,
+  runCitedIgnite,
+  runNotesIntro,
+  runProofStop,
+  runProofWalk,
+  runSequence,
+} from "./explainMotion.ts";
 
 type FakeElement = {
   animate: (...args: unknown[]) => FakeAnimation;
@@ -115,5 +124,66 @@ describe("explanatory motion", () => {
         }
       }
     }
+  });
+
+  test("cited ignite creates no animations when static", async () => {
+    stubViewer({ reduce: true, motionOff: false });
+    const calls: FakeAnimation[] = [];
+    await runCitedIgnite([
+      fakeElement(calls, true) as unknown as Element,
+      null,
+      fakeElement(calls, true) as unknown as Element,
+    ]);
+    expect(calls).toEqual([]);
+  });
+
+  test("notes intro creates no animations when static", async () => {
+    stubViewer({ reduce: true, motionOff: false });
+    const calls: FakeAnimation[] = [];
+    const elements = Array.from({ length: 8 }, () => fakeElement(calls, true) as unknown as Element);
+    await runNotesIntro(elements);
+    expect(calls).toEqual([]);
+  });
+
+  test("proof walk lights steps in order", async () => {
+    stubViewer({ reduce: false, motionOff: false });
+    const calls: FakeAnimation[] = [];
+    const order: string[] = [];
+    await runProofWalk([
+      { element: fakeElement(calls, true) as unknown as Element, endState: () => order.push("owner-check") },
+      { element: fakeElement(calls, true) as unknown as Element, endState: () => order.push("write") },
+      { element: null, endState: () => order.push("gate") },
+    ]);
+    expect(order).toEqual(["owner-check", "write", "gate"]);
+    expect(calls).toHaveLength(2);
+  });
+
+  test("proof stop never animates the failed step", async () => {
+    stubViewer({ reduce: false, motionOff: false });
+    const calls: FakeAnimation[] = [];
+    const order: string[] = [];
+    await runProofStop(
+      [{ element: fakeElement(calls, true) as unknown as Element, endState: () => order.push("passed") }],
+      { element: fakeElement(calls, true) as unknown as Element, endState: () => order.push("stopped") },
+    );
+    // Absence is not an event: only the passed step ignites.
+    expect(order).toEqual(["passed", "stopped"]);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("proof sequences apply every end state with no animations when static", async () => {
+    stubViewer({ reduce: false, motionOff: true });
+    const calls: FakeAnimation[] = [];
+    const order: string[] = [];
+    await runProofWalk([
+      { element: fakeElement(calls, true) as unknown as Element, endState: () => order.push("one") },
+      { element: fakeElement(calls, true) as unknown as Element, endState: () => order.push("two") },
+    ]);
+    await runProofStop([], {
+      element: fakeElement(calls, true) as unknown as Element,
+      endState: () => order.push("stopped"),
+    });
+    expect(order).toEqual(["one", "two", "stopped"]);
+    expect(calls).toEqual([]);
   });
 });

@@ -1,19 +1,60 @@
 // Code view per function (addendum §A1): Decompiled and Verified
 // source panes with tabs below 1100 px and side by side above,
 // provenance badges, linking, highlighting and empty states.
-// The function header leaves a clear slot for VS-2 ("Explain this
-// code") through the explainAction prop; nothing AI renders here yet.
+// VS-2 ("Explain this code") mounts here: the header buttons explain
+// the active pane, the summary card sits above the code, and notes
+// anchor to their lines (interleaved below 1600 px, margin notes at
+// 1600 px and above). Scores, evidence and finding text are untouched.
 import { useEffect, useId, useMemo, useRef, useState, type JSX, type KeyboardEvent, type ReactNode } from "react";
 import { CopyButton } from "../CopyButton.tsx";
-import { CodeLines, type CodeLineDatum } from "./CodeLines.tsx";
+import { CodeLines, type CodeLineDatum, type GutterLamp } from "./CodeLines.tsx";
 import { ProvenanceBadge, type ProvenanceKind } from "./ProvenanceBadge.tsx";
 import { SourceEmpty } from "./SourceEmpty.tsx";
-import { fetchSnippet, type SnippetResult } from "../../lib/api.ts";
+import { fetchSnippet, type ExplainCodeNote, type SnippetResult } from "../../lib/api.ts";
 import { clearSourceCache, fetchSource, findSourceFile, findSourceFunction, sourceFunctionLines, type SourceResult } from "../../lib/source.ts";
 import { motionAllowed, pulseKeyframes, runSequence } from "../../lib/explainMotion.ts";
 import { useMediaQuery } from "../../lib/useMediaQuery.ts";
 import { useReducedMotion } from "../../lib/motion.ts";
 import type { CodePaneView } from "../../lib/route.ts";
+import {
+  ExplainCodeButton,
+  ExplainNoteBody,
+  ExplainViewResults,
+  entryChips,
+  useExplainCodeView,
+  type ExplainRuntime,
+  type TypedEntry,
+} from "./ExplainCode.tsx";
+import { InterleavedNote, MarginNotes, noteRangeLabel } from "./MuseNotes.tsx";
+import type { CiteMaps } from "./CitationChip.tsx";
+
+// One known evidence id: a sentence-case label plus the code locations
+// that prove it (selector + decompiled offset).
+export type ExplainEvidenceEntry = {
+  readonly label: string;
+  readonly targets: readonly { readonly selector: string; readonly offset: number | null }[];
+};
+
+// VS-2 context for one function: who may be explained, how citation
+// targets resolve, and where cross-function chips navigate.
+export type ExplainContext = {
+  // False when /health reports the code-explain feature unavailable:
+  // no button, no consent line, no dead control.
+  readonly available: boolean;
+  // Lower-cased selector to short display name, every function of this
+  // contract (for cross-function chips).
+  readonly functions: ReadonlyMap<string, string>;
+  // Known evidence ids (every plugin finding of this analysis): a
+  // sentence-case label plus the code locations that prove it.
+  readonly evidence: ReadonlyMap<string, ExplainEvidenceEntry>;
+  readonly onFunctionCite: (selector: string, view: CodePaneView, line: number) => void;
+};
+
+export type CodeFocusRequest = {
+  readonly view: CodePaneView;
+  readonly line: number;
+  readonly nonce: number;
+};
 
 const SNIPPET_LIMIT = 30;
 const CONTEXT_LINES = 10;
@@ -83,6 +124,9 @@ export function CodeView({
   expert,
   evidenceLabel,
   explainAction,
+  explain,
+  focusRequest,
+  onFocusConsumed,
   onCopyWholeContract,
 }: {
   readonly address: string;
@@ -106,6 +150,13 @@ export function CodeView({
   // VS-2 slot: the "Explain this code" action mounts here. The consent
   // line below the header renders only when this is present.
   readonly explainAction?: ReactNode | undefined;
+  // VS-2 explanation context: header buttons, summary and line-anchored
+  // notes. Absent when the feature is unavailable: no button, no panel.
+  readonly explain?: ExplainContext | undefined;
+  // Cross-function chip focus (VS-2): switch to the cited pane and
+  // focus its line with one E-2 pulse.
+  readonly focusRequest?: CodeFocusRequest | null | undefined;
+  readonly onFocusConsumed?: (() => void) | undefined;
   readonly onCopyWholeContract?: (() => Promise<string>) | undefined;
 }): JSX.Element {
   const wide = useMediaQuery("(min-width: 1100px)");
@@ -141,6 +192,13 @@ export function CodeView({
   const loading = useRef(false);
   const sourceLoading = useRef(false);
   const mountedTarget = useRef(initialPc ?? null);
+  const margin = useMediaQuery("(min-width: 1600px)");
+  // VS-2 read-along state: the Notes switch (header, after a result
+  // exists) and the chip-to-line target (E-2 pulse style).
+  const [notesOn, setNotesOn] = useState(true);
+  const [citeTarget, setCiteTarget] = useState<{ readonly pane: CodePaneView; readonly line: number } | null>(null);
+  const [pendingFocus, setPendingFocus] = useState<CodeFocusRequest | null>(null);
+  const explainAvailable = explain?.available === true;
 
   useEffect(() => {
     if (snippet.kind !== "idle" || loading.current) {
@@ -273,6 +331,212 @@ export function CodeView({
   const decompiledName = useMemo(() => decompiledFunctionName(lines), [lines]);
   const renamedFrom = verifiedName !== null && decompiledName !== null && verifiedName !== decompiledName ? decompiledName : null;
 
+  const sourcePaneReady = verifiedKind === "verified-full" || verifiedKind === "verified-partial" || verifiedKind === "explorer";
+  const sourceHasCode = sourcePaneReady && !mismatch;
+
+  // VS-2 read-along runtimes, one per pane: each pane explains its own
+  // view, and the session cache makes re-opens instant with no request.
+  const apiKeyOrNull = apiKey.length === 0 ? null : apiKey;
+  const decompiledLineSet = useMemo(() => new Set(lines.map((line) => line.lineNumber)), [lines]);
+  const sourceLineSet = useMemo(
+    () => new Set(shownSource.map((line) => line.lineNumber)),
+    [shownSource],
+  );
+  const decRuntime = useExplainCodeView({
+    address,
+    apiKey: apiKeyOrNull,
+    selector,
+    view: "decompiled",
+    available: explainAvailable,
+    paneLines: decompiledLineSet,
+    lineElement: (line) => lineEls.current.get(line) ?? null,
+  });
+  const srcRuntime = useExplainCodeView({
+    address,
+    apiKey: apiKeyOrNull,
+    selector,
+    view: "source",
+    available: explainAvailable,
+    paneLines: sourceLineSet,
+    lineElement: (line) => sourceLineEls.current.get(line) ?? null,
+  });
+  const runtimeFor = (pane: CodePaneView): ExplainRuntime => (pane === "decompiled" ? decRuntime : srcRuntime);
+  const anyReady = decRuntime.status === "ready" || srcRuntime.status === "ready";
+  // The button explains the visible code pane: when the active view
+  // has no code (unverified, unavailable or mismatch), it explains
+  // the decompiled pane instead of firing a doomed request.
+  const explainsView: CodePaneView =
+    view === "source" && !sourceHasCode ? "decompiled" : view;
+
+  // Chip to line (E-2): focus the cited line in its pane, set the
+  // target style and play exactly one pulse.
+  const focusExplainedLine = (pane: CodePaneView, line: number): void => {
+    setCiteTarget({ pane, line });
+    const elements = pane === "decompiled" ? lineEls : sourceLineEls;
+    const element = elements.current.get(line);
+    if (element === null || element === undefined) {
+      return;
+    }
+    element.focus({ preventScroll: true });
+    element.scrollIntoView({ block: "center" });
+    if (motionAllowed() && !reduce) {
+      void runSequence([{ element, keyframes: pulseKeyframes(), options: { duration: 760 } }]);
+    }
+  };
+
+  const focusNoteById = (id: string): void => {
+    const element = document.getElementById(id);
+    if (element === null) {
+      return;
+    }
+    element.focus({ preventScroll: true });
+    element.scrollIntoView({ block: "center" });
+  };
+
+  const focusEntryEvidence = (): void => {
+    const element = document.getElementById(`${baseId}-entry`);
+    if (element !== null) {
+      element.focus({ preventScroll: true });
+      element.scrollIntoView({ block: "center" });
+      return;
+    }
+    if (view !== "decompiled") {
+      chooseView("decompiled");
+      window.setTimeout(() => {
+        const retry = document.getElementById(`${baseId}-entry`);
+        retry?.focus({ preventScroll: true });
+        retry?.scrollIntoView({ block: "center" });
+      }, 50);
+    }
+  };
+
+  // Cross-function chip focus: take over the row's request, switch to
+  // the cited pane, then focus its line once the code is in.
+  useEffect(() => {
+    if (focusRequest === null || focusRequest === undefined) {
+      return;
+    }
+    setPendingFocus((previous) => (previous?.nonce === focusRequest.nonce ? previous : focusRequest));
+    onFocusConsumed?.();
+  }, [focusRequest, onFocusConsumed]);
+
+  useEffect(() => {
+    if (pendingFocus === null) {
+      return;
+    }
+    if (view !== pendingFocus.view) {
+      chooseView(pendingFocus.view);
+      return;
+    }
+    const elements = pendingFocus.view === "decompiled" ? lineEls : sourceLineEls;
+    const paneLines = pendingFocus.view === "decompiled" ? lines : shownSource;
+    if (paneLines.length === 0) {
+      return;
+    }
+    const element = elements.current.get(pendingFocus.line);
+    if (element === null || element === undefined) {
+      setPendingFocus(null);
+      return;
+    }
+    setCiteTarget({ pane: pendingFocus.view, line: pendingFocus.line });
+    element.focus({ preventScroll: true });
+    element.scrollIntoView({ block: "center" });
+    if (motionAllowed() && !reduce) {
+      void runSequence([{ element, keyframes: pulseKeyframes(), options: { duration: 760 } }]);
+    }
+    setPendingFocus(null);
+  }, [pendingFocus, view, lines, shownSource, reduce]);
+
+  const evidenceLabels = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const [id, entry] of explain?.evidence ?? []) {
+      labels.set(id, entry.label);
+    }
+    return labels;
+  }, [explain]);
+
+  // Evidence chip (E-2): when the finding names a location in this
+  // function, focus that line; otherwise fall back to the entry row.
+  const focusEvidence = (id: string): void => {
+    const entry = explain?.evidence.get(id);
+    const target = entry?.targets.find(
+      (candidate) => candidate.selector.toLowerCase() === selector.toLowerCase() && candidate.offset !== null,
+    );
+    if (target !== undefined && target.offset !== null) {
+      const line = lineForPc(lines, target.offset);
+      if (line !== null) {
+        if (view !== "decompiled") {
+          chooseView("decompiled");
+        }
+        setPendingFocus({ view: "decompiled", line: line.lineNumber, nonce: Date.now() });
+        return;
+      }
+    }
+    focusEntryEvidence();
+  };
+
+  const chipsFor =
+    (pane: CodePaneView) =>
+    (entry: TypedEntry): JSX.Element | null => {
+      const maps: CiteMaps = {
+        lines: pane === "decompiled" ? decompiledLineSet : sourceLineSet,
+        functions: explain?.functions ?? new Map(),
+        evidence: evidenceLabels,
+      };
+      const node = entryChips(
+        entry,
+        { selector, view: pane },
+        maps,
+        {
+          onLine: (line) => focusExplainedLine(pane, line),
+          onFunction: (targetSelector, targetView, line) => explain?.onFunctionCite(targetSelector, targetView, line),
+          onEvidence: (target) => focusEvidence(target),
+        },
+      );
+      return node === null ? null : <>{node}</>;
+    };
+
+  // Several notes may share one anchor line (their ranges end on the
+  // same line): every mounted note after the line renders, in order.
+  const noteEntriesAfter = (runtime: ExplainRuntime, lineNumber: number): TypedEntry[] => {
+    if (!notesOn) {
+      return [];
+    }
+    return runtime.entries.filter(
+      (entry) => entry.kind === "note" && entry.mounted && entry.note !== null && entry.note.to === lineNumber,
+    );
+  };
+
+  const noteEntryAt = (runtime: ExplainRuntime, lineNumber: number): TypedEntry | null => {
+    if (!notesOn) {
+      return null;
+    }
+    for (const entry of runtime.entries) {
+      if (entry.kind === "note" && entry.mounted && entry.note !== null && entry.note.from === lineNumber) {
+        return entry;
+      }
+    }
+    return null;
+  };
+
+  const noteLampFor =
+    (pane: CodePaneView, paneId: string, runtime: ExplainRuntime) =>
+    (lineNumber: number): GutterLamp | null => {
+      if (!notesOn) {
+        return null;
+      }
+      const entry = noteEntryAt(runtime, lineNumber);
+      if (entry === null || entry.note === null) {
+        return null;
+      }
+      const id = `${paneId}-note-${entry.key}`;
+      return {
+        label: `Muse note for ${noteRangeLabel(entry.note)}`,
+        pictogram: "muse",
+        onActivate: () => focusNoteById(id),
+      };
+    };
+
   const focusLine = (pc: number, lineNumber: number): void => {
     setTargetPc(pc);
     const element = lineEls.current.get(lineNumber);
@@ -367,12 +631,80 @@ export function CodeView({
     setWholeCopy(await onCopyWholeContract());
   };
 
+  // VS-2 margin notes for one pane (≥1600 px): the pane reserves a
+  // right margin, notes top-align to their first cited line and stack
+  // when they would overlap. Code line heights never change.
+  const renderMarginNotes = (pane: CodePaneView, paneId: string, runtime: ExplainRuntime): JSX.Element | null => {
+    if (!margin || !notesOn || runtime.status !== "ready") {
+      return null;
+    }
+    const mounted = runtime.entries.filter(
+      (entry) => entry.kind === "note" && entry.mounted && entry.note !== null,
+    );
+    if (mounted.length === 0) {
+      return null;
+    }
+    const elements = pane === "decompiled" ? lineEls : sourceLineEls;
+    return (
+      <MarginNotes
+        notes={mounted.map((entry) => ({
+          id: `${paneId}-note-${entry.key}`,
+          from: (entry.note as ExplainCodeNote).from,
+        }))}
+        renderNote={(id) => {
+          const entry = mounted.find((candidate) => `${paneId}-note-${candidate.key}` === id);
+          if (entry === undefined) {
+            return null;
+          }
+          return <ExplainNoteBody noteId={id} entry={entry} chips={chipsFor(pane)(entry)} />;
+        }}
+        lineTop={(line) => elements.current.get(line)?.offsetTop ?? null}
+      />
+    );
+  };
+
+  // VS-2 interleaved note after a line (<1600 px): an indented callout
+  // between its range's lines. Null at margin widths, when notes are
+  // off, or without a mounted note for the line.
+  const renderInterleavedNote =
+    (pane: CodePaneView, paneId: string, runtime: ExplainRuntime) =>
+    (lineNumber: number): ReactNode | null => {
+      if (margin) {
+        return null;
+      }
+      const after = noteEntriesAfter(runtime, lineNumber);
+      if (after.length === 0) {
+        return null;
+      }
+      return (
+        <>
+          {after.map((entry) =>
+            entry.note === null ? null : (
+              <InterleavedNote
+                key={`${paneId}-note-${entry.key}`}
+                noteId={`${paneId}-note-${entry.key}`}
+                note={entry.note}
+                shownText={entry.shown}
+                done={entry.done}
+                chips={chipsFor(pane)(entry)}
+                intro={true}
+              />
+            ),
+          )}
+        </>
+      );
+    };
+
   const renderDecompiledPane = (paneId: string): JSX.Element => (
-    <section className="code-pane" aria-label="Decompiled from bytecode">
+    <section className={`code-pane${explainAvailable ? " explainable" : ""}`} aria-label="Decompiled from bytecode">
       <div className="code-pane-head">
         <ProvenanceBadge kind="decompiled" />
         {renamedFrom !== null ? <p className="code-names muted">Names: from verified source.</p> : null}
       </div>
+      {explainAvailable ? (
+        <ExplainViewResults runtime={decRuntime} title={title} lineCount={lines.length} chipsFor={chipsFor("decompiled")} />
+      ) : null}
+      {renderMarginNotes("decompiled", paneId, decRuntime)}
       {snippet.kind === "loading" ? (
         <p role="status" className="scan-status">
           {reduce ? "Loading…" : "Scanning…"}
@@ -386,13 +718,16 @@ export function CodeView({
             idPrefix={`${paneId}-dec`}
             lines={shown}
             functionName={title}
-            targetLine={targetLine?.lineNumber ?? null}
+            targetLine={citeTarget?.pane === "decompiled" ? citeTarget.line : (targetLine?.lineNumber ?? null)}
             evidenceLines={evidenceLines}
             highlightLines={highlightDecompiled}
+            citedLines={decRuntime.citedLines}
+            liveLines={decRuntime.liveLines}
+            noteAfterLine={renderInterleavedNote("decompiled", paneId, decRuntime)}
             gutterLampFor={(lineNumber) =>
               evidenceLabel !== null && entryLineNumber === lineNumber
                 ? { label: evidenceLabel, onActivate: () => document.getElementById(`${baseId}-entry`)?.focus() }
-                : null
+                : (noteLampFor("decompiled", paneId, decRuntime)(lineNumber) ?? null)
             }
             renamedFrom={renamedFrom}
             expert={expert}
@@ -452,7 +787,7 @@ export function CodeView({
   );
 
   const renderSourcePane = (paneId: string): JSX.Element => (
-    <section className="code-pane" aria-label="Verified source">
+    <section className={`code-pane${explainAvailable ? " explainable" : ""}`} aria-label="Verified source">
       <div className="code-pane-head">
         {verifiedKind === null ? (
           <p className="code-badge muted">Checking verified source…</p>
@@ -462,6 +797,10 @@ export function CodeView({
         {sourceFile !== null ? <p className="code-file muted">{sourceFile.path}</p> : null}
         <p className="code-honesty muted">Verified means published, not safe. Names and comments are the author&apos;s claims.</p>
       </div>
+      {explainAvailable && sourceHasCode ? (
+        <ExplainViewResults runtime={srcRuntime} title={title} lineCount={shownSource.length} chipsFor={chipsFor("source")} />
+      ) : null}
+      {renderMarginNotes("source", paneId, srcRuntime)}
       {source.kind === "loading" || source.kind === "idle" ? (
         <p role="status" className="scan-status">
           {reduce ? "Loading…" : "Looking for verified source…"}
@@ -506,10 +845,13 @@ export function CodeView({
             idPrefix={`${paneId}-src`}
             lines={shownSource}
             functionName={title}
-            targetLine={null}
+            targetLine={citeTarget?.pane === "source" ? citeTarget.line : null}
             evidenceLines={new Set()}
             highlightLines={highlightSource}
-            gutterLampFor={() => null}
+            citedLines={srcRuntime.citedLines}
+            liveLines={srcRuntime.liveLines}
+            noteAfterLine={renderInterleavedNote("source", paneId, srcRuntime)}
+            gutterLampFor={(lineNumber) => noteLampFor("source", paneId, srcRuntime)(lineNumber)}
             renamedFrom={null}
             expert={expert}
             lineRef={(lineNumber, element) => {
@@ -596,12 +938,52 @@ export function CodeView({
             </button>
           ) : null}
           {explainAction}
+          {explainAvailable ? (
+            wide && sourceHasCode ? (
+              <>
+                <ExplainCodeButton
+                  label="Explain decompiled"
+                  consentId={`${baseId}-explain-consent`}
+                  busy={decRuntime.status === "pending"}
+                  testId={`explain-code-decompiled-${selector}`}
+                  onPress={decRuntime.request}
+                />
+                <ExplainCodeButton
+                  label="Explain verified source"
+                  consentId={`${baseId}-explain-consent`}
+                  busy={srcRuntime.status === "pending"}
+                  testId={`explain-code-source-${selector}`}
+                  onPress={srcRuntime.request}
+                />
+              </>
+            ) : (
+              <ExplainCodeButton
+                label="Explain this code"
+                consentId={`${baseId}-explain-consent`}
+                busy={runtimeFor(explainsView).status === "pending"}
+                testId={`explain-code-${selector}`}
+                onPress={runtimeFor(explainsView).request}
+              />
+            )
+          ) : null}
+          {anyReady ? (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={notesOn}
+              aria-label="Muse notes"
+              className="button-ghost"
+              onClick={() => setNotesOn((value) => !value)}
+            >
+              Notes: {notesOn ? "On" : "Off"}
+            </button>
+          ) : null}
         </div>
-        {explainAction === undefined || explainAction === null ? null : (
+        {explainAvailable || (explainAction !== undefined && explainAction !== null) ? (
           <p className="code-consent muted" id={`${baseId}-explain-consent`}>
             Sends this function&apos;s code to Muse Spark 1.3. One request.
           </p>
-        )}
+        ) : null}
       </div>
       {wholeCopy !== null ? <span className="sr-only" role="status">Whole contract copied.</span> : null}
       {wide ? (

@@ -1,13 +1,17 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   ApiError,
   PERSONALIZE_TIMEOUT_MS,
   analyzeToken,
+  clearExplainCodeCache,
   fetchAssessment,
   fetchChat,
+  fetchExplainCode,
   fetchHealth,
   fetchRug,
+  peekExplainCode,
   pickExplainSource,
+  refreshExplainCode,
   requestPersonalizeMapping,
 } from "./api.ts";
 import type { AnalyzeSuccess } from "../types.ts";
@@ -322,5 +326,164 @@ describe("muse console overlays", () => {
     expect(pickExplainSource({ ...base, rug: configured })).toBe("rug");
     expect(pickExplainSource({ ...base, assessment: configured })).toBe("assessment");
     expect(pickExplainSource(base)).toBeNull();
+  });
+});
+
+// Per-function code explanation (addendum §A2.5, VS-B3, VS-2): one
+// POST per address + selector + view, a session cache so re-opening
+// costs nothing, and tolerant parsing that drops bad entries instead of
+// hiding the rest. Behavior only: request shape, states, cache hits.
+describe("explain code overlay", () => {
+  const ADDRESS = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+  const SELECTOR = "0x44337ea1";
+  const TRANSFER = "0xa9059cbb";
+
+  function okBody(): unknown {
+    return {
+      explainCode: {
+        kind: "ok",
+        summary: [
+          {
+            text: "Only the owner can call this.",
+            cites: ["line:3", { kind: "line", selector: TRANSFER, view: "decompiled", line: 2 }],
+          },
+        ],
+        notes: [
+          { lines: [3, 4], text: "The owner check happens here.", cites: [] },
+          { lines: [4], text: "The block list gains one wallet.", cites: [{ kind: "evidence", id: "blacklist" }] },
+          { lines: [6], text: "This emits the change.", cites: [] },
+        ],
+        droppedClaims: 0,
+        provider: "meta-model-api",
+        modelId: "muse-spark-1.3",
+      },
+    };
+  }
+
+  beforeEach(() => {
+    clearExplainCodeCache();
+  });
+
+  test("posts the address selector and view and parses cites", async () => {
+    let seenBody = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit): Promise<Response> => {
+        seenBody = String(init?.body ?? "");
+        return jsonResponse(200, okBody());
+      }),
+    );
+    try {
+      const state = await fetchExplainCode(ADDRESS, SELECTOR, "decompiled", null);
+      expect(seenBody).toContain(ADDRESS);
+      expect(seenBody).toContain(SELECTOR);
+      expect(seenBody).toContain("decompiled");
+      expect(state.status).toBe("ready");
+      if (state.status !== "ready") {
+        return;
+      }
+      expect(state.summary).toHaveLength(1);
+      expect(state.summary[0]?.cites).toEqual([
+        { kind: "line", selector: SELECTOR, view: "decompiled", line: 3 },
+        { kind: "line", selector: TRANSFER, view: "decompiled", line: 2 },
+      ]);
+      expect(state.notes.map((note) => [note.from, note.to])).toEqual([
+        [3, 4],
+        [4, 4],
+        [6, 6],
+      ]);
+      expect(state.notes[1]?.cites).toEqual([{ kind: "evidence", id: "blacklist" }]);
+      expect(state.modelId).toBe("muse-spark-1.3");
+      expect(peekExplainCode(ADDRESS, SELECTOR, "decompiled")).toEqual(state);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("the session cache prevents a second request but not a second view", async () => {
+    const fetchMock = vi.fn(async (): Promise<Response> => jsonResponse(200, okBody()));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await fetchExplainCode(ADDRESS, SELECTOR, "decompiled", null);
+      await fetchExplainCode(ADDRESS, SELECTOR, "decompiled", null);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      await fetchExplainCode(ADDRESS, SELECTOR, "source", null);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("refresh spends another request knowingly", async () => {
+    const fetchMock = vi.fn(async (): Promise<Response> => jsonResponse(200, okBody()));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await fetchExplainCode(ADDRESS, SELECTOR, "decompiled", null);
+      await refreshExplainCode(ADDRESS, SELECTOR, "decompiled", null);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("failures never poison the cache", async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (): Promise<Response> => {
+        calls += 1;
+        return calls === 1
+          ? jsonResponse(500, { code: "internal-error", message: "Down." })
+          : jsonResponse(200, okBody());
+      }),
+    );
+    try {
+      expect(await fetchExplainCode(ADDRESS, SELECTOR, "decompiled", null)).toEqual({ status: "failed" });
+      const retry = await fetchExplainCode(ADDRESS, SELECTOR, "decompiled", null);
+      expect(retry.status).toBe("ready");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("typed outcomes map to their states", async () => {
+    const cases: Array<[unknown, { readonly status: string }]> = [
+      [{ explainCode: { kind: "not-configured" } }, { status: "not-configured" }],
+      [{ explainCode: { kind: "invalid-output" } }, { status: "invalid-output" }],
+      [{ explainCode: { kind: "capped" } }, { status: "capped" }],
+      [{ explainCode: { kind: "ok" } }, { status: "invalid-output" }],
+      [{ explainCode: { kind: "mystery" } }, { status: "failed" }],
+      [{}, { status: "failed" }],
+    ];
+    for (const [body, expected] of cases) {
+      clearExplainCodeCache();
+      vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(200, body)));
+      try {
+        const state = await refreshExplainCode(ADDRESS, SELECTOR, "decompiled", null);
+        expect(state.status).toBe(expected.status);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    }
+  });
+
+  test("a rate limit reads as capped and a network failure as failed", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(429, { code: "rate-limited", message: "Slow down." })));
+    try {
+      expect(await refreshExplainCode(ADDRESS, SELECTOR, "decompiled", null)).toEqual({ status: "capped" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("offline");
+      }),
+    );
+    try {
+      expect(await refreshExplainCode(ADDRESS, SELECTOR, "decompiled", null)).toEqual({ status: "failed" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

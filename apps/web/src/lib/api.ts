@@ -751,6 +751,314 @@ export async function requestPersonalizeMapping(
 // then shows the one-line state with no buttons at all.
 export type ExplainSource = "explain" | "rug" | "assessment";
 
+// Per-function code explanation (addendum §A2.5, VS-B3, VS-2): POST
+// /v1/explain-code with the address, selector and active pane view.
+// The response carries a summary plus line-anchored notes; every cited
+// line was checked server-side and anything uncited counts into
+// droppedClaims. Scores, evidence and finding text are untouched: this
+// is a labelled overlay beside the deterministic code view.
+export type ExplainCodeView = "decompiled" | "source";
+
+export type ExplainCodeLineCite = {
+  readonly kind: "line";
+  readonly selector: string;
+  readonly view: ExplainCodeView;
+  readonly line: number;
+};
+
+export type ExplainCodeEvidenceCite = {
+  readonly kind: "evidence";
+  readonly id: string;
+};
+
+export type ExplainCodeCite = ExplainCodeLineCite | ExplainCodeEvidenceCite;
+
+export type ExplainCodeSummarySentence = {
+  readonly text: string;
+  readonly cites: readonly ExplainCodeCite[];
+};
+
+export type ExplainCodeNote = {
+  // Sorted 1-based line numbers in the explained view. The note anchors
+  // to from..to; from equals to for a single line.
+  readonly lines: readonly number[];
+  readonly from: number;
+  readonly to: number;
+  readonly text: string;
+  readonly cites: readonly ExplainCodeCite[];
+};
+
+export type ExplainCodeState =
+  | {
+      readonly status: "ready";
+      readonly summary: readonly ExplainCodeSummarySentence[];
+      readonly notes: readonly ExplainCodeNote[];
+      readonly droppedClaims: number;
+      readonly provider: string;
+      readonly modelId: string;
+    }
+  | { readonly status: "not-configured" }
+  | { readonly status: "invalid-output" }
+  | { readonly status: "capped" }
+  | { readonly status: "failed" };
+
+function isExplainCodeView(value: unknown): value is ExplainCodeView {
+  return value === "decompiled" || value === "source";
+}
+
+function toExplainCodeCite(
+  cite: unknown,
+  selector: string,
+  view: ExplainCodeView,
+): ExplainCodeCite | null {
+  if (typeof cite === "string") {
+    const lineMatch = /^line:(\d+)$/.exec(cite);
+    if (lineMatch?.[1] !== undefined) {
+      const line = Number.parseInt(lineMatch[1], 10);
+      if (Number.isSafeInteger(line) && line >= 1) {
+        return { kind: "line", selector, view, line };
+      }
+      return null;
+    }
+    if (cite.length > 0) {
+      return { kind: "evidence", id: cite };
+    }
+    return null;
+  }
+  if (typeof cite !== "object" || cite === null) {
+    return null;
+  }
+  const record = cite as Record<string, unknown>;
+  if (record["kind"] === "line") {
+    const line = record["line"];
+    if (typeof line !== "number" || !Number.isSafeInteger(line) || line < 1) {
+      return null;
+    }
+    const citeSelector = typeof record["selector"] === "string" ? record["selector"] : selector;
+    const citeView = isExplainCodeView(record["view"]) ? record["view"] : view;
+    return { kind: "line", selector: citeSelector, view: citeView, line };
+  }
+  if (record["kind"] === "evidence" && typeof record["id"] === "string" && record["id"].length > 0) {
+    return { kind: "evidence", id: record["id"] };
+  }
+  return null;
+}
+
+function toExplainCodeSummary(
+  entry: unknown,
+  selector: string,
+  view: ExplainCodeView,
+): ExplainCodeSummarySentence | null {
+  if (typeof entry === "string") {
+    return entry.length > 0 ? { text: entry, cites: [] } : null;
+  }
+  if (typeof entry !== "object" || entry === null) {
+    return null;
+  }
+  const record = entry as { text?: unknown; cites?: unknown };
+  if (typeof record.text !== "string" || record.text.length === 0) {
+    return null;
+  }
+  const cites =
+    record.cites === undefined
+      ? []
+      : Array.isArray(record.cites)
+        ? record.cites.map((cite) => toExplainCodeCite(cite, selector, view)).filter((cite) => cite !== null)
+        : null;
+  if (cites === null) {
+    return null;
+  }
+  return { text: record.text, cites };
+}
+
+function toExplainCodeNote(
+  entry: unknown,
+  selector: string,
+  view: ExplainCodeView,
+): ExplainCodeNote | null {
+  if (typeof entry !== "object" || entry === null) {
+    return null;
+  }
+  const record = entry as { lines?: unknown; text?: unknown; cites?: unknown };
+  if (!Array.isArray(record.lines) || record.lines.length === 0) {
+    return null;
+  }
+  const lines = record.lines
+    .filter((line): line is number => typeof line === "number" && Number.isSafeInteger(line) && line >= 1)
+    .sort((first, second) => first - second);
+  if (lines.length !== record.lines.length || typeof record.text !== "string" || record.text.length === 0) {
+    return null;
+  }
+  const cites =
+    record.cites === undefined
+      ? []
+      : Array.isArray(record.cites)
+        ? record.cites.map((cite) => toExplainCodeCite(cite, selector, view)).filter((cite) => cite !== null)
+        : null;
+  if (cites === null) {
+    return null;
+  }
+  return { lines, from: lines[0] as number, to: lines[lines.length - 1] as number, text: record.text, cites };
+}
+
+function toExplainCodeState(body: unknown, selector: string, view: ExplainCodeView): ExplainCodeState {
+  const record = body as { explainCode?: unknown };
+  const explainCode = record.explainCode as { kind?: unknown } | null | undefined;
+  if (explainCode === null || explainCode === undefined || typeof explainCode !== "object") {
+    return { status: "failed" };
+  }
+  if (explainCode.kind === "not-configured") {
+    return { status: "not-configured" };
+  }
+  if (explainCode.kind === "invalid-output") {
+    return { status: "invalid-output" };
+  }
+  if (explainCode.kind === "capped" || explainCode.kind === "rate-limited") {
+    return { status: "capped" };
+  }
+  if (explainCode.kind !== "ok") {
+    return { status: "failed" };
+  }
+  const envelope = explainCode as {
+    summary?: unknown;
+    notes?: unknown;
+    droppedClaims?: unknown;
+    provider?: unknown;
+    modelId?: unknown;
+  };
+  if (!Array.isArray(envelope.summary) || !Array.isArray(envelope.notes)) {
+    return { status: "invalid-output" };
+  }
+  if (typeof envelope.droppedClaims !== "number" || typeof envelope.provider !== "string" || typeof envelope.modelId !== "string") {
+    return { status: "invalid-output" };
+  }
+  // Entry-level problems drop that entry and count it, the same
+  // discipline as the server check: one bad sentence never hides the
+  // rest. A note without usable lines is dropped, never guessed.
+  let dropped = envelope.droppedClaims;
+  const summary: ExplainCodeSummarySentence[] = [];
+  for (const entry of envelope.summary) {
+    const sentence = toExplainCodeSummary(entry, selector, view);
+    if (sentence === null) {
+      dropped += 1;
+    } else {
+      summary.push(sentence);
+    }
+  }
+  const notes: ExplainCodeNote[] = [];
+  for (const entry of envelope.notes) {
+    const note = toExplainCodeNote(entry, selector, view);
+    if (note === null) {
+      dropped += 1;
+    } else {
+      notes.push(note);
+    }
+  }
+  return { status: "ready", summary, notes, droppedClaims: dropped, provider: envelope.provider, modelId: envelope.modelId };
+}
+
+// Session cache for per-function explanations (addendum §A2.2): one
+// POST per address + selector + view. Re-opening a function shows the
+// stored result instantly with no new request. Failures never poison
+// the cache: the next press retries. "Ask again" clears the entry first
+// so the visitor knowingly spends another request.
+const explainCodeCache = new Map<string, Promise<ExplainCodeState>>();
+const explainCodeSettled = new Map<string, ExplainCodeState>();
+
+export function clearExplainCodeCache(): void {
+  explainCodeCache.clear();
+  explainCodeSettled.clear();
+}
+
+function explainCodeKey(address: string, selector: string, view: ExplainCodeView): string {
+  return `${address.toLowerCase()}:${selector.toLowerCase()}:${view}`;
+}
+
+async function loadExplainCode(
+  address: string,
+  selector: string,
+  view: ExplainCodeView,
+  apiKey: string | null,
+): Promise<ExplainCodeState> {
+  let response: Response;
+  try {
+    response = await fetch("/v1/explain-code", {
+      method: "POST",
+      headers: { ...apiHeaders(apiKey), "content-type": "application/json" },
+      body: JSON.stringify({ address, selector, view }),
+    });
+  } catch {
+    return { status: "failed" };
+  }
+  if (!response.ok) {
+    if (response.status === 429) {
+      return { status: "capped" };
+    }
+    const failure = await readError(response, "request-failed");
+    if (failure.code === "rate-limited" || failure.code === "daily-limit") {
+      return { status: "capped" };
+    }
+    return { status: "failed" };
+  }
+  try {
+    return toExplainCodeState(await response.json(), selector, view);
+  } catch {
+    return { status: "failed" };
+  }
+}
+
+// "Ask again" spends another request knowingly: drop the stored entry
+// first so the next press reaches the server again.
+export function refreshExplainCode(
+  address: string,
+  selector: string,
+  view: ExplainCodeView,
+  apiKey: string | null,
+): Promise<ExplainCodeState> {
+  const key = explainCodeKey(address, selector, view);
+  explainCodeCache.delete(key);
+  explainCodeSettled.delete(key);
+  return fetchExplainCode(address, selector, view, apiKey);
+}
+
+export function fetchExplainCode(
+  address: string,
+  selector: string,
+  view: ExplainCodeView,
+  apiKey: string | null,
+): Promise<ExplainCodeState> {
+  const key = explainCodeKey(address, selector, view);
+  const cached = explainCodeCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const pending = loadExplainCode(address, selector, view, apiKey);
+  explainCodeCache.set(key, pending);
+  void pending.then((state) => {
+  if (state.status === "failed") {
+    if (explainCodeCache.get(key) === pending) {
+      explainCodeCache.delete(key);
+    }
+    return;
+  }
+  // Settled overlays stay for the session so re-opening a function
+  // shows them instantly with no new request (addendum §A2.2).
+  explainCodeSettled.set(key, state);
+});
+  return pending;
+}
+
+// The settled overlay for an address + selector + view, if this
+// session already holds one. Lets a re-opened function render its
+// stored explanation instantly without a new request or consent.
+export function peekExplainCode(
+  address: string,
+  selector: string,
+  view: ExplainCodeView,
+): ExplainCodeState | null {
+  return explainCodeSettled.get(explainCodeKey(address, selector, view)) ?? null;
+}
+
 export function pickExplainSource(health: HealthState | null): ExplainSource | null {
   if (health === null) {
     return "explain";

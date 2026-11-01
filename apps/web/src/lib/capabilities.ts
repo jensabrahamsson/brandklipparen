@@ -32,8 +32,20 @@ export type AiFeatureAvailability = {
   readonly explain: Availability;
   readonly chat: Availability;
   readonly rug: Availability;
+  readonly explainCode: Availability;
   readonly onchain: Availability;
 };
+
+// Per-function code explanation (addendum §A2.1, VS-2): absent when
+// /health reports the code-explain feature unavailable, so there is no
+// dead button. Unknown fields (older servers) keep the previous
+// explicit-request behaviour.
+export function toExplainCodeAvailability(health: HealthState | null): Availability {
+  if (health === null) {
+    return "available";
+  }
+  return toAvailability(health.explainCode);
+}
 
 export function toAiAvailability(health: HealthState | null): AiFeatureAvailability {
   if (health === null) {
@@ -42,6 +54,7 @@ export function toAiAvailability(health: HealthState | null): AiFeatureAvailabil
       explain: "available",
       chat: "available",
       rug: "available",
+      explainCode: "available",
       onchain: "available",
     };
   }
@@ -50,6 +63,7 @@ export function toAiAvailability(health: HealthState | null): AiFeatureAvailabil
     explain: toAvailability(health.explain),
     chat: toAvailability(health.chat),
     rug: toAvailability(health.rug),
+    explainCode: toExplainCodeAvailability(health),
     onchain: toAvailability(health.onchain),
   };
 }

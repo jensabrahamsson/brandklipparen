@@ -46,6 +46,7 @@
   --alert-glow: 0 0 0 1px rgb(0 0 0 / 40%), 0 0 28px rgb(255 90 82 / 18%), inset 0 0 24px rgb(255 90 82 / 8%);
   --tube-rings: 0 0 0 1px #0d2a1b, 0 0 0 9px #050b08, 0 0 0 10px #12251a;
   --code-evidence-bg: rgb(141 255 182 / 8%);
+  --code-cited-bg: rgb(141 255 182 / 5%);
   --bg: #010402;
   --surface: #03110a;
   --surface-2: #062016;
@@ -4596,6 +4597,248 @@ ol.code {
 :root[data-motion="off"] *::after {
   animation: none !important;
   transition: none !important;
+}
+
+/* "Explain this code" (addendum §A2, VS-2). Phosphor Console: the
+   summary card carries the Muse dashed double border; notes are
+   indented callouts with the Muse glyph. Glow comes only from the
+   existing elevation tokens; code text stays crisp (no text-shadow).
+   Motion is opacity/colour/glow one-shots plus the approved X-1 height
+   expand; reduced motion and data-motion="off" render every end state
+   statically through the kill switches above. */
+.explain-code-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.explain-code-glyph {
+  display: inline-flex;
+  color: var(--phosphor-hi);
+}
+
+.muse-explain-ready {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.muse-summary {
+  border: 3px double var(--edge);
+  border-radius: 12px;
+  padding: 12px;
+  margin: 0;
+  background-color: var(--glass);
+  box-shadow: var(--elev-1);
+}
+
+.muse-summary-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--phosphor-hi);
+}
+
+.muse-model {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.muse-summary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--phosphor);
+}
+
+.muse-summary-empty {
+  margin: 0;
+  font-size: 14px;
+}
+
+.muse-dropped {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.muse-explain-status {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  border: 1px dashed var(--edge);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.muse-explain-message {
+  margin: 0;
+  font-size: 14px;
+  color: var(--phosphor);
+}
+
+.muse-explain-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.muse-ask-again {
+  white-space: nowrap;
+}
+
+.muse-advisory {
+  margin: 0;
+}
+
+/* Citation chips (addendum §A2.3): 44 px buttons for known targets,
+   plain text for unknown ones. Sentence case, phosphor only. */
+.cite-chip {
+  display: inline-flex;
+  align-items: center;
+  margin: 2px 4px 2px 0;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  padding: 2px 10px;
+  background: transparent;
+  color: var(--phosphor);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+button.cite-chip:hover {
+  color: var(--phosphor-hi);
+  border-color: var(--phosphor);
+  background-color: var(--glass-2);
+  box-shadow: var(--elev-1);
+}
+
+button.cite-chip:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+span.cite-chip {
+  border-style: dashed;
+  color: var(--dim);
+  cursor: default;
+}
+
+/* Line-anchored Muse notes. Interleaved callouts sit between the lines
+   they explain; the X-1 expand below is the only movement. */
+.code-note-row {
+  list-style: none;
+}
+
+.code-note-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 180ms var(--ease-out);
+}
+
+.code-note-expand.is-open {
+  grid-template-rows: 1fr;
+}
+
+.code-note-clip {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.muse-note {
+  margin: 4px 0 4px 40px;
+  border: 1px dashed var(--edge);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background-color: var(--glass);
+}
+
+.muse-note:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.muse-note-lines {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.muse-note-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--phosphor-hi);
+}
+
+.muse-note-chips {
+  margin: 8px 0 0;
+}
+
+/* Cited lines: while a sentence types they carry the live background;
+   settled sentences keep the faint cited background. The rail stays
+   reserved for evidence, so cited code never reads as a finding. */
+.code-line.is-cited {
+  background-color: var(--code-cited-bg);
+}
+
+.code-line.is-cited-live {
+  background-color: var(--code-match-bg);
+}
+
+/* Margin notes (≥1600 px): the explainable pane reserves a right
+   margin; notes overlay it top-aligned to their first cited line and
+   stack when they would overlap. The overlay takes no space in the
+   line flow, so code line heights never change. */
+.code-pane {
+  position: relative;
+}
+
+@media (min-width: 1600px) {
+  .code-pane.explainable {
+    padding-right: 244px;
+  }
+}
+
+.code-margin-notes {
+  position: absolute;
+  top: 0;
+  right: 12px;
+  width: 220px;
+  pointer-events: none;
+}
+
+.code-margin-note {
+  position: absolute;
+  top: var(--note-top, 0);
+  width: 220px;
+  pointer-events: auto;
+}
+
+.code-margin-note .muse-note {
+  margin: 0;
+  border-left: 1px dashed var(--edge);
+}
+
+@media (max-width: 1599px) {
+  .code-margin-notes {
+    display: none;
+  }
 }
 
 

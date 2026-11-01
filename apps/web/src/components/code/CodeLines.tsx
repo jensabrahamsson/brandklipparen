@@ -4,7 +4,7 @@
 // lamp slot, and tokenised code. Long lines wrap with a hanging
 // indent (`--ind`); line numbers stay top-aligned and are never
 // copied (user-select: none). No inner scroll, ever.
-import type { CSSProperties, JSX } from "react";
+import { Fragment, type CSSProperties, type JSX, type ReactNode } from "react";
 import { Pictogram } from "../Pictogram.tsx";
 import {
   hiddenChipText,
@@ -23,6 +23,8 @@ export type CodeLineDatum = {
 export type GutterLamp = {
   readonly label: string;
   readonly onActivate: () => void;
+  // Evidence lamps use the found glyph; Muse note markers use ✦.
+  readonly pictogram?: "found" | "muse" | undefined;
 };
 
 function roleClass(role: CodeRole): string {
@@ -57,6 +59,9 @@ export function CodeLines({
   targetLine,
   evidenceLines,
   highlightLines,
+  citedLines,
+  liveLines,
+  noteAfterLine,
   gutterLampFor,
   renamedFrom,
   expert,
@@ -70,6 +75,13 @@ export function CodeLines({
   readonly targetLine: number | null;
   readonly evidenceLines: ReadonlySet<number>;
   readonly highlightLines: ReadonlySet<number>;
+  // VS-2 read-along: faint cited background for settled sentences and
+  // the live style while a sentence types. Absent without an overlay.
+  readonly citedLines?: ReadonlySet<number> | undefined;
+  readonly liveLines?: ReadonlySet<number> | undefined;
+  // VS-2 interleaved notes (<1600 px): a note node after its range, or
+  // null. Absent without an overlay or at margin widths.
+  readonly noteAfterLine?: ((lineNumber: number) => ReactNode | null) | undefined;
   readonly gutterLampFor: (lineNumber: number) => GutterLamp | null;
   readonly renamedFrom: string | null;
   readonly expert: boolean;
@@ -84,15 +96,18 @@ export function CodeLines({
         const isTarget = targetLine === line.lineNumber;
         const isEvidence = evidenceLines.has(line.lineNumber);
         const isHighlight = highlightLines.has(line.lineNumber);
+        const isCited = citedLines?.has(line.lineNumber) ?? false;
+        const isLive = liveLines?.has(line.lineNumber) ?? false;
         const leading = line.text.match(/^ */)?.[0].length ?? 0;
         const body = line.text.slice(leading);
+        const note = noteAfterLine?.(line.lineNumber) ?? null;
         return (
-          <li
-            key={line.lineNumber}
+          <Fragment key={line.lineNumber}>
+            <li
             id={`${idPrefix}-line-${line.lineNumber}`}
             ref={(element) => lineRef(line.lineNumber, element)}
             tabIndex={-1}
-            className={`code-line${isEvidence ? " is-evidence" : ""}${isTarget ? " is-target" : ""}${isHighlight ? " is-match" : ""}`}
+            className={`code-line${isEvidence ? " is-evidence" : ""}${isTarget ? " is-target" : ""}${isHighlight ? " is-match" : ""}${isCited ? " is-cited" : ""}${isLive ? " is-cited-live" : ""}`}
             style={{ "--i": Math.min(index, 8), "--ind": leading } as CSSProperties}
             onFocus={() => onLineFocus(line.lineNumber)}
             onBlur={() => onLineFocus(null)}
@@ -103,7 +118,7 @@ export function CodeLines({
               <span className="code-lamp-slot" aria-hidden="true" />
             ) : (
               <button type="button" className="code-lamp" aria-label={lamp.label} onClick={lamp.onActivate}>
-                <Pictogram name="found" size={16} />
+                <Pictogram name={lamp.pictogram ?? "found"} size={16} />
               </button>
             )}
             <span className="code-no" aria-hidden="true">
@@ -121,6 +136,8 @@ export function CodeLines({
               )}
             </code>
           </li>
+          {note}
+          </Fragment>
         );
       })}
     </ol>
