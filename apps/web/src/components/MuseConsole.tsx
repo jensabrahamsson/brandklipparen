@@ -140,9 +140,14 @@ export function MuseConsole({
 
   return (
     <section className="card muse-console" aria-label="Muse console" data-testid="muse-console">
-      <h2 className="muse-title" style={{ margin: "0 0 4px", fontSize: 20 }}>
-        <span aria-hidden="true">✦ </span>Muse · advisory{modelId === null ? "" : ` · ${modelId}`}
-      </h2>
+      <div className="muse-head">
+        <h2 className="muse-title">
+          <span aria-hidden="true">✦ </span>Muse · advisory
+        </h2>
+        {modelId === null ? null : (
+          <span className="muse-console-model">{modelId}</span>
+        )}
+      </div>
       <p className="muted" style={{ margin: "0 0 8px" }}>
         Muse reads the evidence above. It never changes the score.
       </p>

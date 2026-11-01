@@ -31,6 +31,7 @@ test("phosphor_palette_tokens_exact", () => {
     ["--glass-2", "#062016"],
     ["--phosphor", "#8dffb6"],
     ["--phosphor-hi", "#d6ffe6"],
+    ["--muse", "#b9f3ff"],
     ["--dim", "#4fb27a"],
     ["--faint", "#1f5a3a"],
     ["--rule", "#154a2e"],
@@ -40,6 +41,18 @@ test("phosphor_palette_tokens_exact", () => {
   ] as const) {
     expect(root).toContain(`${token}: ${hex}`);
   }
+});
+
+test("r2_8_muse_console_tokens_and_contrast", () => {
+  // R2-8 (D-11): the advisory console reads in --muse on --glass at 7:1
+  // or better, with a token-based dashed double frame (no raw shadows).
+  const root = rootBlock();
+  expect(root).toContain("--muse-console-frame");
+  expect(contrastOf(cssVar("--muse"), cssVar("--glass"))).toBeGreaterThanOrEqual(7);
+  expect(code).toMatch(/\.muse-console\s*\{[^}]*border:\s*1px dashed/);
+  expect(code).toMatch(/\.muse-console\s*\{[^}]*box-shadow:\s*var\(--muse-console-frame\)/);
+  expect(code).toMatch(/\.muse-title\s*\{[^}]*color:\s*var\(--muse\)/);
+  expect(code).toMatch(/\.muse-title\s*\{[^}]*white-space:\s*nowrap/);
 });
 
 test("phosphor_system_mono_stack_without_network_fonts", () => {

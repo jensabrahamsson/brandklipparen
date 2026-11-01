@@ -130,11 +130,13 @@ test("n15_ask_renders_sentences_dropped_count_and_advisory", async ({ page }) =>
   const hero = page.locator('section[aria-label="Combined score"]');
   await expect(page.locator(".score-dial .num")).toHaveText("84");
   const before = await hero.innerText();
-  // The Ask field carries the one-line consent and an enabling hint.
+  // The Ask field carries the one-line consent; the button always
+  // looks enabled and the clear icon appears once there is text.
   await expect(page.getByLabel("Ask about this token")).toBeVisible();
-  await expect(page.getByTestId("ask-submit")).toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByTestId("ask-submit")).not.toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByTestId("ask-hint")).toHaveCount(0);
   await page.getByLabel("Ask about this token").fill("Can the owner stop me selling?");
-  await expect(page.getByTestId("ask-submit")).toHaveAttribute("aria-disabled", "false");
+  await expect(page.getByTestId("ask-clear")).toBeVisible();
   await page.getByTestId("ask-submit").click();
   const output = page.getByTestId("muse-output");
   await expect(output.getByText("The owner can stop chosen wallets from sending tokens.").first()).toBeVisible();

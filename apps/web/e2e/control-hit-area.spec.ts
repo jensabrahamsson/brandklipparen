@@ -1,7 +1,7 @@
-// Switch and ask-button hit-area pattern (W-8, W-10): the Expert and
+// Switch and ask-button hit-area pattern (R2-8, W-10): the Expert and
 // Motion switches keep a 44x44 box with a visible keyboard ring and a
-// themed on-state, and the Ask button stays focusable with an off tone
-// while empty.
+// themed on-state, and the Ask button always looks enabled: an empty
+// submit focuses the field with an error hint and sends nothing.
 import { expect, test } from "@playwright/test";
 
 const ADDRESS = "0x5ab1e0000000000000000000000000000000f005";
@@ -82,16 +82,15 @@ test("control_hit_area_visual_boundary_and_states", async ({ page }) => {
   await page.keyboard.press("Space");
   await expect(expert).toHaveAttribute("aria-checked", "false");
 
-  // The empty Ask button stays in the tab order with an off tone: dashed
-  // border, dim text, not-allowed cursor. Clicking it sends nothing.
-  // Playwright treats aria-disabled like disabled for clicks, so the
-  // click is dispatched directly: the handler still guards it.
+  // R2-8: the Ask button always looks enabled. Clicking it empty
+  // focuses the field and shows the error hint; it still sends nothing.
   const ask = page.getByTestId("ask-submit");
-  await expect(ask).toHaveAttribute("aria-disabled", "true");
-  expect(await ask.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("dashed");
-  expect(await ask.evaluate((element) => getComputedStyle(element).cursor)).toBe("not-allowed");
+  await expect(ask).not.toHaveAttribute("aria-disabled", "true");
+  expect(await ask.evaluate((element) => getComputedStyle(element).cursor)).toBe("pointer");
+  await expect(page.getByTestId("ask-hint")).toHaveCount(0);
   await ask.dispatchEvent("click");
   await expect(page.getByTestId("muse-output")).toHaveCount(0);
+  await expect(page.getByTestId("ask-hint")).toContainText("Type a question first, then press Ask.");
 });
 
 test("control_motion_switch_hit_area_and_keyboard", async ({ page }) => {

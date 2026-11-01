@@ -148,14 +148,14 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
   // The Expert switch follows the brand tone instead of system blue.
   const expert = page.getByTestId("expert-switch");
   expect(await expert.evaluate((element) => getComputedStyle(element).accentColor)).not.toContain("0, 122, 255");
-  // The empty Ask button keeps its off tone while staying focusable.
+  // R2-8: the Ask button always looks enabled, and the clear icon
+  // is absent while the field is empty.
   const ask = page.getByTestId("ask-submit");
-  await expect(ask).toHaveAttribute("aria-disabled", "true");
-  expect(await ask.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("dashed");
-  expect(await ask.evaluate((element) => getComputedStyle(element).cursor)).toBe("not-allowed");
-  const clear = page.getByTestId("ask-clear");
-  await expect(clear).toBeVisible();
-  expect(await clear.evaluate((element) => getComputedStyle(element).cursor)).not.toBe("not-allowed");
+  await expect(ask).not.toHaveAttribute("aria-disabled", "true");
+  expect(await ask.evaluate((element) => getComputedStyle(element).borderStyle)).not.toBe("dashed");
+  expect(await ask.evaluate((element) => getComputedStyle(element).cursor)).toBe("pointer");
+  await expect(page.getByTestId("ask-clear")).toHaveCount(0);
+  await expect(page.getByTestId("ask-hint")).toHaveCount(0);
 
   // The gauge segment track keeps a 3:1 boundary on the card surface:
   // an unlit segment against the gauge card.

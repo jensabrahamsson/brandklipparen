@@ -128,22 +128,25 @@ describe("muse console (W-3)", () => {
     expect(html).toContain('maxLength="500"');
   });
 
-  test("ask_button_uses_aria_disabled_with_a_hint_while_empty", () => {
+  test("ask_button_stays_enabled_with_no_hint_or_clear_while_empty", () => {
     const empty = consoleHtml(
       { ...NOTHING_HEALTH, chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" } },
       { ...NOTHING, chat: "available" },
       "",
     );
     expect(empty).toContain('data-testid="ask-submit"');
-    expect(empty).toContain('aria-disabled="true"');
-    expect(empty).toContain("Type your question above to enable.");
+    expect(empty).not.toContain("aria-disabled");
+    expect(empty).not.toContain("Type your question above to enable.");
+    expect(empty).not.toContain('data-testid="ask-hint"');
+    expect(empty).not.toContain('data-testid="ask-clear"');
     expect(empty).not.toContain("<button disabled");
     const filled = consoleHtml(
       { ...NOTHING_HEALTH, chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" } },
       { ...NOTHING, chat: "available" },
       "Can the owner stop me selling?",
     );
-    expect(filled).toContain('aria-disabled="false"');
+    expect(filled).not.toContain("aria-disabled");
     expect(filled).toContain('value="Can the owner stop me selling?"');
+    expect(filled).toContain('data-testid="ask-clear"');
   });
 });

@@ -285,11 +285,13 @@ test("k519_empty_ask_sends_nothing", async ({ page }) => {
   await mockRest(page, chatPosts);
   await page.goto(`/#/token/${ADDRESS}`);
   const submit = page.getByTestId("ask-submit");
-  await expect(submit).toHaveAttribute("aria-disabled", "true");
-  await expect(page.getByTestId("ask-hint")).toContainText("Type your question above to enable.");
-  // Enter in the empty field submits the form, which the empty guard drops.
+  await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+  await expect(page.getByTestId("ask-hint")).toHaveCount(0);
+  // Enter in the empty field submits the form, which focuses the field
+  // and shows the error hint instead of sending.
   await page.getByLabel("Ask about this token").focus();
   await page.keyboard.press("Enter");
+  await expect(page.getByTestId("ask-hint")).toContainText("Type a question first, then press Ask.");
   await page.waitForTimeout(300);
   expect(chatPosts.count).toBe(0);
   await expect(page.getByTestId("muse-output")).toHaveCount(0);
