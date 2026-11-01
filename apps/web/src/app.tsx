@@ -70,7 +70,7 @@ export function App(): JSX.Element {
           <img src="/logo.svg" alt="" />
           brandklipparen
         </a>
-        <span className="bar-desc">rug-pull risk scanner</span>
+        <span className="bar-desc">contract risk scanner</span>
         <span className="spacer" />
         <span className="net">
           <Pictogram name="chain" size={20} />
