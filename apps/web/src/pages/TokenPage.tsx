@@ -630,20 +630,23 @@ function AssessedView({
         onQuestionChange={onQuestionChange}
         onQuestionClear={onQuestionClear}
       />
-      {stripVisible ? (
-        <div className="compact-strip" aria-label="Result summary" data-testid="result-summary">
-          <span className="numeric">
-            <strong>{result.score}</strong> {riskWord(result.score)}
-          </span>
-          <Explain explainKey="score:strip" label="Result summary" />
-          <span className="numeric compact-strip-probs" title={stripProbs}>
-            {stripProbs}
-          </span>
-          <span className="mono numeric compact-strip-hash" title={result.codeHash}>
-            {truncateHash(result.codeHash)}
-          </span>
-        </div>
-      ) : null}
+      <div
+        className="compact-strip"
+        aria-label="Result summary"
+        data-testid="result-summary"
+        hidden={!stripVisible}
+      >
+        <span className="numeric">
+          <strong>{result.score}</strong> {riskWord(result.score)}
+        </span>
+        <Explain explainKey="score:strip" label="Result summary" />
+        <span className="numeric compact-strip-probs" title={stripProbs}>
+          {stripProbs}
+        </span>
+        <span className="mono numeric compact-strip-hash" title={result.codeHash}>
+          {truncateHash(result.codeHash)}
+        </span>
+      </div>
       <OverviewSections
         result={result}
         plugins={plugins}

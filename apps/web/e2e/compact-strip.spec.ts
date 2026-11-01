@@ -89,10 +89,10 @@ test("result_summary_strip_follows_ring_visibility", async ({ page }) => {
   const ring = page.locator('section[aria-label="Combined score"]');
   const gauges = page.locator("section.gauge");
 
-  // At the top: the ring is in view, so the strip stays unmounted
-  // (no layout space taken, nothing to overlap the gauges).
+  // At the top: the ring is in view, so the strip stays mounted but
+  // hidden (no layout space taken, nothing to overlap the gauges).
   await expect(ring).toBeInViewport();
-  await expect(strip).toHaveCount(0);
+  await expect(strip).toBeHidden();
   await expect(await gauges.count()).toBe(3);
 
   // Scroll until the combined score section is fully out of view: the strip
@@ -126,7 +126,7 @@ test("result_summary_strip_follows_ring_visibility", async ({ page }) => {
   // Scrolling back to the top: ring visible again, strip hidden again.
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(ring).toBeInViewport();
-  await expect(strip).toHaveCount(0);
+  await expect(strip).toBeHidden();
 });
 
 test("result_summary_probs_carry_full_text_as_title_on_narrow_phones", async ({ page }) => {

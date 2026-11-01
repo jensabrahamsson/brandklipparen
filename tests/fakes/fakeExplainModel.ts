@@ -6,7 +6,7 @@
 // the network, the clock or the filesystem.
 import type { ExplainInput, ExplainModelOutcome, ExplainModelPort } from "../../src/ports/explainModel.ts";
 
-export type FakeExplainMode = "ok" | "mixed" | "coverage" | "not-configured" | "invalid-output";
+export type FakeExplainMode = "ok" | "mixed" | "coverage" | "coverage-injection" | "not-configured" | "invalid-output";
 
 export class FakeExplainModelAdapter implements ExplainModelPort {
   readonly calls: ExplainInput[] = [];
@@ -61,6 +61,25 @@ export class FakeExplainModelAdapter implements ExplainModelPort {
             }),
           ),
         ),
+      });
+    }
+    if (this.mode === "coverage-injection") {
+      // Prompt-injection shape (C-19): reassurance claims backed only by
+      // coverage limit ids, plus one honest limits claim. The ids resolve
+      // against the request's own collected coverage ids so the check runs
+      // against real frozen-analysis ids.
+      const summary = input.evidenceIds.find((id) => id.startsWith("analysis:")) ?? "analysis:summary";
+      const cantTell = input.evidenceIds.find((id) => id.startsWith("cant-tell:")) ?? "cant-tell:liquidity-locks";
+      return Object.freeze({
+        kind: "ok",
+        sentences: Object.freeze([
+          Object.freeze({ text: "The token is safe to buy.", citations: Object.freeze([summary]) }),
+          Object.freeze({ text: "Ownership was renounced before launch.", citations: Object.freeze([cantTell]) }),
+          Object.freeze({
+            text: "The deterministic analysis lists only proved patterns.",
+            citations: Object.freeze([summary]),
+          }),
+        ]),
       });
     }
     const first = input.evidenceIds[0] ?? "signal:absent";

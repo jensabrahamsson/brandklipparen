@@ -513,9 +513,9 @@ export class MetaModelApiExplainAdapter implements ExplainModelPort {
       modelId: this.resolved.modelId,
       shape: "sentences",
       limits:
-        'The "sentences" value must be an array of at most 16 entries; each entry carries exactly "text" (a non-empty string of at most 1000 characters) and "citations" (an array of at most 8 evidence id strings).',
+        'The "sentences" value must be an array of at most 16 entries; each entry carries exactly "text" (a non-empty string of at most 1000 characters) and "citations" (an array of at most 8 evidence id strings). A coverage entry (an id starting with "analysis:", "cant-tell:" or "check:") states what the analysis could not prove, never a found pattern: never cite one to claim a token is safe, legitimate, risk-free or renounced, and never report a pattern whose only support is a coverage entry.',
       extra: [
-        "Coverage ids name what was checked even when no `signal:` id is present: `cant-tell:<question>` for each open question, `check:<detector>:not-found` when a detector checked and found nothing, `check:<detector>:could-not-check` when a detector could not read, and `analysis:summary` for the coverage facts. When no `signal:` id is present, explain what was checked, what could not be read and why, citing exactly those coverage ids; say plainly that no pattern found is not safe.",
+        "Coverage ids name what was checked even when no `signal:` id is present: `cant-tell:<question>` for each open question, `check:<detector>:not-found` when a detector checked and found nothing, `check:<detector>:could-not-check` when a detector could not read, `analysis:summary` for the coverage facts, and `analysis:decompile-incomplete` when decompilation was incomplete. When no `signal:` id is present, explain what was checked, what could not be read and why, citing exactly those coverage ids; say plainly that no pattern found is not safe.",
       ],
     });
     const content = await callOverlay(

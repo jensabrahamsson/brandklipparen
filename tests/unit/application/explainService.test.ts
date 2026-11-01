@@ -5,6 +5,7 @@ import {
   checkExplainCitations,
   createExplainService,
   isExplainCoverageId,
+  isReassuringSentence,
 } from "../../../src/application/explainService.ts";
 import { ExplainInput } from "../../../src/ports/explainModel.ts";
 import type { ExplainInput as ExplainInputType } from "../../../src/ports/explainModel.ts";
@@ -54,6 +55,43 @@ describe("explain service (S-094)", () => {
   test("s094_invalid_output_discards_whole_overlay", async () => {
     const service = createExplainService(new FakeExplainModelAdapter("invalid-output"));
     expect(await service.explain(testInput())).toEqual({ kind: "invalid-output" });
+  });
+
+  test("c19_reassurance_terms_without_signal_cite_drop", () => {
+    const collected = new Set(["signal:first", "analysis:summary", "cant-tell:liquidity-locks"]);
+    const checked = checkExplainCitations(
+      [
+        { text: "The token is safe to buy.", citations: ["analysis:summary"] },
+        { text: "The token looks legit.", citations: ["cant-tell:liquidity-locks"] },
+        { text: "There is no risk for holders.", citations: ["analysis:summary"] },
+        { text: "The fee is risk-free.", citations: ["cant-tell:liquidity-locks"] },
+        { text: "Ownership was renounced.", citations: ["analysis:summary"] },
+        { text: "The token is unsafe to buy.", citations: ["analysis:summary"] },
+      ],
+      collected,
+    );
+    expect(checked.narrative).toEqual(["The token is unsafe to buy."]);
+    expect(checked.droppedClaims).toBe(5);
+  });
+
+  test("c19_reassurance_terms_with_signal_cite_survive", () => {
+    const collected = new Set(["signal:first", "analysis:summary"]);
+    const checked = checkExplainCitations(
+      [
+        { text: "Ownership was renounced.", citations: ["signal:first"] },
+        { text: "The token is safe to buy.", citations: ["signal:first", "analysis:summary"] },
+      ],
+      collected,
+    );
+    expect(checked.narrative).toEqual(["Ownership was renounced.", "The token is safe to buy."]);
+    expect(checked.droppedClaims).toBe(0);
+  });
+
+  test("c19_reassurance_matcher_is_word_bounded_and_case_insensitive", () => {
+    expect(isReassuringSentence("SAFE to buy")).toBe(true);
+    expect(isReassuringSentence("The token is unsafe.")).toBe(false);
+    expect(isReassuringSentence("No-Risk here.")).toBe(true);
+    expect(isReassuringSentence("The analysis reports a capability.")).toBe(false);
   });
 
   test("s094_mixed_output_counts_drops", async () => {

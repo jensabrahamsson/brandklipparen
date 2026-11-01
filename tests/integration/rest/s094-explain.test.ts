@@ -73,6 +73,13 @@ const TEST_CATALOGUE: CapabilityCatalogue = Object.freeze({
   "storage-write": Object.freeze({ risk: "bot-pump", direction: "raises", severity: "low" }),
 });
 
+// Synthetic minimal runtime with no calls, no storage writes and no
+// dispatcher: PUSH1 01, PUSH1 00, MSTORE, PUSH1 20, PUSH1 00, RETURN.
+// The deterministic pass proves nothing over it, so the envelope carries
+// zero signals and the explain input collects coverage limits only.
+const ZERO_SIGNAL_ADDRESS = "0x02030405060708090a0b0c0d0e0f101112131415";
+const ZERO_SIGNAL_BYTECODE = "0x600160005260206000f3";
+
 const TEST_ADDRESS = "0x0102030405060708090a0b0c0d0e0f1011121314";
 // Honest dispatcher: PUSH2 destination points at the JUMPDEST body, so the
 // reachability walk attributes the SELFDESTRUCT to this selector.
@@ -110,6 +117,46 @@ function serverWithFake(mode: FakeExplainMode): { server: RestServer; fake: Fake
   const fake = new FakeExplainModelAdapter(mode);
   const built = testServer(createExplainService(fake));
   return { server: built.server, fake };
+}
+
+function serverWithCode(
+  address: string,
+  bytecode: string,
+  mode: FakeExplainMode,
+): { server: RestServer; fake: FakeExplainModelAdapter } {
+  const fake = new FakeExplainModelAdapter(mode);
+  const codes = new Map<string, string>([[mustOk(Address.parse(address)) as string, bytecode]]);
+  const rpcFake = new FakeRpcAdapter(codes, mustOk(BlockNumber.of(TEST_BLOCK)));
+  const services: AppServices = createAppServices(
+    {
+      rpc: rpcFake,
+      modelArtifacts: placeholderArtifact(),
+      clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+    },
+    mustDefaultDetectorSet(),
+  );
+  const server = createRestServer({
+    services,
+    apiKeys: [new SecretString(TEST_API_KEY)] as readonly SecretString[],
+    apiKeyPepper: new SecretString(TEST_PEPPER),
+    modelVersion: mustOk(ModelVersion.parse("0.1.0")),
+    indexVersion: mustOk(IndexVersion.parse("1.0.0")),
+    templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
+    catalogue: TEST_CATALOGUE,
+    detectors: mustDefaultDetectorSet(),
+    explainService: createExplainService(fake),
+  });
+  return { server, fake };
+}
+
+async function postExplainFor(server: RestServer, address: string): Promise<{ statusCode: number; body: unknown }> {
+  const response = await server.inject({
+    method: "POST",
+    url: "/v1/explain",
+    headers: { "x-api-key": TEST_API_KEY, "content-type": "application/json" },
+    payload: JSON.stringify({ address }),
+  });
+  return { statusCode: response.statusCode, body: JSON.parse(response.body) as unknown };
 }
 
 async function postExplain(server: RestServer): Promise<{ statusCode: number; body: unknown }> {
@@ -174,12 +221,61 @@ describe("AI explain plugin over REST (S-094)", () => {
       // findings, so the model's coverage answer survives the check.
       expect(fake.calls[0]?.evidenceIds).toContain("analysis:summary");
       expect(fake.calls[0]?.evidenceIds.some((id) => id.startsWith("cant-tell:"))).toBe(true);
+      const upstreamBody = posted.body as {
+        explain: { kind: string; narrative: string[]; droppedClaims: number };
+      };
+      expect(upstreamBody.explain.kind).toBe("ok");
+      expect(upstreamBody.explain.narrative.length).toBeGreaterThan(0);
+      expect(upstreamBody.explain.droppedClaims).toBe(0);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("c19_explain_zero_signal_path_collects_only_coverage", async () => {
+    const { server, fake } = serverWithCode(ZERO_SIGNAL_ADDRESS, ZERO_SIGNAL_BYTECODE, "ok");
+    try {
+      const posted = await postExplainFor(server, ZERO_SIGNAL_ADDRESS);
+      expect(posted.statusCode).toBe(200);
+      expect(fake.calls.length).toBe(1);
+      const sent = fake.calls[0];
+      if (sent === undefined) {
+        throw new Error("expected one explain call");
+      }
+      expect(sent.evidenceIds.some((id) => id.startsWith("signal:"))).toBe(false);
+      expect(sent.evidenceIds).toContain("analysis:summary");
+      expect(sent.evidenceIds).toContain("cant-tell:liquidity-locks");
+      expect((sent.meanings ?? []).some((meaning) => meaning.kind === "coverage")).toBe(true);
       const body = posted.body as {
         explain: { kind: string; narrative: string[]; droppedClaims: number };
       };
       expect(body.explain.kind).toBe("ok");
-      expect(body.explain.narrative.length).toBeGreaterThan(0);
+      expect(body.explain.narrative).toEqual(["The analysis reports a capability."]);
       expect(body.explain.droppedClaims).toBe(0);
+      const analyzed = await server.inject({
+        method: "GET",
+        url: `/v1/analyze?address=${ZERO_SIGNAL_ADDRESS}`,
+        headers: { "x-api-key": TEST_API_KEY },
+      });
+      expect(analyzed.statusCode).toBe(200);
+      expect((JSON.parse(analyzed.body) as { signals: unknown[] }).signals).toEqual([]);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("c19_explain_coverage_injection_reassurance_drops", async () => {
+    const { server, fake } = serverWithCode(ZERO_SIGNAL_ADDRESS, ZERO_SIGNAL_BYTECODE, "coverage-injection");
+    try {
+      const posted = await postExplainFor(server, ZERO_SIGNAL_ADDRESS);
+      expect(posted.statusCode).toBe(200);
+      expect(fake.calls.length).toBe(1);
+      const body = posted.body as {
+        explain: { kind: string; narrative: string[]; droppedClaims: number };
+      };
+      expect(body.explain.kind).toBe("ok");
+      expect(body.explain.narrative).toEqual(["The deterministic analysis lists only proved patterns."]);
+      expect(body.explain.droppedClaims).toBe(2);
     } finally {
       await server.close();
     }

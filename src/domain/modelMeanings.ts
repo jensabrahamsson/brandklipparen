@@ -48,6 +48,13 @@ export const MAX_MEANING_SELECTORS = 8;
 // reconstructed functions, not risk patterns, so they trim first.
 const DECOMPILER_PLUGIN_ID = "dev.brandklipparen.decompiler";
 
+// Coverage entries state what the analysis could NOT prove (limits of the
+// deterministic pass, open can't-tell questions, an incomplete
+// decompilation), never a found pattern. They sort after every finding,
+// including decompiler display records, so trimming drops the limits
+// first and never the proved patterns.
+const COVERAGE_KIND = "coverage";
+
 function labelSelector(selector: string): MeaningSelector {
   return Object.freeze({ selector, name: tableSignatureFor(selector) });
 }
@@ -149,6 +156,9 @@ function severityRank(severity: string | null): number {
 }
 
 function kindRank(meaning: FindingMeaning): number {
+  if (meaning.kind === COVERAGE_KIND) {
+    return 5;
+  }
   if (meaning.kind === "finding") {
     return meaning.pluginId === DECOMPILER_PLUGIN_ID ? 4 : 3;
   }
@@ -161,10 +171,28 @@ function kindRank(meaning: FindingMeaning): number {
   return 2;
 }
 
+// Meaning for one coverage entry stating an analysis limit: what the
+// deterministic pass could not prove, never a found pattern. The text
+// must say absence of a finding is not proof of absence, so the entry
+// can never read as a clean bill of health. Coverage entries carry no
+// selectors and no severity or direction.
+export function meaningForCoverage(input: { readonly id: string; readonly meaning: string }): FindingMeaning {
+  return Object.freeze({
+    id: input.id,
+    pluginId: "analysis",
+    kind: COVERAGE_KIND,
+    severity: null,
+    direction: null,
+    meaning: input.meaning,
+    temporality: "unknown",
+    selectors: Object.freeze([]),
+  });
+}
+
 // Importance order for trimming (M-02e): signals before findings,
-// higher severity first, decompiler display records last. Stable, so
-// equal ranks keep their input order and trimming drops the least
-// important entries first.
+// higher severity first, decompiler display records next, coverage
+// limits last. Stable, so equal ranks keep their input order and
+// trimming drops the least important entries first.
 export function orderMeaningsForModel(meanings: readonly FindingMeaning[]): readonly FindingMeaning[] {
   const copy = meanings.slice();
   copy.sort((left, right) => {

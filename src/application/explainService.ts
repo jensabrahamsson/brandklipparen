@@ -12,6 +12,7 @@
 // frozen envelope and returns a separate overlay.
 import type { ExplainInput, ExplainModelOutcome, ExplainModelPort, ExplainSentence } from "../ports/explainModel.ts";
 import type { CantTellQuestion } from "../domain/cantTell.ts";
+import { ANALYSIS_SUMMARY_COVERAGE_ID, DECOMPILE_INCOMPLETE_COVERAGE_ID } from "./modelMeanings.ts";
 import type { OverlayBudget } from "./overlayBudget.ts";
 
 
@@ -22,6 +23,26 @@ export const MAX_EXPLAIN_CITATIONS_PER_SENTENCE = 8;
 // overlay cache key (a later story) carries code hash, this version,
 // provider and model id.
 export const EXPLAIN_PROMPT_VERSION = "explain-3";
+
+// Reassurance terms (C-19): words that read as a clean bill of health.
+// A sentence carrying one survives only when it cites a `signal:`
+// evidence id, so "safe" can never be backed by a coverage limit entry
+// (`analysis:*`, `cant-tell:*`) alone. Word boundaries keep "unsafe"
+// and similar non-reassuring words out.
+const REASSURANCE_PATTERN = /\b(safe|safely|safety|legit|legitimate|renounced|no[ -]risk|risk[ -]free)\b/i;
+
+export function isReassuringSentence(text: string): boolean {
+  return REASSURANCE_PATTERN.test(text);
+}
+
+function citesSignal(citations: readonly string[]): boolean {
+  for (const citation of citations) {
+    if (citation.startsWith("signal:")) {
+      return true;
+    }
+  }
+  return false;
+}
 
 // Meta-statements about grounding or evidence carry no holder impact:
 // drop any sentence talking about being grounded, frozen evidence or
@@ -44,7 +65,8 @@ export type CheckedExplanation = {
 };
 
 // Coverage citations the checker accepts beside collected `signal:`
-// ids: exactly `analysis:summary`, `cant-tell:<known question>` and
+// ids: exactly `analysis:summary`, `analysis:decompile-incomplete`,
+// `cant-tell:<known question>` and
 // `check:<detector>:not-found|could-not-check`. Anything else keeps
 // the old rule: it must be a collected `signal:` id.
 const CANT_TELL_QUESTIONS: ReadonlySet<string> = Object.freeze(
@@ -59,7 +81,7 @@ const CANT_TELL_QUESTIONS: ReadonlySet<string> = Object.freeze(
 );
 
 export function isExplainCoverageId(id: string): boolean {
-  if (id === "analysis:summary") {
+  if (id === ANALYSIS_SUMMARY_COVERAGE_ID || id === DECOMPILE_INCOMPLETE_COVERAGE_ID) {
     return true;
   }
   if (id.startsWith("cant-tell:")) {
@@ -80,7 +102,9 @@ export function isExplainCoverageId(id: string): boolean {
 // Pure citation check over collected evidence ids: keep a sentence only
 // when it is not a meta-statement, at least one citation is present and
 // every citation both names a collected id and carries a known shape (a
-// `signal:` id or exactly one of the coverage ids above). Uncited
+// `signal:` id or exactly one of the coverage ids above). Reassurance
+// sentences (safe, legitimate, risk-free, renounced) survive only with a
+// `signal:` citation, never on a coverage limit entry alone. Uncited
 // factual sentences drop like uncollected citations, unknown shapes and
 // meta-statements do.
 export function checkExplainCitations(
@@ -95,6 +119,10 @@ export function checkExplainCitations(
       continue;
     }
     if (sentence.citations.length === 0) {
+      droppedClaims += 1;
+      continue;
+    }
+    if (isReassuringSentence(sentence.text) && !citesSignal(sentence.citations)) {
       droppedClaims += 1;
       continue;
     }

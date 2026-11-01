@@ -10,11 +10,15 @@ import {
   frozenFactsOfEnvelope,
 } from "../../../src/application/investigationService.ts";
 import {
+  ANALYSIS_SUMMARY_COVERAGE_ID,
+  DECOMPILE_INCOMPLETE_COVERAGE_ID,
   envelopeMeanings,
   explainCoverageIds,
   explainCoverageMeanings,
+  explainMeanings,
 } from "../../../src/application/modelMeanings.ts";
 import { capMeaningsForModel } from "../../../src/domain/modelMeanings.ts";
+import { standardCantTell } from "../../../src/domain/cantTell.ts";
 import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 import { Evidence } from "../../../src/domain/evidence.ts";
 import type { Evidence as EvidenceType } from "../../../src/domain/evidence.ts";
@@ -160,6 +164,106 @@ describe("m02e envelope meanings for model input", () => {
     expect(facts.evidenceIds).toContain("dev.brandklipparen.blacklist:blacklist");
     expect(facts.evidenceIds.length).toBe(1 + 1 + 64);
     expect(facts.meanings?.length).toBeLessThanOrEqual(MAX_MODEL_MEANINGS);
+  });
+
+  test("c19_coverage_ids_always_collect_summary_and_cant_tell", () => {
+    const value = code();
+    const envelope = envelopeWith([blacklistSignal(value)], {
+      "dev.brandklipparen.blacklist": [blacklistFinding()],
+      "dev.brandklipparen.decompiler": [decompilerFinding(0)],
+    });
+    const withCantTell = { ...envelope, cantTell: standardCantTell() };
+    const ids = explainCoverageIds(withCantTell);
+    expect(ids[0]).toBe(ANALYSIS_SUMMARY_COVERAGE_ID);
+    expect(ids).toContain("cant-tell:liquidity-locks");
+    expect(ids).toContain("cant-tell:owner-shares");
+    expect(ids).toContain("cant-tell:wallet-clusters");
+    expect(ids).toContain("cant-tell:team-identity");
+    expect(ids).toContain("cant-tell:code-intent");
+    expect(ids).toContain("cant-tell:external-contracts");
+    expect(ids).not.toContain(DECOMPILE_INCOMPLETE_COVERAGE_ID);
+  });
+
+  test("c19_coverage_decompile_flag_follows_plugin_outcome", () => {
+    const value = code();
+    const envelope = envelopeWith([blacklistSignal(value)], {
+      "dev.brandklipparen.blacklist": [blacklistFinding()],
+    });
+    const withCantTell = { ...envelope, cantTell: standardCantTell() };
+    expect(explainCoverageIds(withCantTell)).toContain(DECOMPILE_INCOMPLETE_COVERAGE_ID);
+    const failing = {
+      ...withCantTell,
+      pluginResults: [
+        ...withCantTell.pluginResults,
+        {
+          pluginId: "dev.brandklipparen.decompiler",
+          pluginVersion: "1.0.0",
+          apiVersion: "1.0",
+          outcome: "threw" as const,
+          findings: [],
+        },
+      ] as AssessmentEnvelope["pluginResults"],
+    };
+    expect(explainCoverageIds(failing)).toContain(DECOMPILE_INCOMPLETE_COVERAGE_ID);
+    expect(explainCoverageMeanings(failing).find((meaning) => meaning.id === DECOMPILE_INCOMPLETE_COVERAGE_ID)?.meaning).toContain(
+      "threw",
+    );
+    const recovered = {
+      ...withCantTell,
+      pluginResults: [
+        ...withCantTell.pluginResults,
+        {
+          pluginId: "dev.brandklipparen.decompiler",
+          pluginVersion: "1.0.0",
+          apiVersion: "1.0",
+          outcome: "ok" as const,
+          findings: [],
+        },
+      ] as AssessmentEnvelope["pluginResults"],
+    };
+    expect(explainCoverageIds(recovered)).not.toContain(DECOMPILE_INCOMPLETE_COVERAGE_ID);
+  });
+
+  test("c19_coverage_meanings_state_limits_not_safety", () => {
+    const value = code();
+    const envelope = envelopeWith([blacklistSignal(value)], {
+      "dev.brandklipparen.blacklist": [blacklistFinding()],
+      "dev.brandklipparen.decompiler": [decompilerFinding(0), decompilerFinding(1)],
+    });
+    const withCantTell = { ...envelope, cantTell: standardCantTell() };
+    const meanings = explainCoverageMeanings(withCantTell);
+    const summary = meanings.find((meaning) => meaning.id === ANALYSIS_SUMMARY_COVERAGE_ID);
+    expect(summary?.kind).toBe("coverage");
+    expect(summary?.meaning).toContain("1 of 2 decompiled functions");
+    expect(summary?.meaning).toContain("not proof that the pattern is absent");
+    for (const meaning of meanings) {
+      expect(meaning.meaning).toContain("not proof");
+    }
+    const open = meanings.find((meaning) => meaning.id === "cant-tell:liquidity-locks");
+    expect(open?.meaning).toContain("cannot settle");
+  });
+
+  test("c19_explain_meanings_rank_coverage_after_findings_and_trim_first", () => {
+    const value = code();
+    const decompiler = Array.from({ length: 20 }, (_, index) => decompilerFinding(index));
+    const envelope = envelopeWith([blacklistSignal(value)], {
+      "dev.brandklipparen.blacklist": [blacklistFinding()],
+      "dev.brandklipparen.decompiler": decompiler,
+    });
+    const withCantTell = { ...envelope, cantTell: standardCantTell() };
+    const small = explainMeanings(withCantTell);
+    const lastCoverage = small.map((meaning) => meaning.id).findIndex((id) => id === ANALYSIS_SUMMARY_COVERAGE_ID);
+    expect(lastCoverage).toBeGreaterThan(-1);
+    expect(small.slice(0, lastCoverage).every((meaning) => meaning.kind !== "coverage")).toBe(true);
+    const crowded = Array.from({ length: 40 }, (_, index) => decompilerFinding(100 + index));
+    const full = envelopeWith([blacklistSignal(value)], {
+      "dev.brandklipparen.blacklist": [blacklistFinding()],
+      "dev.brandklipparen.decompiler": crowded,
+    });
+    const capped = explainMeanings({ ...full, cantTell: standardCantTell() });
+    expect(capped.length).toBeLessThanOrEqual(MAX_MODEL_MEANINGS);
+    expect(capped.some((meaning) => meaning.kind === "coverage")).toBe(false);
+    expect(explainCoverageIds({ ...full, cantTell: standardCantTell() }).length).toBeGreaterThan(0);
   });
 
   test("m02e_catalogue_tool_descriptions_carry_finding_titles", () => {

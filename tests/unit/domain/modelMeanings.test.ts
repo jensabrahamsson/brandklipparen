@@ -15,6 +15,7 @@ import {
   MAX_MODEL_MEANINGS,
   capMeaningsForModel,
   claimBySignalId,
+  meaningForCoverage,
   meaningForEvidenceFinding,
   meaningForSignal,
   orderMeaningsForModel,
@@ -160,6 +161,33 @@ describe("m02e finding and signal meanings", () => {
       "dev.brandklipparen.blacklist:blacklist",
       "dev.brandklipparen.decompiler:0x70a08231",
     ]);
+  });
+
+  test("c19_coverage_ranks_after_every_finding_and_trims_first", () => {
+    const value = code();
+    const observed = unknownObserved();
+    const signal = meaningForSignal(blacklistSignal(value), null, observed);
+    const finding = meaningForEvidenceFinding({
+      id: "dev.brandklipparen.blacklist:blacklist",
+      pluginId: "dev.brandklipparen.blacklist",
+      title: "Privileged caller can set a mapping entry that gates the transfer path",
+      selectors: ["0xa9059cbb"],
+    });
+    const decompiler = meaningForEvidenceFinding({
+      id: "dev.brandklipparen.decompiler:0x70a08231",
+      pluginId: "dev.brandklipparen.decompiler",
+      title: "Decompiled function balanceOf (0x70a08231)",
+      selectors: ["0x70a08231"],
+    });
+    const coverage = meaningForCoverage({
+      id: "analysis:summary",
+      meaning: "Analysis limits: an absent finding means no proof was found, not proof that the pattern is absent.",
+    });
+    const ordered = orderMeaningsForModel([coverage, decompiler, finding, signal]);
+    expect(ordered.map((meaning) => meaning.id)).toEqual([signal.id, finding.id, decompiler.id, coverage.id]);
+    expect(coverage.kind).toBe("coverage");
+    expect(coverage.severity).toBeNull();
+    expect(coverage.selectors).toEqual([]);
   });
 
   test("m02e_caps_trim_least_important_first_and_bound_field_sizes", () => {

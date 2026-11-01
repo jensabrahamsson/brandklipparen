@@ -32,12 +32,7 @@ import { EXPLAIN_PROMPT_VERSION, serializeExplainOutcome } from "../../applicati
 import type { ExplainService } from "../../application/explainService.ts";
 import { EXPLAIN_CODE_PROMPT_VERSION, serializeExplainCodeOutcome } from "../../application/explainCodeService.ts";
 import type { ExplainCodeService } from "../../application/explainCodeService.ts";
-import {
-  envelopeMeanings,
-  explainCoverageIds,
-  explainCoverageMeanings,
-} from "../../application/modelMeanings.ts";
-import { capMeaningsForModel } from "../../domain/modelMeanings.ts";
+import { envelopeMeanings, explainCoverageIds, explainMeanings } from "../../application/modelMeanings.ts";
 import { ExplainCodeInput } from "../../ports/explainCodeModel.ts";
 import { ExplainInput } from "../../ports/explainModel.ts";
 import { resolveAnalysisCode } from "../../application/resolveAnalysisCode.ts";
@@ -1618,12 +1613,18 @@ export function createRestServer(options: RestServerOptions): RestServer {
     // input widens.
     const input = ExplainInput.create({
       codeHash: envelope.codeHash as string,
-      evidenceIds: [
-        ...envelope.signals.map((signal) => `signal:${signal.id as string}`),
-        ...explainCoverageIds(envelope),
-      ],
+      // Coverage ids travel beside the signal ids so the model can cite
+      // what WAS checked even when nothing was found (zero scored
+      // findings still collect cant-tell, per-detector and summary ids).
+      // Proved signals cite by `signal:` id; coverage limit entries
+      // (`analysis:*`, `cant-tell:*`, `check:*`) travel beside them so
+      // the model can cite what the analysis could not prove. Meanings
+      // rank the limits after every finding (capped like the main
+      // combination), and the citation check drops reassurance claims
+      // that cite only coverage (C-19).
+      evidenceIds: [...envelope.signals.map((signal) => `signal:${signal.id as string}`), ...explainCoverageIds(envelope)],
       promptVersion: EXPLAIN_PROMPT_VERSION,
-      meanings: capMeaningsForModel([...envelopeMeanings(envelope), ...explainCoverageMeanings(envelope)]),
+      meanings: explainMeanings(envelope),
     });
     if (input === null) {
       return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(

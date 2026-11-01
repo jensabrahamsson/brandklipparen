@@ -2810,6 +2810,13 @@ pre.code {
   box-shadow: var(--elev-3);
 }
 
+/* The strip stays mounted with hidden while the ring is in view (stable
+   control identity across scroll toggles); the class display beats the
+   UA [hidden] rule, so hide it explicitly. Takes no space when hidden. */
+.compact-strip[hidden] {
+  display: none;
+}
+
 .compact-strip-hash {
   font-size: 12px;
   color: var(--dim);
