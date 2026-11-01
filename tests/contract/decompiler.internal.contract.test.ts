@@ -1,11 +1,12 @@
 // Contract suite against the internal decompiler adapter (K-008,
-// K-037, K-501, K-521). The adapter runs the deterministic in-process
-// pipeline, so every run is local with no child process: the shared
-// suite proves the success and cap branches, and the tests below prove
-// the structural branch (unresolved control flow yields invalid-output),
-// determinism and the arbitrary-input property (hostile input ends in a
-// typed error, never an exception). All fixtures are synthetic:
-// hand-assembled dispatcher bytecode and the frozen in-repo corpus.
+// K-037, K-501, K-521, C-16r). The adapter runs the deterministic
+// in-process pipeline, so every run is local with no child process: the
+// shared suite proves the success and cap branches, and the tests below
+// prove the structural branch (unresolved control flow resolves ok with
+// the labelled regions kept), determinism and the arbitrary-input
+// property (hostile input ends in a typed outcome, never an exception).
+// All fixtures are synthetic: hand-assembled dispatcher bytecode and the
+// frozen in-repo corpus.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,22 +61,26 @@ runDecompilerPortContract("internal decompiler adapter", makeAdapter, {
 });
 
 describe("internal decompiler adapter limits (K-008, K-521)", () => {
-  test("unresolved control flow yields invalid-output without mutating the input", async () => {
-    // Frozen corpus fixture with one recorded unresolved jump: the
-    // engine labels the region instead of reading it, so the adapter
-    // turns the output away with invalid-output.
+  test("unresolved control flow resolves ok with the labelled region kept", async () => {
+    // Frozen corpus fixture with one recorded unresolved jump (C-16r):
+    // unresolved jumps are normal compiler output, so the adapter
+    // resolves ok and keeps the rendered functions instead of turning
+    // the output away with invalid-output.
     const hex = readFileSync(join(corpusDir, "edge-invalid.hex"), "utf8").trim();
     const bytecode = mustOk(Bytecode.parse(hex));
     const codeHash = mustOk(CodeHash.of(bytecode));
     const before = Array.from(bytecode);
     const result = await new InternalDecompilerAdapter().decompile(bytecode, codeHash, fixedContext());
     expect(Array.from(bytecode)).toEqual(before);
-    expect(result.ok).toBe(false);
-    if (result.ok) {
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
       return;
     }
-    expect(result.error.kind).toBe("invalid-output");
-    expect(result.error.message.length).toBeGreaterThan(0);
+    expect(result.value.codeHash as string).toBe(codeHash as string);
+    expect(result.value.functions.length).toBeGreaterThan(0);
+    for (const fn of result.value.functions) {
+      expect(fn.snippet.text).toContain(`/* selector ${fn.selector as string} */`);
+    }
   });
 
   test("repeated runs give byte-identical snippets", async () => {

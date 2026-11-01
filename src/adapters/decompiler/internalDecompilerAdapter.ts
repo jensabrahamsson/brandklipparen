@@ -1,17 +1,18 @@
 // Internal decompiler adapter behind DecompilerPort (K-008, K-037,
-// K-501, K-521). The only DecompilerPort adapter in the product: it runs
-// the deterministic in-process ERC-20 pipeline (`decompilePreferV2`,
-// decompiler v2 with the v1 evmSsa fallback) synchronously on the port
-// input, with no child process, no binary path and no network. The
-// engine is total: hostile input yields partial output, never an
-// exception. Port-level byte caps bound input and output per A-17;
-// anything the engine itself flags as structurally incomplete
-// (unresolved jumps, dynamic control flow left labelled) is reported
-// as `invalid-output`, so the hard-to-analyze signal now comes solely
-// from the internal engine's own limits, never from an external tool
-// failing. The `timeout` and `process-error` branches stay typed in
-// the error union for port stability (fakes steer them in tests) but
-// are unreachable in-process: nothing here reads a clock or spawns.
+// K-501, K-521, C-16r). The only DecompilerPort adapter in the product:
+// it runs the deterministic in-process ERC-20 pipeline
+// (`decompilePreferV2`, decompiler v2 with the v1 evmSsa fallback)
+// synchronously on the port input, with no child process, no binary path
+// and no network. The engine is total: hostile input yields partial
+// output, never an exception. Port-level byte caps bound input and output
+// per A-17. Unresolved jumps and labelled dynamic control flow are normal
+// solc output (every internal-function return in the v1 CFG), so they
+// stay in the rendered text and the call resolves `ok`: only a genuine
+// inability to analyse (an engine throw, an invalid selector, or a
+// snippet the core turns away) reports `invalid-output`. The `timeout`
+// and `process-error` branches stay typed in the error union for port
+// stability (fakes steer them in tests) but are unreachable in-process:
+// nothing here reads a clock or spawns.
 import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import { CodeSnippet } from "../../domain/evidence.ts";
@@ -111,22 +112,14 @@ export class InternalDecompilerAdapter implements DecompilerPort {
         }),
       );
     }
-    // Structurally incomplete output (K-521): the engine resolved only
-    // what stack-value analysis proves and recorded every other dynamic
-    // target as an unresolved jump, so a nonzero count means control
-    // flow the pipeline labelled instead of read. The deepening reports
-    // that as a failed decompilation rather than quoting a partial
-    // map beside unattributed evidence.
-    const labelledFlow = decompiled.functions.some((fn) => fn.cause === "unexpected-control-flow");
-    if (decompiled.unresolvedJumps.length > 0 || labelledFlow) {
-      const count = Math.max(decompiled.unresolvedJumps.length, labelledFlow ? 1 : 0);
-      return Promise.resolve(
-        err({
-          kind: "invalid-output",
-          message: `decompiler output leaves ${count} unresolved control-flow region(s), labelled not read`,
-        }),
-      );
-    }
+    // Unresolved jumps and labelled regions (C-16r): the engine resolved
+    // only what stack-value analysis proves and recorded every other
+    // dynamic target as an unresolved jump, which is normal solc output
+    // rather than a failed decompilation. The rendered functions keep
+    // their labels in the snippet text and the call resolves `ok`, so
+    // hard-to-analyze fires only on a genuine inability to analyse
+    // below (an engine throw, an invalid selector, or a rejected
+    // snippet), never merely because some jumps are unresolved.
     const functions: DecompiledFunction[] = [];
     for (let index = 0; index < decompiled.functions.length; index += 1) {
       const fn = decompiled.functions[index];

@@ -1,22 +1,28 @@
 // Deepening through the internal decompiler adapter (K-008, K-501,
-// K-521). A successful run links snippets to signal evidence; a run
-// over the input cap yields the hard-to-analyze finding as a display
-// record with the fast path's response standing; unresolved control
-// flow yields the hard-to-analyze signal from the engine's own limits.
+// K-521, C-16r). A successful run links snippets to signal evidence; a
+// run over the input cap yields the hard-to-analyze finding as a display
+// record with the fast path's response standing; unresolved control flow
+// is normal compiler output, so it resolves ok with the snippets kept
+// and raises no hard-to-analyze signal. Only a genuine inability to
+// analyse (steered by fakes in tests) still raises the scored signal.
 // Pathological input stays bounded in-process with caps, so parallel
 // analyses continue. All fixtures are synthetic and hand-assembled.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { InternalDecompilerAdapter } from "../../src/adapters/decompiler/internalDecompilerAdapter.ts";
+import { InMemoryCacheAdapter } from "../../src/adapters/cache/inMemoryCache.ts";
 import { createAppServices } from "../../src/application/analyzeToken.ts";
 import type { Result } from "../../src/domain/result.ts";
+import { decompileContractV2 } from "../../src/domain/decompileV2.ts";
 import { parseModelArtifact } from "../../src/domain/risk.ts";
 import {
   Address,
   ArtifactChecksum,
   BlockNumber,
+  Bytecode,
+  CodeHash,
   IndexVersion,
   ModelVersion,
   RequestId,
@@ -30,6 +36,7 @@ import { FakeDecompilerAdapter } from "../fakes/fakeDecompiler.ts";
 import { FakeModelArtifactAdapter } from "../fakes/fakeModelArtifact.ts";
 import { FakeRpcAdapter } from "../fakes/fakeRpc.ts";
 import { mustDefaultDetectorSet } from "../helpers/detectorSets.ts";
+import { Asm } from "../helpers/evmAsm.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "..", "..");
@@ -162,31 +169,174 @@ describe("internal decompiler deepening in the application service (K-008, K-501
     expect(Number.isInteger(envelope.score as number)).toBe(true);
   });
 
-  test("k008_unresolved_control_flow_yields_hard_to_analyze_signal", async () => {
-    // Frozen corpus fixture with one recorded unresolved jump: the
-    // engine labels the region instead of reading it, so the adapter
-    // turns the output away and the analysis carries the deterministic
-    // hard-to-analyze signal with the fast path's response standing.
+  test("c16_unresolved_control_flow_is_not_hard_to_analyze", async () => {
+    // Frozen corpus fixture with one recorded unresolved jump (C-16r):
+    // unresolved jumps are normal compiler output, so the adapter
+    // resolves ok, the analysis carries no hard-to-analyze signal, and
+    // the rendered functions are present as snippets.
     const bytecode = readFileSync(join(corpusDir, "edge-invalid.hex"), "utf8").trim();
     const target = mustOk(Address.parse(TARGET));
     const block = mustOk(BlockNumber.of(24000000));
+    const adapter = new InternalDecompilerAdapter();
+    const parsed = mustOk(Bytecode.parse(bytecode));
+    const direct = await adapter.decompile(
+      parsed,
+      mustOk(CodeHash.of(parsed)),
+      {
+        requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174000")),
+        deadline: mustOk(Timestamp.of(4102444800000)),
+        block: mustOk(BlockNumber.of(24000000)),
+      },
+    );
+    expect(direct.ok).toBe(true);
+    if (!direct.ok) {
+      throw new Error("expected the internal decompiler to resolve ok on unresolved control flow");
+    }
+    expect(direct.value.functions.length).toBeGreaterThan(0);
+    for (const fn of direct.value.functions) {
+      expect(fn.snippet.text).toContain(`/* selector ${fn.selector as string} */`);
+    }
     const services = createAppServices({
       rpc: new FakeRpcAdapter(new Map([[target as string, bytecode]]), block),
       modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
       clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
-      decompiler: new InternalDecompilerAdapter(),
+      decompiler: adapter,
     },
     mustDefaultDetectorSet());
     const analysed = await services.analyzeToken(inputOf());
     expect(analysed.ok).toBe(true);
     if (!analysed.ok || analysed.value.kind !== "assessed") {
-      throw new Error("expected an assessed envelope after an unresolved-flow decompilation failure");
+      throw new Error("expected an assessed envelope after an unresolved-flow decompilation");
+    }
+    const envelope = analysed.value.envelope;
+    expect(hardToAnalyzeSignals(envelope.signals)).toEqual([]);
+    expect(envelope.probabilities["rug-pull"] as number).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(envelope.score as number)).toBe(true);
+  });
+
+  test("c16_solc_shaped_internal_returns_match_no_decompiler", async () => {
+    // Solc-shaped synthetic contract with a shared internal helper
+    // (rebuilt from the reachV2 shared-return shape with Asm): v1 leaves
+    // the helper return unresolved, which must not raise
+    // hard-to-analyze, so analysing with the internal decompiler gives
+    // the identical score and probabilities as analysing without one.
+    const asm = new Asm();
+    asm.op(0x80).push4("a9059cbb").op(0x14);
+    asm.pushLabel2("transferEntry").op(0x57);
+    asm.op(0x80).push4("23b872dd").op(0x14);
+    asm.pushLabel2("transferFromEntry").op(0x57);
+    asm.label("fallback");
+    asm.op(0x5b).push1(0x00).op(0x80, 0xfd);
+    asm.label("transferEntry").op(0x5b);
+    asm.pushLabel2("ret1");
+    asm.pushLabel2("shared");
+    asm.op(0x56);
+    asm.label("transferFromEntry").op(0x5b);
+    asm.pushLabel2("ret2");
+    asm.pushLabel2("shared");
+    asm.op(0x56);
+    asm.label("shared");
+    asm.op(0x5b);
+    asm.push1(0x01).push1(0x02).op(0x01);
+    asm.op(0x56);
+    asm.op(0xfe);
+    asm.label("ret1").op(0x5b);
+    asm.push1(0x01).push1(0x00);
+    asm.op(0x55, 0x00);
+    asm.label("ret2").op(0x5b);
+    asm.push1(0x02).push1(0x00);
+    asm.op(0x55, 0x00);
+    const hex = asm.build();
+    // The fixture really carries an unresolved v1 jump: without that
+    // the test would prove nothing about the C-16r rule.
+    expect(decompileContractV2(mustOk(Bytecode.parse(hex))).unresolvedJumps.length).toBeGreaterThan(0);
+    const target = mustOk(Address.parse(TARGET));
+    const block = mustOk(BlockNumber.of(24000000));
+    const portsWith = {
+      rpc: new FakeRpcAdapter(new Map([[target as string, hex]]), block),
+      modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
+      clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+      decompiler: new InternalDecompilerAdapter(),
+    };
+    const portsWithout = {
+      rpc: new FakeRpcAdapter(new Map([[target as string, hex]]), block),
+      modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
+      clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+    };
+    const [withDecompiler, withoutDecompiler] = await Promise.all([
+      createAppServices(portsWith, mustDefaultDetectorSet()).analyzeToken(inputOf()),
+      createAppServices(portsWithout, mustDefaultDetectorSet()).analyzeToken(inputOf()),
+    ]);
+    expect(withDecompiler.ok).toBe(true);
+    expect(withoutDecompiler.ok).toBe(true);
+    if (
+      !withDecompiler.ok || withDecompiler.value.kind !== "assessed" ||
+      !withoutDecompiler.ok || withoutDecompiler.value.kind !== "assessed"
+    ) {
+      throw new Error("expected assessed envelopes with and without the internal decompiler");
+    }
+    expect(hardToAnalyzeSignals(withDecompiler.value.envelope.signals)).toEqual([]);
+    expect(withDecompiler.value.envelope.score).toBe(withoutDecompiler.value.envelope.score);
+    expect(withDecompiler.value.envelope.probabilities).toEqual(
+      withoutDecompiler.value.envelope.probabilities,
+    );
+  });
+
+  test("c16_oversize_input_is_transient", async () => {
+    // Bytecode over the adapter input cap (C-16r): the resource-limit
+    // cause stays transient, so the analysis carries no scored signal
+    // and the run stores nothing in the shared cache.
+    const target = mustOk(Address.parse(TARGET));
+    const block = mustOk(BlockNumber.of(24000000));
+    const cache = new InMemoryCacheAdapter();
+    const putSpy = vi.spyOn(cache, "put");
+    const services = createAppServices({
+      rpc: new FakeRpcAdapter(new Map([[target as string, DISPATCHER_BYTECODE]]), block),
+      modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
+      clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+      decompiler: new InternalDecompilerAdapter({ maxBytesIn: 8 }),
+      cache,
+    },
+    mustDefaultDetectorSet());
+    const analysed = await services.analyzeToken(inputOf());
+    expect(analysed.ok).toBe(true);
+    if (!analysed.ok || analysed.value.kind !== "assessed") {
+      throw new Error("expected an assessed envelope after an over-cap decompilation");
+    }
+    const envelope = analysed.value.envelope;
+    expect(hardToAnalyzeSignals(envelope.signals)).toEqual([]);
+    const hardEntry = envelope.pluginResults.find(
+      (entry) => entry.pluginId === "dev.brandklipparen.hard-to-analyze",
+    );
+    expect(hardEntry?.outcome).toBe("ok");
+    expect(
+      hardEntry?.findings.map((finding) => (finding.payload as { cause?: unknown }).cause),
+    ).toEqual(["resource-limit"]);
+    expect(putSpy).not.toHaveBeenCalled();
+  });
+
+  test("c16_genuine_decompiler_failure_still_raises_hard_to_analyze", async () => {
+    // A genuine inability to analyse (C-16r): an invalid-output failure
+    // from the decompiler still maps to the scored decompiler-error
+    // cause, so only hostile input reaches the hard-to-analyze signal.
+    const target = mustOk(Address.parse(TARGET));
+    const block = mustOk(BlockNumber.of(24000000));
+    const services = createAppServices({
+      rpc: new FakeRpcAdapter(new Map([[target as string, DISPATCHER_BYTECODE]]), block),
+      modelArtifacts: new FakeModelArtifactAdapter(placeholderLoadedArtifact()),
+      clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+      decompiler: new FakeDecompilerAdapter({ scenario: "invalid-output" }),
+    },
+    mustDefaultDetectorSet());
+    const analysed = await services.analyzeToken(inputOf());
+    expect(analysed.ok).toBe(true);
+    if (!analysed.ok || analysed.value.kind !== "assessed") {
+      throw new Error("expected an assessed envelope after a genuine decompilation failure");
     }
     const envelope = analysed.value.envelope;
     expect(
       hardToAnalyzeSignals(envelope.signals).map((signal) => signal.cause),
     ).toEqual(["decompiler-error"]);
-    expect(envelope.probabilities["rug-pull"] as number).toBeGreaterThanOrEqual(0);
     expect(Number.isInteger(envelope.score as number)).toBe(true);
   });
 

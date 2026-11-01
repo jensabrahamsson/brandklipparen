@@ -9,6 +9,7 @@ import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import type { CacheError, CachedAssessment } from "../../ports/cache.ts";
 import type { CacheKey as CacheKeyType } from "../../domain/types.ts";
+import { ANALYSIS_CACHE_VERSION } from "../../domain/types.ts";
 
 function corrupt(message: string): Result<never, CacheError> {
   return err({ kind: "entry-corrupt", message });
@@ -55,18 +56,19 @@ function isCodeHashText(value: unknown): value is string {
   return true;
 }
 
-// Splits a cache key into its code hash and model version parts. The key
-// shape is `${codeHash}:${modelVersion}` from CacheKey.of; neither part
-// carries a colon, so the first colon is the single separator.
+// Splits a cache key into its code hash, model version and engine
+// version parts. The key shape is `${codeHash}:${modelVersion}:${engine}`
+// from CacheKey.of; no part carries a colon, so exactly two separators
+// are expected. A two-part legacy key (or any other shape) is rejected,
+// so entries stored before engine versioning never serve (C-16r).
 function splitKey(key: CacheKeyType): { codeHash: string; version: string } | null {
   const text = key as string;
-  const at = text.indexOf(":");
-  if (at <= 0 || at === text.length - 1) {
+  const parts = text.split(":");
+  if (parts.length !== 3) {
     return null;
   }
-  const codeHash = text.slice(0, at);
-  const version = text.slice(at + 1);
-  if (!isCodeHashText(codeHash) || version.includes(":") || version.length === 0) {
+  const [codeHash, version, engine] = parts as unknown as readonly [string, string, string];
+  if (!isCodeHashText(codeHash) || version.length === 0 || engine !== ANALYSIS_CACHE_VERSION) {
     return null;
   }
   return { codeHash, version };

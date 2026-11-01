@@ -4,6 +4,7 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import * as fc from "fast-check";
 import type { Result } from "../../../src/domain/result.ts";
 import {
+  ANALYSIS_CACHE_VERSION,
   Address,
   ArtifactChecksum,
   Bytecode,
@@ -305,6 +306,18 @@ describe("k106_invalid_states_fail_construction_or_compilation", () => {
     // A new model version gives a new key; the same pair is stable.
     expect(mustOk(CacheKey.of(codeHash, v2))).not.toBe(key);
     expect(mustOk(CacheKey.of(codeHash, v1))).toBe(key);
+  });
+
+  test("c16 cache key carries the engine version, retiring legacy keys", () => {
+    // C-16r: the key binds the analysis engine version, so entries
+    // stored while every unresolved jump raised hard-to-analyze (the
+    // two-part legacy shape) can never collide with a fresh key.
+    const codeHash = mustOk(CodeHash.of(mustOk(Bytecode.parse("0x6001"))));
+    const version = mustOk(ModelVersion.parse("1.0.0"));
+    const key = mustOk(CacheKey.of(codeHash, version)) as string;
+    expect(key).toContain(ANALYSIS_CACHE_VERSION);
+    expect(key).not.toBe(`${codeHash as string}:${version as string}`);
+    expect(key).toBe(`${codeHash as string}:${version as string}:${ANALYSIS_CACHE_VERSION}`);
   });
 
   test("page size: positive integer within the page-size limit", () => {

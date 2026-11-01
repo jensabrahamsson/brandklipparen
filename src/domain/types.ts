@@ -572,11 +572,21 @@ export const CloneGroupId = {
   },
 };
 
-// Composed of code hash and model version, so a new model version gives a new key.
+// Engine version bound into every analysis cache key (C-16r, HEIM-0
+// follow-up). The two-part key `${codeHash}:${modelVersion}` predates
+// versioning and counts as version 1; entries stored under it were scored
+// while every unresolved jump raised hard-to-analyze, so they must never
+// serve again. Bumping this constant retires all older entries at once,
+// because the validator rejects any key whose version part differs. The
+// version moves no score and changes no signal.
+export const ANALYSIS_CACHE_VERSION = "2";
+
+// Composed of code hash, model version and engine version, so a new model
+// version or a new analysis engine gives a new key.
 export type CacheKey = string & { readonly __brand: "CacheKey" };
 export const CacheKey = {
   of(codeHash: CodeHash, modelVersion: ModelVersion): Result<CacheKey, DomainError> {
-    return ok(`${codeHash as string}:${modelVersion as string}` as CacheKey);
+    return ok(`${codeHash as string}:${modelVersion as string}:${ANALYSIS_CACHE_VERSION}` as CacheKey);
   },
 };
 

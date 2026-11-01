@@ -226,6 +226,54 @@ describe("verified responses and cache entries (K-511, M-14)", () => {
     expect(recovered.ok).toBe(true);
   });
 
+  test("c16_legacy_two_part_key_is_rejected_not_served", async () => {
+    // C-16r: a key in the pre-versioning two-part shape (code hash and
+    // model version only) holds a regressed entry from before the
+    // decompiler-failure fix, so reads reject it as corrupt instead of
+    // serving it, and the service falls back to a fresh analysis.
+    const bytecode = mustOk(Bytecode.parse(TEST_BYTECODE));
+    const codeHash = mustOk(CodeHash.of(bytecode));
+    const modelVersion = mustOk(ModelVersion.parse("0.1.0"));
+    const freshKey = mustOk(CacheKey.of(codeHash, modelVersion));
+    const legacyKey = `${codeHash as string}:${modelVersion as string}` as CacheKeyType;
+    const cache = new InMemoryCacheAdapter();
+    const services = createAppServices({
+      rpc: new FakeRpcAdapter(
+        new Map([[mustOk(Address.parse(TEST_ADDRESS)) as string, TEST_BYTECODE]]),
+        mustOk(BlockNumber.of(TEST_BLOCK)),
+      ),
+      modelArtifacts: placeholderArtifact(),
+      clock: new FakeClockAdapter(mustOk(Timestamp.of(1700000000000))),
+      cache,
+    },
+    mustDefaultDetectorSet());
+    const first = await services.analyzeToken({
+      address: mustOk(Address.parse(TEST_ADDRESS)),
+      block: mustOk(BlockNumber.of(TEST_BLOCK)),
+      requestId: mustOk(RequestId.parse("123e4567-e89b-42d3-a456-426614174002")),
+      deadline: mustOk(Timestamp.of(1900000000000)),
+      modelVersion,
+      indexVersion: mustOk(IndexVersion.parse("1.0.0")),
+      templateVersion: mustOk(TemplateVersion.parse("1.0.0")),
+      catalogue: TEST_CATALOGUE,
+    });
+    expect(first.ok).toBe(true);
+    const stored = await cache.get(freshKey);
+    expect(stored.ok).toBe(true);
+    if (!stored.ok || stored.value === null) {
+      throw new Error("expected the fresh analysis to store an entry under the versioned key");
+    }
+    // The same entry bytes under a legacy two-part key are corrupt: the
+    // regressed shape never serves.
+    cache.injectRaw(legacyKey, stored.value);
+    const legacy = await cache.get(legacyKey);
+    expect(legacy.ok).toBe(false);
+    if (legacy.ok) {
+      throw new Error("expected the legacy key to be rejected as corrupt");
+    }
+    expect(legacy.error.kind).toBe("entry-corrupt");
+  });
+
   test("k511_cached_responses_served_during_provider_outage", async () => {
     const address = mustOk(Address.parse(TEST_ADDRESS));
     const block = mustOk(BlockNumber.of(TEST_BLOCK));
