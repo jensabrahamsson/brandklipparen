@@ -4,7 +4,13 @@
 // lamp slot, and tokenised code. Long lines wrap with a hanging
 // indent (`--ind`); line numbers stay top-aligned and are never
 // copied (user-select: none). No inner scroll, ever.
-import { Fragment, type CSSProperties, type JSX, type ReactNode } from "react";
+//
+// C-29: each row is a memoised component fed only primitive props,
+// so hover sweeps and typing ticks re-render only the rows whose
+// data actually changed. Tokenising is memoised per row body. The
+// hovered row highlights through CSS :hover; the React hover
+// callback only feeds the cross-pane match highlight.
+import { Fragment, memo, useCallback, useMemo, type CSSProperties, type JSX, type ReactNode } from "react";
 import { Pictogram } from "../Pictogram.tsx";
 import {
   hiddenChipText,
@@ -52,6 +58,114 @@ function CodeToken({ text, role, expert }: { readonly text: string; readonly rol
   return <span className={roleClass(role)}>{text}</span>;
 }
 
+type CodeLineRowProps = {
+  readonly idPrefix: string;
+  readonly line: CodeLineDatum;
+  readonly index: number;
+  readonly isTarget: boolean;
+  readonly isEvidence: boolean;
+  readonly isHighlight: boolean;
+  readonly isCited: boolean;
+  readonly isLive: boolean;
+  readonly lampLabel: string | null;
+  readonly lampPictogram: "found" | "muse";
+  readonly onLampActivate: (() => void) | null;
+  readonly renamedFrom: string | null;
+  readonly expert: boolean;
+  readonly lineRef: (lineNumber: number, element: HTMLLIElement | null) => void;
+  readonly onLineFocus: (lineNumber: number | null) => void;
+  readonly onLineHover: (lineNumber: number | null) => void;
+};
+
+// Callbacks are excluded on purpose: every callback the row receives
+// is an equivalent closure over a stable setter or ref plus the
+// row's own line number (see CodeView's stable handlers), so a new
+// callback identity with unchanged data props needs no re-render.
+// The lamp activator only focuses a stable element id derived from
+// the pane and note key, which the label comparison below covers.
+function rowPropsEqual(previous: CodeLineRowProps, next: CodeLineRowProps): boolean {
+  return (
+    previous.idPrefix === next.idPrefix &&
+    previous.line.lineNumber === next.line.lineNumber &&
+    previous.line.text === next.line.text &&
+    previous.index === next.index &&
+    previous.isTarget === next.isTarget &&
+    previous.isEvidence === next.isEvidence &&
+    previous.isHighlight === next.isHighlight &&
+    previous.isCited === next.isCited &&
+    previous.isLive === next.isLive &&
+    previous.lampLabel === next.lampLabel &&
+    previous.lampPictogram === next.lampPictogram &&
+    previous.renamedFrom === next.renamedFrom &&
+    previous.expert === next.expert
+  );
+}
+
+const CodeLineRow = memo(function CodeLineRow(props: CodeLineRowProps): JSX.Element {
+  const {
+    idPrefix,
+    line,
+    index,
+    isTarget,
+    isEvidence,
+    isHighlight,
+    isCited,
+    isLive,
+    lampLabel,
+    lampPictogram,
+    onLampActivate,
+    renamedFrom,
+    expert,
+    lineRef,
+    onLineFocus,
+    onLineHover,
+  } = props;
+  const leading = line.text.match(/^ */)?.[0].length ?? 0;
+  const body = line.text.slice(leading);
+  const tokens = useMemo(() => tokenizeCodeLine(body), [body]);
+  const ref = useCallback(
+    (element: HTMLLIElement | null) => {
+      lineRef(line.lineNumber, element);
+    },
+    [lineRef, line.lineNumber],
+  );
+  return (
+    <li
+      id={`${idPrefix}-line-${line.lineNumber}`}
+      ref={ref}
+      tabIndex={-1}
+      className={`code-line${isEvidence ? " is-evidence" : ""}${isTarget ? " is-target" : ""}${isHighlight ? " is-match" : ""}${isCited ? " is-cited" : ""}${isLive ? " is-cited-live" : ""}`}
+      style={{ "--i": Math.min(index, 8), "--ind": leading } as CSSProperties}
+      onFocus={() => onLineFocus(line.lineNumber)}
+      onBlur={() => onLineFocus(null)}
+      onMouseEnter={() => onLineHover(line.lineNumber)}
+      onMouseLeave={() => onLineHover(null)}
+    >
+      {lampLabel === null || onLampActivate === null ? (
+        <span className="code-lamp-slot" aria-hidden="true" />
+      ) : (
+        <button type="button" className="code-lamp" aria-label={lampLabel} onClick={onLampActivate}>
+          <Pictogram name={lampPictogram} size={16} />
+        </button>
+      )}
+      <span className="code-no" aria-hidden="true">
+        {line.lineNumber}
+      </span>{" "}
+      <code className="code-text">
+        {tokens.map((token, tokenIndex) =>
+          token.role === "name" && renamedFrom !== null && token.text === renamedFrom ? (
+            <span key={tokenIndex} className="tk-name tk-renamed">
+              {token.text}
+            </span>
+          ) : (
+            <CodeToken key={tokenIndex} text={token.text} role={token.role} expert={expert} />
+          ),
+        )}
+      </code>
+    </li>
+  );
+}, rowPropsEqual);
+
 export function CodeLines({
   idPrefix,
   lines,
@@ -80,7 +194,8 @@ export function CodeLines({
   readonly citedLines?: ReadonlySet<number> | undefined;
   readonly liveLines?: ReadonlySet<number> | undefined;
   // VS-2 interleaved notes (<1600 px): a note node after its range, or
-  // null. Absent without an overlay or at margin widths.
+  // null. Absent without an overlay or at margin widths. Notes render
+  // outside the memoised row so typing updates still reach them.
   readonly noteAfterLine?: ((lineNumber: number) => ReactNode | null) | undefined;
   readonly gutterLampFor: (lineNumber: number) => GutterLamp | null;
   readonly renamedFrom: string | null;
@@ -93,50 +208,28 @@ export function CodeLines({
     <ol className="code" aria-label={`Code lines for ${functionName}`}>
       {lines.map((line, index) => {
         const lamp = gutterLampFor(line.lineNumber);
-        const isTarget = targetLine === line.lineNumber;
-        const isEvidence = evidenceLines.has(line.lineNumber);
-        const isHighlight = highlightLines.has(line.lineNumber);
-        const isCited = citedLines?.has(line.lineNumber) ?? false;
-        const isLive = liveLines?.has(line.lineNumber) ?? false;
-        const leading = line.text.match(/^ */)?.[0].length ?? 0;
-        const body = line.text.slice(leading);
         const note = noteAfterLine?.(line.lineNumber) ?? null;
         return (
           <Fragment key={line.lineNumber}>
-            <li
-            id={`${idPrefix}-line-${line.lineNumber}`}
-            ref={(element) => lineRef(line.lineNumber, element)}
-            tabIndex={-1}
-            className={`code-line${isEvidence ? " is-evidence" : ""}${isTarget ? " is-target" : ""}${isHighlight ? " is-match" : ""}${isCited ? " is-cited" : ""}${isLive ? " is-cited-live" : ""}`}
-            style={{ "--i": Math.min(index, 8), "--ind": leading } as CSSProperties}
-            onFocus={() => onLineFocus(line.lineNumber)}
-            onBlur={() => onLineFocus(null)}
-            onMouseEnter={() => onLineHover(line.lineNumber)}
-            onMouseLeave={() => onLineHover(null)}
-          >
-            {lamp === null ? (
-              <span className="code-lamp-slot" aria-hidden="true" />
-            ) : (
-              <button type="button" className="code-lamp" aria-label={lamp.label} onClick={lamp.onActivate}>
-                <Pictogram name={lamp.pictogram ?? "found"} size={16} />
-              </button>
-            )}
-            <span className="code-no" aria-hidden="true">
-              {line.lineNumber}
-            </span>{" "}
-            <code className="code-text">
-              {tokenizeCodeLine(body).map((token, tokenIndex) =>
-                token.role === "name" && renamedFrom !== null && token.text === renamedFrom ? (
-                  <span key={tokenIndex} className="tk-name tk-renamed">
-                    {token.text}
-                  </span>
-                ) : (
-                  <CodeToken key={tokenIndex} text={token.text} role={token.role} expert={expert} />
-                ),
-              )}
-            </code>
-          </li>
-          {note}
+            <CodeLineRow
+              idPrefix={idPrefix}
+              line={line}
+              index={index}
+              isTarget={targetLine === line.lineNumber}
+              isEvidence={evidenceLines.has(line.lineNumber)}
+              isHighlight={highlightLines.has(line.lineNumber)}
+              isCited={citedLines?.has(line.lineNumber) ?? false}
+              isLive={liveLines?.has(line.lineNumber) ?? false}
+              lampLabel={lamp?.label ?? null}
+              lampPictogram={lamp?.pictogram ?? "found"}
+              onLampActivate={lamp === null ? null : lamp.onActivate}
+              renamedFrom={renamedFrom}
+              expert={expert}
+              lineRef={lineRef}
+              onLineFocus={onLineFocus}
+              onLineHover={onLineHover}
+            />
+            {note}
           </Fragment>
         );
       })}

@@ -5,7 +5,16 @@
 // roles and accessible names.
 import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
-import { entryChips, ExplainCodeButton, ExplainViewResults, type ExplainRuntime, type TypedEntry } from "./ExplainCode.tsx";
+import {
+  createTypingStore,
+  entryChips,
+  ExplainCodeButton,
+  ExplainViewResults,
+  typingChunk,
+  type StaticEntry,
+  type TypedEntry,
+  type TypingStore,
+} from "./ExplainCode.tsx";
 
 function noop(): void {}
 
@@ -38,25 +47,45 @@ function noteEntry(key: string, from: number, to: number, text: string): TypedEn
   };
 }
 
-function runtime(overrides: Partial<ExplainRuntime> = {}): ExplainRuntime {
-  return {
-    status: "ready",
-    provider: "meta-model-api",
-    modelId: "muse-spark-1.3",
-    dropped: 0,
-    entries: [
+function staticOf(entry: TypedEntry): StaticEntry {
+  return { key: entry.key, kind: entry.kind, text: entry.text, note: entry.note, cites: entry.cites, lines: entry.lines };
+}
+
+function settledStore(count: number): TypingStore {
+  const store = createTypingStore();
+  store.set({ active: count, chars: 0, finished: true });
+  return store;
+}
+
+function viewProps(
+  overrides: {
+    readonly status?: "ready" | "pending" | "invalid-output" | "capped" | "failed";
+    readonly dropped?: number;
+    readonly staticEntries?: readonly StaticEntry[];
+    readonly readyMessage?: string | null;
+    readonly store?: TypingStore;
+  } = {},
+): Parameters<typeof ExplainViewResults>[0] {
+  const staticEntries =
+    overrides.staticEntries ??
+    [
       summaryEntry(),
       noteEntry("note-0", 3, 4, "The owner check happens here."),
       noteEntry("note-1", 4, 4, "The block list gains one wallet."),
       noteEntry("note-2", 6, 6, "This emits the change."),
-    ],
-    liveLines: new Set(),
-    citedLines: new Set([3, 4, 6]),
-    readyMessage: "Muse explanation ready: 1 summary, 3 notes.",
-    request: noop,
-    retry: noop,
-    askAgain: noop,
-    ...overrides,
+    ].map(staticOf);
+  return {
+    store: overrides.store ?? settledStore(staticEntries.length),
+    status: overrides.status ?? "ready",
+    modelId: "muse-spark-1.3",
+    dropped: overrides.dropped ?? 0,
+    staticEntries,
+    readyMessage: overrides.readyMessage === undefined ? "Muse explanation ready: 1 summary, 3 notes." : overrides.readyMessage,
+    title: "addBlackList(address)",
+    lineCount: 6,
+    chipsFor: () => null,
+    onRetry: noop,
+    onAskAgain: noop,
   };
 }
 
@@ -75,9 +104,7 @@ describe("explain code panel", () => {
   });
 
   test("the live region announces the ready counts and the footer stands", () => {
-    const html = renderToString(
-      <ExplainViewResults runtime={runtime()} title="addBlackList(address)" lineCount={6} chipsFor={() => null} />,
-    );
+    const html = renderToString(<ExplainViewResults {...viewProps()} />);
     expect(html).toContain('role="status"');
     expect(html).toContain("Muse explanation ready: 1 summary, 3 notes.");
     expect(html).toContain("What this function does");
@@ -88,27 +115,20 @@ describe("explain code panel", () => {
   });
 
   test("a dropped note is named in plain words", () => {
-    const html = renderToString(
-      <ExplainViewResults
-        runtime={runtime({ dropped: 1 })}
-        title="addBlackList(address)"
-        lineCount={6}
-        chipsFor={() => null}
-      />,
-    );
+    const html = renderToString(<ExplainViewResults {...viewProps({ dropped: 1 })} />);
     expect(html).toContain("1 note removed: it cited lines that don&#x27;t exist.");
   });
 
   test("a typing sentence keeps the full text in the accessibility tree", () => {
+    const store = createTypingStore();
+    store.set({ active: 0, chars: "Only the owner".length, finished: false });
     const html = renderToString(
       <ExplainViewResults
-        runtime={runtime({
+        {...viewProps({
           readyMessage: null,
-          entries: [summaryEntry({ shown: "Only the owner", done: false })],
+          staticEntries: [staticOf(summaryEntry())],
+          store,
         })}
-        title="addBlackList(address)"
-        lineCount={6}
-        chipsFor={() => null}
       />,
     );
     expect(html).toContain('aria-hidden="true">Only the owner');
@@ -117,12 +137,7 @@ describe("explain code panel", () => {
 
   test("invalid output names the cause with no notes rendered", () => {
     const html = renderToString(
-      <ExplainViewResults
-        runtime={runtime({ status: "invalid-output", entries: [], readyMessage: null })}
-        title="addBlackList(address)"
-        lineCount={6}
-        chipsFor={() => null}
-      />,
+      <ExplainViewResults {...viewProps({ status: "invalid-output", staticEntries: [], readyMessage: null })} />,
     );
     expect(html).toContain("cited code that isn&#x27;t there");
     expect(html).toContain("Try again");
@@ -132,21 +147,11 @@ describe("explain code panel", () => {
 
   test("capped and failed states name the cause with a retry", () => {
     const capped = renderToString(
-      <ExplainViewResults
-        runtime={runtime({ status: "capped", entries: [], readyMessage: null })}
-        title="addBlackList(address)"
-        lineCount={6}
-        chipsFor={() => null}
-      />,
+      <ExplainViewResults {...viewProps({ status: "capped", staticEntries: [], readyMessage: null })} />,
     );
     expect(capped).toContain("Daily Muse limit reached. Try again tomorrow.");
     const failed = renderToString(
-      <ExplainViewResults
-        runtime={runtime({ status: "failed", entries: [], readyMessage: null })}
-        title="addBlackList(address)"
-        lineCount={6}
-        chipsFor={() => null}
-      />,
+      <ExplainViewResults {...viewProps({ status: "failed", staticEntries: [], readyMessage: null })} />,
     );
     expect(failed).toContain("Muse didn&#x27;t answer. The code and evidence are unchanged.");
     expect(failed).toContain("Try again");
@@ -206,14 +211,30 @@ describe("explain code panel", () => {
     expect(html).not.toContain("<button");
   });
 
+  test("tick writes keep the sentence snapshot stable across ticks", () => {
+    const store = createTypingStore();
+    const before = store.getSentence();
+    store.set({ active: 0, chars: 5, finished: false });
+    expect(store.getSentence()).toBe(before);
+    store.set({ active: 1, chars: 0, finished: false });
+    expect(store.getSentence()).not.toBe(before);
+    expect(store.getSentence()).toEqual({ active: 1, finished: false });
+  });
+
+  test("typing advances at least one character and finishes short sentences fast", () => {
+    expect(typingChunk(0)).toBe(1);
+    expect(typingChunk(37)).toBe(1);
+    expect(typingChunk(38)).toBe(2);
+    expect(typingChunk(74)).toBe(2);
+    // A sentence of any test length types out within the per-sentence budget.
+    for (const length of [1, 37, 100, 500]) {
+      expect(Math.ceil(length / typingChunk(length))).toBeLessThanOrEqual(37);
+    }
+  });
+
   test("the pending line names the function being read", () => {
     const html = renderToString(
-      <ExplainViewResults
-        runtime={runtime({ status: "pending", entries: [], readyMessage: null })}
-        title="addBlackList(address)"
-        lineCount={6}
-        chipsFor={() => null}
-      />,
+      <ExplainViewResults {...viewProps({ status: "pending", staticEntries: [], readyMessage: null })} />,
     );
     expect(html).toContain('role="status"');
     expect(html).toContain("Muse is reading");

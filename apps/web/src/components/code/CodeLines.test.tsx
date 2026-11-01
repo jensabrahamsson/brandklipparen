@@ -67,6 +67,19 @@ describe("code lines", () => {
     expect(out).toContain("⟨U+202E⟩");
   });
 
+  test("fresh but equal sets and callbacks render identical rows", () => {
+    const props = () => ({
+      targetLine: 2,
+      evidenceLines: new Set([2]),
+      highlightLines: new Set([3]),
+      gutterLampFor: (lineNumber: number) =>
+        lineNumber === 2 ? { label: "Evidence at 0x2140: back to the evidence row", onActivate: noop } : null,
+    });
+    // New Set and closure identities every render (as typing ticks do)
+    // must not change the rendered lines.
+    expect(html(props())).toBe(html(props()));
+  });
+
   test("target, evidence and match classes land on the right lines", () => {
     const out = html({
       targetLine: 2,

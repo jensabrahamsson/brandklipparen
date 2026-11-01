@@ -5,7 +5,7 @@
 // the active pane, the summary card sits above the code, and notes
 // anchor to their lines (interleaved below 1600 px, margin notes at
 // 1600 px and above). Scores, evidence and finding text are untouched.
-import { useEffect, useId, useMemo, useRef, useState, type JSX, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type JSX, type KeyboardEvent, type ReactNode } from "react";
 import { CopyButton } from "../CopyButton.tsx";
 import { CodeLines, type CodeLineDatum, type GutterLamp } from "./CodeLines.tsx";
 import { ProvenanceBadge, type ProvenanceKind } from "./ProvenanceBadge.tsx";
@@ -20,12 +20,14 @@ import {
   ExplainCodeButton,
   ExplainNoteBody,
   ExplainViewResults,
+  TypedInterleavedNote,
   entryChips,
+  entryMounted,
   useExplainCodeView,
   type ExplainRuntime,
-  type TypedEntry,
+  type StaticEntry,
 } from "./ExplainCode.tsx";
-import { InterleavedNote, MarginNotes, noteRangeLabel } from "./MuseNotes.tsx";
+import { MarginNotes, noteRangeLabel } from "./MuseNotes.tsx";
 import type { CiteMaps } from "./CitationChip.tsx";
 
 // One known evidence id: a sentence-case label plus the code locations
@@ -193,6 +195,65 @@ export function CodeView({
   const sourceLoading = useRef(false);
   const mountedTarget = useRef(initialPc ?? null);
   const margin = useMediaQuery("(min-width: 1600px)");
+  // C-29: hover only feeds the cross-pane match highlight. It is
+  // throttled by requestAnimationFrame and kept in stable callbacks
+  // so memoised line rows are not invalidated; the hovered row
+  // itself highlights through CSS :hover.
+  const hoverFrame = useRef(0);
+  useEffect(() => () => {
+    if (hoverFrame.current !== 0) {
+      window.cancelAnimationFrame(hoverFrame.current);
+    }
+  }, []);
+  const hoverLater = useCallback((apply: () => void): void => {
+    if (hoverFrame.current !== 0) {
+      window.cancelAnimationFrame(hoverFrame.current);
+    }
+    hoverFrame.current = window.requestAnimationFrame(() => {
+      hoverFrame.current = 0;
+      apply();
+    });
+  }, []);
+  const handleDecLineRef = useCallback((lineNumber: number, element: HTMLLIElement | null): void => {
+    if (element === null) {
+      lineEls.current.delete(lineNumber);
+    } else {
+      lineEls.current.set(lineNumber, element);
+    }
+  }, []);
+  const handleSrcLineRef = useCallback((lineNumber: number, element: HTMLLIElement | null): void => {
+    if (element === null) {
+      sourceLineEls.current.delete(lineNumber);
+    } else {
+      sourceLineEls.current.set(lineNumber, element);
+    }
+  }, []);
+  const handleDecFocus = useCallback((lineNumber: number | null): void => {
+    setActiveDecompiled(lineNumber);
+  }, []);
+  const handleSrcFocus = useCallback((lineNumber: number | null): void => {
+    setActiveSource(lineNumber);
+  }, []);
+  const handleDecHover = useCallback(
+    (lineNumber: number | null): void => {
+      hoverLater(() => setActiveDecompiled(lineNumber));
+    },
+    [hoverLater],
+  );
+  const handleSrcHover = useCallback(
+    (lineNumber: number | null): void => {
+      hoverLater(() => setActiveSource(lineNumber));
+    },
+    [hoverLater],
+  );
+  // C-29: stable element lookups for the explain ignite effect, so it
+  // fires once per sentence instead of on every host render.
+  const handleDecLineElement = useCallback((line: number): HTMLLIElement | null => {
+    return lineEls.current.get(line) ?? null;
+  }, []);
+  const handleSrcLineElement = useCallback((line: number): HTMLLIElement | null => {
+    return sourceLineEls.current.get(line) ?? null;
+  }, []);
   // VS-2 read-along state: the Notes switch (header, after a result
   // exists) and the chip-to-line target (E-2 pulse style).
   const [notesOn, setNotesOn] = useState(true);
@@ -263,19 +324,30 @@ export function CodeView({
 
   const mismatch = sourceResult !== null && sourceResult.status === "verified" && sourceFn === null;
   const sourceFile = sourceResult === null ? null : sourceFn === null ? null : findSourceFile(sourceResult, sourceFn.file);
-  const functionBody = sourceFile === null || sourceFn === null ? [] : sourceFunctionLines(sourceFile, sourceFn);
-  const wholeFileLines = sourceFile === null ? [] : sourceFile.content.split("\n");
+  // C-29: memoise the splits so `shownSource` (and through it
+  // `sourceLineSet` and the explain entries) keeps a stable identity
+  // across unrelated renders such as typing ticks.
+  const functionBody = useMemo(
+    () => (sourceFile === null || sourceFn === null ? [] : sourceFunctionLines(sourceFile, sourceFn)),
+    [sourceFile, sourceFn],
+  );
+  const wholeFileLines = useMemo(() => (sourceFile === null ? [] : sourceFile.content.split("\n")), [sourceFile]);
   const canWholeFile = wholeFileLines.length > 0 && wholeFileLines.length <= WHOLE_FILE_LINE_CAP;
 
   const sourceFirstLine = sourceFn === null ? 1 : sourceFn.startLine - aboveCount;
   const sourceLastLine = sourceFn === null ? 0 : sourceFn.endLine + belowCount;
-  const shownSource: CodeLineDatum[] = wholeFile
-    ? wholeFileLines.map((text, index) => ({ lineNumber: index + 1, text, pcs: [] as readonly number[] }))
-    : functionBody.map((text, index) => ({
-        lineNumber: (sourceFn?.startLine ?? 1) + index,
-        text,
-        pcs: [] as readonly number[],
-      }));
+  const startLine = sourceFn?.startLine ?? 1;
+  const shownSource: CodeLineDatum[] = useMemo(
+    () =>
+      wholeFile
+        ? wholeFileLines.map((text, index) => ({ lineNumber: index + 1, text, pcs: [] as readonly number[] }))
+        : functionBody.map((text, index) => ({
+            lineNumber: startLine + index,
+            text,
+            pcs: [] as readonly number[],
+          })),
+    [wholeFile, wholeFileLines, functionBody, startLine],
+  );
 
   // E-5 line correspondence through the source map: each decompiled
   // line knows its source lines via its pcs, and back.
@@ -349,7 +421,7 @@ export function CodeView({
     view: "decompiled",
     available: explainAvailable,
     paneLines: decompiledLineSet,
-    lineElement: (line) => lineEls.current.get(line) ?? null,
+    lineElement: handleDecLineElement,
   });
   const srcRuntime = useExplainCodeView({
     address,
@@ -358,7 +430,7 @@ export function CodeView({
     view: "source",
     available: explainAvailable,
     paneLines: sourceLineSet,
-    lineElement: (line) => sourceLineEls.current.get(line) ?? null,
+    lineElement: handleSrcLineElement,
   });
   const runtimeFor = (pane: CodePaneView): ExplainRuntime => (pane === "decompiled" ? decRuntime : srcRuntime);
   const anyReady = decRuntime.status === "ready" || srcRuntime.status === "ready";
@@ -477,7 +549,7 @@ export function CodeView({
 
   const chipsFor =
     (pane: CodePaneView) =>
-    (entry: TypedEntry): JSX.Element | null => {
+    (entry: StaticEntry): JSX.Element | null => {
       const maps: CiteMaps = {
         lines: pane === "decompiled" ? decompiledLineSet : sourceLineSet,
         functions: explain?.functions ?? new Map(),
@@ -498,22 +570,44 @@ export function CodeView({
 
   // Several notes may share one anchor line (their ranges end on the
   // same line): every mounted note after the line renders, in order.
-  const noteEntriesAfter = (runtime: ExplainRuntime, lineNumber: number): TypedEntry[] => {
+  // Mounting is sentence-level, so placement stays stable across the
+  // 16 ms ticks; the shown slice resolves inside the note leaves.
+  const noteEntriesAfter = (
+    runtime: ExplainRuntime,
+    lineNumber: number,
+  ): readonly { readonly entry: StaticEntry; readonly index: number }[] => {
     if (!notesOn) {
       return [];
     }
-    return runtime.entries.filter(
-      (entry) => entry.kind === "note" && entry.mounted && entry.note !== null && entry.note.to === lineNumber,
-    );
+    const placed: { entry: StaticEntry; index: number }[] = [];
+    runtime.staticEntries.forEach((entry, index) => {
+      if (
+        entry.kind === "note" &&
+        entryMounted(runtime.sentence, index) &&
+        entry.note !== null &&
+        entry.note.to === lineNumber
+      ) {
+        placed.push({ entry, index });
+      }
+    });
+    return placed;
   };
 
-  const noteEntryAt = (runtime: ExplainRuntime, lineNumber: number): TypedEntry | null => {
+  const noteEntryAt = (
+    runtime: ExplainRuntime,
+    lineNumber: number,
+  ): { readonly entry: StaticEntry; readonly index: number } | null => {
     if (!notesOn) {
       return null;
     }
-    for (const entry of runtime.entries) {
-      if (entry.kind === "note" && entry.mounted && entry.note !== null && entry.note.from === lineNumber) {
-        return entry;
+    for (const [index, entry] of runtime.staticEntries.entries()) {
+      if (
+        entry.kind === "note" &&
+        entryMounted(runtime.sentence, index) &&
+        entry.note !== null &&
+        entry.note.from === lineNumber
+      ) {
+        return { entry, index };
       }
     }
     return null;
@@ -525,13 +619,13 @@ export function CodeView({
       if (!notesOn) {
         return null;
       }
-      const entry = noteEntryAt(runtime, lineNumber);
-      if (entry === null || entry.note === null) {
+      const placed = noteEntryAt(runtime, lineNumber);
+      if (placed === null || placed.entry.note === null) {
         return null;
       }
-      const id = `${paneId}-note-${entry.key}`;
+      const id = `${paneId}-note-${placed.entry.key}`;
       return {
-        label: `Muse note for ${noteRangeLabel(entry.note)}`,
+        label: `Muse note for ${noteRangeLabel(placed.entry.note)}`,
         pictogram: "muse",
         onActivate: () => focusNoteById(id),
       };
@@ -638,25 +732,36 @@ export function CodeView({
     if (!margin || !notesOn || runtime.status !== "ready") {
       return null;
     }
-    const mounted = runtime.entries.filter(
-      (entry) => entry.kind === "note" && entry.mounted && entry.note !== null,
-    );
+    const mounted: { entry: StaticEntry; index: number }[] = [];
+    runtime.staticEntries.forEach((entry, index) => {
+      if (entry.kind === "note" && entryMounted(runtime.sentence, index) && entry.note !== null) {
+        mounted.push({ entry, index });
+      }
+    });
     if (mounted.length === 0) {
       return null;
     }
     const elements = pane === "decompiled" ? lineEls : sourceLineEls;
     return (
       <MarginNotes
-        notes={mounted.map((entry) => ({
+        notes={mounted.map(({ entry }) => ({
           id: `${paneId}-note-${entry.key}`,
           from: (entry.note as ExplainCodeNote).from,
         }))}
         renderNote={(id) => {
-          const entry = mounted.find((candidate) => `${paneId}-note-${candidate.key}` === id);
-          if (entry === undefined) {
+          const placed = mounted.find((candidate) => `${paneId}-note-${candidate.entry.key}` === id);
+          if (placed === undefined) {
             return null;
           }
-          return <ExplainNoteBody noteId={id} entry={entry} chips={chipsFor(pane)(entry)} />;
+          return (
+            <ExplainNoteBody
+              noteId={id}
+              entry={placed.entry}
+              index={placed.index}
+              store={runtime.typing}
+              chips={chipsFor(pane)(placed.entry)}
+            />
+          );
         }}
         lineTop={(line) => elements.current.get(line)?.offsetTop ?? null}
       />
@@ -678,16 +783,16 @@ export function CodeView({
       }
       return (
         <>
-          {after.map((entry) =>
+          {after.map(({ entry, index }) =>
             entry.note === null ? null : (
-              <InterleavedNote
+              <TypedInterleavedNote
                 key={`${paneId}-note-${entry.key}`}
                 noteId={`${paneId}-note-${entry.key}`}
                 note={entry.note}
-                shownText={entry.shown}
-                done={entry.done}
+                entry={entry}
+                index={index}
+                store={runtime.typing}
                 chips={chipsFor(pane)(entry)}
-                intro={true}
               />
             ),
           )}
@@ -702,7 +807,19 @@ export function CodeView({
         {renamedFrom !== null ? <p className="code-names muted">Names: from verified source.</p> : null}
       </div>
       {explainAvailable ? (
-        <ExplainViewResults runtime={decRuntime} title={title} lineCount={lines.length} chipsFor={chipsFor("decompiled")} />
+        <ExplainViewResults
+          store={decRuntime.typing}
+          status={decRuntime.status}
+          modelId={decRuntime.modelId}
+          dropped={decRuntime.dropped}
+          staticEntries={decRuntime.staticEntries}
+          readyMessage={decRuntime.readyMessage}
+          title={title}
+          lineCount={lines.length}
+          chipsFor={chipsFor("decompiled")}
+          onRetry={decRuntime.retry}
+          onAskAgain={decRuntime.askAgain}
+        />
       ) : null}
       {renderMarginNotes("decompiled", paneId, decRuntime)}
       {snippet.kind === "loading" ? (
@@ -731,15 +848,9 @@ export function CodeView({
             }
             renamedFrom={renamedFrom}
             expert={expert}
-            lineRef={(lineNumber, element) => {
-              if (element === null) {
-                lineEls.current.delete(lineNumber);
-              } else {
-                lineEls.current.set(lineNumber, element);
-              }
-            }}
-            onLineFocus={(lineNumber) => setActiveDecompiled(lineNumber)}
-            onLineHover={(lineNumber) => setActiveDecompiled(lineNumber)}
+            lineRef={handleDecLineRef}
+            onLineFocus={handleDecFocus}
+            onLineHover={handleDecHover}
           />
           {lines.length > SNIPPET_LIMIT && !expandedLines ? (
             <button type="button" className="button-ghost snippet-more" onClick={() => setExpandedLines(true)}>
@@ -798,7 +909,19 @@ export function CodeView({
         <p className="code-honesty muted">Verified means published, not safe. Names and comments are the author&apos;s claims.</p>
       </div>
       {explainAvailable && sourceHasCode ? (
-        <ExplainViewResults runtime={srcRuntime} title={title} lineCount={shownSource.length} chipsFor={chipsFor("source")} />
+        <ExplainViewResults
+          store={srcRuntime.typing}
+          status={srcRuntime.status}
+          modelId={srcRuntime.modelId}
+          dropped={srcRuntime.dropped}
+          staticEntries={srcRuntime.staticEntries}
+          readyMessage={srcRuntime.readyMessage}
+          title={title}
+          lineCount={shownSource.length}
+          chipsFor={chipsFor("source")}
+          onRetry={srcRuntime.retry}
+          onAskAgain={srcRuntime.askAgain}
+        />
       ) : null}
       {renderMarginNotes("source", paneId, srcRuntime)}
       {source.kind === "loading" || source.kind === "idle" ? (
@@ -854,15 +977,9 @@ export function CodeView({
             gutterLampFor={(lineNumber) => noteLampFor("source", paneId, srcRuntime)(lineNumber)}
             renamedFrom={null}
             expert={expert}
-            lineRef={(lineNumber, element) => {
-              if (element === null) {
-                sourceLineEls.current.delete(lineNumber);
-              } else {
-                sourceLineEls.current.set(lineNumber, element);
-              }
-            }}
-            onLineFocus={(lineNumber) => setActiveSource(lineNumber)}
-            onLineHover={(lineNumber) => setActiveSource(lineNumber)}
+            lineRef={handleSrcLineRef}
+            onLineFocus={handleSrcFocus}
+            onLineHover={handleSrcHover}
           />
           {!wholeFile && sourceLastLine < wholeFileLines.length ? (
             <button type="button" className="button-ghost snippet-more" onClick={() => setBelowCount((count) => count + CONTEXT_LINES)}>

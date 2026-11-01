@@ -5212,6 +5212,13 @@ ol.code {
   background-color: var(--code-match-bg);
 }
 
+/* C-29: the hovered row highlights in CSS only, so a hover sweep
+   across lines costs no React render. Same match wash; evidence
+   and target rails keep their own backgrounds. */
+.code-line:hover {
+  background-color: var(--code-match-bg);
+}
+
 .code-line:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: -2px;
