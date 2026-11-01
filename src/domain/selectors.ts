@@ -175,23 +175,57 @@ function pushValueBelow(immediate: Uint8Array, limit: number): number | null {
   return value;
 }
 
+// Width of a PUSH0..PUSH4 selector constant, or null for any other opcode.
+// PUSH0 is opcode 0x5f with no immediate bytes; PUSHn is 0x5f + n.
+function selectorPushWidth(opcode: number): number | null {
+  if (opcode === 0x5f) {
+    return 0;
+  }
+  if (opcode >= 0x60 && opcode <= 0x63) {
+    return opcode - 0x5f;
+  }
+  return null;
+}
+
+// Selector bytes of a PUSH0..PUSH4 instruction, left-padded with zeros to
+// a full 4-byte selector, or null when the instruction is not a complete
+// short push (a truncated trailing PUSH has fewer bytes than its width and
+// carries no usable constant).
+function selectorPushBytes(inst: Instruction): Uint8Array | null {
+  const width = selectorPushWidth(inst.opcode);
+  if (width === null || inst.immediate.length !== width) {
+    return null;
+  }
+  if (width === 4) {
+    return inst.immediate;
+  }
+  const padded = new Uint8Array(4);
+  padded.set(inst.immediate, 4 - width);
+  return padded;
+}
+
 // Dispatcher windows, matched on the linear instruction stream where PUSH
 // data is already skipped:
-//   A: DUP1 PUSH4 <selector> EQ PUSHn <destination> JUMPI
-//   B: PUSH4 <selector> DUP2 EQ PUSHn <destination> JUMPI
-//   V1 (Vyper chained reuse): PUSH4 <selector> EQ PUSHn <destination>
-//       JUMPI, with the compared selector left on the stack by the previous
-//       window instead of re-duplicated.
-//   V2 (Vyper XOR compare): DUP1 PUSH4 <selector> XOR ISZERO PUSHn
+//   A: DUP1 PUSH0..PUSH4 <selector> EQ PUSHn <destination> JUMPI
+//   B: PUSH0..PUSH4 <selector> DUP2 EQ PUSHn <destination> JUMPI
+//   V1 (Vyper chained reuse): PUSH0..PUSH4 <selector> EQ PUSHn
+//       <destination> JUMPI, with the compared selector left on the stack
+//       by the previous window instead of re-duplicated.
+//   V2 (Vyper XOR compare): DUP1 PUSH0..PUSH4 <selector> XOR ISZERO PUSHn
 //       <destination> JUMPI, or the DUP2 mirror. Without ISZERO the jump
 //       enters on mismatch, so it never proves a function entry and the
 //       selector is reported unknown.
+// Compilers push selector constants at minimal width, so a selector with
+// leading zero bytes arrives as PUSH3/PUSH2/PUSH1/PUSH0 rather than PUSH4.
+// Every window above therefore accepts PUSH0..PUSH4 and left-pads the value
+// with zeros to a full 4-byte selector (F-2).
 // Newer Vyper sparse and bucketed jump tables (computed JUMP after range
-// checks) carry no per-selector PUSH4 compare window, so they stay out of
+// checks) carry no per-selector PUSH compare window, so they stay out of
 // extraction: no selector there is ever guessed (S-115).
-// A PUSH4 beside EQ without a following PUSH plus JUMPI still reports the
-// selector, with the target explicitly marked unknown. Repeated selectors
-// keep their first occurrence in PC order; the result sorts by selector.
+// A short or full PUSH beside EQ without a following PUSH plus JUMPI still
+// reports the selector, with the target explicitly marked unknown. Repeated
+// selectors keep their first occurrence in PC order; the result sorts by
+// selector.
 export function extractSelectors(bytecode: Bytecode): readonly SelectorEntry[] {
   const code = disassemble(bytecode);
   const found: SelectorEntry[] = [];
@@ -260,40 +294,38 @@ export function extractSelectors(bytecode: Bytecode): readonly SelectorEntry[] {
     if (first.opcode === 0x80) {
       const push = code[i + 1];
       const eq = code[i + 2];
-      if (
-        push !== undefined &&
-        eq !== undefined &&
-        push.opcode === 0x63 &&
-        push.immediate.length === 4 &&
-        eq.opcode === 0x14
-      ) {
-        handleCandidate(push.immediate, i + 3);
+      const selectorBytes = push === undefined ? null : selectorPushBytes(push);
+      if (push !== undefined && eq !== undefined && selectorBytes !== null && eq.opcode === 0x14) {
+        handleCandidate(selectorBytes, i + 3);
       } else if (
         push !== undefined &&
         eq !== undefined &&
-        push.opcode === 0x63 &&
-        push.immediate.length === 4 &&
+        selectorBytes !== null &&
         eq.opcode === 0x18
       ) {
-        // DUP1 PUSH4 <selector> XOR ... (Vyper V2).
-        handleXorCandidate(push.immediate, i + 3);
+        // DUP1 PUSH0..PUSH4 <selector> XOR ... (Vyper V2).
+        handleXorCandidate(selectorBytes, i + 3);
       }
-    } else if (first.opcode === 0x63 && first.immediate.length === 4) {
+    } else {
+      const selectorBytes = selectorPushBytes(first);
+      if (selectorBytes === null) {
+        continue;
+      }
       const dup = code[i + 1];
       const eq = code[i + 2];
       if (dup !== undefined && eq !== undefined && dup.opcode === 0x81 && eq.opcode === 0x14) {
-        handleCandidate(first.immediate, i + 3);
+        handleCandidate(selectorBytes, i + 3);
       } else if (dup !== undefined && dup.opcode === 0x81) {
-        // PUSH4 <selector> DUP2 XOR ... (Vyper V2 mirror): only an ISZERO
-        // before the PUSH plus JUMPI proves a match entry.
+        // PUSH0..PUSH4 <selector> DUP2 XOR ... (Vyper V2 mirror): only an
+        // ISZERO before the PUSH plus JUMPI proves a match entry.
         const xor = code[i + 2];
         if (xor !== undefined && xor.opcode === 0x18) {
-          handleXorCandidate(first.immediate, i + 3);
+          handleXorCandidate(selectorBytes, i + 3);
         }
       } else if (dup !== undefined && dup.opcode === 0x14) {
-        // PUSH4 <selector> EQ ... (Vyper V1 chained reuse): the compared
-        // selector stays on the stack from the previous window.
-        handleCandidate(first.immediate, i + 2);
+        // PUSH0..PUSH4 <selector> EQ ... (Vyper V1 chained reuse): the
+        // compared selector stays on the stack from the previous window.
+        handleCandidate(selectorBytes, i + 2);
       }
     }
   }

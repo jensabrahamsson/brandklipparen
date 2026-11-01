@@ -171,6 +171,50 @@ describe("k009 selector extraction from hand-assembled snippets", () => {
   });
 });
 
+describe("f2 short-push selectors pad to four bytes", () => {
+  test("f2_push3_selector_pairs_with_jump_target", () => {
+    // DUP1 PUSH3 0xfdd58e EQ PUSH1 0x0a JUMPI JUMPDEST STOP: solc emits a
+    // 0x00-prefixed selector at minimal width, padded here to 0x00fdd58e.
+    const entries = extractSelectors(
+      codeFromBytes([0x80, 0x62, 0xfd, 0xd5, 0x8e, 0x14, 0x60, 0x0a, 0x57, 0x5b, 0x00]),
+    );
+    expect(entries).toEqual([{ kind: "paired", selector: "0x00fdd58e", target: 10 }]);
+  });
+
+  test("f2_push2_dup2_variant_pairs_selector", () => {
+    // PUSH2 0x1234 DUP2 EQ PUSH1 0x08 JUMPI JUMPDEST STOP.
+    const entries = extractSelectors(
+      codeFromBytes([0x61, 0x12, 0x34, 0x81, 0x14, 0x60, 0x08, 0x57, 0x5b, 0x00]),
+    );
+    expect(entries).toEqual([{ kind: "paired", selector: "0x00001234", target: 8 }]);
+  });
+
+  test("f2_push1_dup2_variant_pairs_selector", () => {
+    // PUSH1 0x07 DUP2 EQ PUSH1 0x08 JUMPI JUMPDEST STOP.
+    const entries = extractSelectors(
+      codeFromBytes([0x60, 0x07, 0x81, 0x14, 0x60, 0x08, 0x57, 0x5b, 0x00]),
+    );
+    expect(entries).toEqual([{ kind: "paired", selector: "0x00000007", target: 8 }]);
+  });
+
+  test("f2_push0_selector_pairs_with_jump_target", () => {
+    // DUP1 PUSH0 EQ PUSH1 0x06 JUMPI JUMPDEST STOP.
+    const entries = extractSelectors(
+      codeFromBytes([0x80, 0x5f, 0x14, 0x60, 0x06, 0x57, 0x5b, 0x00]),
+    );
+    expect(entries).toEqual([{ kind: "paired", selector: "0x00000000", target: 6 }]);
+  });
+
+  test("f2_short_push_without_jump_target_marked_unknown", () => {
+    // DUP1 PUSH2 0x1234 EQ STOP: the comparison half matches but no PUSH
+    // plus JUMPI follows, so the padded selector stays explicitly unknown.
+    const entries: readonly SelectorEntry[] = extractSelectors(
+      codeFromBytes([0x80, 0x61, 0x12, 0x34, 0x14, 0x00]),
+    );
+    expect(entries).toEqual([{ kind: "unknown", selector: "0x00001234" }]);
+  });
+});
+
 describe("k009 property", () => {
   test("k009_every_selector_paired_or_marked_unknown", () => {
     fc.assert(

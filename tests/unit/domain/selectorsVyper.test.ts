@@ -81,6 +81,35 @@ describe("s115 vyper dispatcher extraction", () => {
     expect(entries).toEqual([{ kind: "paired", selector: "0x70a08231", target: 12 }]);
   });
 
+  test("s115_short_push_vyper_chained_compare_pairs_selector", () => {
+    // PUSH3 0xfdd58e EQ PUSH1 0x08 JUMPI JUMPDEST STOP: the V1 chained
+    // window accepts a minimal-width push, padded here to 0x00fdd58e.
+    const entries = extractSelectors(
+      codeFromBytes([0x62, 0xfd, 0xd5, 0x8e, 0x14, 0x60, 0x08, 0x57, 0x5b, 0x00]),
+    );
+    expect(entries).toEqual([{ kind: "paired", selector: "0x00fdd58e", target: 8 }]);
+  });
+
+  test("s115_short_push_vyper_xor_compare_pairs_selector", () => {
+    // DUP1 PUSH2 0x1234 XOR ISZERO PUSH1 0x08 JUMPI JUMPDEST STOP: the V2
+    // XOR window accepts a minimal-width push, padded here to 0x00001234.
+    const entries = extractSelectors(
+      codeFromBytes([
+        0x80, 0x61, 0x12, 0x34, 0x18, 0x15, 0x60, 0x08, 0x57, 0x5b, 0x00,
+      ]),
+    );
+    expect(entries).toEqual([{ kind: "paired", selector: "0x00001234", target: 8 }]);
+  });
+
+  test("s115_short_push_vyper_dup2_xor_variant_pairs_selector", () => {
+    // PUSH1 0x07 DUP2 XOR ISZERO PUSH1 0x08 JUMPI JUMPDEST STOP: the V2
+    // DUP2 mirror accepts a minimal-width push, padded to 0x00000007.
+    const entries = extractSelectors(
+      codeFromBytes([0x60, 0x07, 0x81, 0x18, 0x15, 0x60, 0x08, 0x57, 0x5b, 0x00]),
+    );
+    expect(entries).toEqual([{ kind: "paired", selector: "0x00000007", target: 8 }]);
+  });
+
   test("s115_solidity_windows_still_pair_after_vyper_change", () => {
     // Regression guard: the two landed Solidity windows keep pairing.
     const first = extractSelectors(
