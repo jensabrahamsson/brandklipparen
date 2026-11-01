@@ -62,7 +62,7 @@ function assessmentUrl(address: string): string {
   return `/v1/assessment?address=${encodeURIComponent(address)}`;
 }
 
-function toAnalyzeResult(body: unknown, response: Response): AnalyzeResult {
+function toAnalyzeResult(body: unknown, _response: Response): AnalyzeResult {
   const record = body as Record<string, unknown>;
   if (record["kind"] === "no-contract") {
     return {
@@ -72,8 +72,10 @@ function toAnalyzeResult(body: unknown, response: Response): AnalyzeResult {
     };
   }
   const success = body as AnalyzeSuccess;
-  const deepening = response.headers.get("x-deepening-status");
-  return { ...success, deepening: deepening === "ready" ? "ready" : "pending" };
+  // Single-fetch token view (F-5): the x-deepening-status header is
+  // ignored and the result is terminal. There is no follow-up poll.
+  void _response;
+  return { ...success, deepening: "ready" };
 }
 
 export async function analyzeToken(address: string, apiKey: string | null): Promise<AnalyzeResult> {

@@ -50,17 +50,10 @@ export function verdictBandColor(score: number): string {
   return word === "Low" ? "var(--low)" : word === "Elevated" ? "var(--elevated)" : "var(--high)";
 }
 
-// Deepening polls (design review P0-6): 1.5 s cadence, capped at 10.
-const DEEPEN_POLL_MS = 1500;
-const DEEPEN_POLL_MAX = 10;
-
 // Token page: combined score ring with a meaning sentence, three gauges,
 // full template explanation, expandable evidence, Can't-tell panel and
-// sidebar. The fast path renders first; while x-deepening-status is
-// pending the page re-reads /v1/analyze on a capped poll and merges
-// snippets only: score and probabilities are asserted unchanged and the
-// deterministic result object is otherwise kept intact. When the poll cap
-// exhausts, the streaming promise hides instead of leaving a lying line.
+// sidebar. Each token view fetches /v1/analyze exactly once and renders
+// the deterministic result as-is; there is no follow-up poll.
 const LAST_TILE_KEY = "brandklipparen-last-plugin-tile";
 
 export function TokenPage({
@@ -104,7 +97,6 @@ export function TokenPage({
   // Raw /health for the console's Explain fallback chain (UI v2 §1.2):
   // the first configured source among explain, rug and assessment wins.
   const [health, setHealth] = useState<HealthState | null>(null);
-  const deepeningPolls = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,7 +105,6 @@ export function TokenPage({
     setElapsed(null);
     setAssessment({ status: "idle" });
     setInvestigation({ status: "idle" });
-    deepeningPolls.current = 0;
     const started = performance.now();
     const key = apiKey.length === 0 ? null : apiKey;
     analyzeToken(address, key).then(
@@ -268,42 +259,6 @@ export function TokenPage({
       }
     }
   }, [view]);
-
-  const deepening = result?.kind === "assessed" ? result.deepening : undefined;
-  const resultKind = result?.kind;
-  useEffect(() => {
-    if (resultKind !== "assessed" || deepening !== "pending") {
-      return;
-    }
-    const key = apiKey.length === 0 ? null : apiKey;
-    const timer = window.setInterval(() => {
-      deepeningPolls.current += 1;
-      const polls = deepeningPolls.current;
-      analyzeToken(address, key).then(
-        (fresh) => {
-          if (fresh.kind !== "assessed") {
-            return;
-          }
-          const done = fresh.deepening === "ready" || polls >= DEEPEN_POLL_MAX;
-          if (done) {
-            window.clearInterval(timer);
-          }
-          setResult((previous) => (previous === null ? previous : mergeDeepeningResult(previous, fresh, done)));
-        },
-        () => {
-          if (polls >= DEEPEN_POLL_MAX) {
-            window.clearInterval(timer);
-            setResult((previous) =>
-              previous !== null && previous.kind === "assessed" && previous.deepening === "pending"
-                ? { ...previous, deepening: "unavailable" }
-                : previous,
-            );
-          }
-        },
-      );
-    }, DEEPEN_POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [address, apiKey, resultKind, deepening]);
 
   const requestAssessment = useCallback(() => {
     setAssessment({ status: "loading" });
@@ -883,32 +838,6 @@ function LoadingNotice(): JSX.Element {
       </div>
     </div>
   );
-}
-
-function sameProbabilities(
-  left: Extract<AnalyzeResult, { kind: "assessed" }>["probabilities"],
-  right: Extract<AnalyzeResult, { kind: "assessed" }>["probabilities"],
-): boolean {
-  return left["rug-pull"] === right["rug-pull"] && left.honeypot === right.honeypot && left["bot-pump"] === right["bot-pump"];
-}
-
-// Design review P0-6: deepening polls merge snippets only. Score and
-// probabilities are asserted unchanged: a mismatched refresh is dropped so
-// the deterministic result never moves under the reader. When the poll cap
-// exhausts without readiness, the caller marks the result unavailable so
-// the streaming promise hides.
-export function mergeDeepeningResult(
-  previous: AnalyzeResult,
-  fresh: AnalyzeResult,
-  pollsExhausted: boolean,
-): AnalyzeResult {
-  if (previous.kind !== "assessed" || fresh.kind !== "assessed") {
-    return previous;
-  }
-  if (fresh.score !== previous.score || sameProbabilities(fresh.probabilities, previous.probabilities) === false) {
-    return previous;
-  }
-  return { ...previous, deepening: fresh.deepening === "ready" ? "ready" : pollsExhausted ? "unavailable" : "pending" };
 }
 
 // Design review P1-14: HTTP failures map to useful copy with a retry path.

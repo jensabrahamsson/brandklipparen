@@ -88,9 +88,9 @@ export type AnalyzeSuccess = {
     readonly claims: readonly ExplanationClaim[];
   };
   readonly cantTell: readonly CantTellEntry[];
-  // "unavailable" is UI-side only (design review P0-6): the header only
-  // ever says pending/ready; the UI records exhausted deepening polls so
-  // it can hide the streaming promise instead of leaving a lying line.
+  // Single-fetch token view (F-5): the client reports the terminal
+  // state directly and never polls. "pending" and "unavailable" stay in
+  // the union only for older cached or mocked payloads.
   readonly deepening: "pending" | "ready" | "unavailable";
 };
 

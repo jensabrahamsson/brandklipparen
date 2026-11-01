@@ -62,8 +62,30 @@ describe("REST API client (K-021, K-305)", () => {
       }
       expect(result.score).toBe(84);
       expect(result.probabilities["honeypot"]).toBeCloseTo(0.91);
-      expect(result.deepening).toBe("pending");
+      expect(result.deepening).toBe("ready");
       expect(fetchMock).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("f5_single_fetch_ignores_pending_header_without_followup", async () => {
+    let seenUrl = "";
+    const fetchMock = vi.fn(async (url: string): Promise<Response> => {
+      seenUrl = String(url);
+      return jsonResponse(200, ANALYZE_FIXTURE, { "x-deepening-status": "pending" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const result = await analyzeToken("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "demo-key");
+      expect(result.kind).toBe("assessed");
+      if (result.kind !== "assessed") {
+        return;
+      }
+      expect(result.deepening).toBe("ready");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(seenUrl).toContain("/v1/analyze");
     } finally {
       vi.unstubAllGlobals();
     }

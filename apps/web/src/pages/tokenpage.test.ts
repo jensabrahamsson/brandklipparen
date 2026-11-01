@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
+import { readFileSync } from "node:fs";
 import { ApiError } from "../lib/api.ts";
-import { errorCopy, meaningSentence, mergeDeepeningResult, verdictBandColor } from "./TokenPage.tsx";
+import { errorCopy, meaningSentence, verdictBandColor } from "./TokenPage.tsx";
 import type { BoardTile } from "../components/plugins/PluginBoard.tsx";
 import type { AnalyzeResult, Signal } from "../types.ts";
 
@@ -26,30 +27,13 @@ function assessed(overrides: Partial<Extract<AnalyzeResult, { kind: "assessed" }
   };
 }
 
-describe("deepening merge (design review P0-6)", () => {
-  test("design_review_ready_flip_keeps_score_and_probabilities", () => {
-    const merged = mergeDeepeningResult(assessed(), assessed({ deepening: "ready" }), false);
-    expect(merged.kind).toBe("assessed");
-    if (merged.kind !== "assessed") {
-      return;
-    }
-    expect(merged.deepening).toBe("ready");
-    expect(merged.score).toBe(84);
-    expect(merged.probabilities["honeypot"]).toBeCloseTo(0.91);
-  });
-
-  test("design_review_mismatched_refresh_is_dropped", () => {
-    const merged = mergeDeepeningResult(assessed(), assessed({ deepening: "ready", score: 12 }), false);
-    expect(merged).toEqual(assessed());
-  });
-
-  test("design_review_exhausted_polls_hide_the_promise", () => {
-    const merged = mergeDeepeningResult(assessed(), assessed({ deepening: "pending" }), true);
-    expect(merged.kind).toBe("assessed");
-    if (merged.kind !== "assessed") {
-      return;
-    }
-    expect(merged.deepening).toBe("unavailable");
+describe("single fetch per token view (F-5)", () => {
+  test("token_page_schedules_no_followup_analyze_poll", () => {
+    const source = readFileSync(new URL("./TokenPage.tsx", import.meta.url), "utf8");
+    expect(source).not.toContain("setInterval");
+    expect(source).not.toContain("DEEPEN_POLL");
+    expect(source).not.toContain("deepeningPolls");
+    expect(source).not.toContain("mergeDeepeningResult");
   });
 });
 
