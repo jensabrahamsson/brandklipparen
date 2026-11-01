@@ -350,8 +350,21 @@ export function validateAssessmentOutput(
     return err(invalid("assessment claims must be an array", "claims", "claims-array", "schema"));
   }
 
+  // Allowed claim links (C-27, F-25): the real owning signal ids travel
+  // beside the evidence, so findings sharing one first selector stay
+  // citable apart. Lists without them fall back to the legacy
+  // code-hash-plus-selector derivation.
   const allowed: SignalIdType[] = [];
-  for (const entry of evidence.evidence) {
+  for (let index = 0; index < evidence.evidence.length; index += 1) {
+    const entry = evidence.evidence[index];
+    if (entry === undefined) {
+      return err(invalid("assessment evidence carries an invalid signal link", "claims", "evidence-links", "semantic"));
+    }
+    const carried = evidence.links?.[index];
+    if (carried !== undefined) {
+      allowed.push(carried);
+      continue;
+    }
     const id = SignalId.of(evidence.codeHash, entry.selector);
     if (!id.ok) {
       return err(invalid("assessment evidence carries an invalid signal link", "claims", "evidence-links", "semantic"));

@@ -114,7 +114,12 @@ export async function requestAssessment(
       meaningForSignal(signal, byId.get(`signal:${signal.id as string}`) ?? null, input.observed),
     ),
   );
-  const enriched = EvidenceList.create(input.evidence.codeHash, input.evidence.evidence, meanings);
+  const enriched = EvidenceList.create(
+    input.evidence.codeHash,
+    input.evidence.evidence,
+    meanings,
+    input.evidence.links,
+  );
   const assessed = await input.adapter.assess(
     enriched.ok ? enriched.value : input.evidence,
     input.promptVersion,

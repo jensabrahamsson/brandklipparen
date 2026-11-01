@@ -20,6 +20,7 @@ import type {
   Address as AddressType,
   BlockNumber as BlockNumberType,
   PromptVersion as PromptVersionType,
+  SignalId as SignalIdType,
 } from "../domain/types.ts";
 import {
   assessmentToCanonical,
@@ -338,9 +339,14 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
     }
     const envelope = analysed.value.envelope;
     const flat: EvidenceType[] = [];
+    // Owning signal id per flattened entry (C-27, F-25): entries from one
+    // signal share that signal's id, so the validator and the prompt cite
+    // the real converted ids instead of re-deriving one id per selector.
+    const links: SignalIdType[] = [];
     for (const signal of envelope.signals) {
       for (const entry of signal.evidence) {
         flat.push(entry);
+        links.push(signal.id);
       }
     }
     if (flat.length === 0) {
@@ -374,6 +380,7 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
       envelope.codeHash,
       [first, ...flat.slice(1)],
       envelopeMeanings(envelope),
+      links,
     );
     if (!evidence.ok) {
       return ok({

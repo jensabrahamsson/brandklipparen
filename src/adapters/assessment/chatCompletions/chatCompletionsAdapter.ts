@@ -194,8 +194,12 @@ function quoteSnippet(text: string): string {
 function buildEvidenceJson(evidence: EvidenceList): string {
   return JSON.stringify({
     codeHash: evidence.codeHash as string,
-    entries: evidence.evidence.map((entry) => {
-      const link = SignalId.of(evidence.codeHash, entry.selector);
+    entries: evidence.evidence.map((entry, index) => {
+      // Real owning signal ids travel beside the evidence (C-27, F-25);
+      // lists without them fall back to the legacy derivation.
+      const carried = evidence.links?.[index];
+      const link =
+        carried === undefined ? SignalId.of(evidence.codeHash, entry.selector) : { ok: true as const, value: carried };
       return {
         selector: entry.selector as string,
         name: tableSignatureFor(entry.selector as string),

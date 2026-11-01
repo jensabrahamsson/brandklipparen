@@ -380,7 +380,7 @@ the core's values:
 | `EvidenceId` | `string` | Stably derived from code hash, selector and PC offset | `EvidenceId.of(codeHash, selector, offset)` |
 | `Timestamp` | `number` | Milliseconds since epoch, integer ≥ 0; delivered by `ClockPort` | `Timestamp.of(ms)` |
 | `UntrustedText` | `string` | Contract string capped at the length limit in A-17 and marked as untrusted data (K-308) | `UntrustedText.quote(raw)` |
-| `SignalId` | `string` | Stably derived from code hash and the evidence selector under K-010 | `SignalId.of(codeHash, selector)` |
+| `SignalId` | `string` | Stably derived from code hash and the evidence selector under K-010; production conversions use a per-finding discriminator so findings sharing one first selector get distinct ids (C-27) | `SignalId.of(codeHash, selector)`, `SignalId.ofKey(codeHash, key)` |
 | `CloneGroupId` | `string` | Stable group ID from the clone index under K-017 | `CloneGroupId.parse(raw)` |
 | `CacheKey` | `string` | Composed of `CodeHash` and `ModelVersion`, so a new model version gives a new key (K-013) | `CacheKey.of(codeHash, modelVersion)` |
 | `PageSize` | `number` | Positive integer within the page-size limit in A-17 | `PageSize.of(value)` |

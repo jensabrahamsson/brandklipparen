@@ -16,10 +16,8 @@ import {
   SignalId,
 } from "../../src/domain/types.ts";
 import type {
-  CodeHash as CodeHashType,
   ModelId as ModelIdType,
   PromptVersion as PromptVersionType,
-  Selector as SelectorType,
 } from "../../src/domain/types.ts";
 import type {
   AssessmentModelError,
@@ -75,8 +73,18 @@ function mustParseExplanationVersion(raw: string): string {
   return raw;
 }
 
-function signalLinkOf(codeHash: CodeHashType, selector: SelectorType): string | null {
-  const id = SignalId.of(codeHash, selector);
+// Canned claim link (C-27, F-25): the real owning signal id travels
+// beside the evidence, with the legacy derivation as fallback.
+function signalLinkOf(evidence: EvidenceList, index: number): string | null {
+  const carried = evidence.links?.[index];
+  if (carried !== undefined) {
+    return carried as string;
+  }
+  const entry = evidence.evidence[index];
+  if (entry === undefined) {
+    return null;
+  }
+  const id = SignalId.of(evidence.codeHash, entry.selector);
   if (!id.ok) {
     return null;
   }
@@ -211,9 +219,7 @@ export class FakeAssessmentModelAdapter implements AssessmentModelPort {
       }>;
     },
   ): unknown {
-    const first = evidence.evidence[0];
-    const derived =
-      first === undefined ? null : signalLinkOf(evidence.codeHash, first.selector);
+    const derived = signalLinkOf(evidence, 0);
     return {
       provider: override?.provider ?? this.providerName,
       modelId: this.modelIdValue as string,

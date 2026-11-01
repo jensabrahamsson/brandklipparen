@@ -120,10 +120,22 @@ function toNonEmpty(items: readonly EvidenceType[]): NonEmpty<EvidenceType> | nu
   return Object.freeze([first, ...sorted.slice(1)]) as NonEmpty<EvidenceType>;
 }
 
+// Unique signal ids (C-27, F-25): `keepId` wins outright so enrichment
+// rebuilds keep the converted id; otherwise a `discriminator` hashes
+// through `SignalId.ofKey`, and direct construction without either keeps
+// the legacy code-hash-plus-first-selector formula.
 function signalIdOf(
   codeHash: CodeHashType,
   evidence: NonEmpty<EvidenceType>,
+  discriminator?: string | undefined,
+  keepId?: SignalIdType | undefined,
 ): Result<SignalIdType, DomainError> {
+  if (keepId !== undefined) {
+    return ok(keepId);
+  }
+  if (discriminator !== undefined) {
+    return SignalId.ofKey(codeHash, discriminator);
+  }
   const first = evidence[0];
   if (first === undefined) {
     return err({ kind: "invalid-signal", message: "signal needs at least one evidence entry" });
@@ -140,12 +152,14 @@ export const Signal = {
     readonly temporality: Temporality;
     readonly evidence: readonly EvidenceType[];
     readonly sourcePlugin?: string | undefined;
+    readonly discriminator?: string | undefined;
+    readonly keepId?: SignalIdType | undefined;
   }): Result<Signal, DomainError> {
     const evidence = toNonEmpty(input.evidence);
     if (evidence === null) {
       return err({ kind: "invalid-signal", message: "signal needs at least one evidence entry" });
     }
-    const id = signalIdOf(input.codeHash, evidence);
+    const id = signalIdOf(input.codeHash, evidence, input.discriminator, input.keepId);
     if (!id.ok) {
       return err(id.error);
     }
@@ -172,6 +186,8 @@ export const Signal = {
     readonly group: CloneGroupIdType;
     readonly priorCount: number;
     readonly evidence: readonly EvidenceType[];
+    readonly discriminator?: string | undefined;
+    readonly keepId?: SignalIdType | undefined;
   }): Result<Signal, DomainError> {
     const evidence = toNonEmpty(input.evidence);
     if (evidence === null) {
@@ -183,7 +199,7 @@ export const Signal = {
         message: `prior count must be an integer at least 0: ${input.priorCount}`,
       });
     }
-    const id = signalIdOf(input.codeHash, evidence);
+    const id = signalIdOf(input.codeHash, evidence, input.discriminator, input.keepId);
     if (!id.ok) {
       return err(id.error);
     }
@@ -207,12 +223,14 @@ export const Signal = {
     readonly risk: RiskType;
     readonly cause: HardToAnalyzeCause;
     readonly evidence: readonly EvidenceType[];
+    readonly discriminator?: string | undefined;
+    readonly keepId?: SignalIdType | undefined;
   }): Result<Signal, DomainError> {
     const evidence = toNonEmpty(input.evidence);
     if (evidence === null) {
       return err({ kind: "invalid-signal", message: "signal needs at least one evidence entry" });
     }
-    const id = signalIdOf(input.codeHash, evidence);
+    const id = signalIdOf(input.codeHash, evidence, input.discriminator, input.keepId);
     if (!id.ok) {
       return err(id.error);
     }

@@ -20,6 +20,7 @@ import type {
   ModelId as ModelIdType,
   PromptVersion as PromptVersionType,
   RequestId as RequestIdType,
+  SignalId as SignalIdType,
   Timestamp as TimestampType,
 } from "../domain/types.ts";
 
@@ -40,6 +41,12 @@ export type EvidenceList = {
   readonly codeHash: CodeHashType;
   readonly evidence: readonly EvidenceType[];
   readonly meanings?: readonly FindingMeaningType[] | undefined;
+  // Owning signal id per evidence entry, parallel to `evidence` (C-27,
+  // F-25): findings sharing one first selector convert to distinct signal
+  // ids, so the validator and the prompt read the real ids from here and
+  // fall back to the legacy code-hash-plus-selector derivation only when
+  // the list travels without them.
+  readonly links?: readonly SignalIdType[] | undefined;
 };
 
 export const EvidenceList = {
@@ -47,6 +54,7 @@ export const EvidenceList = {
     codeHash: CodeHashType,
     evidence: readonly EvidenceType[],
     meanings?: readonly FindingMeaningType[] | undefined,
+    links?: readonly SignalIdType[] | undefined,
   ): Result<EvidenceList, DomainError> {
     if (evidence.length === 0) {
       return err({
@@ -54,11 +62,18 @@ export const EvidenceList = {
         message: "assessment needs at least one evidence entry",
       });
     }
+    if (links !== undefined && links.length !== evidence.length) {
+      return err({
+        kind: "invalid-evidence",
+        message: "assessment signal links must run parallel to the evidence entries",
+      });
+    }
     return ok(
       Object.freeze({
         codeHash,
         evidence: Object.freeze(evidence.slice()),
         ...(meanings === undefined ? {} : { meanings: Object.freeze(meanings.slice()) }),
+        ...(links === undefined ? {} : { links: Object.freeze(links.slice()) }),
       }),
     );
   },

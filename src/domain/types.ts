@@ -552,11 +552,17 @@ export const EvidenceId = {
   },
 };
 
-// Stably derived from code hash and the evidence selector.
+// Stably derived from code hash and the evidence selector (C-27, F-25:
+// `of` is the legacy formula kept for directly constructed signals, while
+// production conversions use `ofKey` with a per-finding discriminator so
+// findings sharing one first selector get distinct ids).
 export type SignalId = string & { readonly __brand: "SignalId" };
 export const SignalId = {
   of(codeHash: CodeHash, selector: Selector): Result<SignalId, DomainError> {
     return ok(keccak256Hex(utf8Encode(`signal:${codeHash as string}:${selector as string}`)) as SignalId);
+  },
+  ofKey(codeHash: CodeHash, key: string): Result<SignalId, DomainError> {
+    return ok(keccak256Hex(utf8Encode(`signal:${codeHash as string}:${key}`)) as SignalId);
   },
 };
 

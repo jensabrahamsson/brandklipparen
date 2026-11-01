@@ -72,7 +72,7 @@ import type {
 import type { CloneHit, CloneMapping } from "../domain/clones.ts";
 import { CloneGroupId, Probability, SkeletonHash } from "../domain/types.ts";
 import { extractSelectors } from "../domain/selectors.ts";
-import { Evidence } from "../domain/evidence.ts";
+import { Evidence, sortEvidence } from "../domain/evidence.ts";
 import type { CodeSnippet as CodeSnippetType } from "../domain/evidence.ts";
 import { HARD_TO_ANALYZE_CAUSES } from "../domain/signals.ts";
 import type { Probability as ProbabilityType } from "../domain/types.ts";
@@ -328,6 +328,7 @@ function attachSnippets(
             severity: signal.severity,
             temporality: signal.temporality,
             evidence,
+            keepId: signal.id,
             ...(signal.sourcePlugin === undefined ? {} : { sourcePlugin: signal.sourcePlugin }),
           })
         : Signal.createCloneMatch({
@@ -339,6 +340,7 @@ function attachSnippets(
             group: signal.group,
             priorCount: signal.priorCount,
             evidence,
+            keepId: signal.id,
           });
     out.push(rebuiltSignal.ok ? rebuiltSignal.value : signal);
   }
@@ -539,6 +541,14 @@ function capabilityKeyOf(finding: PluginFinding): CapabilityKey | null {
   return (CAPABILITY_KEYS as readonly string[]).includes(key) ? (key as CapabilityKey) : null;
 }
 
+// Unique signal ids (C-27, F-25): the discriminator binds the producing
+// plugin, the finding, the converted risk and the first canonical evidence
+// entry, so findings sharing one first selector (the USDT honeypot shape)
+// convert to distinct ids. Canonical evidence order keeps the id stable
+// across runs and finding input order. The failed-plugin fallback below is
+// the only legacy-id signal per analysis; its preimage carries a bare
+// selector while every discriminated preimage carries `|` separators, so
+// the two id domains cannot collide.
 // Single conversion path from plugin findings to today's Signal values
 // through the artifact mapping (S-047, P-05, P-12 step 5): the one function
 // that reads detector output. Risk, direction and severity come from the
@@ -548,8 +558,8 @@ function capabilityKeyOf(finding: PluginFinding): CapabilityKey | null {
 // Findings from unlisted plugins, unknown payloads or failed construction
 // are skipped; the plugin record in `pluginResults` still carries them at
 // weight 0. Conversion order follows the fixed capability key order,
-// matching the legacy sweep: signals sharing one SignalId keep a stable,
-// deterministic order through the final id sort below.
+// matching the legacy sweep: signals sort into a stable, deterministic
+// order through the final id sort below.
 // Owner-control `feature` findings convert beside the capability keys
 // (S-115): the artifact `pluginFeatureCatalogue` maps the plugin id to
 // the risk, direction and severity the finding converts with, and the
@@ -571,6 +581,19 @@ function featureMappingOf(
   return featureCatalogue[pluginId] ?? null;
 }
 
+// Discriminator for one converted signal (C-27, F-25):
+// `pluginId|finding.id|risk|selector:offset` from the first canonical
+// evidence entry, so the id is stable across runs and finding input order
+// while distinct across findings that share one first selector.
+function discriminatorOf(pluginId: string, finding: PluginFinding, risk: string): string {
+  const first = sortEvidence(finding.evidence)[0];
+  const point =
+    first === undefined
+      ? "none:none"
+      : `${first.selector as string}:${first.offset === undefined ? "none" : String(first.offset as number)}`;
+  return `${pluginId}|${finding.id}|${risk}|${point}`;
+}
+
 function signalsFromPluginResults(
   results: readonly PluginResultEntry[],
   codeHash: CodeHashType,
@@ -588,16 +611,17 @@ function signalsFromPluginResults(
     (entry) => entry.outcome === "ok" && pluginAllowedForScoring(entry.pluginId as string, pluginWeights),
   );
   // Conversion order follows the fixed capability key order, matching the
-  // legacy sweep: signals sharing one SignalId keep a stable, deterministic
-  // order through the final id sort below.
+  // legacy sweep: signals sort into a stable, deterministic order through
+  // the final id sort below.
   const keyOrder = new Map<CapabilityKey, number>(
     CAPABILITY_KEYS.map((key, index) => [key, index] as const),
   );
-  const ordered: PluginFinding[] = [];
+  const ordered: { readonly finding: PluginFinding; readonly pluginId: string }[] = [];
   for (const entry of scored) {
     if (entry.outcome !== "ok") {
       continue;
     }
+    const pluginId = entry.pluginId as string;
     const ranked = entry.findings
       .map((finding, index) => ({ finding, index }))
       .filter(({ finding }) => capabilityKeyOf(finding) !== null)
@@ -608,7 +632,7 @@ function signalsFromPluginResults(
           (keyOrder.get(leftKey) ?? left.index) - (keyOrder.get(rightKey) ?? right.index);
         return byKey === 0 ? left.index - right.index : byKey;
       })
-      .map(({ finding }) => finding);
+      .map(({ finding }) => ({ finding, pluginId }));
     ordered.push(...ranked);
   }
   // Branch order reproduces the retired converters entry for entry:
@@ -616,7 +640,7 @@ function signalsFromPluginResults(
   // registry order, then hard-to-analyze signals in registry order, so
   // frozen envelopes stay bit-identical.
   const capability: Signal[] = [];
-  for (const finding of ordered) {
+  for (const { finding, pluginId } of ordered) {
     const key = capabilityKeyOf(finding);
     if (key === null) {
       continue;
@@ -629,6 +653,7 @@ function signalsFromPluginResults(
       severity: mapping.severity,
       temporality,
       evidence: finding.evidence,
+      discriminator: discriminatorOf(pluginId, finding, mapping.risk),
     });
     if (signal.ok) {
       capability.push(signal.value);
@@ -659,6 +684,7 @@ function signalsFromPluginResults(
         severity: mapping.severity,
         temporality,
         evidence: finding.evidence,
+        discriminator: discriminatorOf(pluginId, finding, mapping.risk),
         ...(typeof headWeight !== "number" || !Number.isFinite(headWeight) ? {} : { sourcePlugin: pluginId }),
       });
       if (signal.ok) {
@@ -697,6 +723,7 @@ function signalsFromPluginResults(
           group: hit.group,
           priorCount: hit.priorCount,
           evidence: finding.evidence,
+          discriminator: discriminatorOf(entry.pluginId as string, finding, cloneMapping.risk),
         });
         if (signal.ok) {
           clones.push(signal.value);
@@ -725,6 +752,7 @@ function signalsFromPluginResults(
         risk: FALLBACK_HARD_TO_ANALYZE_RISK,
         cause,
         evidence: finding.evidence,
+        discriminator: discriminatorOf(entry.pluginId as string, finding, FALLBACK_HARD_TO_ANALYZE_RISK),
       });
       if (signal.ok) {
         hard.push(signal.value);
@@ -1103,6 +1131,7 @@ async function attachOwnerState(
         severity: signal.severity,
         temporality: observed,
         evidence: signal.evidence,
+        keepId: signal.id,
         ...(signal.sourcePlugin === undefined ? {} : { sourcePlugin: signal.sourcePlugin }),
       });
       if (!rebuilt.ok) {
@@ -1124,6 +1153,7 @@ async function attachOwnerState(
         severity: signal.severity,
         temporality: changer,
         evidence: signal.evidence,
+        keepId: signal.id,
         ...(signal.sourcePlugin === undefined ? {} : { sourcePlugin: signal.sourcePlugin }),
       });
       if (renamed.ok) {
