@@ -145,9 +145,10 @@ test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await expect(page.getByText("Honeypot", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("91%", { exact: true })).toBeVisible();
   await expect(page.getByText("What bytecode alone cannot tell you")).toBeVisible();
-  await expect(page.getByText("The owner can stop you from selling.").first()).toBeVisible();
-  // The scored-patterns version is Expert-only detail (S-131): plain in Simple.
+  // U-3 hero diet: gauge reasons hide at >=1100, so the claim sentence is
+  // asserted inside "Why this score" where it always renders.
   const whyCard = page.locator('section[aria-label="Why this score"]');
+  await expect(whyCard.getByText("The owner can stop you from selling.").first()).toBeVisible();
   await expect(whyCard).not.toContainText("v1.0.0");
   await page.getByTestId("expert-switch").click();
   await expect(page.getByTestId("expert-switch")).toHaveAttribute("aria-checked", "true");
@@ -222,8 +223,11 @@ test("k507_hostile_signal_renders_as_text_only", async ({ page }) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(hostile) });
   });
   await page.goto(`/#/token/${ADDRESS}`);
-  await expect(page.getByText("<img src=x onerror=alert(1)>").first()).toBeVisible();
-  expect(await page.locator("section[aria-label='Why this score'] img").count()).toBe(0);
+  // U-3 hero diet: gauge reasons hide at >=1100, so the hostile id is
+  // asserted inside "Why this score" where it always renders as text.
+  const whyCard = page.locator("section[aria-label='Why this score']");
+  await expect(whyCard.getByText("<img src=x onerror=alert(1)>").first()).toBeVisible();
+  expect(await whyCard.locator("img").count()).toBe(0);
 });
 
 test("design_review_skip_link_keeps_hash", async ({ page }) => {

@@ -1896,6 +1896,59 @@ a {
   }
 }
 
+/* D-4 (hero diet): at >=1100 px the verdict gauges shrink to two lines
+   (label plus band, then percent with the bar beside it). The reason
+   and signal-count lines are hidden here because "Why this score"
+   already says them; the gauge keeps label, band, percent and bar, so
+   no reading depends on colour alone. Opacity, colour and glow only,
+   never movement. */
+@media (min-width: 1100px) {
+  .verdict .gauge {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 6px;
+    padding: 10px 14px 12px;
+  }
+
+  .verdict .gauge-top {
+    grid-column: 1 / -1;
+  }
+
+  .verdict .gauge .pct {
+    margin: 0;
+    font-size: 30px;
+  }
+
+  .verdict .gauge .bar20 {
+    min-width: 0;
+  }
+
+  .verdict .gauge .why,
+  .verdict .gauge .cnt {
+    display: none;
+  }
+
+  /* D-4: with the copy column on its diet the 400 px dial would bind
+     the hero height, so the dial steps down to 320 px at >=1100. The
+     hero ends near 690 px at 1440x900 with the Explain button in the
+     first viewport, and the dial stays near the left column's height
+     (no dead space beside it). Number and band word travel together,
+     so the reading never depends on colour alone. */
+  .score-ring-wrap {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+  }
+
+  .score-ring-wrap > .score-dial {
+    width: min(320px, 100%);
+  }
+
+  .score-dial .num {
+    font-size: clamp(72px, 10vw, 96px);
+  }
+}
+
 /* Owner-powers strip (UI v2 §1.1, W-9): a kicker, wrapping 44 px chips
    and a summary count under the verdict. Dashed borders mark outside
    the score (extended, can't tell); glow stays token-based. */

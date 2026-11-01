@@ -111,6 +111,60 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     expect(html).toContain("No scored pattern. 9 checks could not be fully read.");
     expect(html).toContain("power-chip-blacklist");
     expect(html).toContain("can&#x27;t tell");
+    // With no found or extended finding there is nothing to collapse
+    // into: no single link, the chips and the summary stay.
+    expect(html).not.toContain("powers-more");
+  });
+
+  test("cant_tell_collapses_into_one_link_when_findings_exist", () => {
+    const hard: PluginResultView = {
+      pluginId: "dev.brandklipparen.hard-to-analyze",
+      pluginVersion: "1.0.0",
+      outcome: "ok",
+      findings: [
+        {
+          id: "dev.brandklipparen.hard-to-analyze:timeout",
+          title: "Slow read",
+          payload: { cause: "timeout" },
+          evidence: [{ selector: "0x12345678", offset: null }],
+        },
+      ],
+    };
+    const board = buildBoardModel(PLUGINS, [
+      ...quietResults().filter(
+        (result) => result.pluginId !== "dev.brandklipparen.blacklist" && result.pluginId !== "dev.brandklipparen.mint",
+      ),
+      ok("dev.brandklipparen.blacklist", [
+        {
+          id: "dev.brandklipparen.blacklist:blacklist",
+          title: "Blocked wallets",
+          payload: { feature: "blacklist" },
+          evidence: [{ selector: "0x44337ea1", offset: 200 }],
+        },
+      ]),
+      ok("dev.brandklipparen.mint", [
+        {
+          id: "dev.brandklipparen.mint:mint-extended",
+          title: "Mint, extended",
+          payload: { fact: "mint", proof: "extended", capped: true },
+          evidence: [{ selector: "0x40c10f19", offset: 100 }],
+        },
+      ]),
+      hard,
+    ]);
+    const ids = PLUGINS.map((plugin) => plugin.id);
+    const html = renderToString(<PowersStrip address={ADDRESS} allIds={ids} tiles={board.ownerTiles} />);
+    // Found and extended chips stay; every can't-tell chip collapses
+    // into the one link at every width (renderToString is desktop).
+    expect(html).toContain("power-chip-blacklist");
+    expect(html).toContain("power-chip-mint");
+    expect(html).toContain("+7 can&#x27;t tell ›");
+    expect(html).toContain("/plugins");
+    expect(html).not.toContain("state-cant-tell");
+    // The chips plus the link already carry every count, so the summary
+    // is dropped. The counts stay in the chips' accessible names.
+    expect(html).not.toContain("powers-summary");
+    expect(html).toContain("Blacklist: found, high. Can the owner block wallets? Open details.");
   });
 
   test("empty_board_renders_nothing", () => {

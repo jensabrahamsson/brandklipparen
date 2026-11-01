@@ -314,6 +314,84 @@ test("r22_hero_gauges_muse_dom_order", async ({ page }) => {
   }
 });
 
+test("u3_ai_in_first_viewport", async ({ page }) => {
+  // D-4 hero diet: at laptop widths the hero ends by y 720, the Muse
+  // console head and the Explain button sit in the first viewport, and
+  // can't-tell chips collapse into one "+N can't tell ›" link.
+  for (const [target, score, linkText] of [
+    [USDT, 29, "+3 can't tell ›"],
+    [PEPE, 19, "+7 can't tell ›"],
+  ] as const) {
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 1920, height: 900 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await openToken(page, target, score);
+      const metrics = await page.evaluate(() => {
+        const rectOf = (selector: string): Box | null => {
+          const element = document.querySelector(selector);
+          if (element === null) {
+            return null;
+          }
+          const box = element.getBoundingClientRect();
+          return { x: box.x, y: box.y, width: box.width, height: box.height };
+        };
+        return {
+          hero: rectOf('section[aria-label="Combined score"]'),
+          museHead: rectOf('[data-testid="muse-console"] .muse-head'),
+          explain: rectOf('[data-testid="muse-console"] .muse-actions .button'),
+          moreLinks: [...document.querySelectorAll(".powers-more")].map(
+            (link) => link.textContent ?? "",
+          ),
+          cantTellChips: document.querySelectorAll(".power-chip.state-cant-tell").length,
+          summary: document.querySelector(".powers-summary"),
+        };
+      });
+      expect(metrics.hero).not.toBeNull();
+      expect((metrics.hero?.y ?? 1000) + (metrics.hero?.height ?? 0)).toBeLessThanOrEqual(720);
+      expect(metrics.museHead).not.toBeNull();
+      expect((metrics.museHead?.y ?? 1000) + (metrics.museHead?.height ?? 0)).toBeLessThanOrEqual(900);
+      expect(metrics.explain).not.toBeNull();
+      expect(metrics.explain?.y ?? 1000).toBeGreaterThanOrEqual(0);
+      expect((metrics.explain?.y ?? 1000) + (metrics.explain?.height ?? 0)).toBeLessThanOrEqual(900);
+      expect(metrics.cantTellChips).toBe(0);
+      expect(metrics.moreLinks).toEqual([linkText]);
+      expect(metrics.summary).toBeNull();
+    }
+  }
+  // The console head stays visible at 1280x800, and the single link
+  // holds at every width including phones.
+  for (const [target, score] of [
+    [USDT, 29],
+    [PEPE, 19],
+  ] as const) {
+    for (const viewport of [
+      { width: 1280, height: 800 },
+      { width: 1024, height: 800 },
+      { width: 768, height: 844 },
+      { width: 390, height: 844 },
+      { width: 320, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await openToken(page, target, score);
+      const metrics = await page.evaluate(() => ({
+        headTop: document
+          .querySelector('[data-testid="muse-console"] .muse-head')
+          ?.getBoundingClientRect().top ?? null,
+        links: document.querySelectorAll(".powers-more").length,
+        chips: document.querySelectorAll(".power-chip.state-cant-tell").length,
+      }));
+      if (viewport.width === 1280) {
+        expect(metrics.headTop).not.toBeNull();
+        expect(metrics.headTop ?? 1000).toBeLessThanOrEqual(800);
+      }
+      expect(metrics.links).toBe(1);
+      expect(metrics.chips).toBe(0);
+    }
+  }
+});
+
 test("u2_phone_risk_rows_single_line_no_card", async ({ page }) => {
   // D-3 layout contract: phone gauge rows read as one line each with no
   // card-in-card frame, so labels never ellipsize and numbers clear the bar.
