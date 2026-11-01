@@ -2017,8 +2017,37 @@ a {
 }
 
 .power-chip.state-found-scored .power-lamp {
-  color: var(--phosphor);
   filter: drop-shadow(0 0 4px currentColor);
+}
+
+/* R2-11 chip hierarchy: the found-chip lamp carries the same severity
+   colour as the board tile lamp (high red, medium amber, low phosphor),
+   with glow; the name reads phosphor-hi. */
+.power-chip.state-found-scored.sev-high .power-lamp {
+  color: var(--high);
+}
+
+.power-chip.state-found-scored.sev-medium .power-lamp {
+  color: var(--amber);
+}
+
+.power-chip.state-found-scored.sev-low .power-lamp {
+  color: var(--phosphor);
+}
+
+.power-chip.state-found-scored .power-name {
+  color: var(--phosphor-hi);
+}
+
+/* R2-11: can't-tell chips stay quiet (no background, dim 400-weight name
+   with a visible tag) so findings keep the visual weight. */
+.power-chip.state-cant-tell {
+  background: none;
+}
+
+.power-chip.state-cant-tell .power-name {
+  color: var(--dim);
+  font-weight: 400;
 }
 
 .power-chip.state-extended .power-lamp {
@@ -3674,6 +3703,19 @@ a {
 .board-summary {
   margin: 4px 0 16px;
   font-size: 15px;
+}
+
+/* R3 D-10: the board summary reads as a lamp legend, one small lamp
+   plus a word per nonzero state. Parts break between states, never
+   inside a lamp plus word pair. */
+.board-legend-part {
+  white-space: nowrap;
+}
+
+.board-legend-part .lamp-legend {
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
 }
 
 .board-group {

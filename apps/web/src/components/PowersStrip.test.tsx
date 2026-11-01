@@ -5,7 +5,9 @@
 // with synthetic fixtures (no mainnet addresses).
 import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
+import { Explain } from "./Explain.tsx";
 import { PowersStrip } from "./PowersStrip.tsx";
+import { explanationFor } from "../lib/explanations.ts";
 import { buildBoardModel } from "./plugins/PluginBoard.tsx";
 import { syntheticAddress } from "../lib/syntheticAddresses.ts";
 import type { PluginListEntry, PluginResultView } from "./PluginsPanel.tsx";
@@ -80,7 +82,7 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     expect(html).toContain("Blacklist: found, high. Can the owner block wallets? Open details.");
     // The extended chip carries its label, and so does the summary count.
     expect(html).toContain("Not in score");
-    expect(html).toContain("1 found. 1 more found by extended analysis (not in score).");
+    expect(html).toContain("1 found. 1 more the score doesn&#x27;t count yet.");
     // Quiet detectors get no chip.
     expect(html).not.toContain("power-chip-pause");
   });
@@ -176,6 +178,54 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     const html = renderToString(<PowersStrip address={ADDRESS} allIds={[]} tiles={[]} plugins={null} />);
     expect(html).toContain("Owner powers are loading…");
     expect(html).not.toContain("power-chip-");
+  });
+
+  test("found_chips_carry_the_tile_severity_class_for_the_lamp", () => {
+    const html = htmlFor([
+      ...quietResults().filter((result) => result.pluginId !== "dev.brandklipparen.blacklist"),
+      ok("dev.brandklipparen.blacklist", [
+        {
+          id: "dev.brandklipparen.blacklist:blacklist",
+          title: "Blocked wallets",
+          payload: { feature: "blacklist" },
+          evidence: [{ selector: "0x44337ea1", offset: 200 }],
+        },
+      ]),
+    ]);
+    // The blacklist detector reports max high, so the chip carries the
+    // high severity class the lamp colour follows (R2-11).
+    expect(html).toContain("power-chip state-found-scored sev-high");
+  });
+
+  test("cant_tell_chips_carry_a_visible_cant_tell_tag", () => {
+    const hard: PluginResultView = {
+      pluginId: "dev.brandklipparen.hard-to-analyze",
+      pluginVersion: "1.0.0",
+      outcome: "ok",
+      findings: [
+        {
+          id: "dev.brandklipparen.hard-to-analyze:timeout",
+          title: "Slow read",
+          payload: { cause: "timeout" },
+          evidence: [{ selector: "0x12345678", offset: null }],
+        },
+      ],
+    };
+    const board = buildBoardModel(PLUGINS, [...quietResults(), hard]);
+    const ids = PLUGINS.map((plugin) => plugin.id);
+    const html = renderToString(<PowersStrip address={ADDRESS} allIds={ids} tiles={board.ownerTiles} />);
+    // With no finding the can't-tell chips stay visible, each with a
+    // quiet tag instead of relying on the lamp alone (R2-11).
+    expect(html).toContain("power-chip state-cant-tell");
+    expect(html).toContain("Can&#x27;t tell</span>");
+  });
+
+  test("strip_help_trigger_explains_extended_analysis", () => {
+    const html = htmlFor(quietResults());
+    expect(html).toContain('data-testid="explain-powers:extended"');
+    expect(explanationFor("powers:extended").body).toContain("never moves the score");
+    const open = renderToString(<Explain explainKey="powers:extended" label="Extended analysis" defaultOpen />);
+    expect(open).toContain("never moves the score");
   });
 
   test("empty_then_populated_rerender_does_not_throw", () => {

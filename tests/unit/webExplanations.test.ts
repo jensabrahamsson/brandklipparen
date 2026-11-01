@@ -24,6 +24,7 @@ const UI_KEYS = [
   "score:gauge:bot-pump",
   "score:band",
   "score:strip",
+  "powers:extended",
   "evidence:selector",
   "evidence:offset",
   "evidence:snippet",

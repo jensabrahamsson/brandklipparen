@@ -205,6 +205,10 @@ describe("honest verdict sentence (R2-3, D-4)", () => {
     ];
     const sentence = meaningSentence(result, tiles);
     expect(sentence).toContain("Extended analysis found 2");
+    expect(sentence).toBe(
+      "Low risk. Extended analysis found 2 owner powers the score doesn't count yet: blacklist, transfer limits.",
+    );
+    expect(sentence).not.toContain("more (not");
     expect(sentence).not.toContain("%");
   });
 

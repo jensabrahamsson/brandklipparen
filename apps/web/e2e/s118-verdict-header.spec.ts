@@ -175,9 +175,9 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
 });
 
 // W-9: PEPE-like fixture, 0 signals plus 1 extended finding. The strip
-// names the unscored pattern ("No scored pattern. 1 more found by
-// extended analysis") so the quiet signal list never contradicts it,
-// and every chip is a 44 px link to the detail view.
+// names the unscored pattern ("No scored pattern. 1 owner power the
+// score doesn't count yet.") so the quiet signal list never contradicts
+// it, and every chip is a 44 px link to the detail view.
 const PEPE_PLUGINS = {
   plugins: [
     "ownership",
@@ -289,12 +289,17 @@ test("s118_pepe_like_quiet_signals_with_extended_strip", async ({ page }) => {
   await expect(header.locator(".score-dial .num")).toHaveText("19");
   await expect(header.locator(".score-dial .bandtag")).toHaveText("LOW");
   await expect(header.locator(".risk-meaning")).toContainText("Low risk.");
+  // R3 D-10: the verdict names the extended finding in plain words,
+  // never as "more (not in score)".
+  const verdict = header.locator(".risk-meaning");
+  await expect(verdict).toContainText("Extended analysis found 1 owner power the score doesn't count yet");
+  await expect(verdict).not.toContainText("more (not");
 
   // The strip names the unscored pattern with its not-in-score label,
   // and the chip is a 44 px link to the mint detail view.
   const strip = page.getByTestId("powers-strip");
-  await expect(strip).toContainText("No scored pattern. 1 more found by extended analysis");
-  await expect(strip).toContainText("not in score");
+  await expect(strip).toContainText("No scored pattern. 1 owner power the score doesn't count yet.");
+  await expect(strip).toContainText("Not in score");
   const chip = page.getByTestId("power-chip-mint");
   await expect(chip).toBeVisible();
   expect(await chip.getAttribute("href")).toContain("/plugins/mint");
@@ -302,4 +307,12 @@ test("s118_pepe_like_quiet_signals_with_extended_strip", async ({ page }) => {
   expect(chipBox).not.toBeNull();
   expect(chipBox?.width ?? 0).toBeGreaterThanOrEqual(44);
   expect(chipBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+  // R3 D-10: "extended analysis" reads at most twice on the PEPE page.
+  const bodyText = await page.evaluate(() => document.body.innerText);
+  expect(bodyText.match(/extended analysis/gi)?.length ?? 0).toBeLessThanOrEqual(2);
+
+  // The strip "?" explains why the finding never moves the score.
+  await page.getByTestId("explain-powers:extended").focus();
+  await expect(page.getByRole("tooltip")).toContainText("never moves the score");
 });

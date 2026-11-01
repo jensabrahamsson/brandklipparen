@@ -7,6 +7,7 @@
 // count. The summary never uses a "·" row, so the meta-separator scan
 // keeps owning middots.
 import type { JSX } from "react";
+import { Explain } from "./Explain.tsx";
 import { Pictogram } from "./Pictogram.tsx";
 import { pluginHref } from "../lib/pluginCopy.ts";
 import { powersSummaryCopy } from "../lib/signals.ts";
@@ -83,13 +84,15 @@ export function PowersStrip({
   const summary = collapseCantTell ? null : powersSummaryCopy({ found, extended, cantTell });
   return (
     <div className="powers" data-testid="powers-strip">
-      <p className="powers-kicker">Owner powers</p>
+      <p className="powers-kicker">
+        <span>Owner powers</span> <Explain explainKey="powers:extended" label="Extended analysis" />
+      </p>
       {shown.length === 0 && !collapseCantTell ? null : (
         <ul className="powers-chips">
           {shown.map((tile) => (
             <li key={tile.pluginId}>
               <a
-                className={`power-chip state-${tile.state}`}
+                className={`power-chip state-${tile.state} sev-${tile.severity}`}
                 href={pluginHref(address, tile.pluginId, allIds)}
                 aria-label={`${tile.copy.title}: ${chipStatus(tile.state, tile.severity)}. ${tile.copy.question} Open details.`}
                 data-testid={`power-chip-${tile.copy.slug}`}
@@ -99,6 +102,7 @@ export function PowersStrip({
                 </span>
                 <span className="power-name">{tile.copy.title}</span>
                 {tile.state === "extended" ? <span className="power-tag">Not in score</span> : null}
+                {tile.state === "cant-tell" ? <span className="power-tag">Can&apos;t tell</span> : null}
                 {tile.state === "found-scored" ? (
                   <span className="sr-only">{chipSeverityWord(tile.severity)}</span>
                 ) : null}

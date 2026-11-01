@@ -21,6 +21,7 @@ const UI_KEYS = [
   "score:gauges",
   "score:band",
   "score:strip",
+  "powers:extended",
   "evidence:selector",
   "evidence:offset",
   "evidence:snippet",

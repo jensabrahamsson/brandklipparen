@@ -3,7 +3,7 @@
 // spec; third-party ids keep rendering in the PluginsPanel fallback.
 // Motion is power-on, lamp ignite, count-up and hover glow only
 // (M-1, M-2, M-3, M-9); static under prefers-reduced-motion.
-import { useState, type JSX } from "react";
+import { Fragment, useState, type JSX } from "react";
 import { Pictogram } from "../Pictogram.tsx";
 import { useMediaQuery } from "../../lib/useMediaQuery.ts";
 import { PluginTile } from "./PluginTile.tsx";
@@ -142,6 +142,23 @@ export function buildBoardModel(
   };
 }
 
+function summaryLamp(state: PluginState): "found" | "extended" | "canttell" | "error" | "notrun" | "notfound" {
+  switch (state) {
+    case "found-scored":
+      return "found";
+    case "extended":
+      return "extended";
+    case "cant-tell":
+      return "canttell";
+    case "error":
+      return "error";
+    case "not-run":
+      return "notrun";
+    default:
+      return "notfound";
+  }
+}
+
 function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.Element | null {
   const found = tiles.filter((tile) => tile.state === "found-scored").length;
   const extended = tiles.filter((tile) => tile.state === "extended").length;
@@ -156,29 +173,47 @@ function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.E
     return null;
   }
   // R2-10: zero counts read as noise ("0 not found" wrapping to an
-  // orphan line), so only nonzero states are named.
-  const parts: string[] = [];
+  // orphan line), so only nonzero states are named. R3 D-10: the summary
+  // reads as a lamp legend, one lamp plus word per state, so it shares
+  // the board's visual language instead of repeating "extended analysis".
+  const parts: { readonly state: PluginState; readonly text: string }[] = [];
   if (found > 0) {
-    parts.push(`${countedFound} found`);
+    parts.push({ state: "found-scored", text: `${countedFound} found` });
   }
   if (extended > 0) {
-    parts.push(`${countedExtended} found by extended analysis (not in score)`);
+    parts.push({ state: "extended", text: `${countedExtended} not in score` });
   }
   if (cantTell > 0) {
-    parts.push(`${cantTell} can't tell`);
+    parts.push({ state: "cant-tell", text: `${cantTell} can't tell` });
   }
   if (errors > 0) {
-    parts.push(`${errors} errors`);
+    parts.push({ state: "error", text: `${errors} errors` });
   }
   if (notRun > 0) {
-    parts.push(`${notRun} not run`);
+    parts.push({ state: "not-run", text: `${notRun} not run` });
   }
   if (notFound > 0) {
-    parts.push(`${countedNotFound} not found`);
+    parts.push({ state: "not-found", text: `${countedNotFound} not found` });
   }
   return (
     <p className="board-summary numeric" data-testid="plugin-board-summary">
-      {tiles.length} owner powers checked: {parts.join(" · ")}
+      {tiles.length} owner powers checked:{" "}
+      {parts.map((part, index) => (
+        <Fragment key={part.state}>
+          {index > 0 ? (
+            <span className="board-sep" aria-hidden="true">
+              {" "}
+              ·{" "}
+            </span>
+          ) : null}
+          <span className="board-legend-part">
+            <span className="lamp lamp-legend" aria-hidden="true">
+              <Pictogram name={summaryLamp(part.state)} size={16} />
+            </span>{" "}
+            {part.text}
+          </span>
+        </Fragment>
+      ))}
     </p>
   );
 }

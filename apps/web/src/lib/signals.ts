@@ -57,7 +57,7 @@ export function powersSummaryCopy({ found, extended, cantTell }: PowersSummaryCo
   if (found > 0) {
     const parts = [`${found} found`];
     if (extended > 0) {
-      parts.push(`${extended} more found by extended analysis (not in score)`);
+      parts.push(`${extended} more the score doesn't count yet`);
     }
     if (cantTell > 0) {
       parts.push(`${cantTell} can't tell`);
@@ -65,9 +65,10 @@ export function powersSummaryCopy({ found, extended, cantTell }: PowersSummaryCo
     return `${parts.join(". ")}.`;
   }
   if (extended > 0) {
-    const more = extended === 1 ? "1 more" : `${extended} more`;
-    const cant = cantTell > 0 ? ` ${cantTell} more could not be fully read.` : "";
-    return `No scored pattern. ${more} found by extended analysis (not in score).${cant}`;
+    const noun = extended === 1 ? "owner power" : "owner powers";
+    const checks = cantTell === 1 ? "1 check" : `${cantTell} checks`;
+    const cant = cantTell > 0 ? ` ${checks} could not be fully read.` : "";
+    return `No scored pattern. ${extended} ${noun} the score doesn't count yet.${cant}`;
   }
   if (cantTell > 0) {
     const checks = cantTell === 1 ? "1 check" : `${cantTell} checks`;

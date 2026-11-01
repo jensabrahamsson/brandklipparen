@@ -672,8 +672,6 @@ function AssessedView({
         apiKey={apiKey}
         onchainAvailability={availability.onchain}
         sorted={sorted}
-        extendedTiles={heroBoard.ownerTiles.filter((tile) => tile.state === "extended")}
-        allIds={heroIds}
         liveEntry={liveEntry}
       />
       {mode === "expert" ? <StreamView address={address} apiKey={apiKey} /> : null}
@@ -706,8 +704,6 @@ export function OverviewSections({
   onchainAvailability,
   question,
   sorted,
-  extendedTiles,
-  allIds,
   liveEntry,
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
@@ -718,8 +714,6 @@ export function OverviewSections({
   readonly onchainAvailability: Availability;
   readonly question: string;
   readonly sorted: Extract<AnalyzeResult, { kind: "assessed" }>["signals"];
-  readonly extendedTiles: readonly BoardTile[];
-  readonly allIds: readonly string[];
   readonly liveEntry: LiveTokenEntry | null;
 }): JSX.Element {
   // The deterministic "Show standard order" choice (K-035): the third-party
@@ -786,8 +780,6 @@ export function OverviewSections({
         codeHash={result.codeHash}
         apiKey={apiKey}
         names={selectorNames}
-        extendedTiles={extendedTiles}
-        allIds={allIds}
       />
     ),
     "plugin-findings": (
@@ -949,7 +941,8 @@ export function meaningSentence(
   const extended = ownerTiles.filter((tile) => tile.state === "extended");
   if (extended.length > 0) {
     const names = extended.map((tile) => tile.copy.title.toLowerCase()).join(", ");
-    return `${word} risk. No scored owner power. Extended analysis found ${extended.length} more (not in score): ${names}.`;
+    const noun = extended.length === 1 ? "owner power" : "owner powers";
+    return `${word} risk. Extended analysis found ${extended.length} ${noun} the score doesn't count yet: ${names}.`;
   }
   return `${word} risk. No owner power found in the code we could read. That is not the same as safe.`;
 }

@@ -98,10 +98,10 @@ describe("plugin board (UI v2 §5.1)", () => {
     for (const word of ["Found · High", "Found", "Error", "Not run", "Not found"]) {
       expect(html).toContain(word);
     }
-    // R2-10: no "Extended analysis" pill; the status line and the
-    // summary carry "not in score" instead.
-    expect(html).not.toContain("Extended analysis");
-    expect(html).toContain("extended analysis");
+    // R2-10: no "Extended analysis" pill; the status line carries
+    // "not in score" instead. R3 D-10: the summary is a lamp legend
+    // with no "extended analysis" wording at all.
+    expect(html.toLowerCase()).not.toContain("extended analysis");
   });
 
   test("a hard read turns quiet tiles into can't tell", () => {
@@ -134,6 +134,10 @@ describe("plugin board (UI v2 §5.1)", () => {
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={RESULTS} />);
     expect(html).toContain("owner powers checked");
     expect(html).toContain("not in score");
+    // R3 D-10: the summary reads as a lamp legend, one lamp plus word
+    // per state, with no "extended analysis" wording.
+    expect(html).toContain("board-legend-part");
+    expect(html.toLowerCase()).not.toContain("extended analysis");
   });
 
   test("tiles link to the plugin detail route", () => {
@@ -272,5 +276,15 @@ describe("plugin board (UI v2 §5.1)", () => {
     );
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={results} />);
     expect(html).toContain("Can&#x27;t tell");
+  });
+
+  test("summary separators sit outside the nowrap legend parts so the line wraps", () => {
+    const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={RESULTS} />);
+    // The middots separate breakable spans between the nowrap
+    // lamp-plus-word parts. A separator inside a nowrap part glues the
+    // whole summary into one unbreakable run that scrolls sideways at
+    // 320-390 px.
+    expect(html).toContain("board-sep");
+    expect(html).not.toContain('board-legend-part"> · ');
   });
 });

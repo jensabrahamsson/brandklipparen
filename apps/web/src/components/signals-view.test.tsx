@@ -4,7 +4,6 @@ import { ExplanationList } from "./ExplanationList.tsx";
 import { SignalRows } from "./SignalList.tsx";
 import type { Signal } from "../types.ts";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
-import type { BoardTile } from "./plugins/PluginBoard.tsx";
 
 vi.mock("./CopyButton.tsx", async () => {
   const React = await import("react");
@@ -39,28 +38,6 @@ const NAMES = new Map([
   ["0x44337ea1", { signature: "approve(address,uint256)", name: "approve" }],
 ]);
 
-function extendedTile(slug: string, title: string): BoardTile {
-  return {
-    pluginId: `dev.brandklipparen.${slug}`,
-    slug,
-    copy: {
-      slug,
-      title,
-      question: `Can the owner ${slug}?`,
-      pictogram: "owner",
-      group: "owner",
-      foundLine: () => title,
-      limits: "Test limit.",
-      cantTellLine: "Test can't tell line.",
-    },
-    state: "extended",
-    severity: "medium",
-    payloads: [],
-    evidenceCount: 0,
-    orderIndex: 0,
-  };
-}
-
 describe("merged score card (R2-6, D-5)", () => {
   test("r26_single_card_merges_claim_and_signal_with_severity_rail", () => {
     const html = renderToString(
@@ -79,8 +56,6 @@ describe("merged score card (R2-6, D-5)", () => {
         codeHash="0xabc"
         apiKey=""
         names={NAMES}
-        extendedTiles={[]}
-        allIds={[]}
       />,
     );
     expect(html).toContain('aria-label="Why this score"');
@@ -159,15 +134,12 @@ describe("merged score card (R2-6, D-5)", () => {
         codeHash="0xabc"
         apiKey=""
         names={NAMES}
-        extendedTiles={[]}
-        allIds={[]}
       />,
     );
     expect(card.match(/explain-trigger/g)?.length ?? 0).toBeLessThanOrEqual(1);
   });
 
-  test("r26_empty_state_names_extended_findings_with_links", () => {
-    const tiles = [extendedTile("blacklist", "Blacklist"), extendedTile("transfer-limits", "Transfer limits")];
+  test("r26_empty_state_is_one_line_without_repeating_extended", () => {
     const html = renderToString(
       <ExplanationList
         claims={[]}
@@ -178,36 +150,15 @@ describe("merged score card (R2-6, D-5)", () => {
         codeHash="0xabc"
         apiKey=""
         names={NAMES}
-        extendedTiles={tiles}
-        allIds={["dev.brandklipparen.blacklist", "dev.brandklipparen.transfer-limits"]}
       />,
     );
     expect(html).toContain('aria-label="Why this score"');
-    expect(html).toMatch(/Extended analysis found.*?2.*?more \(not in score\):/s);
-    expect(html).toContain("Blacklist");
-    expect(html).toContain("Transfer limits");
-    expect(html).toContain("plugins/blacklist");
-    expect(html).toContain("plugins/transfer-limits");
+    expect(html).toContain("No pattern raised the score.");
+    expect(html).not.toContain("Extended analysis");
+    expect(html).not.toContain("extended analysis");
+    expect(html).not.toContain("plugins/blacklist");
     expect(html).not.toContain("Template");
     expect(html).not.toContain("No signals");
-  });
-
-  test("r26_empty_state_without_extended_stays_honest", () => {
-    const html = renderToString(
-      <ExplanationList
-        claims={[]}
-        signals={[]}
-        templateVersion="1.0.0"
-        expert={false}
-        address={ADDRESS}
-        codeHash="0xabc"
-        apiKey=""
-        names={NAMES}
-        extendedTiles={[]}
-        allIds={[]}
-      />,
-    );
-    expect(html).toContain("No scored pattern found in the code we could read.");
   });
 
   test("r26_signal_without_claim_falls_back_to_plain_reason", () => {
@@ -242,8 +193,6 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
         codeHash="0xabc"
         apiKey=""
         names={NAMES}
-        extendedTiles={[]}
-        allIds={[]}
       />,
     );
     expect(html).toContain("Scored patterns · v1.0.0");
@@ -269,8 +218,6 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
         codeHash="0xabc"
         apiKey=""
         names={NAMES}
-        extendedTiles={[]}
-        allIds={[]}
       />,
     );
     expect(html).toContain("The owner can stop you from selling.");
@@ -294,8 +241,6 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
         codeHash="0xabc"
         apiKey=""
         names={NAMES}
-        extendedTiles={[]}
-        allIds={[]}
       />,
     );
     expect(html).toContain("Possible in code · no controlling account found");
@@ -323,8 +268,6 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
         codeHash="0xabc"
         apiKey=""
         names={NAMES}
-        extendedTiles={[]}
-        allIds={[]}
       />,
     );
     expect(html).toContain(checksummed);

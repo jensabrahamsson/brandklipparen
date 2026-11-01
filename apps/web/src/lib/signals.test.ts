@@ -85,19 +85,22 @@ describe("signal descriptions (K-021)", () => {
   test("w9_powers_summary_found_extended_and_cant_tell", () => {
     expect(powersSummaryCopy({ found: 2, extended: 0, cantTell: 0 })).toBe("2 found.");
     expect(powersSummaryCopy({ found: 2, extended: 2, cantTell: 0 })).toBe(
-      "2 found. 2 more found by extended analysis (not in score).",
+      "2 found. 2 more the score doesn't count yet.",
     );
     expect(powersSummaryCopy({ found: 1, extended: 1, cantTell: 1 })).toBe(
-      "1 found. 1 more found by extended analysis (not in score). 1 can't tell.",
+      "1 found. 1 more the score doesn't count yet. 1 can't tell.",
     );
   });
 
   test("w9_powers_summary_no_scored_pattern_names_extended", () => {
     expect(powersSummaryCopy({ found: 0, extended: 1, cantTell: 0 })).toBe(
-      "No scored pattern. 1 more found by extended analysis (not in score).",
+      "No scored pattern. 1 owner power the score doesn't count yet.",
     );
     expect(powersSummaryCopy({ found: 0, extended: 2, cantTell: 0 })).toBe(
-      "No scored pattern. 2 more found by extended analysis (not in score).",
+      "No scored pattern. 2 owner powers the score doesn't count yet.",
+    );
+    expect(powersSummaryCopy({ found: 0, extended: 2, cantTell: 1 })).toBe(
+      "No scored pattern. 2 owner powers the score doesn't count yet. 1 check could not be fully read.",
     );
     expect(powersSummaryCopy({ found: 0, extended: 0, cantTell: 2 })).toBe(
       "No scored pattern. 2 checks could not be fully read.",
