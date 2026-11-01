@@ -1,7 +1,11 @@
 // Tile state for the plugin board (UI v2 §5.1). Pure: the first match
 // wins, exactly in the spec table order. Never scored, never evidence:
 // it only names what the analysis already reported.
-export type PluginState = "error" | "not-run" | "found-scored" | "extended" | "cant-tell" | "not-found";
+//
+// Analysis tools get their own neutral state (R3 D-8): they ran, they
+// are not owner powers, and they never read can't tell. `ran` carries
+// the tool glyph with no severity rail and no fill.
+export type PluginState = "error" | "not-run" | "found-scored" | "extended" | "cant-tell" | "not-found" | "ran";
 
 export type PluginResultLike = {
   readonly outcome: string;
@@ -53,6 +57,7 @@ function isScoredPayload(payload: unknown): boolean {
 export function pluginState(
   result: PluginResultLike | undefined,
   context: CantTellContext,
+  group: "owner" | "tools" = "owner",
 ): PluginState {
   if (result === undefined) {
     return "not-run";
@@ -64,6 +69,11 @@ export function pluginState(
     return "not-run";
   }
   const findings = result.findings;
+  // Tools are not owner powers, so the can't-tell rule never applies to
+  // them: a tool with output ran, a tool without output found nothing.
+  if (group === "tools") {
+    return findings.length > 0 ? "ran" : "not-found";
+  }
   if (findings.some((finding) => isScoredPayload(finding.payload))) {
     return "found-scored";
   }
@@ -103,4 +113,5 @@ export const PLUGIN_STATE_WORD: Record<PluginState, string> = Object.freeze({
   extended: "Found",
   "cant-tell": "Can't tell",
   "not-found": "Not found",
+  ran: "Ran",
 });

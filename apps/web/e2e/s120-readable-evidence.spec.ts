@@ -291,8 +291,11 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   await expect(board.getByRole("heading", { name: "What we checked" })).toBeVisible();
   await expect(board.getByTestId("plugin-board-summary")).toContainText("9 owner powers checked");
   await expect(board.locator("a[data-tile-slug]")).toHaveCount(13);
-  await expect(board.getByText("Found · High", { exact: true })).toHaveCount(2);
-  await expect(board.getByText("Found · Medium", { exact: true })).toHaveCount(1);
+  await expect(board.getByText("Found · High", { exact: true })).toHaveCount(0);
+  await expect(board.getByText("Found · Medium", { exact: true })).toHaveCount(0);
+  // Analysis tools read neutrally (R3 D-8): ran, with no severity.
+  await expect(board.getByText("Ran", { exact: true })).toHaveCount(2);
+  await expect(board.getByText("Ran · 1 function")).toHaveCount(1);
   await expect(board.getByText("Not found", { exact: true })).toHaveCount(10);
 
   // Expert mode still shows every structured offset.

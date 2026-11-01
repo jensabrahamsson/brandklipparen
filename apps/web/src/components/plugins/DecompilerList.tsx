@@ -172,14 +172,18 @@ function DecompilerRow({
           <Pictogram name={statusGlyph(fn.status)} size={20} />
         </span>
         <span className="sr-only">{decompilerStatusWord(fn.status)}.</span>
-        <span className="decompiler-name">{fn.displayName}</span>
-        <span className="decompiler-selector mono">{fn.selector}</span>
-        {fn.ownerOnly ? <span className="owner-tag">Owner-only</span> : null}
-        {chips.map((chip) => (
-          <span key={chip} className="decompiler-chip">
-            {chip}
-          </span>
-        ))}
+        <span className="decompiler-main">
+          <span className="decompiler-name">{breakableName(fn.displayName)}</span>
+          <span className="decompiler-selector mono">{fn.selector}</span>
+        </span>
+        <span className="decompiler-tags">
+          {fn.ownerOnly ? <span className="owner-tag">Owner-only</span> : null}
+          {chips.map((chip) => (
+            <span key={chip} className="decompiler-chip">
+              {chip}
+            </span>
+          ))}
+        </span>
         <span className="decompiler-chev" aria-hidden="true">
           <Pictogram name={open ? "chevron-down" : "chevron-right"} size={20} />
         </span>
@@ -276,6 +280,27 @@ export type ExplainFocusTarget = {
   readonly nonce: number;
 };
 
+// A signature that breaks only after commas: "transferFrom(address,<wbr>
+// address,<wbr>uint256)" wraps between arguments but never mid-token, so
+// narrow rows keep their height without sideways scroll.
+function breakableName(displayName: string): JSX.Element | string {
+  if (!displayName.includes(",")) {
+    return displayName;
+  }
+  const parts = displayName.split(",");
+  return (
+    <>
+      {parts.map((part, index) => (
+        <span key={`${index}-${part}`}>
+          {index > 0 ? "," : null}
+          {index > 0 ? <wbr /> : null}
+          {part}
+        </span>
+      ))}
+    </>
+  );
+}
+
 export function DecompilerList({
   address,
   apiKey,
@@ -286,6 +311,7 @@ export function DecompilerList({
   initialPc,
   explainAvailable,
   evidenceIndex,
+  ownerOnlySelectors,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -304,17 +330,34 @@ export function DecompilerList({
   // VS-2 evidence chips: every plugin finding of this analysis, id to
   // label plus the code locations that prove it.
   readonly evidenceIndex?: ReadonlyMap<string, ExplainEvidenceEntry> | undefined;
+  // Owner-only fallback (R3 D-8): the Ownership finding's evidence
+  // selectors, lower-cased. A function the ownership proof touches is
+  // tagged owner-only even when the guarded-state-update annotation is
+  // absent. Display only: ordering and filtering follow the same tags.
+  readonly ownerOnlySelectors?: ReadonlySet<string> | undefined;
 }): JSX.Element {
-  const all = useMemo(
-    () => sortDecompilerFunctions(parseDecompilerFunctions(findings.map((finding) => finding.payload))),
-    [findings],
-  );
+  const all = useMemo(() => {
+    const parsed = parseDecompilerFunctions(findings.map((finding) => finding.payload));
+    const extra = ownerOnlySelectors;
+    if (extra === undefined || extra.size === 0) {
+      return sortDecompilerFunctions(parsed);
+    }
+    return sortDecompilerFunctions(
+      parsed.map((fn) =>
+        fn.ownerOnly || !extra.has(fn.selector.toLowerCase()) ? fn : { ...fn, ownerOnly: true },
+      ),
+    );
+  }, [findings, ownerOnlySelectors]);
   const summary = useMemo(() => summarizeDecompilerFunctions(all), [all]);
   const countedTotal = useCountUp(summary.total, 600);
   const countedNamed = useCountUp(summary.named, 600);
   const countedPartly = useCountUp(summary.partlyRead, 600);
   const [query, setQuery] = useState("");
-  const [segment, setSegment] = useState<DecompilerSegment>("all");
+  // The list opens on the owner-only segment when it has rows (R3 D-8):
+  // that is the information scent toward what matters.
+  const [segment, setSegment] = useState<DecompilerSegment>(() =>
+    all.some((fn) => fn.ownerOnly) ? "owner-only" : "all",
+  );
   const visible = useMemo(() => filterDecompilerFunctions(all, query, segment), [all, query, segment]);
   // A deep link past the row cap starts with the full list, so the
   // target row exists on the first render (effects never run under
@@ -454,6 +497,7 @@ export function DecompilerList({
           className="input"
           type="search"
           autoComplete="off"
+          placeholder="Name or 0x selector"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -474,6 +518,10 @@ export function DecompilerList({
           {decompilerCountLine(visible.length, all.length)}
         </p>
       </div>
+      <p className="decompiler-legend">
+        <span aria-hidden="true">◐</span> partly read <span aria-hidden="true">·</span>{" "}
+        <span aria-hidden="true">●</span> fully read
+      </p>
       {visible.length === 0 ? (
         <p className="muted">No functions match this filter.</p>
       ) : (

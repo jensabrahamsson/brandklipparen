@@ -31,6 +31,8 @@ export type BoardTile = {
 
 const STATE_RANK: Record<PluginState, number> = Object.freeze({
   "found-scored": 0,
+  // Tools that ran sort first in their group, like findings do.
+  ran: 0,
   extended: 1,
   "cant-tell": 2,
   error: 3,
@@ -52,6 +54,9 @@ function resultFor(results: readonly PluginResultView[], pluginId: string): Plug
 function cantTellContext(results: readonly PluginResultView[]): CantTellContext {
   const hard = resultFor(results, "dev.brandklipparen.hard-to-analyze");
   const hardToAnalyzeFired = hard !== undefined && hard.findings.length > 0;
+  // A transfer row counts as partly read only for `unexpected-control-flow`
+  // (R3 D-8): `no-plain-return` only means the body returns nothing, so a
+  // routine USDT transfer never turns the board can't tell on its own.
   const decompiler = resultFor(results, "dev.brandklipparen.decompiler");
   const partialTransfer = (decompiler?.findings ?? []).some((finding) => {
     const payload = finding.payload;
@@ -66,7 +71,7 @@ function cantTellContext(results: readonly PluginResultView[]): CantTellContext 
           ? finding.id.split(":").pop()
           : undefined;
     const isTransfer = selector === "0xa9059cbb" || selector === "0x23b872dd";
-    return isTransfer && record["cause"] !== null && record["cause"] !== undefined;
+    return isTransfer && record["cause"] === "unexpected-control-flow";
   });
   return { hardToAnalyzeFired, partialTransfer };
 }
@@ -113,7 +118,7 @@ export function buildBoardModel(
       pluginId: entry.id,
       slug: slugForPluginId(entry.id, entries.map((candidate) => candidate.id)),
       copy,
-      state: pluginState(result, context),
+      state: pluginState(result, context, copy.group),
       severity: severityOf(entry),
       payloads,
       evidenceCount,

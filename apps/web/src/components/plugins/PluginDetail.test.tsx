@@ -115,8 +115,8 @@ describe("plugin detail header (D-7)", () => {
           pluginId: "dev.brandklipparen.capability",
           slug: "capability",
           copy: PLUGIN_COPY["capability"] as BoardTile["copy"],
-          state: "found-scored",
-          severity: "low",
+          state: "ran",
+          severity: "medium",
           payloads: [{ capability: "call" }],
           evidenceCount: 1,
           orderIndex: 9,
@@ -152,6 +152,16 @@ describe("plugin detail header (D-7)", () => {
     expect(html).not.toContain("detail-owner");
     expect(html).not.toContain("Read owner on-chain");
     expect(html).not.toContain("not read yet");
+  });
+
+  test("r3_ran_tools_read_neutrally_with_no_score_claim", () => {
+    const html = toolDetail();
+    expect(html).toContain("Ran");
+    expect(html).not.toContain("Found ·");
+    expect(html).not.toContain("Applies now");
+    expect(html).toContain("In score: no (analysis tool)");
+    expect(detailProvenance("ran", 0, "1.0.1")).toBe("In score: no (analysis tool)");
+    expect(html).toContain("Calls other contracts");
   });
 
   test("the breadcrumb links the token and the board, and the back link names checks", () => {

@@ -71,6 +71,26 @@ describe("plugin board states (UI v2 §5.1)", () => {
   test("junk payloads with findings are not found, not scored", () => {
     expect(pluginState(scoredView({ note: "heavy" }), QUIET)).toBe("not-found");
   });
+
+  test("tools never read can't tell, even on a hard read", () => {
+    const hard: CantTellContext = { hardToAnalyzeFired: true, partialTransfer: true };
+    expect(pluginState({ outcome: "ok", findings: [] }, hard, "tools")).toBe("not-found");
+    expect(pluginState(scoredView({ capability: "call" }), hard, "tools")).toBe("ran");
+    expect(pluginState(scoredView({ selector: "0xa9059cbb", cause: "no-plain-return" }), hard, "tools")).toBe(
+      "ran",
+    );
+  });
+
+  test("tools with output read ran and quiet tools read not found", () => {
+    expect(pluginState(scoredView({ capability: "call" }), QUIET, "tools")).toBe("ran");
+    expect(pluginState({ outcome: "ok", findings: [] }, QUIET, "tools")).toBe("not-found");
+  });
+
+  test("tool errors and missing tools keep their quiet states", () => {
+    expect(pluginState({ outcome: "threw", findings: [] }, QUIET, "tools")).toBe("error");
+    expect(pluginState({ outcome: "input-unavailable", findings: [] }, QUIET, "tools")).toBe("not-run");
+    expect(pluginState(undefined, QUIET, "tools")).toBe("not-run");
+  });
 });
 
 describe("proof headline (UI v2 §5.5)", () => {

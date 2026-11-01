@@ -526,12 +526,21 @@ function AssessedView({
     // VS-2 evidence chips: every plugin finding of this analysis, id to
     // label plus the code locations that prove it.
     const evidenceIndex = new Map<string, ExplainEvidenceEntry>();
+    // Owner-only fallback (R3 D-8): the selectors the ownership proof
+    // touches tag decompiler rows owner-only when the annotation is
+    // absent. Display only.
+    const ownerOnlySelectors = new Set<string>();
     for (const resultView of detailViews) {
       for (const finding of resultView.findings) {
         evidenceIndex.set(finding.id, {
           label: finding.title,
           targets: finding.evidence.map((entry) => ({ selector: entry.selector, offset: entry.offset })),
         });
+        if (resultView.pluginId === "dev.brandklipparen.ownership") {
+          for (const target of finding.evidence) {
+            ownerOnlySelectors.add(target.selector.toLowerCase());
+          }
+        }
       }
     }
     return (
@@ -554,6 +563,7 @@ function AssessedView({
         codePc={view.pc}
         availability={availability}
         evidenceIndex={evidenceIndex}
+        ownerOnlySelectors={ownerOnlySelectors}
       />
     );
   }

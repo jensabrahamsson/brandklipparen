@@ -6,21 +6,23 @@ import type { CSSProperties, JSX } from "react";
 import { Pictogram } from "../Pictogram.tsx";
 import { useCountUp } from "../../lib/motion.ts";
 import type { PluginCopyEntry } from "../../lib/pluginCopy.ts";
-import { pluginHref } from "../../lib/pluginCopy.ts";
+import { pluginHref, ranStatusWord } from "../../lib/pluginCopy.ts";
 import type { PluginState } from "../../lib/pluginState.ts";
 import { PLUGIN_STATE_WORD } from "../../lib/pluginState.ts";
 
 export type TileSeverity = "low" | "medium" | "high";
 
-const LAMP_GLYPH: Record<PluginState, "found" | "extended" | "canttell" | "error" | "notrun" | "notfound"> =
-  Object.freeze({
-    error: "error",
-    "not-run": "notrun",
-    "found-scored": "found",
-    extended: "extended",
-    "cant-tell": "canttell",
-    "not-found": "notfound",
-  });
+const LAMP_GLYPH: Record<
+  Exclude<PluginState, "ran">,
+  "found" | "extended" | "canttell" | "error" | "notrun" | "notfound"
+> = Object.freeze({
+  error: "error",
+  "not-run": "notrun",
+  "found-scored": "found",
+  extended: "extended",
+  "cant-tell": "canttell",
+  "not-found": "notfound",
+});
 
 function statusPhrase(state: PluginState, severity: TileSeverity): string {
   if (state === "found-scored") {
@@ -56,12 +58,24 @@ export function PluginTile({
   readonly matched: boolean;
   readonly index: number;
 }): JSX.Element {
-  const found = state === "found-scored" || state === "extended";
+  const found = state === "found-scored" || state === "extended" || state === "ran";
   const counted = useCountUp(evidenceCount, 600);
   const body = found ? copy.foundLine(payloads) : tileQuietBody(state);
-  const statusWord = state === "found-scored" ? `Found · ${severityWord(severity)}` : PLUGIN_STATE_WORD[state];
+  const statusWord =
+    state === "found-scored"
+      ? `Found · ${severityWord(severity)}`
+      : state === "ran"
+        ? ranStatusWord(copy, payloads.length)
+        : PLUGIN_STATE_WORD[state];
+  const lampGlyph = state === "ran" ? copy.pictogram : LAMP_GLYPH[state];
   const lampClass =
-    state === "found-scored" ? "lamp is-found" : state === "extended" ? "lamp is-extended" : "lamp";
+    state === "found-scored"
+      ? "lamp is-found"
+      : state === "extended"
+        ? "lamp is-extended"
+        : state === "ran"
+          ? "lamp is-ran"
+          : "lamp";
   return (
     <a
       className={`tile state-${state} sev-${severity}`}
@@ -71,7 +85,7 @@ export function PluginTile({
       data-tile-slug={copy.slug}
       style={{ "--i": Math.min(index, 12) } as CSSProperties}
     >
-      <span className="tile-rail" aria-hidden="true" />
+      {copy.group === "tools" ? null : <span className="tile-rail" aria-hidden="true" />}
       <span className="tile-top">
         <Pictogram name={copy.pictogram} size={24} />
         <span className="tile-title">{copy.title}</span>
@@ -86,7 +100,7 @@ export function PluginTile({
       </span>
       <span className="tile-status">
         <span className={lampClass} aria-hidden="true">
-          <Pictogram name={LAMP_GLYPH[state]} size={20} />
+          <Pictogram name={lampGlyph} size={20} />
         </span>
         <span className="status-word" data-nowrap={true}>
           {statusWord}

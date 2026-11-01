@@ -3,6 +3,11 @@
 // otherwise the full id, URL-encoded. Never scored, never evidence:
 // display strings only.
 import type { PictogramName } from "./pictograms.ts";
+import {
+  decompilerSummaryLine,
+  parseDecompilerFunctions,
+  summarizeDecompilerFunctions,
+} from "./decompilerView.ts";
 
 export type PluginGroup = "owner" | "tools";
 
@@ -93,31 +98,11 @@ function capabilityLine(payloads: readonly unknown[]): string {
   return labels.join(" · ");
 }
 
+// The tile line reuses the shared decompiler summary (R3 D-8), so the
+// tile, the detail header and the list summary print the same string for
+// the same payloads. Any discrepancy between the three is a bug.
 function decompilerLine(payloads: readonly unknown[]): string {
-  let named = 0;
-  let partial = 0;
-  for (const payload of payloads) {
-    const record = recordOf(payload);
-    if (record === null) {
-      continue;
-    }
-    if (typeof record["signature"] === "string" || typeof record["name"] === "string") {
-      if (typeof record["signature"] === "string" && record["signature"] !== "") {
-        named += 1;
-      }
-    }
-    if (typeof record["cause"] === "string" && record["cause"] !== "") {
-      partial += 1;
-    } else if (record["cause"] !== null && record["cause"] !== undefined) {
-      partial += 1;
-    }
-  }
-  const total = payloads.length;
-  const functionWord = total === 1 ? "function" : "functions";
-  if (partial === 0) {
-    return `${total} ${functionWord} · ${named} named · fully read`;
-  }
-  return `${total} ${functionWord} · ${named} named · ${partial} partly read`;
+  return decompilerSummaryLine(summarizeDecompilerFunctions(parseDecompilerFunctions(payloads)));
 }
 
 function cloneMatchLine(payloads: readonly unknown[]): string {
@@ -428,6 +413,16 @@ export function copyForPluginId(id: string): PluginCopyEntry | null {
     return null;
   }
   return PLUGIN_COPY[lastSegment(id)] ?? null;
+}
+
+// Status word for the neutral tool state (R3 D-8): tools ran, they did
+// not find owner powers. The decompiler names its function count because
+// that is what the tool read; every other tool reads plain "Ran".
+export function ranStatusWord(copy: PluginCopyEntry, payloadCount: number): string {
+  if (copy.slug !== "decompiler") {
+    return "Ran";
+  }
+  return `Ran · ${payloadCount} ${payloadCount === 1 ? "function" : "functions"}`;
 }
 
 export function pluginHref(address: string, pluginId: string, allIds: readonly string[]): string {

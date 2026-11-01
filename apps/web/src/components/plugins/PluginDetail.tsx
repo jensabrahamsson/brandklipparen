@@ -23,7 +23,7 @@ import type { AiFeatureAvailability, Availability } from "../../lib/capabilities
 import type { PluginFindingView, PluginListEntry } from "../PluginsPanel.tsx";
 import { PLUGIN_STATE_WORD } from "../../lib/pluginState.ts";
 import { codeHref, type CodePaneView } from "../../lib/route.ts";
-import { temporalityLine } from "../../lib/pluginCopy.ts";
+import { ranStatusWord, temporalityLine } from "../../lib/pluginCopy.ts";
 import type { SelectorName } from "../../lib/selectorNames.ts";
 import { selectorDisplayName, selectorShortName } from "../../lib/selectorNames.ts";
 import { useTypewriter } from "../../lib/typewriter.ts";
@@ -45,6 +45,11 @@ export function detailProvenance(
   weight: number | undefined,
   modelVersion: string,
 ): string {
+  // Analysis tools never move the score (R3 D-8); their provenance says
+  // so plainly instead of borrowing the scored wording.
+  if (state === "ran") {
+    return "In score: no (analysis tool)";
+  }
   if (state === "extended") {
     return "In score: no (extended analysis)";
   }
@@ -311,6 +316,7 @@ export function PluginDetailView({
   codePc,
   availability,
   evidenceIndex,
+  ownerOnlySelectors,
 }: {
   readonly address: string;
   readonly apiKey: string;
@@ -336,13 +342,16 @@ export function PluginDetailView({
   // evidence chips. Both optional so older callers keep working.
   readonly availability?: AiFeatureAvailability | undefined;
   readonly evidenceIndex?: ReadonlyMap<string, ExplainEvidenceEntry> | undefined;
+  // Owner-only fallback for the decompiler list (R3 D-8). Optional so
+  // older callers keep working.
+  readonly ownerOnlySelectors?: ReadonlySet<string> | undefined;
 }): JSX.Element {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const title = tile?.copy.title ?? entry?.displayName ?? "Unknown check";
   const sentence =
     tile === null
       ? (entry?.description ?? "No description for this check.")
-      : tile.state === "found-scored" || tile.state === "extended"
+      : tile.state === "found-scored" || tile.state === "extended" || tile.state === "ran"
         ? tile.copy.foundLine(tile.payloads)
         : tileQuietBody(tile.state);
   const typed = useTypewriter(sentence);
@@ -401,12 +410,14 @@ export function PluginDetailView({
           <p className="detail-question">{tile.copy.question}</p>
           <p className="detail-status">
             <span className="lamp" aria-hidden="true">
-              <Pictogram name={tile.state === "found-scored" ? "found" : tile.state === "extended" ? "extended" : tile.state === "error" ? "error" : tile.state === "not-run" ? "notrun" : tile.state === "cant-tell" ? "canttell" : "notfound"} size={20} />
+              <Pictogram name={tile.state === "ran" ? tile.copy.pictogram : tile.state === "found-scored" ? "found" : tile.state === "extended" ? "extended" : tile.state === "error" ? "error" : tile.state === "not-run" ? "notrun" : tile.state === "cant-tell" ? "canttell" : "notfound"} size={20} />
             </span>{" "}
             <span className="status-word" data-nowrap={true}>
               {tile.state === "found-scored"
                 ? `Found · ${severityWord(tile.severity)}`
-                : PLUGIN_STATE_WORD[tile.state]}
+                : tile.state === "ran"
+                  ? ranStatusWord(tile.copy, tile.payloads.length)
+                  : PLUGIN_STATE_WORD[tile.state]}
             </span>
             {tile.state === "extended" ? (
               <>
@@ -458,6 +469,7 @@ export function PluginDetailView({
               initialPc={codePc}
               explainAvailable={(availability?.explainCode ?? "available") === "available"}
               evidenceIndex={evidenceIndex}
+              ownerOnlySelectors={ownerOnlySelectors}
             />
           ) : (
             <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} />

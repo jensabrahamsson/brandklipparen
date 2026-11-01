@@ -137,4 +137,63 @@ describe("plugin board (UI v2 §5.1)", () => {
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={RESULTS} />);
     expect(html).toContain(`/plugins/blacklist`);
   });
+
+  test("r3_tools_run_neutrally_with_no_severity_rail_or_fill", () => {
+    const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={RESULTS} />);
+    expect(html).toContain("Ran · 1 function");
+    for (const slug of ["capability", "decompiler", "clone-match", "hard-to-analyze"]) {
+      const start = html.indexOf(`data-testid="plugin-tile-${slug}"`);
+      expect(start).toBeGreaterThan(-1);
+      expect(html.slice(start, html.indexOf("</a>", start))).not.toContain("tile-rail");
+    }
+    // The Ran state carries the tool glyph in a neutral lamp: no
+    // severity lamp or rail inside a ran tile anchor.
+    const cap = html.indexOf('data-testid="plugin-tile-capability"');
+    const capTile = html.slice(cap, html.indexOf("</a>", cap));
+    expect(capTile).toContain("lamp is-ran");
+    expect(capTile).not.toContain("tile-rail");
+    expect(capTile).not.toContain("is-found");
+  });
+
+  test("r3_a_transfer_no_plain_return_alone_creates_no_cant_tell_tiles", () => {
+    const quiet = ok("dev.brandklipparen.decompiler", [
+      {
+        id: "dev.brandklipparen.decompiler:0xa9059cbb",
+        title: "Decompiled function transfer (0xa9059cbb)",
+        payload: { selector: "0xa9059cbb", name: "transfer", cause: "no-plain-return", unresolvedJumps: 0 },
+        evidence: [{ selector: "0xa9059cbb", offset: 45 }],
+      },
+    ]);
+    const results = PLUGINS.map((entry) =>
+      entry.id === "dev.brandklipparen.decompiler"
+        ? quiet
+        : ok(entry.id),
+    );
+    const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={results} />);
+    expect(html).not.toContain("Can&#x27;t tell");
+    expect(html).toContain("Ran · 1 function");
+  });
+
+  test("r3_only_unexpected_control_flow_on_transfer_reads_partly", () => {
+    const partial = ok("dev.brandklipparen.decompiler", [
+      {
+        id: "dev.brandklipparen.decompiler:0xa9059cbb",
+        title: "Decompiled function transfer (0xa9059cbb)",
+        payload: {
+          selector: "0xa9059cbb",
+          name: "transfer",
+          cause: "unexpected-control-flow",
+          unresolvedJumps: 4,
+        },
+        evidence: [{ selector: "0xa9059cbb", offset: 45 }],
+      },
+    ]);
+    const results = PLUGINS.map((entry) =>
+      entry.id === "dev.brandklipparen.decompiler"
+        ? partial
+        : ok(entry.id),
+    );
+    const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={results} />);
+    expect(html).toContain("Can&#x27;t tell");
+  });
 });

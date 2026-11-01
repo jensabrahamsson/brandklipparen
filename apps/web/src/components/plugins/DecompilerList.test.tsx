@@ -38,16 +38,19 @@ function payload(selector: string, overrides: Record<string, unknown> = {}): Rec
   };
 }
 
-// 32 synthetic payloads: one guarded owner-only row, named and unnamed
-// rows, all with invented selectors and no real-world names.
-function thirtyTwo(): PluginFindingView[] {
+// 32 synthetic payloads: named and unnamed rows, all with invented
+// selectors and no real-world names. With `guarded` (the default) the
+// first row carries the guarded-state-update annotation, so the list
+// opens on the Owner-only segment; without it every row is plain and
+// the list opens on All.
+function thirtyTwo(guarded = true): PluginFindingView[] {
   const out: PluginFindingView[] = [
     finding(
       "0x0ecb93c0",
       payload("0x0ecb93c0", {
         name: "toggleGate",
         signature: "toggleGate(address)",
-        annotations: ["token-pattern: guarded-state-update"],
+        annotations: guarded ? ["token-pattern: guarded-state-update"] : [],
         cause: "unexpected-control-flow",
         unresolvedJumps: 55,
       }),
@@ -97,18 +100,17 @@ function listHtml(findings: PluginFindingView[], expert = false, initialSelector
 
 describe("decompiler list", () => {
   test("32 payloads render 12 rows plus Show all 32 functions", () => {
-    const html = listHtml(thirtyTwo());
+    const html = listHtml(thirtyTwo(false));
     expect(html.match(/data-testid="decompiler-row-/g) ?? []).toHaveLength(12);
     expect(textOf(html)).toContain("Show all 32 functions");
   });
 
-  test("guarded-state-update rows come first", () => {
+  test("a guarded row opens the list on the Owner-only segment", () => {
     const html = listHtml(thirtyTwo());
-    const guarded = html.indexOf("decompiler-row-0x0ecb93c0");
-    const other = html.indexOf("decompiler-row-0x00000001");
-    expect(guarded).toBeGreaterThan(-1);
-    expect(other).toBeGreaterThan(-1);
-    expect(guarded).toBeLessThan(other);
+    expect(textOf(html)).toContain("1 of 32");
+    expect(html).toContain("decompiler-row-0x0ecb93c0");
+    expect(html).not.toContain("decompiler-row-0x00000001");
+    expect(html).toContain("Owner-only");
   });
 
   test("unexpected-control-flow maps to partly read with no raw cause in Simple mode", () => {
@@ -132,8 +134,9 @@ describe("decompiler list", () => {
   });
 
   test("filter and segmented control render with a live count", () => {
-    const html = listHtml(thirtyTwo());
+    const html = listHtml(thirtyTwo(false));
     expect(html).toContain("Filter functions");
+    expect(html).toContain('placeholder="Name or 0x selector"');
     expect(html).toContain('aria-pressed="true"');
     expect(textOf(html)).toContain("32 of 32");
     for (const label of ["All", "Owner-only", "Named"]) {
@@ -158,9 +161,45 @@ describe("decompiler list", () => {
     // Row 15 sits past the 12-row cap; a deep link to it renders the
     // full list with that row expanded on the first pass.
     const selector = hexOf(15);
-    const html = listHtml(thirtyTwo(), false, selector);
+    const html = listHtml(thirtyTwo(false), false, selector);
     expect(html).toContain(`data-testid="decompiler-row-${selector}"`);
     expect(html).toContain('aria-expanded="true"');
     expect(textOf(html)).not.toContain("Show all");
+  });
+
+  test("r3_the_status_meaning_is_visible_above_the_list", () => {
+    const html = listHtml(thirtyTwo(false));
+    expect(textOf(html)).toContain("partly read");
+    expect(textOf(html)).toContain("fully read");
+    expect(html).toContain("decompiler-legend");
+  });
+
+  test("r3_no_plain_return_renders_partly_read_without_a_raw_cause", () => {
+    const selector = hexOf(7);
+    const html = listHtml([
+      finding(
+        selector,
+        payload(selector, { name: "move", signature: "move(address)", cause: "no-plain-return" }),
+      ),
+    ]);
+    expect(html).toContain("partly read");
+    expect(html).not.toContain("no-plain-return");
+    expect(html).toContain("is-partly");
+    expect(html).not.toContain("is-error");
+  });
+
+  test("r3_ownership_evidence_tags_owner_only_without_the_annotation", () => {
+    const selector = hexOf(9);
+    const html = renderToString(
+      <DecompilerList
+        address={ADDRESS}
+        apiKey=""
+        findings={[finding(selector, payload(selector, { annotations: [] }))]}
+        expert={false}
+        ownerOnlySelectors={new Set([selector])}
+      />,
+    );
+    expect(html).toContain("Owner-only");
+    expect(textOf(html)).toContain("1 of 1");
   });
 });

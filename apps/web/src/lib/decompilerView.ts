@@ -65,17 +65,18 @@ function cleanAnnotations(value: unknown): readonly string[] {
   return Object.freeze(out);
 }
 
-// Cause mapping (UI v2 §5.4): `unexpected-control-flow` reads as partly
-// read, a null cause reads as complete, and any other cause reads as an
-// error. The raw string never leaves the Expert raw list.
+// Cause mapping (UI v2 §5.4, R3 D-8): a null cause reads as complete;
+// any recorded cause reads as partly read. `unexpected-control-flow`
+// means jumps were not followed; `no-plain-return` only means the body
+// has no plain return value (typical of old code such as USDT), and any
+// unknown cause is a coverage gap, never a failure. "error" is reserved
+// for detector outcome failures, which carry no rows at all. The raw
+// string never leaves the Expert raw list.
 export function decompilerStatusOf(cause: string | null): DecompilerStatus {
   if (cause === null) {
     return "complete";
   }
-  if (cause === "unexpected-control-flow") {
-    return "partly-read";
-  }
-  return "error";
+  return "partly-read";
 }
 
 export function decompilerStatusWord(status: DecompilerStatus): string {
@@ -218,6 +219,9 @@ export function decompilerFunctionSentence(fn: DecompilerFunction): string {
   const size = bytes === null ? "unknown size" : `${groupThousands(bytes)} bytes`;
   const head = `Starts at ${hexOf(fn.startPc)} · ${size}`;
   if (fn.status === "partly-read") {
+    if (fn.cause === "no-plain-return") {
+      return `${head} · partly read: no plain return value.`;
+    }
     const jumpWord = fn.unresolvedJumps === 1 ? "jump was" : "jumps were";
     return `${head} · partly read: ${fn.unresolvedJumps} ${jumpWord} not followed.`;
   }

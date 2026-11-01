@@ -36,10 +36,12 @@ describe("decompiler status", () => {
     expect(parseDecompilerFunction(payload())?.status).toBe("partly-read");
   });
 
-  test("a null cause reads as complete and any other cause as error", () => {
+  test("a null cause reads as complete and any recorded cause as partly read", () => {
     expect(decompilerStatusOf(null)).toBe("complete");
-    expect(decompilerStatusOf("no-plain-return")).toBe("error");
-    expect(decompilerStatusOf("decompiler-error")).toBe("error");
+    expect(decompilerStatusOf("no-plain-return")).toBe("partly-read");
+    expect(decompilerStatusOf("unexpected-control-flow")).toBe("partly-read");
+    expect(decompilerStatusOf("decompiler-error")).toBe("partly-read");
+    expect(parseDecompilerFunction(payload({ cause: "no-plain-return" }))?.status).toBe("partly-read");
   });
 
   test("payloads without a valid selector are dropped", () => {
@@ -120,6 +122,15 @@ describe("decompiler sentence", () => {
       "Starts at 0x19b · 2 646 bytes · partly read: 55 jumps were not followed.",
     );
     expect(decompilerFunctionSentence(fn)).not.toContain("unexpected-control-flow");
+  });
+
+  test("no-plain-return reads as partly read with no plain return value", () => {
+    const fn = parseDecompilerFunction(
+      payload({ cause: "no-plain-return", unresolvedJumps: 0 }),
+    ) as NonNullable<ReturnType<typeof parseDecompilerFunction>>;
+    expect(fn.status).toBe("partly-read");
+    expect(decompilerFunctionSentence(fn)).toBe("Starts at 0x19b · 2 646 bytes · partly read: no plain return value.");
+    expect(decompilerFunctionSentence(fn)).not.toContain("no-plain-return");
   });
 });
 

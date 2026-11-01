@@ -3814,6 +3814,17 @@ a {
   color: var(--dim);
 }
 
+/* Ran tools (R3 D-8): plain glass, no severity rail and no fill. The
+   status lamp carries the tool glyph in dim; severity colours never
+   apply to analysis tools. */
+.tile.state-ran {
+  background: var(--glass);
+}
+
+.tile.state-ran .lamp {
+  color: var(--dim);
+}
+
 .tile-top {
   display: flex;
   flex-wrap: wrap;
@@ -4778,10 +4789,11 @@ a {
 }
 
 .decompiler-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto 20px;
   align-items: center;
-  gap: 4px 12px;
+  column-gap: 12px;
+  row-gap: 4px;
   width: 100%;
   min-height: 48px;
   padding: 10px 4px;
@@ -4819,12 +4831,24 @@ a {
   color: var(--phosphor);
 }
 
+/* Partly read is a coverage gap, not danger: the lamp stays dim, never
+   red or amber (R3 D-8, addendum §A1.4). Error is reserved for detector
+   outcome failures, which carry no rows; it stays dim for the same
+   reason and keeps its own glyph. */
 .decompiler-row.is-partly .decompiler-lamp {
-  color: var(--amber);
+  color: var(--dim);
 }
 
 .decompiler-row.is-error .decompiler-lamp {
-  color: var(--high);
+  color: var(--dim);
+}
+
+/* Name and selector stack in the row's second column; the tags column
+   only takes room when a row carries tags, so the chevron keeps one x
+   across rows. */
+.decompiler-main {
+  display: grid;
+  min-width: 0;
 }
 
 .decompiler-name {
@@ -4835,6 +4859,14 @@ a {
 .decompiler-selector {
   font-size: 13px;
   color: var(--dim);
+}
+
+.decompiler-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
 }
 
 .owner-tag,
@@ -4855,7 +4887,13 @@ a {
 
 .decompiler-chev {
   display: inline-flex;
-  margin-left: auto;
+  justify-self: end;
+  color: var(--dim);
+}
+
+.decompiler-legend {
+  margin: 8px 0 0;
+  font-size: 13px;
   color: var(--dim);
 }
 
