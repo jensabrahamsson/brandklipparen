@@ -16,7 +16,7 @@
 import { attributeFunctions, findFunctionEntries } from "./evmFlow.ts";
 import { V2_MAX_RETURN_TARGETS, buildCfg, lift, resolveEntryReachV2 } from "./evmLift.ts";
 import { stackEffectOf } from "./opcodes.ts";
-import type { CfgBlock } from "./evmLift.ts";
+import type { CfgBlock, ControlFlowGraph } from "./evmLift.ts";
 import { nameForSelector } from "./evmNames.ts";
 import { disassemble, extractSelectors } from "./selectors.ts";
 import type { Instruction, SelectorEntry } from "./selectors.ts";
@@ -2265,13 +2265,210 @@ function revertingSideFastPath(
   return false;
 }
 
+// Revert-height memo (C-13, F-12): the bounded reverting-side proof as a
+// longest-path height per block instead of an exponential per-path DFS.
+// H(b) is the number of blocks on the longest path from b to a reverting
+// halt (REVERT or INVALID), counting b itself, or FAIL. A block whose
+// first interesting instruction is a state op (SSTORE or CALL-family)
+// fails; one whose first is a reverting halt proves with height 1; any
+// other block proves with 1 plus the largest height over the successors
+// every path must cross, and fails when any of them fails. Heights above
+// REVERTING_SIDE_MAX_BLOCKS fail, exactly the old depth cap. States live
+// in an Int32Array per CFG: 0 is unvisited, -1 is in progress (an
+// ancestor on the explicit DFS stack), -2 is FAIL, and anything positive
+// is a proven height.
+const REVERT_HEIGHT_IN_PROGRESS = -1;
+const REVERT_HEIGHT_FAIL = -2;
+
+// One CFG per bytecode object: every reverting-side call in an analysis
+// shares the callers' bytecode object, so the CFG is built once no
+// matter how many JUMPIs the gate loops try (C-12 moves this into the
+// engine memo).
+const revertingCfgByBytecode = new WeakMap<BytecodeType, ControlFlowGraph>();
+// One height array per CFG: heights are start-independent, so every side
+// proof reuses them (C-12 moves this to slot "revertHeight").
+const revertHeightByCfg = new WeakMap<ControlFlowGraph, Int32Array>();
+// One dynamic-return target list per CFG block: dynamicReturnTargets
+// walks the whole CFG per call, so each block resolves once.
+const revertDynByCfg = new WeakMap<ControlFlowGraph, Map<number, readonly number[]>>();
+
+function revertingCfgOf(bytecode: BytecodeType): ControlFlowGraph {
+  const hit = revertingCfgByBytecode.get(bytecode);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const cfg = buildCfg(lift(bytecode));
+  revertingCfgByBytecode.set(bytecode, cfg);
+  return cfg;
+}
+
+function revertHeightsOf(cfg: ControlFlowGraph): Int32Array {
+  const hit = revertHeightByCfg.get(cfg);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const heights = new Int32Array(cfg.blocks.length);
+  revertHeightByCfg.set(cfg, heights);
+  return heights;
+}
+
+function revertDynTargetsOf(cfg: ControlFlowGraph, block: number): readonly number[] {
+  let perBlock = revertDynByCfg.get(cfg);
+  if (perBlock === undefined) {
+    perBlock = new Map<number, readonly number[]>();
+    revertDynByCfg.set(cfg, perBlock);
+  }
+  const hit = perBlock.get(block);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const targets = dynamicReturnTargets(cfg, block, true);
+  perBlock.set(block, targets);
+  return targets;
+}
+
+// The successors every reverting path from this block must cross,
+// mirroring the old DFS: a proven jump edge first, else every
+// caller-pushed continuation of a dynamic return jump. Null when the
+// block proves nothing from here.
+function revertMustProve(cfg: ControlFlowGraph, index: number): readonly number[] | null {
+  const current = cfg.blocks[index];
+  if (current === undefined) {
+    return null;
+  }
+  if (current.terminal === "jump") {
+    const target = current.successors.find((candidate) => candidate.kind === "jump");
+    if (target !== undefined) {
+      return [target.to];
+    }
+    // Dynamic return jump: the helper was entered by a caller that
+    // pushed its continuation, so every caller-pushed continuation
+    // must reach the revert for the side to prove.
+    return revertDynTargetsOf(cfg, index);
+  }
+  if (current.terminal === "jumpi") {
+    const conditional = current.successors.find((candidate) => candidate.kind === "conditional");
+    if (conditional === undefined || conditional.kind !== "conditional") {
+      return null;
+    }
+    return [conditional.to, conditional.fallThrough];
+  }
+  if (current.terminal === "fall") {
+    const through = current.successors.find((candidate) => candidate.kind === "fall-through");
+    if (through === undefined) {
+      return null;
+    }
+    return [through.to];
+  }
+  return null;
+}
+
+// Iterative post-order height (no recursion: hostile CFGs hold thousands
+// of blocks). The explicit stack is always the current DFS path, so a
+// successor still in progress is a cycle back onto the path.
+//
+// Equivalence with the old DFS: the old walk fails a path exactly when
+// it revisits a block on its own path, halts otherwise, crosses state,
+// or runs past the block cap, and it requires every successor path to
+// prove. A block that reaches an in-progress block therefore lies on a
+// cycle with it: the old walk fails every path through that cycle, so
+// FAIL is path-independent and memoising it changes no verdict. The
+// depth cap counts blocks from the start, which is exactly a
+// longest-path bound, so capping intermediate heights at the same bound
+// changes no verdict either: any path that long fails whatever prefix
+// precedes it.
+function revertHeightFrom(cfg: ControlFlowGraph, heights: Int32Array, start: number): number {
+  const blocks = cfg.blocks;
+  if (start < 0 || start >= blocks.length || start >= heights.length) {
+    return REVERT_HEIGHT_FAIL;
+  }
+  const settled = heights[start];
+  if (settled !== undefined && settled !== 0) {
+    return settled === REVERT_HEIGHT_IN_PROGRESS ? REVERT_HEIGHT_FAIL : settled;
+  }
+  heights[start] = REVERT_HEIGHT_IN_PROGRESS;
+  const stack: number[] = [start];
+  while (stack.length > 0) {
+    const top = stack[stack.length - 1];
+    if (top === undefined) {
+      stack.pop();
+      continue;
+    }
+    const current = blocks[top];
+    if (current === undefined) {
+      heights[top] = REVERT_HEIGHT_FAIL;
+      stack.pop();
+      continue;
+    }
+    let scan: "state" | "halt" | null = null;
+    for (const instruction of current.instructions) {
+      if (REVERTING_STATE_OPS.has(instruction.opcode)) {
+        scan = "state";
+        break;
+      }
+      if (REVERTING_HALT_OPS.has(instruction.opcode)) {
+        scan = "halt";
+        break;
+      }
+    }
+    if (scan !== null) {
+      heights[top] = scan === "halt" ? 1 : REVERT_HEIGHT_FAIL;
+      stack.pop();
+      continue;
+    }
+    const mustProve = revertMustProve(cfg, top);
+    if (mustProve === null || mustProve.length === 0) {
+      heights[top] = REVERT_HEIGHT_FAIL;
+      stack.pop();
+      continue;
+    }
+    let tallest = 0;
+    let outcome: "push" | "fail" | "done" = "done";
+    for (const next of mustProve) {
+      if (next < 0 || next >= blocks.length || next >= heights.length) {
+        outcome = "fail";
+        break;
+      }
+      const state = heights[next];
+      if (state === 0) {
+        heights[next] = REVERT_HEIGHT_IN_PROGRESS;
+        stack.push(next);
+        outcome = "push";
+        break;
+      }
+      if (state === undefined || state === REVERT_HEIGHT_IN_PROGRESS || state === REVERT_HEIGHT_FAIL) {
+        outcome = "fail";
+        break;
+      }
+      if (state > tallest) {
+        tallest = state;
+      }
+    }
+    if (outcome === "push") {
+      continue;
+    }
+    if (outcome === "fail") {
+      heights[top] = REVERT_HEIGHT_FAIL;
+    } else {
+      const height = tallest + 1;
+      heights[top] = height > REVERTING_SIDE_MAX_BLOCKS ? REVERT_HEIGHT_FAIL : height;
+    }
+    stack.pop();
+  }
+  const proven = heights[start];
+  if (proven === undefined || proven === REVERT_HEIGHT_IN_PROGRESS || proven === REVERT_HEIGHT_FAIL) {
+    return REVERT_HEIGHT_FAIL;
+  }
+  return proven;
+}
+
 function revertingSideBounded(
   bytecode: BytecodeType,
   isMember: (pc: number) => boolean,
   jumpiPc: number,
   side: "jump" | "fall",
 ): boolean {
-  const cfg = buildCfg(lift(bytecode));
+  const cfg = revertingCfgOf(bytecode);
   let jumpBlock = -1;
   for (const block of cfg.blocks) {
     if (block.instructions.some((instruction) => instruction.pc === jumpiPc && instruction.opcode === 0x57)) {
@@ -2288,56 +2485,9 @@ function revertingSideBounded(
     return false;
   }
   const start = side === "jump" ? edge.to : edge.fallThrough;
-  const visit = (index: number, depth: number, path: ReadonlySet<number>): boolean => {
-    if (depth > REVERTING_SIDE_MAX_BLOCKS || path.has(index)) {
-      return false;
-    }
-    const current = cfg.blocks[index];
-    if (current === undefined) {
-      return false;
-    }
-    for (const instruction of current.instructions) {
-      if (REVERTING_STATE_OPS.has(instruction.opcode)) {
-        return false;
-      }
-      if (REVERTING_HALT_OPS.has(instruction.opcode)) {
-        return true;
-      }
-    }
-    const next = new Set(path);
-    next.add(index);
-    if (current.terminal === "jump") {
-      const target = current.successors.find((candidate) => candidate.kind === "jump");
-      if (target !== undefined) {
-        return visit(target.to, depth + 1, next);
-      }
-      // Dynamic return jump: the helper was entered by a caller that
-      // pushed its continuation, so every caller-pushed continuation
-      // must reach the revert for the side to prove.
-      const returns = dynamicReturnTargets(cfg, index, true);
-      if (returns.length === 0) {
-        return false;
-      }
-      return returns.every((to) => visit(to, depth + 1, next));
-    }
-    if (current.terminal === "jumpi") {
-      const conditional = current.successors.find((candidate) => candidate.kind === "conditional");
-      if (conditional === undefined || conditional.kind !== "conditional") {
-        return false;
-      }
-      return visit(conditional.to, depth + 1, next) && visit(conditional.fallThrough, depth + 1, next);
-    }
-    if (current.terminal === "fall") {
-      const through = current.successors.find((candidate) => candidate.kind === "fall-through");
-      if (through === undefined) {
-        return false;
-      }
-      return visit(through.to, depth + 1, next);
-    }
-    return false;
-  };
   try {
-    return visit(start, 1, new Set<number>());
+    const height = revertHeightFrom(cfg, revertHeightsOf(cfg), start);
+    return height !== REVERT_HEIGHT_FAIL && height <= REVERTING_SIDE_MAX_BLOCKS;
   } catch {
     return false;
   }
