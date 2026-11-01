@@ -285,6 +285,85 @@ describe("proxy resolution through RpcPort (K-002, K-005)", () => {
     expect(result.value.resolution.implementationSlot as string).toBe(ZOS_IMPLEMENTATION_SLOT as string);
   });
 
+  test("f1_implementation_own_slot_pointing_elsewhere_is_ignored", async () => {
+    const { IMPLEMENTATION_SLOT, ADMIN_SLOT } = await import("../../../src/domain/proxy.ts");
+    const codes = codesFor([
+      [PROXY, PROXY_BYTECODE],
+      [IMPL, IMPL_BYTECODE],
+      [OTHER, ADMIN_BYTECODE],
+    ]);
+    const storage = storageFor([
+      [PROXY, IMPLEMENTATION_SLOT as string, addressWord(IMPL)],
+      [PROXY, ADMIN_SLOT as string, ZERO_WORD],
+      // Attacker-controlled storage behind the implementation: a clean
+      // contract address written into the implementation's own slot must
+      // never steer the reported implementation.
+      [IMPL, IMPLEMENTATION_SLOT as string, addressWord(OTHER)],
+      [IMPL, ADMIN_SLOT as string, addressWord(ADMIN)],
+    ]);
+    const rpc = new FakeRpcAdapter(codes, headBlock(), storage);
+    const result = await resolveProxy(
+      { rpc },
+      {
+        address: mustOk(Address.parse(PROXY)),
+        block: headBlock(),
+        requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174000")),
+        deadline: mustOk(Timestamp.of(4102444800000)),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.resolution.kind !== "eip1967") {
+      throw new Error("expected an eip1967 resolution");
+    }
+    expect(result.value.resolution.implementation as string).toBe(
+      mustOk(Address.parse(IMPL)) as string,
+    );
+    for (const call of rpc.getStorageAtCalls) {
+      expect(call.address).toBe(mustOk(Address.parse(PROXY)) as string);
+    }
+  });
+
+  test("f1_eip1967_to_1167_chain_keeps_outer_admin", async () => {
+    const { IMPLEMENTATION_SLOT, ADMIN_SLOT } = await import("../../../src/domain/proxy.ts");
+    const stub = `0x363d3d373d3d3d363d73${OTHER.slice(2).toLowerCase()}5af43d82803e903d91602b57fd5bf3`;
+    const codes = codesFor([
+      [PROXY, PROXY_BYTECODE],
+      [IMPL, stub],
+      [OTHER, IMPL_BYTECODE],
+    ]);
+    const storage = storageFor([
+      [PROXY, IMPLEMENTATION_SLOT as string, addressWord(IMPL)],
+      [PROXY, ADMIN_SLOT as string, addressWord(ADMIN)],
+    ]);
+    const rpc = new FakeRpcAdapter(codes, headBlock(), storage);
+    const result = await resolveProxy(
+      { rpc },
+      {
+        address: mustOk(Address.parse(PROXY)),
+        block: headBlock(),
+        requestId: mustOk(RequestId.parse("123e4567-e89b-12d3-a456-426614174000")),
+        deadline: mustOk(Timestamp.of(4102444800000)),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.value.resolution.kind !== "eip1967") {
+      throw new Error("expected an eip1967 resolution");
+    }
+    expect(result.value.resolution.implementation as string).toBe(
+      mustOk(Address.parse(OTHER)) as string,
+    );
+    expect(result.value.resolution.admin.kind).toBe("eoa");
+    if (result.value.resolution.admin.kind !== "eoa") {
+      return;
+    }
+    expect(result.value.resolution.admin.address as string).toBe(
+      mustOk(Address.parse(ADMIN)) as string,
+    );
+    for (const call of rpc.getStorageAtCalls) {
+      expect(call.address).toBe(mustOk(Address.parse(PROXY)) as string);
+    }
+  });
+
   test("proxy_depth_limit_terminates", async () => {
     const { IMPLEMENTATION_SLOT, ADMIN_SLOT } = await import("../../../src/domain/proxy.ts");
     const addrs = [PROXY, IMPL, ADMIN, OTHER];

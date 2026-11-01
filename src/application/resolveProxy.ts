@@ -3,7 +3,11 @@
 // RpcPort at the pinned block, decodes them with the pure domain module,
 // detects EIP-1167 minimal-proxy bytecode and EIP-7702 delegation
 // designators from the fetched code, and classifies the admin and the
-// upgrade authority with slot and block evidence. Proxy chains are followed
+// upgrade authority with slot and block evidence. Storage slots are read
+// once at the entry address only: in a delegatecall chain every hop runs
+// against the entry storage, so a later hop's own storage is attacker
+// controlled and never consulted. Code hops are followed solely through
+// code-embedded pointers (EIP-1167, EIP-7702) with the outer admin kept,
 // up to a configured bound, and cycles terminate through a visited set.
 // This module performs no I/O of its own; every external call goes through
 // the port, and the module imports solely domain and ports.
@@ -31,6 +35,7 @@ import type {
   Address as AddressType,
   BlockNumber as BlockNumberType,
   Bytecode as BytecodeType,
+  CodeHash as CodeHashType,
   RequestId as RequestIdType,
   StorageWord as StorageWordType,
   Timestamp as TimestampType,
@@ -111,8 +116,183 @@ export async function resolveProxy(
   }
   const ctx: CallContext = { requestId: input.requestId, deadline: input.deadline, block };
   const codeCache = new Map<string, BytecodeType>();
+  const entry = input.address;
+
+  const entryCode = await readCode(ports, codeCache, entry, ctx);
+  if (entryCode === null) {
+    // No code at the entry address: an EOA carries no proxy info.
+    return ok({ resolution: NONE_RESOLUTION, block });
+  }
+  if (entryCode === undefined) {
+    const failed = await readCodeError(ports, codeCache, entry, ctx);
+    if (failed !== null) {
+      return rpcError(input, failed);
+    }
+    return ok({ resolution: NONE_RESOLUTION, block });
+  }
+  // Code-embedded pointers come first: EIP-7702 and EIP-1167 targets live
+  // in the bytecode, so no slot read applies. A chain that starts in code
+  // stays in code: storage is never consulted after a code hop.
+  if (parseEip7702Delegation(entryCode) !== null || parseEip1167Target(entryCode) !== null) {
+    return followCodeChain(ports, codeCache, input, block, ctx, entry, entryCode, maxDepth);
+  }
+
+  // Storage slots are read once at the entry address only. Every delegate
+  // hop executes against the entry storage, so the implementation's own
+  // storage is attacker controlled and never consulted.
+  const implWord = await ports.rpc.getStorageAt(entry, IMPLEMENTATION_SLOT, ctx);
+  if (!implWord.ok) {
+    return rpcError(input, implWord.error);
+  }
+  let decoded = decodeSlotAddress(implWord.value);
+  let implSlot = IMPLEMENTATION_SLOT;
+  let adminSlot = ADMIN_SLOT;
+  let isZos = false;
+  if (decoded.kind !== "address") {
+    const zosWord = await ports.rpc.getStorageAt(entry, ZOS_IMPLEMENTATION_SLOT, ctx);
+    if (!zosWord.ok) {
+      return rpcError(input, zosWord.error);
+    }
+    const zosDecoded = decodeSlotAddress(zosWord.value);
+    if (zosDecoded.kind !== "address") {
+      return ok({ resolution: NONE_RESOLUTION, block });
+    }
+    decoded = zosDecoded;
+    implSlot = ZOS_IMPLEMENTATION_SLOT;
+    adminSlot = ZOS_ADMIN_SLOT;
+    isZos = true;
+  }
+  const implementation = decoded.address;
+  const implCode = await readCode(ports, codeCache, implementation, ctx);
+  if (implCode === null || implCode === undefined) {
+    if (implCode === undefined) {
+      const failed = await readCodeError(ports, codeCache, implementation, ctx);
+      if (failed !== null) {
+        return rpcError(input, failed);
+      }
+    }
+    return ok({ resolution: NONE_RESOLUTION, block });
+  }
+  const hash = CodeHash.of(implCode);
+  if (!hash.ok) {
+    return ok({ resolution: NONE_RESOLUTION, block });
+  }
+  const adminWord = await ports.rpc.getStorageAt(entry, adminSlot, ctx);
+  if (!adminWord.ok) {
+    return rpcError(input, adminWord.error);
+  }
+  const classified = await classifyAdmin(ports, codeCache, adminWord.value, ctx);
+  if (classified === undefined) {
+    const decodedAdmin = decodeSlotAddress(adminWord.value);
+    const holder = decodedAdmin.kind === "address" ? decodedAdmin.address : entry;
+    const failed = await readCodeError(ports, codeCache, holder, ctx);
+    if (failed !== null) {
+      return rpcError(input, failed);
+    }
+    return ok({ resolution: NONE_RESOLUTION, block });
+  }
+  const resolvedAdmin = classified;
+  const selector = proxiableUUIDSelector();
+  let outer: ProxyResolution;
+  if (isZos) {
+    outer = Object.freeze({
+      kind: "zos",
+      implementation,
+      implementationCodeHash: hash.value,
+      implementationSlot: implSlot,
+      adminSlot,
+      block,
+      admin: resolvedAdmin.admin,
+      upgradeAuthority: resolvedAdmin.authority,
+    });
+  } else if (bytecodeHasSelector(entryCode, selector) || bytecodeHasSelector(implCode, selector)) {
+    const offset =
+      selectorOffsetInBytecode(entryCode, selector) ?? selectorOffsetInBytecode(implCode, selector);
+    outer = Object.freeze({
+      kind: "uups",
+      implementation,
+      implementationCodeHash: hash.value,
+      implementationSlot: IMPLEMENTATION_SLOT,
+      block,
+      upgradeFunction: selector,
+      ...(offset === null ? {} : { upgradeFunctionOffset: offset }),
+      upgradeAuthority: resolvedAdmin.authority,
+    });
+  } else {
+    outer = Object.freeze({
+      kind: "eip1967",
+      implementation,
+      implementationCodeHash: hash.value,
+      implementationSlot: implSlot,
+      adminSlot,
+      block,
+      admin: resolvedAdmin.admin,
+      upgradeAuthority: resolvedAdmin.authority,
+    });
+  }
+
+  // Follow code-embedded pointers from the implementation onward. The outer
+  // storage hop stays upgradeable and keeps its admin; only the effective
+  // code target advances.
+  let finalAddress = implementation;
+  let finalCode = implCode;
+  let finalHash = hash.value;
+  const visited: string[] = [
+    (entry as string).toLowerCase(),
+    (implementation as string).toLowerCase(),
+  ];
+  let depth = 1;
+  for (;;) {
+    if (depth > maxDepth) {
+      break;
+    }
+    const next = parseEip7702Delegation(finalCode) ?? parseEip1167Target(finalCode);
+    if (next === null) {
+      break;
+    }
+    const nextKey = (next as string).toLowerCase();
+    if (visited.includes(nextKey)) {
+      break;
+    }
+    visited.push(nextKey);
+    const targetCode = await readCode(ports, codeCache, next, ctx);
+    if (targetCode === null || targetCode === undefined) {
+      if (targetCode === undefined) {
+        const failed = await readCodeError(ports, codeCache, next, ctx);
+        if (failed !== null) {
+          return rpcError(input, failed);
+        }
+      }
+      break;
+    }
+    const targetHash = CodeHash.of(targetCode);
+    if (!targetHash.ok) {
+      break;
+    }
+    finalAddress = next;
+    finalCode = targetCode;
+    finalHash = targetHash.value;
+    depth += 1;
+  }
+  return ok({ resolution: withFinalTarget(outer, finalAddress, finalHash), block });
+}
+
+// Code-pointer chain from an entry whose bytecode already carries the hop
+// (EIP-7702 or EIP-1167): every further hop comes from bytecode as well,
+// never from storage.
+async function followCodeChain(
+  ports: ResolveProxyPorts,
+  codeCache: Map<string, BytecodeType>,
+  input: ResolveProxyInput,
+  block: BlockNumberType,
+  ctx: CallContext,
+  entry: AddressType,
+  entryCode: BytecodeType,
+  maxDepth: number,
+): Promise<Result<ResolveProxySuccess, ResolveProxyError>> {
   const visited: string[] = [];
-  let current = input.address;
+  let current = entry;
+  let currentCode = entryCode;
   let depth = 0;
   let last: ProxyResolution = NONE_RESOLUTION;
 
@@ -122,23 +302,9 @@ export async function resolveProxy(
       return ok({ resolution: last, block });
     }
     visited.push(key);
-    const proxyCode = await readCode(ports, codeCache, current, ctx);
-    if (proxyCode === null) {
-      // No code at the entry address: an EOA carries no proxy info.
-      // A broken implementation pointer deeper in the chain ends the
-      // walk at the last good resolution.
-      return ok({ resolution: last, block });
-    }
-    if (proxyCode === undefined) {
-      const failed = await readCodeError(ports, codeCache, current, ctx);
-      if (failed !== null) {
-        return rpcError(input, failed);
-      }
-      return ok({ resolution: last, block });
-    }
     // EIP-7702 comes first: delegated EOA code carries the 0xef0100 prefix
     // with the delegation address inline, so no slot read applies.
-    const delegated = parseEip7702Delegation(proxyCode);
+    const delegated = parseEip7702Delegation(currentCode);
     if (delegated !== null) {
       const targetCode = await readCode(ports, codeCache, delegated, ctx);
       if (targetCode === null || targetCode === undefined) {
@@ -161,12 +327,13 @@ export async function resolveProxy(
         mutability: "changeable-by-new-authorization",
       });
       current = delegated;
+      currentCode = targetCode;
       depth += 1;
       continue;
     }
     // EIP-1167 follows: the minimal-proxy bytecode embeds the fixed target
     // address inline, so no slot read applies.
-    const minimalTarget = parseEip1167Target(proxyCode);
+    const minimalTarget = parseEip1167Target(currentCode);
     if (minimalTarget !== null) {
       const targetCode = await readCode(ports, codeCache, minimalTarget, ctx);
       if (targetCode === null || targetCode === undefined) {
@@ -189,102 +356,33 @@ export async function resolveProxy(
         mutability: "fixed",
       });
       current = minimalTarget;
+      currentCode = targetCode;
       depth += 1;
       continue;
     }
-    const implWord = await ports.rpc.getStorageAt(current, IMPLEMENTATION_SLOT, ctx);
-    if (!implWord.ok) {
-      return rpcError(input, implWord.error);
-    }
-    let decoded = decodeSlotAddress(implWord.value);
-    let implSlot = IMPLEMENTATION_SLOT;
-    let adminSlot = ADMIN_SLOT;
-    let isZos = false;
-    if (decoded.kind !== "address") {
-      const zosWord = await ports.rpc.getStorageAt(current, ZOS_IMPLEMENTATION_SLOT, ctx);
-      if (!zosWord.ok) {
-        return rpcError(input, zosWord.error);
-      }
-      const zosDecoded = decodeSlotAddress(zosWord.value);
-      if (zosDecoded.kind !== "address") {
-        return ok({ resolution: last, block });
-      }
-      decoded = zosDecoded;
-      implSlot = ZOS_IMPLEMENTATION_SLOT;
-      adminSlot = ZOS_ADMIN_SLOT;
-      isZos = true;
-    }
-    const implementation = decoded.address;
-    const implCode = await readCode(ports, codeCache, implementation, ctx);
-    if (implCode === null || implCode === undefined) {
-      if (implCode === undefined) {
-        const failed = await readCodeError(ports, codeCache, implementation, ctx);
-        if (failed !== null) {
-          return rpcError(input, failed);
-        }
-      }
-      return ok({ resolution: last, block });
-    }
-    const hash = CodeHash.of(implCode);
-    if (!hash.ok) {
-      return ok({ resolution: last, block });
-    }
-    const adminWord = await ports.rpc.getStorageAt(current, adminSlot, ctx);
-    if (!adminWord.ok) {
-      return rpcError(input, adminWord.error);
-    }
-    const classified = await classifyAdmin(ports, codeCache, adminWord.value, ctx);
-    if (classified === undefined) {
-      const decodedAdmin = decodeSlotAddress(adminWord.value);
-      const holder =
-        decodedAdmin.kind === "address" ? decodedAdmin.address : current;
-      const failed = await readCodeError(ports, codeCache, holder, ctx);
-      if (failed !== null) {
-        return rpcError(input, failed);
-      }
-      return ok({ resolution: last, block });
-    }
-    const resolvedAdmin = classified;
-    const selector = proxiableUUIDSelector();
-    if (isZos) {
-      last = Object.freeze({
-        kind: "zos",
-        implementation,
-        implementationCodeHash: hash.value,
-        implementationSlot: implSlot,
-        adminSlot,
-        block,
-        admin: resolvedAdmin.admin,
-        upgradeAuthority: resolvedAdmin.authority,
-      });
-    } else if (bytecodeHasSelector(proxyCode, selector) || bytecodeHasSelector(implCode, selector)) {
-      const offset =
-        selectorOffsetInBytecode(proxyCode, selector) ??
-        selectorOffsetInBytecode(implCode, selector);
-      last = Object.freeze({
-        kind: "uups",
-        implementation,
-        implementationCodeHash: hash.value,
-        implementationSlot: IMPLEMENTATION_SLOT,
-        block,
-        upgradeFunction: selector,
-        ...(offset === null ? {} : { upgradeFunctionOffset: offset }),
-        upgradeAuthority: resolvedAdmin.authority,
-      });
-    } else {
-      last = Object.freeze({
-        kind: "eip1967",
-        implementation,
-        implementationCodeHash: hash.value,
-        implementationSlot: implSlot,
-        adminSlot,
-        block,
-        admin: resolvedAdmin.admin,
-        upgradeAuthority: resolvedAdmin.authority,
-      });
-    }
-    current = implementation;
-    depth += 1;
+    return ok({ resolution: last, block });
+  }
+}
+
+// Substitute the final code target into an outer storage-hop resolution.
+// The outer kind, slots, block, admin and upgrade authority are unchanged:
+// the outermost admin wins and the outer hop already marks upgradeability.
+function withFinalTarget(
+  outer: ProxyResolution,
+  implementation: AddressType,
+  implementationCodeHash: CodeHashType,
+): ProxyResolution {
+  switch (outer.kind) {
+    case "eip1967":
+      return Object.freeze({ ...outer, implementation, implementationCodeHash });
+    case "zos":
+      return Object.freeze({ ...outer, implementation, implementationCodeHash });
+    case "uups":
+      return Object.freeze({ ...outer, implementation, implementationCodeHash });
+    case "eip1167":
+    case "eip7702":
+    case "none":
+      return outer;
   }
 }
 
