@@ -8,6 +8,8 @@ owner can do to you, proven from the bytecode.
 XII, a horse that never flinched at fire. The tool does the same: it
 stays calm and reads the contract while the market is on fire.*
 
+How it was built: one person, a team of agents — see [docs/HOW-IT-WAS-BUILT.md](docs/HOW-IT-WAS-BUILT.md).
+
 Demo video: (link added at submission)
 
 Meta Global AI Developer Hackathon entry · Indie Developer track ·
