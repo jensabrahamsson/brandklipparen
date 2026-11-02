@@ -19,7 +19,7 @@ import { readStoredMode, writeStoredMode } from "../lib/uiMode.ts";
 import type { UiMode } from "../lib/uiMode.ts";
 import { fetchLiveTokens } from "../lib/liveTokens.ts";
 import type { LiveTokenEntry } from "../lib/liveTokens.ts";
-import { resolveTokenIdentity, tokenDisplayText } from "../lib/tokenIdentity.ts";
+import { resolveTokenIdentity, textHasNonAscii, tokenDisplayText } from "../lib/tokenIdentity.ts";
 import { TokenHeader } from "../components/TokenHeader.tsx";
 import { clearStoredPriorities, readStoredPriorities, writeStoredPriorities } from "../lib/priorities.ts";
 import { matchPriorities } from "../lib/matcher.ts";
@@ -893,8 +893,14 @@ function recordRecent(value: Extract<AnalyzeResult, { kind: "assessed" }>): void
       word: riskWord(value.score),
       probabilities: value.probabilities,
       topSignal: top === undefined ? null : signalTitle(top),
-      symbol: value.tokenSymbol === undefined ? null : tokenDisplayText(value.tokenSymbol, value.tokenSymbolNonAscii === true),
-      name: value.tokenName === undefined ? null : tokenDisplayText(value.tokenName, value.tokenNameNonAscii === true),
+      symbol:
+        value.tokenSymbol === undefined
+          ? null
+          : tokenDisplayText(value.tokenSymbol, value.tokenSymbolNonAscii === true || textHasNonAscii(value.tokenSymbol)),
+      name:
+        value.tokenName === undefined
+          ? null
+          : tokenDisplayText(value.tokenName, value.tokenNameNonAscii === true || textHasNonAscii(value.tokenName)),
       at: Date.now(),
     };
     const next = [entry, ...entries.filter((item) => (item as { address?: string }).address !== value.target)].slice(0, 5);

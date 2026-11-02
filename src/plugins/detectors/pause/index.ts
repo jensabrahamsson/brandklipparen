@@ -193,6 +193,33 @@ function toggleMode(regions: readonly RegionFacts[], slot: number): "pause" | "t
   return "unknown";
 }
 
+// Whether any region stores a proven zero to `slot` through the
+// expression view (SCAN-3): a clear write carried into a shared
+// internal helper leaves no constant beside its SSTORE for the legacy
+// store scan, while the expression store still proves the value. Such
+// a write flips the flag back, so a one-way classification must not
+// stand on the legacy scan alone.
+function exprProvesZeroWrite(
+  bytecode: DetectorInput["bytecode"],
+  regions: readonly RegionFacts[],
+  slot: number,
+): boolean {
+  for (const region of regions) {
+    const exprs = interpretRegionExprs(bytecode, region.selector);
+    for (const [, record] of exprs.stores) {
+      if (
+        record.slot.kind === "const" &&
+        record.slot.value === BigInt(slot) &&
+        record.value.kind === "const" &&
+        record.value.value === 0n
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 // Privileged flag proof over the frozen input. Total: arbitrary bytecode
 // yields a finding list, never an exception. Deterministic: candidate
 // slots scan ascending and the lowest provable slot wins. Bytecode without
@@ -703,6 +730,15 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       const exprPacked = packedBoolWriteExpr(store.slot.value, candidateExprs.stores.get(store.pc));
       if (legacyPacked !== null || exprPacked !== null) {
         candidates.add(store.slot.value);
+        continue;
+      }
+      // A plain flag write through a shared internal helper (SCAN-3):
+      // the constant travels on the stack from the entry, so no
+      // constant sits beside the SSTORE for the legacy scan, while the
+      // expression store still proves the written value is a boolean.
+      const exprValue = candidateExprs.stores.get(store.pc)?.value;
+      if (exprValue !== undefined && exprValue.kind === "const" && exprValue.value <= 1n) {
+        candidates.add(store.slot.value);
       }
     }
   }
@@ -740,6 +776,25 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       if (writePc === null) {
         const exprStores = [...writerExprs.stores.entries()]
           .filter(([, record]) => packedBoolWriteExpr(slot, record) !== null)
+          .map(([pc]) => pc)
+          .sort((left, right) => left - right);
+        const first = exprStores[0];
+        if (first !== undefined) {
+          writePc = first;
+        }
+      }
+      // Plain flag writes through a shared internal helper (SCAN-3):
+      // the legacy lookup needs a constant beside the SSTORE, while the
+      // expression store proves the boolean the entry carried in.
+      if (writePc === null) {
+        const exprStores = [...writerExprs.stores.entries()]
+          .filter(
+            ([, record]) =>
+              record.slot.kind === "const" &&
+              record.slot.value === BigInt(slot) &&
+              record.value.kind === "const" &&
+              record.value.value <= 1n,
+          )
           .map(([pc]) => pc)
           .sort((left, right) => left - right);
         const first = exprStores[0];
@@ -855,8 +910,13 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         // write) is a launch gate, not a freeze: trading can open but
         // can never be frozen again, so no pause fact is proven for
         // it. A computed packed write proves neither direction, so its
-        // mode stays unknown and the fact still stands.
-        const mode = toggleMode(view.regions, slot);
+        // mode stays unknown and the fact still stands. A zero write
+        // proven only through the expression view (a clear carried
+        // into a shared helper) still proves the flag flips back.
+        let mode = toggleMode(view.regions, slot);
+        if (mode === "trading-toggle" && exprProvesZeroWrite(input.bytecode, view.regions, slot)) {
+          mode = "pause";
+        }
         if (mode === "trading-toggle") {
           continue;
         }

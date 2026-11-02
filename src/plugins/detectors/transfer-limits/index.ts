@@ -18,6 +18,7 @@
 import { Evidence } from "../../../domain/evidence.ts";
 import type { Evidence as EvidenceType, NonEmpty } from "../../../domain/evidence.ts";
 import {
+  SLOT_FLAVOR_WINDOW_PC,
   TRANSFER_FROM_SELECTOR,
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
@@ -131,10 +132,33 @@ function evidenceFor(
 }
 
 // A limit compare in the transfer path: the slot loads beside LT or GT.
-// The proof returns the read PC.
-function limitCompare(region: RegionFacts, slot: number): number | null {
+// The proof returns the read and compare PCs. A compare that reads a
+// chain-context value (TIMESTAMP or BLOCKNUMBER) beside the load pits
+// the slot against the chain, never against an amount or a balance, so
+// it proves no transfer limit (SCAN-3).
+const CHAIN_CONTEXT_OPCODES: ReadonlySet<number> = new Set([0x42, 0x43]);
+
+function limitCompare(
+  region: RegionFacts,
+  slot: number,
+  code: readonly Instruction[],
+): { readonly loadPc: number; readonly gatePc: number } | null {
   const proof = constSlotLoadNearFlavor(region, slot, ["lt", "gt"]);
-  return proof === null ? null : proof.loadPc;
+  if (proof === null) {
+    return null;
+  }
+  const low = Math.min(proof.loadPc, proof.gatePc);
+  const high = Math.max(proof.loadPc, proof.gatePc);
+  for (const instruction of code) {
+    if (
+      instruction.pc >= low - SLOT_FLAVOR_WINDOW_PC &&
+      instruction.pc <= high &&
+      CHAIN_CONTEXT_OPCODES.has(instruction.opcode)
+    ) {
+      return null;
+    }
+  }
+  return Object.freeze({ loadPc: proof.loadPc, gatePc: proof.gatePc });
 }
 
 // A limit write: the writer stores a caller-chosen (computed) value or a
@@ -180,6 +204,7 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
   }
   const attribution = attributeFunctions(input.bytecode);
   const view = analyzeOwnerControl(input.bytecode);
+  const code = disassemble(input.bytecode);
   const privilegedSet = new Set(view.privileged);
   const transferSet = new Set(view.transfers);
   const candidates = new Set<number>();
@@ -226,10 +251,11 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
         if (transfer === undefined) {
           continue;
         }
-        const readPc = limitCompare(transfer, slot);
-        if (readPc === null) {
+        const compare = limitCompare(transfer, slot, code);
+        if (compare === null) {
           continue;
         }
+        const readPc = compare.loadPc;
         const holder = attribution.holderOf(writePc);
         const readerHolder = attribution.holderOf(readPc);
         if (holder === null || readerHolder === null) {
@@ -512,6 +538,12 @@ export function limitTransferGate(
       }
       for (const jump of code) {
         if (jump.pc <= candidate.pc || jump.pc > candidate.pc + 64 || jump.opcode !== 0x57) {
+          continue;
+        }
+        // The paired jump must belong to the transfer path (SCAN-3): a
+        // reverting jump of another function in the window (a writer
+        // guard, say) never proves this compare gates a transfer.
+        if (!gateMember(jump.pc)) {
           continue;
         }
         if (

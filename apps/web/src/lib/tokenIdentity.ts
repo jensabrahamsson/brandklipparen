@@ -57,6 +57,23 @@ function clean(value: string | null | undefined): string | null {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+// Whether a display text carries a non-ASCII code point (SCAN-3): text
+// that arrives without a flag — a live-list label shown when the
+// analysis name or symbol is empty, or an older unflagged response —
+// is still a homoglyph risk, so the flag derives from the text itself
+// whenever no analysis flag covers it.
+export function textHasNonAscii(text: string | null): boolean {
+  if (text === null) {
+    return false;
+  }
+  for (const char of text) {
+    if ((char.codePointAt(0) ?? 0) > 0x7e) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function resolveTokenIdentity(
   result: TokenIdentitySource,
   liveEntry: LiveIdentitySource,
@@ -68,8 +85,9 @@ export function resolveTokenIdentity(
   return {
     symbol,
     name,
-    symbolNonAscii: analysisSymbol !== null && result.tokenSymbolNonAscii === true,
-    nameNonAscii: analysisName !== null && result.tokenNameNonAscii === true,
+    symbolNonAscii:
+      (analysisSymbol !== null && result.tokenSymbolNonAscii === true) || textHasNonAscii(symbol),
+    nameNonAscii: (analysisName !== null && result.tokenNameNonAscii === true) || textHasNonAscii(name),
   };
 }
 

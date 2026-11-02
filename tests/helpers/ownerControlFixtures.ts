@@ -1566,6 +1566,562 @@ export function byteMaskPauseTokenHex(): string {
   return asm.build();
 }
 
+// SCAN-3 idiom fixtures: array-loop list writers, feature-flag batch
+// setters, internal pause helpers, exempt-or-flag trading toggles,
+// pair-only pause gates, dual-rate fee setters, scaled and removable
+// limits, a block-number gate and supply-decreasing burn shapes. Every
+// builder uses synthetic selectors and hand-assembled bytecode only.
+export const SCAN3_SET = "0x0a9c6c1e";
+export const SCAN3_CLEAR = "0x0b9c6c1e";
+export const SCAN3_BURN = "0x42966c68";
+export const SCAN3_SUPPLY = "0x18160ddd";
+
+function scan3Dispatcher(asm: Asm, entries: readonly (readonly [string, string])[]): void {
+  for (const [selector, label] of entries) {
+    asm.op(0x80).push4(selector.slice(2)).op(0x14);
+    asm.pushLabel2(label).op(0x57);
+  }
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+}
+
+function scan3OwnerGuard(asm: Asm, okLabel: string, blockedLabel: string): void {
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2(okLabel).op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label(blockedLabel).op(0x5b);
+  asm.label(okLabel).op(0x5b);
+}
+
+// One mapping write of base `base` through the explicit keccak(key .
+// baseSlot) memory pattern; key and value arrive as two calldata loads.
+function scan3MappingWrite(asm: Asm, base: number): void {
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(base).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+}
+
+// One mapping load of base `base` keyed by a calldata word.
+function scan3MappingLoad(asm: Asm, base: number): void {
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(base).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54);
+}
+
+function scan3SharedHead(asm: Asm): void {
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("ret1");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("transferFromEntry").op(0x5b);
+  asm.pushLabel2("ret2");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+}
+
+function scan3SharedTail(asm: Asm): void {
+  asm.label("ret1").op(0x5b, 0x00);
+  asm.label("ret2").op(0x5b, 0x00);
+}
+
+// Bots-array blacklist token (SCAN-3): the list writer loops over a
+// calldata array, storing one mapping entry of base 7 per iteration
+// behind an owner guard; a second guarded writer clears entries the
+// same way. Both transfer entries route through a shared gate that
+// reverts while either of two entries of base 7 reads set.
+export function botsArrayBlacklistTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [TRANSFER_FROM_SELECTOR, "transferFromEntry"],
+    [SCAN3_SET, "setEntry"],
+    [SCAN3_CLEAR, "clearEntry"],
+  ]);
+  scan3SharedHead(asm);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.label("setLoop").op(0x5b);
+  scan3MappingWrite(asm, 7);
+  asm.pushLabel2("setLoop").op(0x56);
+  asm.label("clearEntry").op(0x5b);
+  scan3OwnerGuard(asm, "clearOk", "clearBlocked");
+  asm.label("clearLoop").op(0x5b);
+  scan3MappingWrite(asm, 7);
+  asm.pushLabel2("clearLoop").op(0x56);
+  asm.label("shared").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.op(0x15);
+  asm.pushLabel2("second").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("second").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.op(0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  scan3SharedTail(asm);
+  return asm.build();
+}
+
+// Feature-flag batch blacklist token (SCAN-3): the guarded batch setter
+// first requires feature flag slot 8 to read set, then loops mapping
+// writes of base 7. The shared transfer gate jumps straight to its
+// revert while an entry reads set (`if (listed[from]) revert` shape).
+export function featureFlagBatchBlacklistTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [TRANSFER_FROM_SELECTOR, "transferFromEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  scan3SharedHead(asm);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x08).op(0x54, 0x15);
+  asm.pushLabel2("setLoopHead").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setLoopHead").op(0x5b);
+  scan3MappingWrite(asm, 7);
+  asm.pushLabel2("setLoopHead").op(0x56);
+  asm.label("shared").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x56);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  scan3SharedTail(asm);
+  return asm.build();
+}
+
+// Dead-setter token (SCAN-3, negative): a guarded writer sets mapping
+// base 7, but the transfer path only checks the balance mapping of
+// base 2 against the amount and never reads base 7, so no list power
+// is proven.
+export function deadSetterBlacklistTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  scan3MappingLoad(asm, 2);
+  asm.op(0x35, 0x10, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  return asm.build();
+}
+
+// Exempt-skip token (SCAN-3, negative): a guarded writer sets an
+// exemption mapping of base 7. Both transfer entries route through a
+// shared helper that returns at once while either of two exemption
+// entries reads set, and otherwise runs a reverting limit compare on
+// slot 6; the exemption itself never reverts a transfer.
+export function exemptSkipLimitTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [TRANSFER_FROM_SELECTOR, "transferFromEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  scan3SharedHead(asm);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  asm.label("shared").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.op(0x15);
+  asm.pushLabel2("second").op(0x57);
+  asm.op(0x56);
+  asm.label("second").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.op(0x15);
+  asm.pushLabel2("check").op(0x57);
+  asm.op(0x56);
+  asm.label("check").op(0x5b);
+  asm.op(0x35).push1(0x06).op(0x54, 0x11, 0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  scan3SharedTail(asm);
+  return asm.build();
+}
+
+// Internal-helper pause token (SCAN-3): both guarded pause entries jump
+// into one shared write helper carrying the new flag value, which
+// stores slot 4 and returns through the dynamic return address. Both
+// transfer entries route through a shared gate that jumps straight to
+// its revert while slot 4 reads set.
+export function internalPauseTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [TRANSFER_FROM_SELECTOR, "transferFromEntry"],
+    [SCAN3_SET, "setEntry"],
+    [SCAN3_CLEAR, "clearEntry"],
+  ]);
+  scan3SharedHead(asm);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.pushLabel2("setRet");
+  asm.push1(0x01);
+  asm.pushLabel2("writeHelper");
+  asm.op(0x56);
+  asm.label("setRet").op(0x5b, 0x00);
+  asm.label("clearEntry").op(0x5b);
+  scan3OwnerGuard(asm, "clearOk", "clearBlocked");
+  asm.pushLabel2("clearRet");
+  asm.push1(0x00);
+  asm.pushLabel2("writeHelper");
+  asm.op(0x56);
+  asm.label("clearRet").op(0x5b, 0x00);
+  asm.label("writeHelper").op(0x5b);
+  asm.push1(0x04).op(0x55, 0x56);
+  asm.label("shared").op(0x5b);
+  asm.push1(0x04).op(0x54);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x56);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  scan3SharedTail(asm);
+  return asm.build();
+}
+
+// Trading-toggle token (SCAN-3): guarded writers flip flag slot 4 both
+// ways. The transfer path proceeds while the flag reads set or an
+// exemption entry of base 7 reads set, and reverts otherwise
+// (`require(flag || exempt[from])` shape).
+export function tradingToggleExemptTokenHex(reversible: boolean): string {
+  const asm = new Asm();
+  const entries: (readonly [string, string])[] = reversible
+    ? [
+        [TRANSFER_SELECTOR, "transferEntry"],
+        [SCAN3_SET, "setEntry"],
+        [SCAN3_CLEAR, "clearEntry"],
+      ]
+    : [
+        [TRANSFER_SELECTOR, "transferEntry"],
+        [SCAN3_SET, "setEntry"],
+      ];
+  scan3Dispatcher(asm, entries);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x04).op(0x54);
+  asm.pushLabel2("tok").op(0x57);
+  scan3MappingLoad(asm, 7);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  if (reversible) {
+    asm.label("clearEntry").op(0x5b);
+    scan3OwnerGuard(asm, "clearOk", "clearBlocked");
+    asm.push1(0x00).push1(0x04).op(0x55, 0x00);
+  }
+  return asm.build();
+}
+
+// Pair-only pause token (SCAN-3): guarded writers flip flag slot 4 both
+// ways. The transfer path reverts only while the flag reads set and
+// the recipient equals the stored pair address of slot 9.
+export function pairOnlyPauseTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+    [SCAN3_CLEAR, "clearEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x04).op(0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.op(0x35).push1(0x09).op(0x54, 0x14, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  asm.label("clearEntry").op(0x5b);
+  scan3OwnerGuard(asm, "clearOk", "clearBlocked");
+  asm.push1(0x00).push1(0x04).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Dual-rate fee token (SCAN-3): one guarded setter stores two calldata
+// rates into slots 5 and 6 after a cap compare against 1000, and the
+// transfer path multiplies the amount by slot 5 and subtracts.
+export function dualRateFeeTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x05).op(0x54, 0x02, 0x03);
+  asm.push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.op(0x35).push2(1000).op(0x11, 0x15);
+  asm.pushLabel2("wok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("wok").op(0x5b);
+  asm.op(0x35).push1(0x05).op(0x55);
+  asm.op(0x35).push1(0x06).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Scaled-limit token (SCAN-3): the guarded setter stores the calldata
+// value multiplied by 1000 into limit slot 6, and both transfer
+// entries route through a shared gate that reverts while the loaded
+// balance of base 2 plus the amount exceeds slot 6.
+export function scaledLimitTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [TRANSFER_FROM_SELECTOR, "transferFromEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  scan3SharedHead(asm);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.op(0x35).push2(1000).op(0x02).push1(0x06).op(0x55, 0x00);
+  asm.label("shared").op(0x5b);
+  scan3MappingLoad(asm, 2);
+  asm.op(0x35, 0x01).push1(0x06).op(0x54, 0x11, 0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  scan3SharedTail(asm);
+  return asm.build();
+}
+
+// Removable-limit token (SCAN-3): the guarded writer stores one large
+// constant into limit slot 6 (a remove-limits write), and the transfer
+// path reverts while the amount exceeds slot 6.
+export function removableLimitTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x06).op(0x54, 0x11, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push2(60000).push1(0x06).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Block-number gate token (SCAN-3, negative): the guarded writer
+// stores a computed end block into slot 7, and the transfer path
+// reverts while the block number reads below slot 7. No amount or
+// balance is compared, so no limit power is proven.
+export function blockNumberGateTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x43).push1(0x07).op(0x54, 0x10, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.op(0x35).push1(0x0a).op(0x01).push1(0x07).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Burn-only token (SCAN-3, negative): the public burn entry decreases
+// supply slot 2 by subtraction and adjusts a balance entry of base 3
+// by addition beside the store (a shared update shape). No entry
+// increases the supply slot, so no mint power is proven.
+export function burnOnlyTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SUPPLY, "supplyEntry"],
+    [SCAN3_BURN, "burnEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("supplyEntry").op(0x5b);
+  asm.push1(0x02).op(0x54, 0x00);
+  asm.label("burnEntry").op(0x5b);
+  asm.push1(0x02).op(0x54);
+  asm.op(0x35, 0x03).push1(0x02).op(0x55);
+  scan3MappingLoad(asm, 3);
+  asm.op(0x35, 0x01);
+  scan3MappingLoad(asm, 3);
+  asm.op(0x55, 0x00);
+  return asm.build();
+}
+
+// Stored-recipient mint token (SCAN-3): the guarded writer increases
+// supply slot 2 by the calldata amount and credits the balance entry
+// of base 3 keyed by the stored owner address of slot 0 (an `issue`
+// shape that mints to a stored account, not a calldata address).
+export function storedRecipientMintTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SUPPLY, "supplyEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("supplyEntry").op(0x5b);
+  asm.push1(0x02).op(0x54, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x02).op(0x54);
+  asm.op(0x35, 0x01).push1(0x02).op(0x55);
+  asm.push1(0x00).op(0x54).push1(0x00).op(0x52);
+  asm.push1(0x03).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x80, 0x54);
+  asm.op(0x35, 0x01, 0x90, 0x55, 0x00);
+  return asm.build();
+}
+
+// Internal-clear pause token (SCAN-3): the guarded set entry stores
+// one directly beside the SSTORE, while the guarded clear entry jumps
+// into a shared write helper carrying zero, so only the expression
+// view proves the flag also flips back. Both transfer entries route
+// through a shared gate that reverts while slot 4 reads set.
+export function internalClearPauseTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [TRANSFER_FROM_SELECTOR, "transferFromEntry"],
+    [SCAN3_SET, "setEntry"],
+    [SCAN3_CLEAR, "clearEntry"],
+  ]);
+  scan3SharedHead(asm);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  asm.label("clearEntry").op(0x5b);
+  scan3OwnerGuard(asm, "clearOk", "clearBlocked");
+  asm.pushLabel2("clearRet");
+  asm.push1(0x00);
+  asm.pushLabel2("writeHelper");
+  asm.op(0x56);
+  asm.label("clearRet").op(0x5b, 0x00);
+  asm.label("writeHelper").op(0x5b);
+  asm.push1(0x04).op(0x55, 0x56);
+  asm.label("shared").op(0x5b);
+  asm.push1(0x04).op(0x54, 0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  scan3SharedTail(asm);
+  return asm.build();
+}
+
+// Struct fee token (SCAN-3): one guarded setter stores three calldata
+// fee fields into consecutive slots 5, 6 and 7, and the transfer path
+// sums two loaded fields, multiplies the amount by the sum, divides
+// by 10000 and subtracts the result.
+export function structFeeTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x05).op(0x54).push1(0x06).op(0x54, 0x01, 0x02);
+  asm.push2(10000).op(0x04, 0x03);
+  asm.push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.op(0x35).push1(0x05).op(0x55);
+  asm.op(0x35).push1(0x06).op(0x55);
+  asm.op(0x35).push1(0x07).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Nested-role frozen token (SCAN-3): the list writer is guarded only
+// by a nested role entry — the caller keyed under a role word hashed
+// with base 9 in two keccak stages — and writes frozen mapping base 7.
+// The shared transfer gate jumps straight to its revert while an
+// entry reads set.
+export function nestedRoleFrozenTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [TRANSFER_FROM_SELECTOR, "transferFromEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  scan3SharedHead(asm);
+  asm.label("setEntry").op(0x5b);
+  // Inner hash: keccak(role . base 9) left in memory at 0x00.
+  asm.push1(0x2a).push1(0x00).op(0x52);
+  asm.push1(0x09).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20);
+  // Outer hash: keccak(caller . inner) keyed load.
+  asm.push1(0x20).op(0x52);
+  asm.op(0x33).push1(0x00).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("setBlocked").op(0x57);
+  asm.pushLabel2("setOk").op(0x56);
+  asm.label("setBlocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  asm.label("shared").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x56);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  scan3SharedTail(asm);
+  return asm.build();
+}
+
+// Caller-keyed gate token (SCAN-3): the guarded writer sets mapping
+// base 7, and the transfer path gates on the entry keyed by the
+// caller itself (`require(!listed[msg.sender])` shape), tested by a
+// raw load that jumps straight to its revert.
+export function callerKeyedBlacklistTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  return asm.build();
+}
+
 // Short-circuit packed pause token (SCAN-2): packed bit 8 of slot 0 is
 // set and cleared by guarded packed writers. While the bit reads set
 // the transfer path reverts only when the calldata word also reads
