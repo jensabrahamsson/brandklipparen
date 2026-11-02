@@ -599,7 +599,13 @@ function AssessedView({
                 {verdictTail} <Explain explainKey="score:combined" label="Combined score" />
               </span>
             </p>
-            <PowersStrip address={address} allIds={heroIds} tiles={heroBoard.ownerTiles} plugins={plugins} />
+            <PowersStrip
+              address={address}
+              allIds={heroIds}
+              tiles={heroBoard.ownerTiles}
+              plugins={plugins}
+              ownerState={result.ownerState}
+            />
             {calibrationNote(result.modelVersion) !== null ? (
               <p className="quiet" style={{ margin: "4px 0 0" }}>
                 {calibrationNote(result.modelVersion)}

@@ -7,6 +7,9 @@
 // count. The summary never uses a "·" row, so the meta-separator scan
 // keeps owning middots.
 import type { JSX } from "react";
+import { CopyButton } from "./CopyButton.tsx";
+import { toChecksumAddress } from "../lib/checksumAddress.ts";
+import type { AnalyzeSuccess } from "../types.ts";
 import { Explain } from "./Explain.tsx";
 import { Pictogram } from "./Pictogram.tsx";
 import { pluginHref } from "../lib/pluginCopy.ts";
@@ -42,6 +45,7 @@ export function PowersStrip({
   allIds,
   tiles,
   plugins = [],
+  ownerState,
 }: {
   readonly address: string;
   readonly allIds: readonly string[];
@@ -49,6 +53,7 @@ export function PowersStrip({
   // Null while `/v1/plugins` is still pending; the board model then
   // yields no tiles, which is a loading state, not an empty result.
   readonly plugins?: readonly PluginListEntry[] | null;
+  readonly ownerState?: AnalyzeSuccess["ownerState"];
 }): JSX.Element | null {
   if (tiles.length === 0) {
     if (plugins === null) {
@@ -87,6 +92,21 @@ export function PowersStrip({
       <p className="powers-kicker">
         <span>Owner powers</span> <Explain explainKey="powers:extended" label="Extended analysis" />
       </p>
+      {ownerState?.status === "renounced" && ownerState.address !== null && ownerState.getter !== null ? (
+        <p className="powers-renounced">
+          Owner renounced — {ownerState.getter} returns {toChecksumAddress(ownerState.address)} at block{" "}
+          {ownerState.block}, so these setters can no longer be called.{" "}
+          <CopyButton
+            value={toChecksumAddress(ownerState.address)}
+            label="Copy owner address"
+            testId="copy-renounced-owner-address"
+          />
+        </p>
+      ) : ownerState?.status === "unknown" && ownerState.reason.includes("could not be read") ? (
+        <p className="powers-renounced">
+          Owner could not be read at block {ownerState.block}, so the score floor still applies.
+        </p>
+      ) : null}
       {shown.length === 0 && !collapseCantTell ? null : (
         <ul className="powers-chips">
           {shown.map((tile) => (

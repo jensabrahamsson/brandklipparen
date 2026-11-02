@@ -419,14 +419,32 @@ function condBoolGatesOnBase(cond: Expr | undefined, base: number): boolean {
 }
 
 // The side of a gate jump taken while the gated entry reads set: the
-// ISZERO parity on the path to the entry load names it (an odd count
+// negation parity on the path to the entry load names it (an odd count
 // jumps while the entry reads clear, so the set side falls through).
+// Negation is semantic, not opcode-shaped: ISZERO flips a boolean
+// entry, as does XOR with the constant 1 and an equality against the
+// constant 0, so every spelling names the same side.
 function mappingTruthySide(cond: Expr, base: number): "jump" | "fall" | null {
   const search = (expr: Expr, parity: number): number | null => {
     if (expr.kind === "sload") {
       return exprMappingBase(expr.slot) === base ? parity : null;
     }
-    const childParity = expr.kind === "op" && expr.name === "ISZERO" ? parity + 1 : parity;
+    let childParity = parity;
+    if (expr.kind === "op" && expr.name === "ISZERO") {
+      childParity = parity + 1;
+    } else if (
+      expr.kind === "op" &&
+      expr.name === "XOR" &&
+      expr.args.some((arg) => arg.kind === "const" && arg.value === 1n)
+    ) {
+      childParity = parity + 1;
+    } else if (
+      expr.kind === "op" &&
+      expr.name === "EQ" &&
+      expr.args.some((arg) => arg.kind === "const" && arg.value === 0n)
+    ) {
+      childParity = parity + 1;
+    }
     if (expr.kind === "calldata") {
       return search(expr.offset, childParity);
     }
@@ -1209,7 +1227,10 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       }
       const exprBase = exprMappingBase(writerExprs.stores.get(write.pc)?.slot);
       const windowBase = mappingBaseNearAccess(code, writerMember, write.pc, writerSlotOf);
-      const writeBase = exprBase ?? windowBase;
+      // The hash may sit on any constant scratch pair (a loop writer
+      // hashing array elements lays memory out the same way), so the
+      // scratch-pair pattern gets its chance beside the usual pair.
+      const writeBase = exprBase ?? windowBase ?? scratchPairBase(code, writerMember, write.pc);
       if (writeBase === null || writeBase === undefined) {
         continue;
       }

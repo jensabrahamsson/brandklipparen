@@ -89,6 +89,18 @@ export type AnalyzeSuccess = {
         readonly facts: readonly string[];
       }
     | undefined;
+  // Live owner-getter state behind the score floor (SCORE-2): present
+  // when the analysis read a dispatched owner() or getOwner() at the
+  // pinned block. The address is full EIP-55.
+  readonly ownerState?:
+    | {
+        readonly status: "renounced" | "active" | "unknown";
+        readonly getter: "owner()" | "getOwner()" | null;
+        readonly address: string | null;
+        readonly block: number;
+        readonly reason: string;
+      }
+    | undefined;
   readonly signals: readonly Signal[];
   // Additive detector plugin results (S-043, P-11): present in REST
   // responses beside the calibrated signals. The generic Plugins panel

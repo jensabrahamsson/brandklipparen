@@ -228,6 +228,31 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     expect(open).toContain("never moves the score");
   });
 
+  test("renounced_owner_line_names_getter_address_and_block", () => {
+    const board = buildBoardModel(PLUGINS, quietResults());
+    const ids = PLUGINS.map((plugin) => plugin.id);
+    const html = renderToString(
+      <PowersStrip
+        address={ADDRESS}
+        allIds={ids}
+        tiles={board.ownerTiles}
+        ownerState={{
+          status: "renounced",
+          getter: "owner()",
+          address: "0x0000000000000000000000000000000000000000",
+          block: 24000000,
+          reason: "the owner getter returns the zero or dead address",
+        }}
+      />,
+    );
+    expect(html).toContain("Owner renounced");
+    expect(html).toContain("owner()");
+    expect(html).toContain("0x0000000000000000000000000000000000000000");
+    expect(html).toContain("24000000");
+    expect(html).toContain("so these setters can no longer be called.");
+    expect(html).toContain('aria-label="Copy owner address"');
+  });
+
   test("empty_then_populated_rerender_does_not_throw", () => {
     const ids = PLUGINS.map((plugin) => plugin.id);
     const populated = buildBoardModel(PLUGINS, [

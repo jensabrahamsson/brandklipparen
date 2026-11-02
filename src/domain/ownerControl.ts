@@ -876,6 +876,7 @@ function v2SimulateBlock(
       opcode === 0x14 ||
       opcode === 0x16 ||
       opcode === 0x17 ||
+      opcode === 0x18 ||
       opcode === 0x1b ||
       opcode === 0x1c
     ) {
@@ -901,9 +902,11 @@ function v2SimulateBlock(
                           ? "AND"
                           : opcode === 0x17
                             ? "OR"
-                            : opcode === 0x1b
-                              ? "SHL"
-                              : "SHR";
+                            : opcode === 0x18
+                              ? "XOR"
+                              : opcode === 0x1b
+                                ? "SHL"
+                                : "SHR";
       v2Push(sim, exprMakeOp(name, [second, top]));
       continue;
     }

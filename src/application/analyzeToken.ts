@@ -178,10 +178,28 @@ export type AssessmentEnvelope = {
   // Deterministic evidence floor behind the served score (SCORE-1):
   // present when a floor rule applies to the proven owner powers.
   readonly scoreFloor?: AppliedScoreFloor | undefined;
+  // Live owner-getter state behind the floor (SCORE-2): present on the
+  // fresh path and on owner re-reads, absent on older cached envelopes.
+  readonly ownerState?: OwnerState | undefined;
   readonly signals: readonly Signal[];
   readonly pluginResults: readonly PluginResultEntry[];
   readonly explanation: Explanation;
   readonly cantTell: readonly CantTellItem[];
+};
+
+// Live ownership state read through the standard owner getters at the
+// pinned block (SCORE-2): `renounced` only when a dispatched `owner()` or
+// `getOwner()` returned the zero or dead address, `active` only when it
+// returned a non-zero address, and `unknown` otherwise (no getter, an
+// unreadable or non-address answer, or disagreeing getters). The address
+// is EIP-55 and the getter plus block cite the read, so every interface
+// carries the same fact deterministically for a given block.
+export type OwnerState = {
+  readonly status: "renounced" | "active" | "unknown";
+  readonly getter: "owner()" | "getOwner()" | null;
+  readonly address: string | null;
+  readonly block: number;
+  readonly reason: string;
 };
 
 // The assessed outcome beside the empty-address outcome (K-001): an address
@@ -421,6 +439,8 @@ async function reattachOwnerStateOnHit(
   explanation: Explanation;
   score: RiskScoreType;
   scoreFloor: AppliedScoreFloor | null;
+  ownerState: OwnerState;
+  pluginResults: readonly PluginResultEntry[];
 } | null> {
   const loaded = counted.modelArtifacts.load(input.modelVersion);
   if (!loaded.ok) {
@@ -454,15 +474,18 @@ async function reattachOwnerStateOnHit(
   if (!rendered.ok) {
     return null;
   }
-  const refloored = applyScoreFloor(
-    cached.calibratedScore as number,
-    scoreFloorFactsOf(cached.pluginResults, ownerState.renouncedProven),
-  );
+  const disposition = floorDispositionOf(cached.pluginResults, {
+    proven: ownerState.renouncedProven,
+    ownerSlotProven: ownerSlotProof(cached.pluginResults) !== null,
+  });
+  const refloored = applyScoreFloor(cached.calibratedScore as number, disposition.facts);
   return {
     signals: ownerState.signals,
     explanation: rendered.value,
     score: refloored.score,
     scoreFloor: refloored.floor,
+    ownerState: ownerState.ownerState,
+    pluginResults: withFloorCopy(cached.pluginResults, disposition),
   };
 }
 
@@ -893,12 +916,30 @@ function ownerSlotProof(
 // proves a privileged caller, so it counts as written. Fee and limit
 // facts count on the detector proof itself (a privileged writer whose
 // value the transfer path uses); no separate numeric cap is read here.
-function scoreFloorFactsOf(
+//
+// Renounce lifting is per fact and conservative (SCORE-2): a proven
+// renounced `owner()` lifts a fact only when its gate is the Ownable
+// owner. The gate comes from the detectors where they expose it — a mint
+// extended finding names `auth: "owner"` versus a role slot or mapping,
+// and an extended proxy-upgrade fact is gated by the proxy admin slot, a
+// separate role. Any other floor finding is attributed to the owner only
+// when the ownership detector proved an owner slot for this bytecode
+// (its privileged-writer proof is a caller check against that slot);
+// unattributed findings keep their floor.
+type FloorDisposition = {
+  readonly facts: ScoreFloorFacts;
+  readonly floored: ReadonlySet<string>;
+  readonly lifted: ReadonlySet<string>;
+};
+
+function floorDispositionOf(
   results: readonly PluginResultEntry[],
-  renouncedProven: boolean,
-): ScoreFloorFacts {
+  renounce: { readonly proven: boolean; readonly ownerSlotProven: boolean },
+): FloorDisposition {
   const block = new Set<string>();
   const risky = new Set<string>();
+  const floored = new Set<string>();
+  const lifted = new Set<string>();
   for (const entry of results) {
     if (entry.outcome !== "ok") {
       continue;
@@ -921,24 +962,96 @@ function scoreFloorFactsOf(
       if (name === null) {
         continue;
       }
-      if (BLOCK_HOLDER_FACTS.includes(name)) {
-        block.add(name);
-        continue;
-      }
-      if (!RISKY_FACTS.includes(name)) {
+      const isBlock = BLOCK_HOLDER_FACTS.includes(name);
+      if (!isBlock && !RISKY_FACTS.includes(name)) {
         continue;
       }
       if (name === "proxy-upgrade" && typeof feature !== "string" && record["adminKind"] !== "eoa") {
         continue;
       }
-      risky.add(name);
+      const auth: unknown = record["auth"];
+      const gate: "owner" | "non-owner" | "unknown" =
+        auth === "role-slot" || auth === "role-mapping"
+          ? "non-owner"
+          : auth === "owner"
+            ? "owner"
+            : name === "proxy-upgrade" && typeof feature !== "string"
+              ? "non-owner"
+              : renounce.ownerSlotProven
+                ? "owner"
+                : "unknown";
+      if (renounce.proven && gate === "owner") {
+        lifted.add(name);
+        continue;
+      }
+      floored.add(name);
+      if (isBlock) {
+        block.add(name);
+      } else {
+        risky.add(name);
+      }
     }
   }
   return Object.freeze({
-    block: Object.freeze(BLOCK_HOLDER_FACTS.filter((fact) => block.has(fact))),
-    risky: Object.freeze(RISKY_FACTS.filter((fact) => risky.has(fact))),
-    renouncedProven,
+    facts: Object.freeze({
+      block: Object.freeze(BLOCK_HOLDER_FACTS.filter((fact) => block.has(fact))),
+      risky: Object.freeze(RISKY_FACTS.filter((fact) => risky.has(fact))),
+      renouncedProven: false,
+    }),
+    floored,
+    lifted,
   });
+}
+
+// Floor copy for extended findings (SCORE-2): a finding that feeds the
+// floor sets the minimum score, and one lifted by proven renounced
+// ownership is not counted for that reason. Scored findings carry no
+// extended suffix and pass through untouched, as do extended facts that
+// prove no floor fact.
+function withFloorCopy(
+  results: readonly PluginResultEntry[],
+  disposition: FloorDisposition,
+): readonly PluginResultEntry[] {
+  if (disposition.floored.size === 0 && disposition.lifted.size === 0) {
+    return results;
+  }
+  return Object.freeze(
+    results.map((entry) => {
+      if (entry.outcome !== "ok") {
+        return entry;
+      }
+      let changed = false;
+      const findings = entry.findings.map((finding) => {
+        const payload: unknown = finding.payload;
+        if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+          return finding;
+        }
+        const record = payload as { readonly [field: string]: unknown };
+        const fact: unknown = record["fact"];
+        if (typeof fact !== "string" || record["proof"] !== "extended") {
+          return finding;
+        }
+        const suffix = disposition.lifted.has(fact)
+          ? "Found by extended analysis; not counted because ownership is renounced."
+          : disposition.floored.has(fact)
+            ? "Found by extended analysis; sets the minimum score."
+            : null;
+        if (suffix === null || !finding.title.includes("Found by extended analysis")) {
+          return finding;
+        }
+        const title = finding.title.replace(
+          /Found by extended analysis; (?:not counted in the score|not counted because ownership is renounced|sets the minimum score)\./,
+          suffix,
+        );
+        if (title === finding.title) {
+          return finding;
+        }
+        changed = true;
+        return Object.freeze({ ...finding, title });
+      });
+      return changed ? Object.freeze({ ...entry, findings: Object.freeze(findings) }) : entry;
+    }),
+  );
 }
 
 function isZeroOrDeadWord(word: string): boolean {
@@ -1112,6 +1225,7 @@ async function attachOwnerState(
   enriched: boolean;
   readFailed: boolean;
   renouncedProven: boolean;
+  ownerState: OwnerState;
 }> {
   const ctx: CallContext = { requestId: input.requestId, deadline: input.deadline, block };
   const proof = ownerSlotProof(pluginResults);
@@ -1134,6 +1248,7 @@ async function attachOwnerState(
   // proven renounced needs a dispatched owner getter agreeing below, so
   // the run keeps changerless temporality either way and names no one.
   let slotRenouncedCandidate = false;
+  let slotPoisoned = false;
   if (ownershipScored && proof !== null) {
     const parsed = Slot.parse(`0x${proof.slot.toString(16).padStart(64, "0")}`);
     if (parsed.ok) {
@@ -1145,11 +1260,14 @@ async function attachOwnerState(
       } else {
         const candidate = addressOfStoredWord(stored.value as string);
         if (candidate === null) {
-          return { signals, enriched: false, readFailed, renouncedProven: false };
+          // Not an address word: no changer is named from the slot, but
+          // the getter read below still decides the live owner state.
+          slotPoisoned = true;
+        } else {
+          slotValue = stored.value;
+          slot = parsed.value;
+          slotAddress = candidate;
         }
-        slotValue = stored.value;
-        slot = parsed.value;
-        slotAddress = candidate;
       }
     }
   }
@@ -1161,6 +1279,8 @@ async function attachOwnerState(
   const dispatched = dispatchedOwnerGetters(analysisBytecode);
   const getterAddresses: AddressType[] = [];
   const getterWords: string[] = [];
+  const getterReads: { readonly name: "owner()" | "getOwner()"; readonly word: string }[] = [];
+  let getterFailed = false;
   for (const selector of [OWNER_SELECTOR, GET_OWNER_SELECTOR]) {
     if (!dispatched.has(selector)) {
       continue;
@@ -1168,22 +1288,92 @@ async function attachOwnerState(
     const answer = await readOwnerGetter(rpc, input.address, selector, ctx);
     if (answer.failed) {
       readFailed = true;
+      getterFailed = true;
       continue;
     }
     if (answer.word !== null) {
       getterWords.push(answer.word);
+      getterReads.push({
+        name: selector === OWNER_SELECTOR ? "owner()" : "getOwner()",
+        word: answer.word,
+      });
     }
     if (answer.address !== null) {
       getterAddresses.push(answer.address);
     }
   }
-  // Proven renounced (SCORE-1): the owner slot word and every answering
-  // dispatched owner getter agree on zero or dead. Anything less (a zero
-  // slot alone, no getter, a failed or non-zero answer) proves nothing.
+  // Live owner state from the getters alone (SCORE-2): the getter is the
+  // current controller read, so a zero or dead answer proves renounced
+  // ownership without any owner-slot proof. The slot only attributes
+  // gates and names changers below; it never overrides the getter. A
+  // failed, missing, non-address or disagreeing answer stays unknown,
+  // so the floor still applies and no renounce is claimed.
+  const firstGetter = getterReads[0]?.name ?? null;
+  const ownerState: OwnerState = ((): OwnerState => {
+    const base = { getter: firstGetter, block: block as number };
+    if (dispatched.size === 0) {
+      return Object.freeze({
+        ...base,
+        getter: null,
+        status: "unknown",
+        address: null,
+        reason: "no owner getter is dispatched; ownership state is unknown",
+      });
+    }
+    if (getterFailed) {
+      return Object.freeze({
+        ...base,
+        status: "unknown",
+        address: null,
+        reason: "the owner could not be read",
+      });
+    }
+    if (getterWords.length > 0 && getterWords.every((word) => isZeroOrDeadWord(word))) {
+      const word = getterWords[0] ?? "";
+      const parsed = Address.parse(`0x${word.slice(-40)}`);
+      return Object.freeze({
+        ...base,
+        status: "renounced",
+        address: parsed.ok ? (parsed.value as string) : null,
+        reason: "the owner getter returns the zero or dead address",
+      });
+    }
+    if (getterAddresses.length > 0) {
+      const first = getterAddresses[0];
+      if (
+        first !== undefined &&
+        getterAddresses.every(
+          (answer) => (answer as string).toLowerCase() === (first as string).toLowerCase(),
+        ) &&
+        getterWords.every((word) => !isZeroOrDeadWord(word))
+      ) {
+        return Object.freeze({
+          ...base,
+          status: "active",
+          address: first as string,
+          reason: "the owner getter returns a non-zero address",
+        });
+      }
+      return Object.freeze({
+        ...base,
+        status: "unknown",
+        address: null,
+        reason: "the owner getters disagree; ownership state is unknown",
+      });
+    }
+    return Object.freeze({
+      ...base,
+      status: "unknown",
+      address: null,
+      reason: "the owner getter did not return an address; ownership state is unknown",
+    });
+  })();
+  const renouncedProven = ownerState.status === "renounced";
+  if (slotPoisoned) {
+    return { signals, enriched: false, readFailed, renouncedProven, ownerState };
+  }
   if (slotRenouncedCandidate) {
-    const renouncedProven =
-      getterWords.length > 0 && getterWords.every((word) => isZeroOrDeadWord(word));
-    return { signals, enriched: false, readFailed, renouncedProven };
+    return { signals, enriched: false, readFailed, renouncedProven, ownerState };
   }
   const gettersRepeat = (base: AddressType): boolean =>
     getterAddresses.every((answer) => (answer as string).toLowerCase() === (base as string).toLowerCase());
@@ -1198,7 +1388,7 @@ async function attachOwnerState(
   let slotAccepted = false;
   if (slotAddress !== null && getterAddresses.length > 0) {
     if (!gettersRepeat(slotAddress)) {
-      return { signals, enriched: false, readFailed, renouncedProven: false };
+      return { signals, enriched: false, readFailed, renouncedProven, ownerState };
     }
     proven = slotAddress;
     slotAccepted = true;
@@ -1206,16 +1396,16 @@ async function attachOwnerState(
     // No getter proves the slot: the stored value may be a supply, a
     // packed word or unrelated storage that happens to fit in 20 bytes,
     // so the run keeps changerless temporality and no measured value.
-    return { signals, enriched: false, readFailed, renouncedProven: false };
+    return { signals, enriched: false, readFailed, renouncedProven, ownerState };
   } else if (getterAddresses.length > 0) {
     const first = getterAddresses[0];
     if (first === undefined || !gettersRepeat(first)) {
-      return { signals, enriched: false, readFailed, renouncedProven: false };
+      return { signals, enriched: false, readFailed, renouncedProven, ownerState };
     }
     proven = first;
     slotAccepted = false;
   } else {
-    return { signals, enriched: false, readFailed, renouncedProven: false };
+    return { signals, enriched: false, readFailed, renouncedProven, ownerState };
   }
   // Evidence keys behind owner-gated findings (P-2 item 3): only signals
   // with one of these keys may name the proven owner as their changer.
@@ -1294,7 +1484,7 @@ async function attachOwnerState(
     }
     return signal;
   });
-  return { signals: Object.freeze(out), enriched, readFailed, renouncedProven: false };
+  return { signals: Object.freeze(out), enriched, readFailed, renouncedProven, ownerState };
 }
 
 // Proven controller behind a stored owner word: the last 20 bytes parsed
@@ -1407,7 +1597,10 @@ export async function analyzeToken(
   if (ports.cache !== undefined) {
     const hit = await ports.cache.get(cacheKey.value);
     if (hit.ok && hit.value !== null && proxyFactOf(proxy) === null) {
-      if (ownerSlotProof(hit.value.pluginResults) !== null) {
+      if (
+        ownerSlotProof(hit.value.pluginResults) !== null ||
+        dispatchedOwnerGetters(analysisBytecode).size > 0
+      ) {
         const reowned = await reattachOwnerStateOnHit(
           countedPorts,
           input,
@@ -1425,6 +1618,8 @@ export async function analyzeToken(
             ...envelope,
             score: reowned.score,
             scoreFloor: reowned.scoreFloor ?? undefined,
+            ownerState: reowned.ownerState,
+            pluginResults: reowned.pluginResults,
             signals: reowned.signals,
             explanation: reowned.explanation,
           });
@@ -1564,11 +1759,12 @@ export async function analyzeToken(
   if (decompiled !== null) {
     signals = attachSnippets(signals, codeHash.value, decompiled);
   }
-  const risk = score(
-    signals,
-    loaded.value.artifact,
-    scoreFloorFactsOf(pluginResults, ownerState.renouncedProven),
-  );
+  const disposition = floorDispositionOf(pluginResults, {
+    proven: ownerState.renouncedProven,
+    ownerSlotProven: ownerSlotProof(pluginResults) !== null,
+  });
+  const flooredResults = withFloorCopy(pluginResults, disposition);
+  const risk = score(signals, loaded.value.artifact, disposition.facts);
   // Origins for the 1.1.0 templates travel as data beside the signals;
   // scoring above never sees them, so text changes stay display-only.
   const rendered = renderExplanation({
@@ -1594,8 +1790,9 @@ export async function analyzeToken(
     probabilities: risk.probabilities,
     score: risk.score,
     ...(risk.floor === null ? {} : { scoreFloor: risk.floor }),
+    ownerState: ownerState.ownerState,
     signals,
-    pluginResults,
+    pluginResults: flooredResults,
     explanation: rendered.value,
     cantTell: standardCantTell(),
   });
@@ -1687,6 +1884,17 @@ export function assessmentToCanonical(envelope: AssessmentEnvelope): CanonicalVa
             minimum: envelope.scoreFloor.minimum,
             label: envelope.scoreFloor.label,
             facts: [...envelope.scoreFloor.facts],
+          },
+        }),
+    ...(envelope.ownerState === undefined
+      ? {}
+      : {
+          ownerState: {
+            status: envelope.ownerState.status,
+            getter: envelope.ownerState.getter,
+            address: envelope.ownerState.address,
+            block: envelope.ownerState.block,
+            reason: envelope.ownerState.reason,
           },
         }),
     signals: envelope.signals.map(signalToCanonical),

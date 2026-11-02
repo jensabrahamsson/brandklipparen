@@ -349,6 +349,7 @@ const ANALYZE_FIELD_NAMES = [
   "assessedAt",
   "probabilities",
   "score",
+  "ownerState",
   "signals",
   "pluginResults",
   "explanation",
