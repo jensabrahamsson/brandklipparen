@@ -82,7 +82,7 @@ test("start page sweep at 390 and 1440", async ({ page }) => {
     "start",
     () => page.goto("/"),
     () => readyStart(page),
-    () => page.getByLabel("Contract address").fill("not-an-address"),
+    () => page.getByRole("textbox", { name: "Contract address" }).fill("not-an-address"),
     [390, 1440],
   );
 });
@@ -230,7 +230,7 @@ test("layout-only checks at 320 and 768", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 900 });
   await page.goto("/");
   await readyStart(page);
-  await page.getByLabel("Contract address").fill("not-an-address");
+  await page.getByRole("textbox", { name: "Contract address" }).fill("not-an-address");
   await checkQuiet(page, bucket, "start layout");
   await assertLayout(page, { widths: [320, 768] });
   for (const [address, score] of [

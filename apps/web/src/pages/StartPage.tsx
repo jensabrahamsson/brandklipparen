@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type JSX } from "react";
-import { ChainSelector } from "../components/ChainSelector.tsx";
 import { MotionSwitch } from "../components/MotionSwitch.tsx";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { CopyButton } from "../components/CopyButton.tsx";
@@ -23,8 +22,17 @@ const LEGEND: readonly { readonly min: number; readonly max: number; readonly wo
   { min: HIGH_BAND.min, max: HIGH_BAND.max, word: "High", meaning: "owner can hurt holders" },
 ];
 
-// Start page: one search field for a contract address, the mainnet-only
-// chain badge, and the live new-tokens list below it.
+// Example tokens under the search (D-14): a judge rarely has a contract
+// address on the clipboard, so the first 30 seconds offer two demo
+// links. USDT and PEPE are the review's named examples with their real
+// mainnet addresses (owner-approved for this page only).
+export const TRY_EXAMPLES: readonly { readonly name: string; readonly address: string }[] = [
+  { name: "USDT", address: "0xdAC17F958D2ee523a2206206994597C13D831ec7" },
+  { name: "PEPE", address: "0x6982508145454ce325ddbe47a25d4ec3d2311933" },
+];
+
+// Start page: one search field for a contract address, two example
+// links below it, and the live new-tokens list below that.
 
 type RecentEntry = {
   readonly address: string;
@@ -75,6 +83,10 @@ export function StartPage({
 }): JSX.Element {
   const [raw, setRaw] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The API-key field mounts only while its disclosure is open, so the
+  // closed disclosure contributes no hidden-layout box to measure (the
+  // layout contract counts every rendered control at every width).
+  const [apiOpen, setApiOpen] = useState(false);
   const [recent] = useState<RecentEntry[]>(loadRecent);
   // DexScreener column (DX-1): visible only while /health reports the
   // market feed. A failed or silent health check hides the column rather
@@ -173,15 +185,13 @@ export function StartPage({
     <div className="page">
       <section className="hero">
         <div className="fade-sec" style={{ "--sec-i": 0 } as CSSProperties}>
-          <p className="boot">BK/1 · ERC-20 contract reader · ready</p>
           <h1 className="hero-title">
             Scan before
             <br />
             <em>you swap.</em>
           </h1>
           <p className="hero-sub">
-            Paste a contract address. Rug pull, honeypot and bot-pump risk from bytecode alone, explained in plain
-            English.
+            Paste a contract address. See what its owner can do to you, in plain English.
           </p>
           <form onSubmit={submit} noValidate className="prompt">
             <div className="field">
@@ -220,6 +230,16 @@ export function StartPage({
               {error}
             </p>
           ) : null}
+          <p className="try-row">
+            <span id="try-label">Try:</span>{" "}
+            <span className="try-chips" role="group" aria-labelledby="try-label">
+              {TRY_EXAMPLES.map((example) => (
+                <a key={example.address} className="try-chip" href={`#/token/${example.address}`}>
+                  {example.name}
+                </a>
+              ))}
+            </span>
+          </p>
         </div>
         <aside className="legend fade-sec" aria-label="Risk score legend" style={{ "--sec-i": 1 } as CSSProperties}>
           <h3>Risk score · 0–100</h3>
@@ -235,26 +255,6 @@ export function StartPage({
           <p className="note">A score is a reading of the contract, not a promise. Every page lists what we can&apos;t tell.</p>
         </aside>
       </section>
-      <div
-        style={{ display: "flex", gap: 16, justifyContent: "flex-start", marginTop: 16, flexWrap: "wrap", alignItems: "center" }}
-      >
-        <ChainSelector />
-        <details className="muted" style={{ fontSize: 14 }}>
-          <summary style={{ cursor: "pointer" }}>Settings</summary>
-          <label className="muted api-key-row">
-            API key
-            <input
-              type="password"
-              className="input"
-              autoComplete="off"
-              placeholder="Demo key"
-              value={apiKey}
-              onChange={(event) => onApiKeyChange(event.target.value)}
-              aria-label="API key for the demo"
-            />
-          </label>
-        </details>
-      </div>
       {recent.length > 0 ? (
         <section aria-label="Recently analyzed" style={{ marginTop: 56 }}>
           <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Recently analyzed</h2>
@@ -351,14 +351,31 @@ export function StartPage({
           ) : null}
         </>
       )}
-      <section aria-label="Guarantees" style={{ marginTop: 32 }}>
-        <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }} className="muted">
-          <span>Works on unverified contracts</span>
-          <span>Evidence for every signal</span>
-          <span>Deterministic score · optional Muse assessment</span>
-        </div>
-      </section>
       <footer className="page-foot">
+        <span className="foot-trust">
+          Deterministic score · Muse is advisory · Works on unverified contracts · Evidence for every signal
+        </span>
+        <details
+          className="foot-api muted"
+          open={apiOpen}
+          onToggle={(event) => setApiOpen(event.currentTarget.open)}
+        >
+          <summary>API key</summary>
+          {apiOpen ? (
+            <label className="muted api-key-row">
+              API key
+              <input
+                type="password"
+                className="input"
+                autoComplete="off"
+                placeholder="Demo key"
+                value={apiKey}
+                onChange={(event) => onApiKeyChange(event.target.value)}
+                aria-label="API key for the demo"
+              />
+            </label>
+          ) : null}
+        </details>
         <MotionSwitch />
         <span className="foot-model">Follows your system setting until switched off.</span>
       </footer>

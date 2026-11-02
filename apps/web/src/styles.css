@@ -414,6 +414,53 @@ a {
   text-transform: none;
 }
 
+/* U-11 topbar at phone widths (D-14): the 40 px side padding let the
+   chain glyph overlap the wordmark at 320. Tighter padding from 480 px,
+   and at 360 px and below the off-palette horse mark hides, the wordmark
+   tightens, everything shrinks one step, and the bar may wrap: items
+   stack instead of intersecting, so the acceptance holds whatever the
+   font metrics do. */
+@media (max-width: 480px) {
+  .topbar {
+    padding: 6px 16px 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    row-gap: 4px;
+  }
+
+  .topbar .spacer {
+    display: none;
+  }
+
+  .topbar .net {
+    margin-left: auto;
+  }
+
+  .brand {
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    gap: 8px;
+  }
+
+  .brand img {
+    display: none;
+  }
+
+  .topbar .net svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .topbar .net-text {
+    font-size: 11px;
+  }
+}
+
 .live {
   color: var(--text);
   display: inline-flex;
@@ -462,13 +509,6 @@ a {
   gap: 48px;
   align-items: end;
   padding: 34px 0 26px;
-}
-
-.boot {
-  font-size: 12px;
-  color: var(--dim);
-  letter-spacing: 0.08em;
-  margin: 0 0 14px;
 }
 
 .hero-title {
@@ -566,6 +606,49 @@ a {
   text-transform: none;
   letter-spacing: 0.06em;
   white-space: nowrap;
+}
+
+/* U-11 example links (D-14): "Try: USDT · PEPE" under
+   the search, so the first 30 seconds need no clipboard address. Real
+   links (keyboard- and touch-operable), each a 44 px target that wraps
+   onto its own lines instead of pushing the page wide. */
+.try-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 20px 0 0;
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.try-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.try-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-button);
+  background: var(--glass-2);
+  color: var(--phosphor-hi);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: var(--elev-1);
+}
+
+.try-chip:hover {
+  border-color: var(--dim);
+  box-shadow: var(--elev-2);
 }
 
 .legend {
@@ -4373,6 +4456,22 @@ a {
 .page-foot .foot-model {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* U-11 start-page footer (D-14): the trust line plus the "API key"
+   disclosure live here now that the Chain row is gone. The summary is a
+   full 44 px target; the trust line wraps instead of scrolling. */
+.page-foot .foot-trust {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.foot-api summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--dim);
 }
 
 .detail-head {
