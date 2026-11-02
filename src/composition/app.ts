@@ -434,6 +434,15 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     services,
     apiKeys,
     apiKeyPepper: config.apiKeyPepper,
+    ...(config.mcpApiKey === undefined
+      ? {}
+      : {
+          envApiKey: config.mcpApiKey,
+          defaultApiKey: config.mcpApiKey,
+          mcpApiKey: config.mcpApiKey,
+          clientApiKey: config.mcpApiKey,
+          stdioApiKey: config.mcpApiKey,
+        }),
     modelVersion: config.modelVersion,
     indexVersion: config.cloneIndexVersion,
     templateVersion: templateVersion.value,

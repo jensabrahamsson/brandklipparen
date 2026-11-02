@@ -1,9 +1,8 @@
-// MCP dated-protocol handshake (S-107, K-021): the server negotiates the
-// dated protocol version the SDK client sends, answers with its supported
-// version and server info, turns an unsupported version away with a
-// machine-readable mismatch error, and fails closed on tool calls without
-// a key when keys are configured. Written first (red) per A-21: the
-// server answers every initialize without negotiating. No network; the
+// MCP dated-protocol handshake (S-107, K-021, MCP-2): the server
+// negotiates the dated protocol version the SDK client sends, accepts a
+// supported version as offered, answers an unsupported version with its
+// latest supported version, and fails closed on tool calls without a
+// key when keys are configured and no env key is set. No network; the
 // frames below mirror what the official SDK client sends over stdio.
 import { describe, expect, test } from "vitest";
 import { parseModelArtifact } from "../../../src/domain/risk.ts";
@@ -118,13 +117,22 @@ describe("MCP handshake negotiation (S-107)", () => {
     expect(opened.result?.capabilities).toEqual({ tools: {} });
     expect(opened.result?.serverInfo).toMatchObject({ name: "brandklipparen-mcp" });
 
-    // An unsupported version fails closed with a machine-readable error
-    // instead of a silent downgrade.
+    // Older supported versions are accepted as offered (MCP-2).
+    for (const version of ["2025-03-26", "2024-11-05"]) {
+      const older = JSON.parse(
+        await mcp.handleJsonRpc(frame("initialize", { protocolVersion: version }, 2)),
+      ) as { result?: { protocolVersion?: unknown }; error?: unknown };
+      expect(older.error).toBeUndefined();
+      expect(older.result?.protocolVersion).toBe(version);
+    }
+
+    // An unsupported version answers with the server's latest supported
+    // version instead of failing (MCP-2 negotiation).
     const mismatched = JSON.parse(
       await mcp.handleJsonRpc(frame("initialize", { protocolVersion: "1999-01-01" }, 2)),
-    ) as { error?: { code?: unknown; data?: { code?: unknown } } };
-    expect(mismatched.error?.code).toBe(-32602);
-    expect(mismatched.error?.data?.code).toBe("protocol-version-mismatch");
+    ) as { result?: { protocolVersion?: unknown }; error?: unknown };
+    expect(mismatched.error).toBeUndefined();
+    expect(mismatched.result?.protocolVersion).toBe("2025-06-18");
 
     // A keyed server fails closed on a tool call without a key.
     const keyed: McpServer = createMcpServer({

@@ -842,6 +842,16 @@ export function withDemoDefaults(
   return { env: merged, applied: Object.freeze(applied.slice()) };
 }
 
+// MCP stdio defaults (MCP-2): `npm run start:mcp` applies the same safe
+// demo defaults, so a standard client config only needs the RPC URL and
+// optional key pointers. The user environment always wins and no values
+// are printed by the caller (names only, on stderr).
+export function withMcpDefaults(
+  env: Readonly<Record<string, string | undefined>>,
+): { readonly env: Record<string, string | undefined>; readonly applied: readonly string[] } {
+  return withDemoDefaults(env);
+}
+
 function repoRoot(): string {
   return dirname(dirname(fileURLToPath(import.meta.url)));
 }

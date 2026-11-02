@@ -7,7 +7,9 @@
 // starts no daemon, no watch mode and no timer: REST binds one listener
 // and MCP reads stdin until it closes. Ethereum mainnet only.
 import { readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { withMcpDefaults } from "../scripts/demo.ts";
 import { loadConfig } from "./adapters/config/loader.ts";
 import { InternalDecompilerAdapter } from "./adapters/decompiler/internalDecompilerAdapter.ts";
 import {
@@ -125,7 +127,9 @@ async function startupPorts(config: AppConfig): Promise<AnalyzeTokenPorts> {
   });
 }
 
-function loadAppConfig(): AppConfig {
+export { withMcpDefaults };
+
+export function loadAppConfig(): AppConfig {
   // `start:rest` and `start:mcp` honour `<NAME>_FILE` secret pointers
   // (C-28, F-29): the real file reader is injected here, so the loader
   // itself performs no I/O.
@@ -135,6 +139,27 @@ function loadAppConfig(): AppConfig {
   }
   return loaded.value;
 }
+
+// MCP config (MCP-2): the same safe defaults as `npm run demo`, reusing
+// the demo default helper, so a standard client config only needs the
+// RPC URL and optional key pointers. Names only are logged, on stderr,
+// never values, and stdout stays the JSON-RPC channel.
+export function loadMcpAppConfig(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  readSecretFile: (path: string) => string = (path) => readFileSync(path, "utf8"),
+): AppConfig {
+  const { env: defaulted, applied } = withMcpDefaults(env);
+  if (applied.length > 0) {
+    process.stderr.write(`brandklipparen mcp: defaults applied for: ${applied.join(", ")}\n`);
+  }
+  const loaded = loadConfig(defaulted, { readSecretFile });
+  if (!loaded.ok) {
+    fail(formatConfigError(loaded.error));
+  }
+  return loaded.value;
+}
+
+export const loadMcpConfig = loadMcpAppConfig;
 
 async function startRest(allowlistPath: string | null): Promise<void> {
   const config = loadAppConfig();
@@ -166,7 +191,7 @@ async function startRest(allowlistPath: string | null): Promise<void> {
 }
 
 async function startMcp(allowlistPath: string | null): Promise<void> {
-  const config = loadAppConfig();
+  const config = loadMcpAppConfig();
   const built = buildApp(config, {
     ports: await startupPorts(config),
     allowlist: loadAllowlist(allowlistPath),
@@ -204,6 +229,11 @@ async function main(): Promise<void> {
   usage();
 }
 
-void main().catch((error: unknown) => {
-  fail(error instanceof Error ? error.message : "the server failed to start");
-});
+const invokedDirectly =
+  process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (invokedDirectly) {
+  void main().catch((error: unknown) => {
+    fail(error instanceof Error ? error.message : "the server failed to start");
+  });
+}

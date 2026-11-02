@@ -265,11 +265,14 @@ stdout). Point an MCP client at the command above as a stdio server; no
 port is opened. List tools first (`tools/list`), then call one per
 frame (`tools/call` with `name` and `arguments`).
 
-Generic MCP client configuration (copy, then replace the two
-`<...>` values). `npm run start:mcp` does not read `.env.local`, so the
-variables the server needs at startup go in `env`; the values below
-are the same defaults `npm run demo` uses. Node 22 must be first on the
-`PATH` the client launches `npm` with.
+Generic MCP client configuration (copy, then replace the `<...>`
+values). `npm run start:mcp` applies the same safe defaults as
+`npm run demo` (the demo default helpers), so only the RPC URL and the
+optional key pointers below are needed; the user environment always
+wins and no values are printed (applied names go to stderr only, and
+stdout stays the JSON-RPC channel). `npm run start:mcp` does not read
+`.env.local`. Node 22 must be first on the `PATH` the client launches
+`npm` with.
 
 ```json
 {
@@ -279,43 +282,45 @@ are the same defaults `npm run demo` uses. Node 22 must be first on the
       "args": ["run", "start:mcp"],
       "cwd": "<path to repo>",
       "env": {
-        "BRANDKLIPPAREN_API_KEYS_FILE": "<path to a file with your key>",
-        "BRANDKLIPPAREN_ENV": "local",
-        "BRANDKLIPPAREN_MODEL_VERSION": "1.0.1",
-        "BRANDKLIPPAREN_MODEL_ARTIFACT_PATH": "model/artifact-1.0.1.json",
-        "BRANDKLIPPAREN_CLONE_INDEX_VERSION": "1.0.0",
-        "BRANDKLIPPAREN_LOG_LEVEL": "info",
-        "BRANDKLIPPAREN_HTTP_PORT": "8080",
-        "BRANDKLIPPAREN_CACHE_DIR": ".cache/brandklipparen",
         "BRANDKLIPPAREN_RPC_URLS": "https://ethereum-rpc.publicnode.com",
-        "BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE": "300",
-        "BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY": "1000",
-        "BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE": "600"
+        "BRANDKLIPPAREN_API_KEYS_FILE": "<path to a file with your keys>",
+        "BRANDKLIPPAREN_MCP_API_KEY_FILE": "<path to a file with one of those keys>"
       }
     }
   }
 }
 ```
 
+Both key pointers are optional: drop them to run without the key gate.
 The server checks at startup that the RPC endpoint answers Ethereum
-mainnet. The `initialize` handshake accepts MCP protocol version
-`2025-06-18`. The Muse tools stay `not-configured` until their
-`BRANDKLIPPAREN_*_PROVIDER` and `*_META_*` variables are added to `env`
-(names in `.env.example`; keys only through `*_FILE` pointers). When a
-key file is set, every `tools/call` frame must carry a key in the
-top-level `auth` field described below; a client that cannot add that
-field gets `missing-api-key`. With neither `BRANDKLIPPAREN_API_KEYS`
-nor its `*_FILE` pointer set, the MCP server runs without the key gate.
+mainnet. The `initialize` handshake accepts the client's MCP protocol
+version when supported (`2025-06-18`, `2025-03-26` or `2024-11-05`);
+otherwise it answers with the server's latest supported version
+(`2025-06-18`) instead of failing. The Muse tools stay
+`not-configured` until their `BRANDKLIPPAREN_*_PROVIDER` and
+`*_META_*` variables are added to `env` (names in `.env.example`;
+keys only through `*_FILE` pointers).
 
-Tool calls carry the API key in the JSON-RPC `auth` field of each
-frame. MCP hosts may log JSON-RPC frames, so a logged frame can expose
-that key: use a host that does not persist frames (or that redacts the
-`auth` field), and rotate the key if frames were logged. The server
-itself receives its accepted keys only through the environment at
-startup (`BRANDKLIPPAREN_API_KEYS`, or `BRANDKLIPPAREN_API_KEYS_FILE`
-pointing at a file holding them), never through a file in the repo;
-prefer that environment injection over putting a key in a client
-configuration file that is checked in or shared.
+In stdio mode the user's own client launches the server process, so a
+standard client needs no project-specific frame field: when
+`BRANDKLIPPAREN_API_KEYS` (or its `*_FILE` pointer) is set, point
+`BRANDKLIPPAREN_MCP_API_KEY_FILE` at a file holding one accepted key
+(the same `*_FILE` rules as the other keys: set only one of
+`BRANDKLIPPAREN_MCP_API_KEY` and its pointer; an unreadable or
+oversized file is a startup error). A `tools/call` frame without a
+top-level `auth` field then uses that env key, with the same per-key
+rate and quota caps as any other key. A frame `auth` field, when a
+client does send one, still wins over the env key. With neither
+`BRANDKLIPPAREN_API_KEYS` nor its `*_FILE` pointer set, the MCP server
+runs without the key gate.
+
+A frame `auth` value can still be sent as an override, but MCP hosts
+may log JSON-RPC frames, so a logged frame can expose that key: use a
+host that does not persist frames (or that redacts the `auth` field),
+and rotate the key if frames were logged. Prefer the
+`BRANDKLIPPAREN_MCP_API_KEY_FILE` pointer for standard clients, and
+never put a key value in a client configuration file that is checked
+in or shared.
 
 Reading tools, one per REST feature, all read-only through the same
 services, guards, per-key caps and caches as the REST routes:
@@ -327,13 +332,13 @@ services, guards, per-key caps and caches as the REST routes:
 - `list_plugins`, `get_plugin_docs`, `get_plugin_audit`, plus one
   `plugin_*` tool per registered detector
 
-Example call (one frame on stdin, key in `auth`):
+Example call (one frame on stdin, no `auth` field needed when
+`BRANDKLIPPAREN_MCP_API_KEY_FILE` is set):
 
 ```json
 {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
  "params": {"name": "explain_token",
- "arguments": {"address": "0x0102030405060708090a0b0c0d0e0f1011121314"}},
- "auth": "<a value from BRANDKLIPPAREN_API_KEYS>"}
+ "arguments": {"address": "0x0102030405060708090a0b0c0d0e0f1011121314"}}}
 ```
 
 The response carries one text content block with the same body the

@@ -122,12 +122,14 @@ import { pluginResultToCanonical } from "../../application/pluginExposure.ts";
 
 export const MCP_SERVER_NAME = "brandklipparen-mcp";
 export const MCP_SERVER_VERSION = "1.0.0";
-// Dated MCP protocol version the server negotiates (S-107, K-021): the
-// handshake pins the wire version both sides speak, and an SDK client
-// sending anything else fails closed instead of silently downgrading.
+// Dated MCP protocol versions the server negotiates (S-107, K-021,
+// MCP-2): the latest supported version is the fallback answer when a
+// client offers a version the server does not support.
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 export const SUPPORTED_MCP_PROTOCOL_VERSIONS: readonly string[] = Object.freeze([
   MCP_PROTOCOL_VERSION,
+  "2025-03-26",
+  "2024-11-05",
 ]);
 
 const DEFAULT_ANALYZE_TIMEOUT_MS = 30000;
@@ -137,6 +139,16 @@ export type McpServerOptions = {
   readonly services: AppServices;
   readonly apiKeys?: readonly SecretString[] | undefined;
   readonly apiKeyPepper?: SecretString | undefined;
+  // Client key from the process environment (MCP-2): in stdio mode the
+  // user's own client launches this process, so a frame without a
+  // top-level `auth` field uses this key. A frame `auth` always wins.
+  // Loaded via BRANDKLIPPAREN_MCP_API_KEY(_FILE) at startup and verified
+  // against apiKeys with the same per-key caps as any frame key.
+  readonly envApiKey?: SecretString | string | undefined;
+  readonly defaultApiKey?: SecretString | string | undefined;
+  readonly mcpApiKey?: SecretString | string | undefined;
+  readonly clientApiKey?: SecretString | string | undefined;
+  readonly stdioApiKey?: SecretString | string | undefined;
   readonly modelVersion: ModelVersion;
   readonly indexVersion: IndexVersion;
   readonly templateVersion: TemplateVersion;
@@ -272,6 +284,18 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     keys: options.apiKeys ?? [],
     pepper: options.apiKeyPepper,
   });
+  const envApiKeyRaw =
+    options.envApiKey ?? options.defaultApiKey ?? options.mcpApiKey ?? options.clientApiKey ?? options.stdioApiKey;
+  const envApiKey: string | undefined =
+    envApiKeyRaw === undefined
+      ? undefined
+      : typeof envApiKeyRaw === "string"
+        ? envApiKeyRaw
+        : envApiKeyRaw.reveal();
+  // A frame or call-option key always wins; the env key only fills the
+  // gap a standard client leaves (MCP-2).
+  const effectiveApiKey = (callOptions: CallToolOptions | undefined): string | undefined =>
+    callOptions?.apiKey ?? envApiKey;
   const keyGate = (options.apiKeys ?? []).length > 0;
   const analyzeTimeoutMs = options.analyzeTimeoutMs ?? DEFAULT_ANALYZE_TIMEOUT_MS;
   const maxMessageBytes = options.maxMessageBytes ?? DEFAULT_MAX_MESSAGE_BYTES;
@@ -306,7 +330,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
   ): Result<{ readonly input: T; readonly apiKeyId: string }, McpToolError> {
     let apiKeyId = "anonymous";
     if (keyGate) {
-      const candidate = callOptions?.apiKey;
+      const candidate = effectiveApiKey(callOptions);
       if (candidate === undefined) {
         return err(missingApiKey(requestId as string));
       }
@@ -1318,7 +1342,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     const detectors = options.detectors;
     let apiKeyId = "anonymous";
     if (keyGate) {
-      const candidate = callOptions?.apiKey;
+      const candidate = effectiveApiKey(callOptions);
       if (candidate === undefined) {
         return err(missingApiKey(requestId as string));
       }
@@ -1374,7 +1398,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     const detectors = options.detectors;
     let apiKeyId = "anonymous";
     if (keyGate) {
-      const candidate = callOptions?.apiKey;
+      const candidate = effectiveApiKey(callOptions);
       if (candidate === undefined) {
         return err(missingApiKey(requestId as string));
       }
@@ -1431,7 +1455,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     const detectors = options.detectors;
     let apiKeyId = "anonymous";
     if (keyGate) {
-      const candidate = callOptions?.apiKey;
+      const candidate = effectiveApiKey(callOptions);
       if (candidate === undefined) {
         return err(missingApiKey(requestId as string));
       }
@@ -1657,22 +1681,20 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     const auth = typeof record["auth"] === "string" ? (record["auth"] as string) : undefined;
     switch (method) {
       case "initialize": {
-        // SDK handshake negotiation (S-107): the client opens with its
-        // protocol version beside capabilities and client info, and the
-        // server answers with the negotiated dated version it supports.
-        // Anything else fails closed with a machine-readable mismatch.
+        // Handshake negotiation (S-107, MCP-2): accept the client's
+        // version when supported; otherwise answer with the server's
+        // latest supported version per the MCP negotiation rules
+        // instead of failing.
         const offered =
           typeof params === "object" && params !== null && !Array.isArray(params)
             ? (params as Record<string, unknown>)["protocolVersion"]
             : undefined;
-        if (typeof offered !== "string" || !SUPPORTED_MCP_PROTOCOL_VERSIONS.includes(offered)) {
-          return jsonRpcError(id, -32602, "Unsupported MCP protocol version.", {
-            code: "protocol-version-mismatch",
-            supported: [...SUPPORTED_MCP_PROTOCOL_VERSIONS],
-          });
-        }
+        const negotiated =
+          typeof offered === "string" && SUPPORTED_MCP_PROTOCOL_VERSIONS.includes(offered)
+            ? offered
+            : MCP_PROTOCOL_VERSION;
         return jsonRpcResult(id, {
-          protocolVersion: offered,
+          protocolVersion: negotiated,
           capabilities: { tools: {} },
           serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
         });

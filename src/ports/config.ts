@@ -66,6 +66,11 @@ export type AppConfig = {
   readonly httpPort?: number;
   readonly cacheDir?: string;
   readonly apiKeys?: readonly SecretString[];
+  // Client key for the MCP stdio transport (MCP-2): the key the server
+  // presents on behalf of a standard client when a frame carries no
+  // `auth` field. Loaded only via BRANDKLIPPAREN_MCP_API_KEY or its
+  // *_FILE pointer; verified against apiKeys like any frame key.
+  readonly mcpApiKey?: SecretString;
   readonly chainId?: ChainId;
   readonly rpcUrls?: readonly SecretString[];
   readonly rpcDeadlineMs?: number;

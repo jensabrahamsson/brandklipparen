@@ -222,6 +222,7 @@ const V = {
   demoPublicUrl: "BRANDKLIPPAREN_DEMO_PUBLIC_URL",
   cacheDir: "BRANDKLIPPAREN_CACHE_DIR",
   apiKeys: "BRANDKLIPPAREN_API_KEYS",
+  mcpApiKey: "BRANDKLIPPAREN_MCP_API_KEY",
   apiKeyPepper: "BRANDKLIPPAREN_API_KEY_PEPPER",
   rateLimitPerKeyPerMinute: "BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE",
   quotaPerKeyPerDay: "BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY",
@@ -332,6 +333,7 @@ export const CONFIG_VARIABLE_NAMES: readonly string[] = Object.freeze(Object.val
 // typed config. Exported so the demo launcher expands the same set.
 export const SECRET_FILE_ALLOWLIST: readonly string[] = Object.freeze([
   V.apiKeys,
+  V.mcpApiKey,
   V.apiKeyPepper,
   V.rpcUrls,
   V.assessmentMetaApiKey,
@@ -450,6 +452,12 @@ export function loadConfig(env: EnvInput, options?: LoadConfigOptions): Result<A
   const apiKeys = optionalField(env, V.apiKeys, (raw) => parseApiKeys(V.apiKeys, raw));
   if (!apiKeys.ok) {
     return apiKeys;
+  }
+  // MCP stdio client key (MCP-2): optional in every setup, resolved
+  // through the same *_FILE rules as the server keys above.
+  const mcpApiKey = optionalField(env, V.mcpApiKey, (raw) => parseSecret(V.mcpApiKey, raw));
+  if (!mcpApiKey.ok) {
+    return mcpApiKey;
   }
 
   // Mainnet only (S-091, K-001): the product analyses Ethereum
@@ -925,6 +933,7 @@ export function loadConfig(env: EnvInput, options?: LoadConfigOptions): Result<A
     ...(httpPort.value === undefined ? {} : { httpPort: httpPort.value }),
     ...(cacheDir.value === undefined ? {} : { cacheDir: cacheDir.value }),
     ...(apiKeys.value === undefined ? {} : { apiKeys: apiKeys.value }),
+    ...(mcpApiKey.value === undefined ? {} : { mcpApiKey: mcpApiKey.value }),
     ...(chainId.value === undefined ? {} : { chainId: chainId.value }),
     ...(rpcUrls.value === undefined ? {} : { rpcUrls: rpcUrls.value }),
     ...(rpcDeadlineMs.value === undefined ? {} : { rpcDeadlineMs: rpcDeadlineMs.value }),
