@@ -644,9 +644,12 @@ export function ExplainViewResults({
           </ul>
         )}
         {dropped > 0 ? (
-          <p className="quiet muse-dropped">
-            {`${dropped} ${plural(dropped, "note", "notes")} removed: ${dropped === 1 ? "it cited" : "they cited"} lines that don't exist.`}
-          </p>
+          <details className="muse-details">
+            <summary>Details</summary>
+            <p className="quiet muse-dropped">
+              {`${dropped} ${plural(dropped, "note", "notes")} removed: ${dropped === 1 ? "it cited" : "they cited"} lines that don't exist.`}
+            </p>
+          </details>
         ) : null}
       </section>
       <div className="muse-explain-foot">

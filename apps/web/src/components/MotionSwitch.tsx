@@ -1,6 +1,6 @@
-// Motion on/off switch (UI v2 §5.6, W-10, WCAG 2.2.2; round-3 D-19): one
-// shared `.switch`: a label, a 32x18 track with a knob, and the state
-// word. The knob side swaps without a position transition (instant
+// Animations on/off switch, shown only in Settings: one shared
+// `.switch`: a label, a 32x18 track with a knob, and the state word.
+// The knob side swaps without a position transition (instant
 // justify-content change; colour-only transitions), so there is no
 // movement. The box is 44 px on every width.
 import { useEffect, useState, type JSX } from "react";
@@ -17,7 +17,7 @@ export function MotionSwitch({ testId = "motion-switch" }: { readonly testId?: s
       type="button"
       role="switch"
       aria-checked={on}
-      aria-label="Motion"
+      aria-label="Animations"
       data-testid={testId}
       className="switch"
       onClick={() => {
@@ -26,7 +26,7 @@ export function MotionSwitch({ testId = "motion-switch" }: { readonly testId?: s
         writeStoredMotion(next);
       }}
     >
-      <span className="switch-label">Motion</span>
+      <span className="switch-label">Animations</span>
       <span className="switch-track" aria-hidden="true">
         <span className="switch-knob" />
       </span>

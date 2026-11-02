@@ -318,6 +318,113 @@ function condReferencesMappingBase(cond: Expr | undefined, base: number): boolea
   return false;
 }
 
+// Whether a store is reachable from one side of a gate jump only
+// after crossing a priced opcode (an amount compare or scaling). A
+// per-address limit entry arms exactly that shape: nonzero entry,
+// then `amount > limit` decides between store and revert, so the
+// entry alone blocks no one. A listed entry whose set side stores
+// only past another boolean entry gate (an exemption test) crosses
+// no priced opcode and still blocks the non-exempt listed.
+function storeAfterPricedOnSide(
+  code: ReturnType<typeof disassemble>,
+  jumpiPc: number,
+  side: "jump" | "fall",
+): boolean {
+  const indexAt = new Map<number, number>();
+  for (let at = 0; at < code.length; at += 1) {
+    const insn = code[at];
+    if (insn !== undefined) {
+      indexAt.set(insn.pc, at);
+    }
+  }
+  const startIndex = indexAt.get(jumpiPc);
+  if (startIndex === undefined) {
+    return false;
+  }
+  const destOf = (at: number): number | null => {
+    for (let back = at - 1, steps = 0; back >= 0 && steps < 4; back -= 1, steps += 1) {
+      const cand = code[back];
+      if (cand === undefined) {
+        return null;
+      }
+      if (cand.opcode >= 0x60 && cand.opcode <= 0x63 && cand.immediate !== undefined) {
+        let value = 0;
+        for (const byte of cand.immediate) {
+          value = value * 256 + byte;
+        }
+        return value;
+      }
+      if (cand.opcode !== 0x80 && cand.opcode !== 0x90) {
+        return null;
+      }
+    }
+    return null;
+  };
+  const priced = new Set([0x10, 0x11, 0x12, 0x13, 0x02, 0x04, 0x05, 0x06]);
+  type Frame = { readonly at: number; readonly steps: number; readonly priced: boolean };
+  const queue: Frame[] = [];
+  if (side === "fall") {
+    queue.push(Object.freeze({ at: startIndex + 1, steps: 0, priced: false }));
+  } else {
+    const dest = destOf(startIndex);
+    const destIndex = dest === null ? undefined : indexAt.get(dest);
+    if (destIndex !== undefined) {
+      queue.push(Object.freeze({ at: destIndex, steps: 0, priced: false }));
+    }
+  }
+  const seen = new Set<string>();
+  while (queue.length > 0) {
+    const frame = queue.shift();
+    if (frame === undefined || frame.steps > 128) {
+      continue;
+    }
+    const key = `${frame.at}:${frame.priced ? 1 : 0}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    let at = frame.at;
+    let steps = frame.steps;
+    let isPriced = frame.priced;
+    while (at < code.length && steps <= 128) {
+      const insn = code[at];
+      if (insn === undefined) {
+        break;
+      }
+      steps += 1;
+      if (priced.has(insn.opcode)) {
+        isPriced = true;
+      }
+      if (insn.opcode === 0x55 && isPriced) {
+        return true;
+      }
+      if (insn.opcode === 0xfd || insn.opcode === 0xfe || insn.opcode === 0x00 || insn.opcode === 0xf3) {
+        break;
+      }
+      if (insn.opcode === 0x57) {
+        const dest = destOf(at);
+        const destIndex = dest === null ? undefined : indexAt.get(dest);
+        if (destIndex !== undefined) {
+          queue.push(Object.freeze({ at: destIndex, steps, priced: isPriced }));
+        }
+        at += 1;
+        continue;
+      }
+      if (insn.opcode === 0x56) {
+        const dest = destOf(at);
+        const destIndex = dest === null ? undefined : indexAt.get(dest);
+        if (destIndex === undefined) {
+          break;
+        }
+        at = destIndex;
+        continue;
+      }
+      at += 1;
+    }
+  }
+  return false;
+}
+
 // First member JUMPI past `afterPc` whose fall side reverts and whose
 // own condition reads a mapping entry on `base`, or null. Mirrors the
 // legacy gate scan, tightened so a nearby revert on another value (a
@@ -351,6 +458,12 @@ function revertingMappingGatePc(
     // `exempt`) is an allowlist shape, never a list, and stays silent here.
     const truthy = cond === undefined ? null : mappingTruthySide(cond, base);
     if (truthy === null || truthy === "fall") {
+      // A set side whose only store sits past a priced amount compare
+      // is not blocked by the entry: a per-address limit entry arms
+      // that compare, and small amounts still store from that side.
+      if (storeAfterPricedOnSide(code, candidate.pc, "fall")) {
+        continue;
+      }
       return candidate.pc;
     }
   }
@@ -672,7 +785,16 @@ export function exprMappingGatePc(
     if (truthySide === null) {
       continue;
     }
-    if (hasRevertingSide(bytecode, code, gateMember, pc, truthySide)) {
+    // A revert reachable somewhere down the set side proves a block
+    // unless that side's store sits past a priced amount compare: a
+    // limit entry's set side reaches both a store (small amounts) and
+    // a revert (large ones) through that compare, so the entry alone
+    // blocks no one. A store past only another boolean entry gate
+    // (an exemption test) still blocks the non-exempt listed.
+    if (
+      hasRevertingSide(bytecode, code, gateMember, pc, truthySide) &&
+      !storeAfterPricedOnSide(code, pc, truthySide)
+    ) {
       return pc;
     }
     // A merely reachable revert down the set side is not enough
@@ -1311,6 +1433,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             gateBase === writeBase &&
             gateJumpi !== undefined &&
             hasRevertingSideBounded(input.bytecode, gateMember, gateJumpi.pc, "fall") &&
+            !storeAfterPricedOnSide(code, gateJumpi.pc, "fall") &&
             // Polarity (SCAN-B): the fall revert must be the side taken
             // while the entry reads set; a clear-side revert belongs to
             // an allowlist shape, never to a list.
@@ -1357,6 +1480,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
                 insn.pc > packedGate.cmpPc &&
                 insn.pc <= packedGate.cmpPc + 64 &&
                 hasRevertingSide(input.bytecode, code, gateMember, insn.pc, "fall") &&
+                !storeAfterPricedOnSide(code, insn.pc, "fall") &&
                 fallIsTruthySide(code, transferExprs.jumpis, insn.pc, writeBase) !== false,
             );
             if (packedJumpi !== undefined) {

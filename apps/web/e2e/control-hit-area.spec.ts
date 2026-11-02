@@ -1,5 +1,5 @@
 // Switch and ask-button hit-area pattern (R2-8, W-10): the Expert and
-// Motion switches keep a 44x44 box with a visible keyboard ring and a
+// Animations switches keep a 44x44 box with a visible keyboard ring and a
 // themed on-state, and the Ask button always looks enabled: an empty
 // submit focuses the field with an error hint and sends nothing.
 import { expect, test } from "@playwright/test";
@@ -113,11 +113,9 @@ test("control_motion_switch_hit_area_and_keyboard", async ({ page }) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ plugins: [] }) });
   });
 
-  // Note: hash URLs build by concatenation (see token-symbol-heading).
-  await page.goto("/#/token/" + ADDRESS);
-  await expect(page.getByRole("img", { name: /Combined score 10 of 100/ })).toBeVisible();
+  await page.goto("/#/settings");
 
-  // The Motion switch keeps a real 44x44 box in the page footer.
+  // The Animations switch keeps a real 44x44 box in Settings.
   const motion = page.getByTestId("motion-switch");
   await expect(motion).toBeVisible();
   const box = await motion.boundingBox();

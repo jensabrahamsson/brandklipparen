@@ -140,8 +140,10 @@ test("n15_ask_renders_sentences_dropped_count_and_advisory", async ({ page }) =>
   await page.getByTestId("ask-submit").click();
   const output = page.getByTestId("muse-output");
   await expect(output.getByText("The owner can stop chosen wallets from sending tokens.").first()).toBeVisible();
+  await expect(output.getByTestId("explain-dropped")).toBeHidden();
+  await output.locator("details.muse-details summary").click();
   await expect(output.getByTestId("explain-dropped")).toContainText("2 sentences removed: they cited no evidence.");
-  await expect(output.getByTestId("muse-advisory")).toContainText("Advisory. The score above did not change.");
+  await expect(output.getByTestId("muse-advisory")).toContainText("AI explanation · doesn't change the score");
   // The fulfilled answer proves the route ran, so the count is settled.
   expect(chatPosts.count).toBe(1);
   // Scores, gauges and hero text are byte-identical before and after Ask.
@@ -176,7 +178,7 @@ test("n15_ask_failure_offers_retry_without_moving_score", async ({ page }) => {
   await page.getByLabel("Ask about this token").fill("Can the owner stop me selling?");
   await page.getByTestId("ask-submit").click();
   const output = page.getByTestId("muse-output");
-  await expect(output).toContainText("The answer failed to load; the page result above stands.");
+  await expect(output).toContainText("The answer failed to load.");
   await expect(output.getByRole("button", { name: "Try again" })).toBeVisible();
   expect(await hero.innerText()).toBe(before);
 });

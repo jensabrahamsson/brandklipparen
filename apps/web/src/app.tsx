@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, type JSX, type MouseEvent } from "react";
 import { parseHash, type Route } from "./lib/route.ts";
 import { initialApiKey } from "./lib/initialApiKey.ts";
+import { applyMotionPref, readStoredMotion } from "./lib/motionPref.ts";
 import { Pictogram } from "./components/Pictogram.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
+import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { StartPage } from "./pages/StartPage.tsx";
 import { TokenPage } from "./pages/TokenPage.tsx";
 
@@ -24,6 +26,10 @@ function loadApiKey(): string {
 export function App(): JSX.Element {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   const [apiKey, setApiKey] = useState(loadApiKey);
+
+  useEffect(() => {
+    applyMotionPref(readStoredMotion());
+  }, []);
 
   useEffect(() => {
     const onChange = (): void => setRoute(parseHash(window.location.hash));
@@ -78,7 +84,9 @@ export function App(): JSX.Element {
         </span>
       </header>
       <main id="main" tabIndex={-1}>
-        {route.name === "start" ? (
+        {route.name === "settings" ? (
+          <SettingsPage apiKey={apiKey} onApiKeyChange={storeApiKey} />
+        ) : route.name === "start" ? (
           <StartPage apiKey={apiKey} onApiKeyChange={storeApiKey} onAnalyze={goToken} />
         ) : (
           <ErrorBoundary key={route.address}>

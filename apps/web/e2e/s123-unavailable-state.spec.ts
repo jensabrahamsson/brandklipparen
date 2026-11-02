@@ -116,7 +116,7 @@ test("s123_unavailable_state_blocks_all_ai_calls", async ({ page }) => {
   // action can invite a call that answers not-configured.
   const consoleCard = page.locator('section[aria-label="Muse console"]');
   await expect(consoleCard.getByTestId("muse-unavailable")).toContainText("Muse is not connected on this server.");
-  await expect(consoleCard.getByTestId("muse-unavailable")).toContainText(
+  await expect(consoleCard.getByTestId("muse-unavailable")).not.toContainText(
     "Everything above is computed without it.",
   );
   await expect(consoleCard.locator("button")).toHaveCount(0);

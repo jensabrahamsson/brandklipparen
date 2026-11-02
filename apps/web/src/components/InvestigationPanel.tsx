@@ -132,9 +132,9 @@ function CheckedNarrative({
   );
 }
 
-// Spec wording for removed sentences (UI v2 §1.2): the count plus the
-// reason in plain words, with the uncited vs unknown-id split when the
-// report carries it.
+// Wording for removed sentences, shown only inside a Details
+// disclosure: the count plus the reason in plain words, with the
+// uncited vs unknown-id split when the report carries it.
 function removedLine(
   droppedClaims: number,
   dropReasons: { readonly uncited: number; readonly unknownId: number } | undefined,
@@ -251,9 +251,12 @@ export function InvestigationPanel({
               Muse&apos;s conclusion did not cite collected evidence, so it is not shown.
             </p>
           )}
-          <p className="quiet" style={{ margin: 0 }}>
-            {removedLine(state.droppedClaims, state.dropReasons)}
-          </p>
+          <details className="muse-details">
+            <summary>Details</summary>
+            <p className="quiet" style={{ margin: 0 }}>
+              {removedLine(state.droppedClaims, state.dropReasons)}
+            </p>
+          </details>
           <button type="button" className="button-ghost" onClick={onRequest} style={{ marginTop: 8 }}>
             Run again
           </button>

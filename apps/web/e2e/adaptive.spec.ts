@@ -281,7 +281,7 @@ test("k519_ask_sends_one_chat_request_per_press", async ({ page }) => {
   await expect(page.getByTestId("muse-output")).toContainText(
     "The owner can stop chosen wallets from sending tokens.",
   );
-  await expect(page.getByTestId("muse-advisory")).toContainText("Advisory. The score above did not change.");
+  await expect(page.getByTestId("muse-advisory")).toContainText("AI explanation · doesn't change the score");
 });
 
 test("k519_empty_ask_sends_nothing", async ({ page }) => {

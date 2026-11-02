@@ -434,15 +434,16 @@ test("hover_leaves_cards_flat_without_perspective", async ({ page }) => {
 
 test("motion_switch_off_is_static_without_emulation", async ({ page }) => {
   await mockRest(page);
-  await page.goto(`/#/token/${ADDRESS}`);
-
-  const cards = page.locator(".card, .cant-tell");
-  await expect(cards.first()).toBeVisible();
+  await page.goto("/#/settings");
   const motion = page.getByTestId("motion-switch");
   await expect(motion).toHaveAttribute("aria-checked", "true");
   await motion.click();
   await expect(motion).toHaveAttribute("aria-checked", "false");
   expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBe("off");
+  await page.goto(`/#/token/${ADDRESS}`);
+
+  const cards = page.locator(".card, .cant-tell");
+  await expect(cards.first()).toBeVisible();
 
   // Same interaction script as the reduced-motion run: hover, open a
   // tooltip, expand a signal and run the investigation. Nothing may

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type JSX } from "react";
-import { MotionSwitch } from "../components/MotionSwitch.tsx";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { CopyButton } from "../components/CopyButton.tsx";
 import { LiveTokens } from "../components/LiveTokens.tsx";
@@ -76,7 +75,6 @@ function loadRecent(): RecentEntry[] {
 
 export function StartPage({
   apiKey,
-  onApiKeyChange,
   onAnalyze,
 }: {
   readonly apiKey: string;
@@ -85,10 +83,6 @@ export function StartPage({
 }): JSX.Element {
   const [raw, setRaw] = useState("");
   const [error, setError] = useState<string | null>(null);
-  // The API-key field mounts only while its disclosure is open, so the
-  // closed disclosure contributes no hidden-layout box to measure (the
-  // layout contract counts every rendered control at every width).
-  const [apiOpen, setApiOpen] = useState(false);
   const [recent] = useState<RecentEntry[]>(loadRecent);
   // DexScreener column (DX-1): visible only while /health reports the
   // market feed. A failed or silent health check hides the column rather
@@ -355,29 +349,9 @@ export function StartPage({
         <span className="foot-trust">
           Deterministic score · Muse is advisory · Works on unverified contracts · Evidence for every signal
         </span>
-        <details
-          className="foot-api muted"
-          open={apiOpen}
-          onToggle={(event) => setApiOpen(event.currentTarget.open)}
-        >
-          <summary>API key</summary>
-          {apiOpen ? (
-            <label className="muted api-key-row">
-              API key
-              <input
-                type="password"
-                className="input"
-                autoComplete="off"
-                placeholder="Demo key"
-                value={apiKey}
-                onChange={(event) => onApiKeyChange(event.target.value)}
-                aria-label="API key for the demo"
-              />
-            </label>
-          ) : null}
-        </details>
-        <MotionSwitch />
-        <span className="foot-model">Follows your system setting until switched off.</span>
+        <a className="foot-settings" href="#/settings">
+          Use your own API key
+        </a>
       </footer>
     </div>
   );

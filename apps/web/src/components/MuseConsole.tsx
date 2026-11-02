@@ -115,8 +115,7 @@ export function MuseConsole({
     return (
       <section className="card muse-console" aria-label="Muse console" data-testid="muse-console">
         <p data-testid="muse-unavailable" style={{ margin: 0 }}>
-          <span aria-hidden="true">✦ </span>Muse is not connected on this server. Everything above is computed
-          without it.
+          <span aria-hidden="true">✦ </span>Muse is not connected on this server.
         </p>
       </section>
     );
@@ -161,9 +160,6 @@ export function MuseConsole({
           <span className="muse-console-model">{modelId}</span>
         )}
       </div>
-      <p className="muted" style={{ margin: "0 0 8px" }}>
-        Muse reads the evidence above. It never changes the score.
-      </p>
       <div className="muse-actions">
         {showExplain ? (
           <button type="button" className="button" onClick={onExplain}>
@@ -236,7 +232,7 @@ export function MuseConsole({
             />
           ) : null}
           <p className="quiet muse-advisory" data-testid="muse-advisory" style={{ margin: "12px 0 0" }}>
-            Advisory. The score above did not change.
+            AI explanation · doesn&apos;t change the score
           </p>
         </div>
       )}
@@ -268,11 +264,11 @@ function ChatOutput({
     return <ScanStatus text="Asking Muse…" />;
   }
   if (chat.status === "not-configured") {
-    return <p style={{ margin: 0 }}>Muse is not available for this question. The analysis above stands.</p>;
+    return <p style={{ margin: 0 }}>Muse is not available for this question.</p>;
   }
   if (chat.status === "ready") {
     if (chat.answers.length === 0) {
-      return <p style={{ margin: 0 }}>Muse had nothing to add. The analysis above stands.</p>;
+      return <p style={{ margin: 0 }}>Muse had nothing to add.</p>;
     }
     return (
       <div>
@@ -291,12 +287,12 @@ function ChatOutput({
     );
   }
   if (chat.status === "fallback") {
-    return <p style={{ margin: 0 }}>Muse had nothing to add. The analysis above stands.</p>;
+    return <p style={{ margin: 0 }}>Muse had nothing to add.</p>;
   }
   return (
     <div>
       <p role="alert" style={{ margin: "0 0 8px" }}>
-        The answer failed to load; the page result above stands.
+        The answer failed to load.
       </p>
       <button type="button" className="button-ghost" onClick={onRetry}>
         Try again

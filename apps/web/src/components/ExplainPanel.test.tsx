@@ -21,8 +21,7 @@ describe("explain fallback", () => {
     const html = renderToString(
       <ExplainFallback verdict={VERDICT} claims={[...CLAIMS]} onRetry={() => undefined} />,
     );
-    expect(html).toContain("back its answer with evidence");
-    expect(html).toContain("Here is what the analysis says:");
+    expect(html).toContain("Muse&#x27;s answer cited no evidence. Here&#x27;s the analysis instead:");
     expect(html).toContain("No owner powers were found in the bytecode.");
     expect(html).toContain("Liquidity locks cannot be told from bytecode.");
     expect(html.indexOf("No owner powers were found")).toBeLessThan(
@@ -84,6 +83,23 @@ describe("explain fallback", () => {
     expect(html).toContain("Pause");
     expect(html).toContain("Evidence: Blacklist. Open the Why this score row.");
     expect(html).not.toContain("[E:signal:");
+  });
+
+  test("dropped_line_sits_inside_a_details_disclosure", () => {
+    const html = renderToString(
+      <ExplainSentences
+        narrative={["The owner can pause transfers."]}
+        droppedClaims={1}
+        signals={[]}
+        address="0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        allIds={[]}
+        onSignalLink={() => undefined}
+      />,
+    );
+    expect(html).toContain("<details");
+    expect(html).toContain("<summary>Details</summary>");
+    expect(html).toContain("1 sentence removed: it cited no evidence.");
+    expect(html.indexOf("<details")).toBeLessThan(html.indexOf("1 sentence removed"));
   });
 
   test("all_dropped_without_claims_names_the_honest_limit_beside_a_bare_verdict", () => {

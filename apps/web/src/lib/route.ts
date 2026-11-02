@@ -18,6 +18,7 @@ export type TokenView =
 
 export type Route =
   | { readonly name: "start" }
+  | { readonly name: "settings" }
   | { readonly name: "token"; readonly address: string; readonly view: TokenView };
 
 function mainView(address: string): Route {
@@ -30,6 +31,9 @@ function mainView(address: string): Route {
 export function parseHash(hash: string): Route {
   if (hash === "" || hash === "#/" || hash === "#") {
     return { name: "start" };
+  }
+  if (hash === "#/settings") {
+    return { name: "settings" };
   }
   const match = /^#\/token\/(.+)$/.exec(hash);
   if (match?.[1] === undefined) {

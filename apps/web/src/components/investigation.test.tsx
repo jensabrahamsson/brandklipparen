@@ -76,6 +76,7 @@ describe("investigation panel provider badge", () => {
       />,
     );
     expect(html).toContain("did not cite collected evidence, so it is not shown");
+    expect(html).toContain("<summary>Details</summary>");
     expect(html).toContain("2 sentences removed: 1 cited nothing, 1 cited an unknown id.");
   });
 

@@ -82,7 +82,7 @@ describe("muse console (W-3)", () => {
   test("nothing_configured_shows_one_line_with_no_buttons", () => {
     const html = consoleHtml(NOTHING_HEALTH, NOTHING);
     expect(html).toContain("Muse is not connected on this server.");
-    expect(html).toContain("Everything above is computed without it.");
+    expect(html).not.toContain("Everything above is computed without it.");
     expect(html).not.toContain("<button");
     expect(html).not.toContain("disabled");
   });
@@ -90,7 +90,7 @@ describe("muse console (W-3)", () => {
   test("explain_only_shows_explain_without_ask_or_investigate", () => {
     const html = consoleHtml(EXPLAIN_HEALTH, EXPLAIN_ONLY);
     expect(html).toContain("Explain this result");
-    expect(html).toContain("Muse reads the evidence above. It never changes the score.");
+    expect(html).not.toContain("Muse reads the evidence above. It never changes the score.");
     expect(html).not.toContain("Ask about this token");
     expect(html).not.toContain("Investigate");
     expect(html).not.toContain("disabled");

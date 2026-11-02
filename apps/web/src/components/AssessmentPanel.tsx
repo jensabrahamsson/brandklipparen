@@ -57,10 +57,7 @@ export function AssessmentPanel({
           />
         ) : (
           <div>
-            <p className="muted">
-              Request a free-text assessment of the closed evidence list. The deterministic score, signals and
-              evidence stay unchanged.
-            </p>
+            <p className="muted">A plain-language read of the findings above.</p>
             <button type="button" className="button" onClick={onRequest}>
               Request assessment
             </button>

@@ -208,6 +208,13 @@ test("u4_explain_coverage_chips_read_as_evidence", async ({ page }) => {
   expect(texts).toContain("Pause · not found");
   expect(texts).toContain("Liquidity lock · can't tell");
   expect(texts).toContain("What we checked");
+  const chipWrap = await output
+    .locator("a.muse-chip, button.muse-chip")
+    .first()
+    .evaluate((element) => getComputedStyle(element).whiteSpace);
+  expect(chipWrap).toBe("nowrap");
+  await expect(output.getByTestId("explain-dropped")).toBeHidden();
+  await output.locator("details.muse-details summary").click();
   await expect(output.getByTestId("explain-dropped")).toContainText(
     "1 sentence removed: it cited no evidence.",
   );

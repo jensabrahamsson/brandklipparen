@@ -67,14 +67,31 @@ test("u11_stale_start_copy_and_chain_pill_are_gone", async ({ page }) => {
   for (const stale of ["bytecode alone", "BK/1", "ERC-20 contract reader"]) {
     expect(content).not.toContain(stale);
   }
-  await expect(page.getByText("Settings", { exact: true })).toHaveCount(0);
   // No static Chain pill: "Ethereum mainnet" reads exactly once, in the
-  // topbar. The footer keeps the API key behind one disclosure.
+  // topbar. The footer links to Settings for the API key and carries
+  // no Animations switch.
   await expect(page.getByText("Ethereum mainnet", { exact: true })).toHaveCount(1);
   await expect(page.getByText("See what its owner can do to you, in plain English.")).toBeVisible();
   await expect(page.locator(".page-foot")).toContainText("Deterministic score");
   await expect(page.locator(".page-foot")).toContainText("Muse is advisory");
-  await expect(page.locator(".foot-api summary")).toHaveText("API key");
+  await expect(page.getByTestId("motion-switch")).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Use your own API key" })).toHaveAttribute("href", "#/settings");
+});
+
+test("u11_settings_hold_api_key_and_animations", async ({ page }) => {
+  await mockRest(page);
+  await page.goto("/");
+  await page.getByRole("link", { name: "Use your own API key" }).click();
+  await expect(page).toHaveURL(/#\/settings$/);
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByLabel("API key", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your own key, if you have one. Kept only in this browser session.")).toBeVisible();
+  const animations = page.getByRole("switch", { name: "Animations" });
+  await expect(animations).toBeVisible();
+  await expect(page.getByText(/Blink and glow only/)).toBeVisible();
+  const box = await animations.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
 });
 
 test("u11_topbar_items_do_not_intersect_at_320", async ({ page }) => {

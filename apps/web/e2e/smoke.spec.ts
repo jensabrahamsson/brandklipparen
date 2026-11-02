@@ -198,8 +198,10 @@ test("w3_explain_renders_sentences_dropped_count_and_advisory", async ({ page })
   await expect(output.getByTestId("explain-sentences")).toContainText(
     "The owner can stop chosen wallets from sending tokens.",
   );
+  await expect(output.getByTestId("explain-dropped")).toBeHidden();
+  await output.locator("details.muse-details summary").click();
   await expect(output.getByTestId("explain-dropped")).toContainText("2 sentences removed: they cited no evidence.");
-  await expect(output.getByTestId("muse-advisory")).toContainText("Advisory. The score above did not change.");
+  await expect(output.getByTestId("muse-advisory")).toContainText("AI explanation · doesn't change the score");
   // Scores, gauges and hero text are byte-identical before and after Explain.
   expect(await hero.innerText()).toBe(before);
 });

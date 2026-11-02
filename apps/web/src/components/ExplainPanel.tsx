@@ -105,8 +105,8 @@ function jumpToCantTell(): void {
   }
 }
 
-// Spec wording for removed sentences (UI v2 §1.2): the count plus the
-// reason, never a developer term.
+// Wording for removed sentences, shown only inside a Details
+// disclosure: the count plus the reason, never a developer term.
 export function droppedLine(droppedClaims: number): string | null {
   if (droppedClaims <= 0) {
     return null;
@@ -157,9 +157,12 @@ export function ExplainSentences({
         </ul>
       )}
       {dropped === null ? null : (
-        <p data-testid="explain-dropped" className="quiet" style={{ margin: "8px 0 0" }}>
-          {dropped}
-        </p>
+        <details className="muse-details">
+          <summary>Details</summary>
+          <p data-testid="explain-dropped" className="quiet" style={{ margin: "8px 0 0" }}>
+            {dropped}
+          </p>
+        </details>
       )}
     </div>
   );
@@ -185,10 +188,7 @@ export function ExplainFallback({
     <div data-testid="explain-fallback">
       {claims.length > 0 ? (
         <>
-          <p style={{ margin: 0 }}>
-            Muse couldn&apos;t back its answer with evidence, so we hid it. Here is what the analysis
-            says:
-          </p>
+          <p style={{ margin: 0 }}>Muse&apos;s answer cited no evidence. Here&apos;s the analysis instead:</p>
           <ul className="muse-sentences" style={{ margin: "8px 0 0", paddingLeft: 20 }}>
             {claims.map((claim, index) => (
               <li key={index}>{claim.text}</li>
@@ -267,7 +267,7 @@ export function ExplainPanel({
     );
   }
   if (state.status === "not-configured") {
-    return <p style={{ margin: 0 }}>Muse is not available for this result. The analysis above stands.</p>;
+    return <p style={{ margin: 0 }}>Muse is not available for this result.</p>;
   }
   if (state.status === "ready") {
     const dropped = droppedLine(state.droppedClaims);
@@ -280,9 +280,12 @@ export function ExplainPanel({
           <div>
             <ExplainFallback verdict={verdict} claims={claims} onRetry={onRetry} />
             {dropped === null ? null : (
-              <p data-testid="explain-dropped" className="quiet" style={{ margin: "8px 0 0" }}>
-                {dropped}
-              </p>
+              <details className="muse-details">
+                <summary>Details</summary>
+                <p data-testid="explain-dropped" className="quiet" style={{ margin: "8px 0 0" }}>
+                  {dropped}
+                </p>
+              </details>
             )}
           </div>
         ) : (
@@ -299,12 +302,12 @@ export function ExplainPanel({
     );
   }
   if (state.status === "fallback") {
-    return <p style={{ margin: 0 }}>Muse had nothing to add. The analysis above stands.</p>;
+    return <p style={{ margin: 0 }}>Muse had nothing to add.</p>;
   }
   return (
     <div>
       <p role="alert" style={{ margin: "0 0 8px" }}>
-        The explanation failed to load; the page result above stands.
+        The explanation failed to load.
       </p>
       <button type="button" className="button-ghost" onClick={onRetry}>
         Try again

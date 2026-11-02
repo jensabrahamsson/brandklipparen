@@ -4851,12 +4851,27 @@ a.button-ghost {
   overflow-wrap: anywhere;
 }
 
-.foot-api summary {
+.foot-settings {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  cursor: pointer;
-  color: var(--dim);
+  color: var(--phosphor);
+}
+
+.settings-row {
+  margin-bottom: 20px;
+  min-width: 0;
+}
+
+.settings-label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--phosphor);
+}
+
+.settings-note {
+  margin: 8px 0 0;
+  max-width: 72ch;
 }
 
 .detail-head {
@@ -6335,6 +6350,9 @@ span.cite-chip {
 .muse-chip {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: nowrap;
   gap: 8px;
   box-sizing: border-box;
   min-height: 44px;
@@ -6378,9 +6396,23 @@ button.muse-chip {
   color: var(--dim);
 }
 
+.muse-chip > span:not(.muse-chip-lamp) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .muse-chip-lamp {
   display: inline-flex;
   flex: none;
+}
+
+.muse-details summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+  color: var(--dim);
 }
 
 /* Line-anchored Muse notes. Interleaved callouts sit between the lines
