@@ -234,6 +234,21 @@ describe("verified-source ABI mapping (VS-B2)", () => {
     expect(mapped.find((entry) => entry.signature === "foo(uint256)")).toMatchObject({ startLine: 2 });
   });
 
+  test("uint alias overloads pair with the bodied implementation, not the interface", () => {
+    const declarations = [
+      { file: "a.sol", name: "foo", paramsText: "uint256 x", startLine: 2, endLine: 2, hasBody: false, contractKind: "interface" as const },
+      { file: "a.sol", name: "foo", paramsText: "uint x", startLine: 5, endLine: 7, hasBody: true, contractKind: "contract" as const },
+      { file: "a.sol", name: "foo", paramsText: "address x", startLine: 9, endLine: 11, hasBody: true, contractKind: "contract" as const },
+    ];
+    const abi = [
+      { type: "function", name: "foo", inputs: [{ type: "uint256" }] },
+      { type: "function", name: "foo", inputs: [{ type: "address" }] },
+    ];
+    const mapped = mapSourceFunctions(abi, declarations);
+    expect(mapped.find((entry) => entry.signature === "foo(uint256)")).toMatchObject({ startLine: 5 });
+    expect(mapped.find((entry) => entry.signature === "foo(address)")).toMatchObject({ startLine: 9 });
+  });
+
   test("bk22_tuple_inputs_use_parenthesised_canonical_form", () => {
     const declarations = [
       { file: "a.sol", name: "bar", paramsText: "(uint256,address) x", startLine: 2, endLine: 4 },

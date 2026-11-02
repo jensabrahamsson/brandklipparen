@@ -520,7 +520,7 @@ function entryLooksLikeUnknownProxy(entryCode: BytecodeType): boolean {
   return !paired && containsDelegateCall(entryCode);
 }
 
-function containsDelegateCall(code: BytecodeType): boolean {
+export function containsDelegateCall(code: BytecodeType): boolean {
   const raw = code as Uint8Array;
   let pc = 0;
   while (pc < raw.length) {

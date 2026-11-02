@@ -141,12 +141,13 @@ export function clearSourceCache(): void {
   sourceCache.clear();
 }
 
-async function loadSource(address: string, apiKey: string | null): Promise<SourceResult> {
+async function loadSource(address: string, apiKey: string | null, block?: number): Promise<SourceResult> {
   const headers: Record<string, string> = {};
   if (apiKey !== null && apiKey.length > 0) {
     headers["x-api-key"] = apiKey;
   }
-  const response = await fetch(`/v1/source?address=${encodeURIComponent(address)}`, { headers });
+  const blockQuery = block !== undefined && Number.isSafeInteger(block) && block >= 0 ? `&block=${block}` : "";
+  const response = await fetch(`/v1/source?address=${encodeURIComponent(address)}${blockQuery}`, { headers });
   if (!response.ok) {
     throw new Error(`Request failed with status ${response.status}.`);
   }
@@ -159,13 +160,13 @@ async function loadSource(address: string, apiKey: string | null): Promise<Sourc
 
 // One `/v1/source` request per address, shared across panes. Failures
 // never poison the cache: the empty state offers Retry instead.
-export function fetchSource(address: string, apiKey: string | null): Promise<SourceResult> {
-  const key = address.toLowerCase();
+export function fetchSource(address: string, apiKey: string | null, block?: number, codeHash?: string): Promise<SourceResult> {
+  const key = `${address.toLowerCase()}:${block === undefined ? "latest" : block}:${codeHash ?? ""}`;
   const cached = sourceCache.get(key);
   if (cached !== undefined) {
     return cached;
   }
-  const pending = loadSource(address, apiKey);
+  const pending = loadSource(address, apiKey, block);
   sourceCache.set(key, pending);
   void pending.catch(() => {
     if (sourceCache.get(key) === pending) {

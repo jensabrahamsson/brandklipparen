@@ -47,20 +47,31 @@ export type InvestigateChatTransport = (
   init: InvestigateChatTransportInit,
 ) => Promise<InvestigateChatTransportResponse>;
 
+export function createFetchInvestigateChatTransport(limits: {
+  readonly timeoutMs: number;
+  readonly maxBytes: number;
+}): InvestigateChatTransport {
+  return async (url, init) =>
+    safeFetchText(url, {
+      method: "POST",
+      headers: init.headers,
+      body: init.body,
+      timeoutMs: limits.timeoutMs,
+      maxBytes: limits.maxBytes,
+      signal: init.signal,
+    });
+}
+
 export async function fetchInvestigateChatTransport(
   url: string,
   init: InvestigateChatTransportInit,
 ): Promise<InvestigateChatTransportResponse> {
   // BK-25: stream through the bounded helper so an oversize body is
   // refused while reading, never buffered whole first.
-  return safeFetchText(url, {
-    method: "POST",
-    headers: init.headers,
-    body: init.body,
+  return createFetchInvestigateChatTransport({
     timeoutMs: DEFAULT_INVESTIGATE_TIMEOUT_MS,
-    maxBytes: DEFAULT_INVESTIGATE_MAX_BYTES_OUT,
-    signal: init.signal,
-  });
+    maxBytes: DEFAULT_INVESTIGATE_MAX_BYTES_IN,
+  })(url, init);
 }
 
 export type InvestigateChatLogEntry = {
@@ -465,7 +476,9 @@ export class InvestigateChatCompletionsAdapter implements InvestigationModelPort
     this.jsonResponseFormat = options.jsonResponseFormat ?? false;
     this.maxTokens = options.maxTokens ?? INVESTIGATE_CHAT_MAX_TOKENS;
     this.reasoningEffort = options.reasoningEffort;
-    this.transport = options.transport ?? fetchInvestigateChatTransport;
+    this.transport =
+      options.transport ??
+      createFetchInvestigateChatTransport({ timeoutMs: this.timeoutMs, maxBytes: this.maxBytesIn });
     this.onLog = options.onLog;
   }
 
@@ -489,12 +502,15 @@ export class InvestigateChatCompletionsAdapter implements InvestigationModelPort
         outcome,
       });
     };
+    // The runner's remaining token budget reserves the completion
+    // allowance: the provider is never asked for more than remains.
+    const allowance = Math.max(1, Math.min(this.maxTokens, input.budgets.tokensLeft));
     const body = buildRequestBody(
       this.modelIdValue,
       this.providerValue,
       input,
       this.jsonResponseFormat,
-      this.maxTokens,
+      allowance,
       this.reasoningEffort,
     );
     if (byteLength(body) > this.maxBytesOut) {

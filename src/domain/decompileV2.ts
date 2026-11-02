@@ -173,7 +173,10 @@ function op(name: string, args: readonly Expr[]): Expr {
 }
 function sloadExpr(slot: Expr): Expr { return Object.freeze({ kind: "sload", slot }) as Expr; }
 function calldataExpr(offset: Expr): Expr { return Object.freeze({ kind: "calldata", offset }) as Expr; }
-function keccakExpr(words: readonly Expr[]): Expr { return Object.freeze({ kind: "keccak", words: Object.freeze(words.slice()) }) as Expr; }
+function keccakExpr(words: readonly Expr[]): Expr {
+  const candidate = Object.freeze({ kind: "keccak", words: Object.freeze(words.slice()) }) as Expr;
+  return overExprCaps(candidate) ? UNKNOWN : candidate;
+}
 
 // ---- block simulation ----
 type Effect =
@@ -339,16 +342,34 @@ function mappingBaseOf(slot: Expr): number | null {
   return null;
 }
 function containsSload(e: Expr): boolean {
-  if (e.kind === "sload") return true;
-  if (e.kind === "calldata") return containsSload(e.offset);
-  if (e.kind === "keccak") return e.words.some(containsSload);
-  if (e.kind === "op") return e.args.some(containsSload);
+  const seen = new Set<Expr>();
+  const stack: Expr[] = [e];
+  while (stack.length > 0) {
+    const cur = stack.pop() ?? UNKNOWN;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    if (cur.kind === "sload") return true;
+    if (cur.kind === "calldata") stack.push(cur.offset);
+    else if (cur.kind === "keccak") { for (const w of cur.words) stack.push(w); }
+    else if (cur.kind === "op") { for (const a of cur.args) stack.push(a); }
+  }
   return false;
 }
 function findReturnSload(e: Expr): Extract<Expr, { kind: "sload" }> | null {
-  if (e.kind === "sload") return e;
-  if (e.kind === "op") { for (const a of e.args) { const f = findReturnSload(a); if (f !== null) return f; } }
-  if (e.kind === "keccak") { for (const w of e.words) { const f = findReturnSload(w); if (f !== null) return f; } }
+  // Shared (DAG) subexpressions are visited once: a subtree already
+  // explored without finding an sload is never re-expanded.
+  const seen = new Set<Expr>();
+  const stack: Expr[] = [e];
+  while (stack.length > 0) {
+    const cur = stack.pop() ?? UNKNOWN;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    spendWork(1);
+    if (cur.kind === "sload") return cur;
+    if (cur.kind === "op") { for (const a of cur.args) stack.push(a); }
+    else if (cur.kind === "keccak") { for (const w of cur.words) stack.push(w); }
+    else if (cur.kind === "calldata") stack.push(cur.offset);
+  }
   return null;
 }
 

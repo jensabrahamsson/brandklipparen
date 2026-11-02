@@ -138,6 +138,7 @@ export type AssessmentServiceDeps = {
   // Absent means no global cap; the composition passes the validated
   // value or its conservative default. Cache hits never spend it.
   readonly globalDailyCap?: number | undefined;
+  readonly globalBudget?: import("./overlayBudget.ts").SharedAiGlobalBudget | undefined;
   readonly cache?: AssessmentCacheStore | undefined;
   readonly meter?: AssessmentCostMeter | undefined;
 };
@@ -300,6 +301,9 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
   const meter = deps.meter ?? createInMemoryAssessmentCostMeter();
   const globalSpent = new Map<string, number>();
   function globalExhausted(day: string): boolean {
+    if (deps.globalBudget !== undefined) {
+      return deps.globalBudget.isExhausted(day);
+    }
     if (deps.globalDailyCap === undefined) {
       return false;
     }
@@ -311,6 +315,10 @@ export function createAssessmentService(deps: AssessmentServiceDeps): Assessment
     return (globalSpent.get(day) ?? 0) >= deps.globalDailyCap;
   }
   function recordGlobal(day: string): void {
+    if (deps.globalBudget !== undefined) {
+      deps.globalBudget.record(day);
+      return;
+    }
     if (deps.globalDailyCap === undefined) {
       return;
     }

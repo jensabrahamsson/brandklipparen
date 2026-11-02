@@ -570,6 +570,8 @@ function AssessedView({
         availability={availability}
         evidenceIndex={evidenceIndex}
         ownerOnlySelectors={ownerOnlySelectors}
+        block={result.block}
+        codeHash={result.codeHash}
       />
     );
   }
@@ -801,6 +803,7 @@ export function OverviewSections({
         codeHash={result.codeHash}
         apiKey={apiKey}
         names={selectorNames}
+        block={result.block}
       />
     ),
     "plugin-findings": (

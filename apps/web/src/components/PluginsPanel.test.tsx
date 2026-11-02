@@ -95,7 +95,7 @@ describe("generic plugins panel (S-046)", () => {
             findings: [
               {
                 id: "dev.brandklipparen.pause:pause-extended",
-                title: "The owner can freeze all transfers. Found by extended analysis; not counted in the score.",
+                title: "A privileged account can freeze transfers. Found by extended analysis; not counted in the score.",
                 payload: { fact: "pause", slot: 0, mode: "pause", proof: "extended" },
                 evidence: [{ selector: "0x0a9c6c1e", offset: 123 }],
               },
@@ -105,7 +105,7 @@ describe("generic plugins panel (S-046)", () => {
       />,
     );
     expect(html).toContain("Extended analysis · not in score");
-    expect(html).toContain("The owner can freeze all transfers.");
+    expect(html).toContain("A privileged account can freeze transfers.");
     // The badge renders once: the scored capability finding above carries
     // a `feature`-less capability payload, so it stays unbadged.
     const badges = html.match(/Extended analysis · not in score/g) ?? [];

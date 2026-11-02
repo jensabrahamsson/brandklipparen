@@ -356,7 +356,7 @@ describe("p1 honest claim sentences (1.1.0)", () => {
     const code = fixtureCode();
     const cases: ReadonlyArray<{ readonly key: string; readonly first: string }> = [
       { key: "blacklist", first: "The owner can stop chosen wallets from sending tokens." },
-      { key: "pause", first: "The owner can freeze all transfers." },
+      { key: "pause", first: "A privileged account can freeze transfers." },
       { key: "mint", first: "The owner can create new tokens." },
       { key: "transfer-fee", first: "The owner can change the fee taken on each transfer." },
       { key: "transfer-limits", first: "The owner can cap how much a wallet may send or hold." },

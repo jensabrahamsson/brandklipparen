@@ -21,6 +21,7 @@ export function ExplanationList({
   apiKey,
   names,
   bandHigh,
+  block,
 }: {
   readonly claims: readonly ExplanationClaim[];
   readonly signals: readonly Signal[];
@@ -30,6 +31,7 @@ export function ExplanationList({
   readonly codeHash: string;
   readonly apiKey: string;
   readonly names: ReadonlyMap<string, SelectorName>;
+  readonly block?: number | undefined;
   // True when the token band is High: filled severity tags stay reserved
   // for High tokens (round-3 review D-11).
   readonly bandHigh?: boolean | undefined;
@@ -57,6 +59,7 @@ export function ExplanationList({
         apiKey={apiKey}
         names={names}
         bandHigh={bandHigh}
+        block={block}
       />
     </section>
   );

@@ -246,4 +246,33 @@ describe("m02e investigation model input", () => {
     expect(blacklist?.meaning).toBe(BLACKLIST_TITLE);
     expect(blacklist?.selectors).toContainEqual({ selector: "0xa9059cbb", name: "transfer(address,uint256)" });
   });
+
+  test("decide clamps max_tokens to the remaining token budget", async () => {
+    const code = mustOk(Bytecode.parse("0x6001600055"));
+    const input = mustOk(
+      InvestigationModelInput.create({
+        codeHash: mustOk(CodeHash.of(code)),
+        scoreBand: "High",
+        signalIds: ["sig-1"],
+        tools: [{ toolId: "evidence.list", description: "list frozen evidence", argNames: [] }],
+        trace: [],
+        budgets: { stepsLeft: 7, tokensLeft: 100, deadlineMs: 30000 },
+        meanings: [blacklistMeaning()],
+      }),
+    );
+    const calls: Array<{ body: string }> = [];
+    const adapter = new MetaModelApiInvestigateAdapter({
+      endpoint: "https://api.example.invalid/v1/",
+      apiKey: new SecretString(FAKE_KEY),
+      modelId: mustOk(ModelId.parse(MODEL_ID)),
+      transport: async (_url, init) => {
+        calls.push({ body: init.body });
+        return { status: 200, bodyText: concludeEnvelope() };
+      },
+    });
+    const result = await adapter.decide(input, fixedContext());
+    expect(result.ok).toBe(true);
+    const body = JSON.parse(calls[0]?.body ?? "") as Record<string, unknown>;
+    expect(body["max_tokens"]).toBe(100);
+  });
 });

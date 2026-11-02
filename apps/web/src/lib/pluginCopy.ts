@@ -161,7 +161,7 @@ function pauseLine(payloads: readonly unknown[]): string {
   const record = firstPayloadWith(payloads, ["mode"]);
   const mode = record === null ? null : textOf(record, "mode");
   if (mode === "pause") {
-    return "The owner can freeze all transfers.";
+    return "A privileged account can freeze transfers.";
   }
   if (mode === "trading-toggle") {
     return "The owner can switch trading on and off.";

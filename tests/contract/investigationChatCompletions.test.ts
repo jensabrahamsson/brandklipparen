@@ -124,7 +124,8 @@ describe("investigation chat-completions request shape", () => {
     const body = JSON.parse(call.body) as Record<string, unknown>;
     expect(body["model"]).toBe(MODEL_ID);
     expect(Object.keys(body).sort()).toEqual(["max_tokens", "messages", "model", "reasoning_effort", "temperature"]);
-    expect(body["max_tokens"]).toBe(8192);
+    // The remaining token budget (4000) clamps the 8192 completion cap.
+    expect(body["max_tokens"]).toBe(4000);
     expect(body["temperature"]).toBe(0);
     expect(body["reasoning_effort"]).toBe("low");
     expect("top_p" in body).toBe(false);

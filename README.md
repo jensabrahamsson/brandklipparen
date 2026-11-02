@@ -259,7 +259,7 @@ Replace the synthetic address with any ERC-20 contract address on Ethereum mainn
 ## MCP
 
 ```sh
-npm run start:mcp
+npm --silent run start:mcp
 ```
 
 The MCP server speaks minimal JSON-RPC 2.0 over stdio
@@ -269,11 +269,13 @@ port is opened. List tools first (`tools/list`), then call one per
 frame (`tools/call` with `name` and `arguments`).
 
 Generic MCP client configuration (copy, then replace the `<...>`
-values). `npm run start:mcp` applies the same safe defaults as
+values). `npm --silent run start:mcp` applies the same safe defaults as
 `npm run demo` (the demo default helpers), so only the RPC URL and the
 optional key pointers below are needed; the user environment always
 wins and no values are printed (applied names go to stderr only, and
-stdout stays the JSON-RPC channel). `npm run start:mcp` does not read
+stdout stays the JSON-RPC channel). The `--silent` flag keeps npm
+lifecycle banners off stdout, which is the JSON-RPC channel.
+`npm --silent run start:mcp` does not read
 `.env.local`. Node 22 must be first on the `PATH` the client launches
 `npm` with.
 
@@ -282,7 +284,7 @@ stdout stays the JSON-RPC channel). `npm run start:mcp` does not read
   "mcpServers": {
     "brandklipparen": {
       "command": "npm",
-      "args": ["run", "start:mcp"],
+      "args": ["--silent", "run", "start:mcp"],
       "cwd": "<path to repo>",
       "env": {
         "BRANDKLIPPAREN_RPC_URLS": "https://ethereum-rpc.publicnode.com",

@@ -1,11 +1,10 @@
-// SCAN-4 dev-set measurement at idiom-class granularity. The local
-// dev set (verified sources, labels per power) holds no runtime
-// bytecode in this repository, so each token is measured through the
-// synthetic fixture that reproduces its verified-source idiom class.
-// Class sizes are the verified-token counts per class (null-labelled
-// and unverified entries excluded); outcomes multiply by class size,
-// so the totals below are the dev-set TP/FP/FN per power under that
-// mapping. Assertions check detector outcomes only.
+// SCAN-4 synthetic fixture measurement at idiom-class granularity.
+// Each row is one hand-written synthetic fixture reproducing an idiom
+// class; the `tokens` field records how many real tokens were assigned
+// to that class for provenance only and is never used as a weight.
+// Counts below are per-fixture-class outcomes on synthetic bytecode:
+// they do not measure accuracy on the real contracts, whose runtime
+// bytecode is not in this repository.
 import { describe, expect, test } from "vitest";
 import { Bytecode, CodeHash } from "../../../src/domain/types.ts";
 import type { DetectorInput, PluginFinding } from "../../../src/plugins/detector.ts";
@@ -148,49 +147,49 @@ function measure(power: Power): { tp: number; fp: number; fn: number; tn: number
       continue;
     }
     const found = detect(power, row.hex());
+    // One synthetic fixture class counts once, regardless of how many
+    // real tokens were assigned to the class.
     if (row.label && found) {
-      tp += row.tokens;
+      tp += 1;
     } else if (row.label) {
-      fn += row.tokens;
+      fn += 1;
     } else if (found) {
-      fp += row.tokens;
+      fp += 1;
     } else {
-      tn += row.tokens;
+      tn += 1;
     }
   }
   return { tp, fp, fn, tn };
 }
 
-describe("SCAN-4 dev-set measurement (idiom-class weighted)", () => {
-  test("blacklist reports zero FP and zero FN over the verified dev set classes", () => {
+describe("SCAN-4 synthetic fixture measurement (per class, unweighted)", () => {
+  test("blacklist synthetic classes: getter-helper class is a known miss", () => {
     const result = measure("blacklist");
-    console.log(`blacklist TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
-    expect(result).toEqual({ tp: 20, fp: 0, fn: 0, tn: 14 });
+    console.log(`blacklist synthetic classes TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
+    expect(result).toEqual({ tp: 7, fp: 0, fn: 1, tn: 3 });
   });
 
-  test("pause reports zero FP and zero FN over the verified dev set classes", () => {
+  test("pause synthetic classes: getter-helper classes are known misses", () => {
     const result = measure("pause");
-    console.log(`pause TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
-    expect(result).toEqual({ tp: 20, fp: 0, fn: 0, tn: 14 });
+    console.log(`pause synthetic classes TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
+    expect(result).toEqual({ tp: 3, fp: 0, fn: 2, tn: 2 });
   });
 
-  test("limits report zero FP and zero FN over the verified dev set classes", () => {
+  test("limits synthetic classes report no FP or FN", () => {
     const result = measure("limits");
-    console.log(`limits TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
-    expect(result.fn).toBe(0);
-    expect(result.fp).toBe(0);
-    expect(result.tp).toBe(17);
+    console.log(`limits synthetic classes TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
+    expect(result).toEqual({ tp: 2, fp: 0, fn: 0, tn: 1 });
   });
 
-  test("mint reports zero FP and zero FN over the verified dev set classes", () => {
+  test("mint synthetic classes report no FP or FN", () => {
     const result = measure("mint");
-    console.log(`mint TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
-    expect(result).toEqual({ tp: 12, fp: 0, fn: 0, tn: 1 });
+    console.log(`mint synthetic classes TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
+    expect(result).toEqual({ tp: 2, fp: 0, fn: 0, tn: 1 });
   });
 
-  test("fees report zero FP and zero FN over the verified dev set classes", () => {
+  test("fee synthetic classes report no FP or FN", () => {
     const result = measure("fee");
-    console.log(`fee TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
-    expect(result).toEqual({ tp: 15, fp: 0, fn: 0, tn: 19 });
+    console.log(`fees synthetic classes TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
+    expect(result).toEqual({ tp: 4, fp: 0, fn: 0, tn: 1 });
   });
 });

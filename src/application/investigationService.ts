@@ -242,6 +242,7 @@ export type InvestigationServiceOptions = {
   // service still answers `not-configured` per request with zero sends,
   // but health reports the loop disabled so the UI hides it up front.
   readonly configured?: boolean | undefined;
+  readonly globalBudget?: import("./overlayBudget.ts").SharedAiGlobalBudget | undefined;
 };
 
 export type InvestigationService = {
@@ -300,13 +301,22 @@ export function createInvestigationService(options: InvestigationServiceOptions)
           };
         }
       }
+      const globalBudget = options.globalBudget;
       const result = await investigateToken(
         options.adapter,
         catalogue,
         facts,
         ctx,
         options.limits,
-        hooks,
+        globalBudget === undefined
+          ? hooks
+          : {
+              ...hooks,
+              beforeProviderCall: () => {
+                if (hooks.beforeProviderCall !== undefined && !hooks.beforeProviderCall()) return false;
+                return globalBudget.trySpend(quota?.day);
+              },
+            },
       );
       if (result.status === "done") {
         cache.set(key, result.report);

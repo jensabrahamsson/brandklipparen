@@ -189,6 +189,27 @@ describe("decompiler v2", () => {
     expect(out.text.length).toBeLessThan(20000);
   });
 
+  test("shared keccak expressions stay bounded", () => {
+    const asm = new Asm();
+    dispatcher(asm, [["a9059cbb", "body"]]);
+    asm.label("body").op(0x5b);
+    asm.push1(0x04).op(0x35);
+    // Store the same word at mem 0 and 32, hash, then repeat 40 times:
+    // each round hashes the shared previous result twice over.
+    for (let round = 0; round < 40; round += 1) {
+      asm.op(0x80).push1(0x00).op(0x52);
+      asm.op(0x80).push1(0x20).op(0x52);
+      asm.push1(0x40).push1(0x00).op(0x20);
+    }
+    asm.push1(0x00).op(0x52);
+    asm.push1(0x20).push1(0x00).op(0xf3);
+    const started = Date.now();
+    const out = decompileContractV2(bc(asm.build()));
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(out.text).toContain("function transfer(address arg0, uint256 arg1) /* selector 0xa9059cbb */ {");
+    expect(out.text.length).toBeLessThan(20000);
+  });
+
   test("subtraction of 1 and 2^160 is not rendered as the address mask", () => {
     const asm = new Asm();
     dispatcher(asm, [["a9059cbb", "body"]]);

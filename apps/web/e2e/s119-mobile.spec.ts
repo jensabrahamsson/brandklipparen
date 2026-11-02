@@ -251,8 +251,8 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
     await expect(legend).toBeVisible();
     await expect(legend).toContainText("0–29");
     await expect(legend).toContainText("LOW");
-    await expect(legend).toContainText("lowest band on this scale");
-    await expect(legend).toContainText("Low does not mean safe");
+    await expect(legend).toContainText("no strong owner powers seen");
+    await expect(legend).toContainText("not a promise");
     const recentRow = page.locator(".recent-row").first();
     await expect(recentRow).toBeVisible();
     expect((await recentRow.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);

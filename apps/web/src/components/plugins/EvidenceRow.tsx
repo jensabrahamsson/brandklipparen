@@ -65,8 +65,10 @@ export function EvidenceRow({
   showInCodeId,
   onShowInCode,
   showInCodeHref,
+  block,
 }: {
   readonly address: string;
+  readonly block?: number | undefined;
   readonly apiKey: string;
   readonly selector: string;
   readonly offset: number | null;
@@ -101,7 +103,7 @@ export function EvidenceRow({
     if (next && snippet.kind === "idle" && !loading.current) {
       loading.current = true;
       setSnippet({ kind: "loading" });
-      fetchSnippet(address, selector, apiKey.length === 0 ? null : apiKey).then(
+      fetchSnippet(address, selector, apiKey.length === 0 ? null : apiKey, block).then(
         (result) => {
           loading.current = false;
           setSnippet({ kind: "ready", result });

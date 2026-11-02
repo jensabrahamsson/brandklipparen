@@ -191,12 +191,16 @@ function ProofSection({
   pluginId,
   slug,
   expert,
+  block,
+  codeHash,
 }: {
   readonly address: string;
   readonly apiKey: string;
   readonly pluginId: string;
   readonly slug: string;
   readonly expert: boolean;
+  readonly block?: number | undefined;
+  readonly codeHash?: string | undefined;
 }): JSX.Element | null {
   const [report, setReport] = useState<readonly ProofStep[] | null | undefined>(undefined);
   useEffect(() => {
@@ -204,7 +208,7 @@ function ProofSection({
       return;
     }
     let cancelled = false;
-    fetchProof(address, apiKey.length === 0 ? null : apiKey).then(
+    fetchProof(address, apiKey.length === 0 ? null : apiKey, block, codeHash).then(
       (state) => {
         if (cancelled) {
           return;
@@ -225,7 +229,7 @@ function ProofSection({
     return () => {
       cancelled = true;
     };
-  }, [address, apiKey, pluginId, slug]);
+  }, [address, apiKey, pluginId, slug, block, codeHash]);
   if (!PROOF_SLUGS.has(slug)) {
     return null;
   }
@@ -249,12 +253,14 @@ function EvidenceSection({
   findings,
   names,
   expert,
+  block,
 }: {
   readonly address: string;
   readonly apiKey: string;
   readonly findings: readonly PluginFindingView[];
   readonly names: ReadonlyMap<string, SelectorName>;
   readonly expert: boolean;
+  readonly block?: number | undefined;
 }): JSX.Element | null {
   const [showAll, setShowAll] = useState(false);
   const rows = findings.flatMap((finding) =>
@@ -283,6 +289,7 @@ function EvidenceSection({
               named={known}
               expert={expert}
               index={index}
+              block={block}
               showInCodeHref={codeHref(address, row.selector, "decompiled", row.offset)}
             />
           );
@@ -317,8 +324,12 @@ export function PluginDetailView({
   availability,
   evidenceIndex,
   ownerOnlySelectors,
+  block,
+  codeHash,
 }: {
   readonly address: string;
+  readonly block?: number | undefined;
+  readonly codeHash?: string | undefined;
   readonly apiKey: string;
   readonly symbol: string;
   readonly slug: string;
@@ -472,9 +483,11 @@ export function PluginDetailView({
                   explainAvailable={(availability?.explainCode ?? "available") === "available"}
                   evidenceIndex={evidenceIndex}
                   ownerOnlySelectors={ownerOnlySelectors}
+                  block={block}
+                  codeHash={codeHash}
                 />
               ) : (
-                <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} />
+                <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} block={block} />
               )}
               <ProofSection
                 address={address}
@@ -482,6 +495,8 @@ export function PluginDetailView({
                 pluginId={tile.pluginId}
                 slug={slug}
                 expert={expert}
+                block={block}
+                codeHash={codeHash}
               />
               <section className="card detail-limits" aria-label="What this check can't tell you">
                 <h2>What this check can&apos;t tell you</h2>

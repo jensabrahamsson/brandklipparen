@@ -6,7 +6,7 @@
 import { describe, expect, test } from "vitest";
 import { createExplainService } from "../../../src/application/explainService.ts";
 import { EXPLAIN_PROMPT_VERSION } from "../../../src/application/explainService.ts";
-import { OverlayBudget } from "../../../src/application/overlayBudget.ts";
+import { OverlayBudget, SharedAiGlobalBudget } from "../../../src/application/overlayBudget.ts";
 import { FakeExplainModelAdapter } from "../../fakes/fakeExplainModel.ts";
 import { ExplainInput } from "../../../src/ports/explainModel.ts";
 
@@ -65,6 +65,15 @@ describe("overlay cost caps and cache (S-106)", () => {
     const nextDay = await service.explain(other, "key-2");
     expect(nextDay.kind).toBe("ok");
     expect(fake.calls.length).toBe(2);
+  });
+
+  test("shared global budget caps across two feature budgets", () => {
+    const shared = new SharedAiGlobalBudget({ globalDailyCap: 1, today: () => "2030-01-01" });
+    const explainBudget = new OverlayBudget({ dailyCapPerKey: 10, globalBudget: shared, today: () => "2030-01-01" });
+    const chatBudget = new OverlayBudget({ dailyCapPerKey: 10, globalBudget: shared, today: () => "2030-01-01" });
+    expect(explainBudget.trySpend("key-1")).toBe(true);
+    expect(chatBudget.trySpend("key-2")).toBe(false);
+    expect(shared.trySpend()).toBe(false);
   });
 
   test("s106_overlay_capped_key_spends_nothing", async () => {

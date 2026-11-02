@@ -117,7 +117,7 @@ const CAPABILITY_EFFECT: Readonly<Record<RiskType, string>> = Object.freeze({
 // storage, so it stays a signal for the score but renders no claim.
 const ORIGIN_SENTENCE: Readonly<Record<string, string>> = Object.freeze({
   blacklist: "The owner can stop chosen wallets from sending tokens.",
-  pause: "The owner can freeze all transfers.",
+  pause: "A privileged account can freeze transfers.",
   mint: "The owner can create new tokens.",
   "transfer-fee": "The owner can change the fee taken on each transfer.",
   "transfer-limits": "The owner can cap how much a wallet may send or hold.",

@@ -1906,6 +1906,31 @@ export function scaledLimitTokenHex(): string {
   return asm.build();
 }
 
+// Scaled limit with an unrelated popped timestamp read before the
+// amount-versus-limit compare in the shared transfer path.
+export function timestampPoppedLimitTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [TRANSFER_FROM_SELECTOR, "transferFromEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  scan3SharedHead(asm);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.op(0x35).push2(1000).op(0x02).push1(0x06).op(0x55, 0x00);
+  asm.label("shared").op(0x5b);
+  asm.op(0x42, 0x50);
+  scan3MappingLoad(asm, 2);
+  asm.op(0x35, 0x01).push1(0x06).op(0x54, 0x11, 0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  scan3SharedTail(asm);
+  return asm.build();
+}
+
 // Removable-limit token (SCAN-3): the guarded writer stores one large
 // constant into limit slot 6 (a remove-limits write), and the transfer
 // path reverts while the amount exceeds slot 6.
@@ -3022,6 +3047,45 @@ export function scanRSubGuardFeeExemptTokenHex(): string {
   asm.label("sharedOk").op(0x5b);
   asm.op(0x56, 0xfe);
   scan3SharedTail(asm);
+  return asm.build();
+}
+
+// Blacklist setter behind a subtraction owner guard: the writer proves
+// its caller check with SUB(owner, caller) gated to a revert, and the
+// shared transfer gate reverts while the written entry reads set.
+export function scanRSubGuardBlacklistTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(JUMP_GATE_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.op(0x80).push4(SCANR_OWNER_SET.slice(2)).op(0x14);
+  asm.pushLabel2("ownerEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("ret1");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("ownerEntry").op(0x5b);
+  scan3OwnerGuard(asm, "ownerOk", "ownerBlocked");
+  asm.op(0x33).push1(0x00).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x03);
+  asm.pushLabel2("setBlocked").op(0x57);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  asm.label("setBlocked").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("shared").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x56);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("ret1").op(0x5b, 0x00);
   return asm.build();
 }
 

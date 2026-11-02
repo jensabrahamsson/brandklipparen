@@ -442,6 +442,18 @@ function splitTopLevel(text: string): string[] {
   return parts.map((part) => part.trim()).filter((part) => part.length > 0);
 }
 
+// Canonical elementary type: Solidity aliases expand to the ABI form
+// (`uint` -> `uint256`, `int` -> `int256`, `byte` -> `bytes1`), with any
+// array suffix preserved. Other bases pass through unchanged.
+export function canonicalSolType(type: string): string {
+  const match = /^([^[]+)((?:\[[^\]]*\])*)$/.exec(type.trim());
+  if (match === null) return type.replace(/\s/g, "");
+  const base = match[1] ?? "";
+  const suffix = match[2] ?? "";
+  const canonical = base === "uint" ? "uint256" : base === "int" ? "int256" : base === "byte" ? "bytes1" : base;
+  return `${canonical}${suffix}`;
+}
+
 function canonicalInputType(input: Record<string, unknown>): string | null {
   const type = input["type"];
   if (typeof type !== "string" || type === "") {
@@ -465,7 +477,7 @@ function canonicalInputType(input: Record<string, unknown>): string | null {
     }
     return `(${inner.join(",")})${type.slice("tuple".length)}`;
   }
-  return type;
+  return canonicalSolType(type);
 }
 
 type AbiFunction = {
@@ -547,18 +559,31 @@ function declarationTypes(paramsText: string): readonly string[] | null {
     if (type === "") {
       return null;
     }
-    types.push(type.replace(/\s/g, ""));
+    types.push(canonicalSolType(type.replace(/\s/g, "")));
   }
   return Object.freeze(types);
 }
+
+const ELEMENTARY_TYPE = /^(?:address|bool|string|bytes(?:[1-9]|[12][0-9]|3[0-2])?|u?int(?:8|16|24|32|40|48|56|64|72|80|88|96|104|112|120|128|136|144|152|160|168|176|184|192|200|208|216|224|232|240|248|256)?|fixed|ufixed)(?:\[[^\]]*\])*$/;
 
 function typesMatch(fn: AbiFunction, declaration: MappableDeclaration): boolean | null {
   const declared = declarationTypes(declaration.paramsText);
   if (declared === null || declared.length !== fn.types.length) {
     return declared === null ? null : false;
   }
-  const wanted = fn.types.map((type) => type.replace(/\s/g, ""));
-  return declared.every((type, index) => type === wanted[index]);
+  const wanted = fn.types.map((type) => canonicalSolType(type.replace(/\s/g, "")));
+  let unknown = false;
+  const matches = declared.every((type, index) => {
+    if (type === wanted[index]) return true;
+    // A user-defined or otherwise unresolved type cannot be proven
+    // different from the ABI type: report unknown, never a mismatch.
+    if (!ELEMENTARY_TYPE.test(type) || !(wanted[index] !== undefined && ELEMENTARY_TYPE.test(wanted[index]))) {
+      unknown = true;
+      return true;
+    }
+    return false;
+  });
+  return matches ? (unknown ? null : true) : false;
 }
 
 // ABI functions located in the published sources (VS-B2, C-25): matched

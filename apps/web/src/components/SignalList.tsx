@@ -171,6 +171,7 @@ export function SignalRows({
   apiKey,
   names,
   bandHigh,
+  block,
 }: {
   readonly signals: readonly Signal[];
   readonly claims: readonly ExplanationClaim[];
@@ -179,6 +180,7 @@ export function SignalRows({
   readonly codeHash: string;
   readonly apiKey: string;
   readonly names: ReadonlyMap<string, SelectorName>;
+  readonly block?: number | undefined;
   // True when the token band is High. A red fill reads as the token's
   // own alarm, so filled severity tags render only on High tokens;
   // Low and Elevated tokens get outline tags (round-3 review D-11).
@@ -243,6 +245,7 @@ export function SignalRows({
                           named={names.has(entry.selector.toLowerCase())}
                           expert={expert}
                           index={entryIndex}
+                          block={block}
                         />
                       ))}
                     </ol>

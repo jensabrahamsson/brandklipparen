@@ -149,12 +149,20 @@ function limitCompare(
   }
   const low = Math.min(proof.loadPc, proof.gatePc);
   const high = Math.max(proof.loadPc, proof.gatePc);
-  for (const instruction of code) {
+  for (let index = 0; index < code.length; index += 1) {
+    const instruction = code[index];
     if (
+      instruction !== undefined &&
       instruction.pc >= low - SLOT_FLAVOR_WINDOW_PC &&
       instruction.pc <= high &&
       CHAIN_CONTEXT_OPCODES.has(instruction.opcode)
     ) {
+      // A chain-context value that is immediately popped never feeds
+      // the compare: an unrelated `TIMESTAMP; POP` beside a genuine
+      // amount-versus-limit compare proves no chain comparison.
+      if (code[index + 1]?.opcode === 0x50) {
+        continue;
+      }
       return null;
     }
   }

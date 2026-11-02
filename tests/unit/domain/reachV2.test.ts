@@ -434,4 +434,43 @@ describe("reachability v2 callee-entry exclusion (SCAN-R)", () => {
     expect(reach.reachedBlocks.has(blockIndexOf(ret1Pc))).toBe(true);
     expect(reach.reachedBlocks.has(blockIndexOf(calleePc))).toBe(false);
   });
+
+  test("unreachable callee triple cannot hide a real return destination", () => {
+    const asm = new Asm();
+    asm.op(0x80).push4("a9059cbb").op(0x14);
+    asm.pushLabel2("transferEntry").op(0x57);
+    asm.label("fallback");
+    asm.op(0x5b).push1(0x00).op(0x80, 0xfd);
+    asm.label("transferEntry").op(0x5b);
+    asm.pushLabel2("ret1");
+    asm.pushLabel2("shared");
+    asm.op(0x56);
+    asm.label("ret1");
+    const ret1Pc = asm.pc;
+    asm.op(0x5b, 0x00);
+    asm.label("shared");
+    asm.op(0x5b);
+    asm.push1(0x01).op(0x50);
+    const sharedJumpPc = asm.pc;
+    asm.op(0x56);
+    asm.op(0xfe);
+    // Unreachable: PUSH 0, PUSH ret1, JUMP names ret1 as a callee.
+    asm.label("dead").op(0x5b);
+    asm.push1(0x00);
+    asm.pushLabel2("ret1");
+    asm.op(0x56);
+    const code = bytecodeOf(asm.build());
+    const cfg = buildCfg(lift(code));
+    const entries = findFunctionEntries(code, cfg);
+    const transfer = entries.find((entry) => entry.selector === TRANSFER);
+    if (transfer === undefined) throw new Error("expected transfer entry");
+    const blockIndexOf = (pc: number): number => {
+      const block = cfg.blocks.find((candidate) => candidate.range.startPc === pc);
+      if (block === undefined) throw new Error(`expected block at ${pc}`);
+      return block.index;
+    };
+    const reach = resolveEntryReachV2(cfg, transfer.entryBlock);
+    expect(reach.resolvedJumpAtPc).toEqual([sharedJumpPc]);
+    expect(reach.reachedBlocks.has(blockIndexOf(ret1Pc))).toBe(true);
+  });
 });

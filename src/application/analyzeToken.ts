@@ -1257,8 +1257,8 @@ export async function analyzeToken(
   // Resolved analysis code shared with the code routes (C-4, F-6):
   // the entry code, the proxy on the pinned block, then the
   // implementation code when resolution yields one, so a rug token behind
-  // a proxy is scored on the logic that actually runs. An unreadable
-  // implementation degrades to the entry bytecode.
+  // a proxy is scored on the logic that actually runs. An unresolved
+  // proxy or unreadable implementation fails the analysis typed.
   const resolvedCode = await resolveAnalysisCode(countedPorts, {
     address: input.address,
     block: input.block,

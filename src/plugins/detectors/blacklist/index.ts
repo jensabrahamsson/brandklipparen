@@ -35,7 +35,6 @@ import {
   isStandardTokenWriter,
   mappingBaseNearAccess,
   mappingLoadNearFlavor,
-  nearestFlavorPc,
   ownerCheckVia,
   packedMappingGateExpr,
   packedMappingGateShift,
@@ -351,12 +350,10 @@ function revertingMappingGatePc(
 // Writer guard for extended analysis (SCAN-2): the proven owner check,
 // a role-slot or auth-mapping guard, or a compound owner-or-role gate.
 // Writers behind a shared check helper never reduce to one beside-window
-// caller compare, so all three proofs get their chance. The owner check
-// here stays equality-only (SCAN-R): a subtraction-form owner guard
-// alone never proves a list writer, because the fee and pair setters
-// of trading-toggle tokens share that guard shape while their mapping
-// gates are exemptions, not lists. Role-slot and auth-mapping guards
-// keep their full proof, as does a compound gate.
+// caller compare, so all three proofs get their chance. A subtraction-
+// form owner guard alone does not prove a list writer here (fee and
+// pair setters share that shape); the extended caller accepts it only
+// together with a listed-side gate proof (see `listedSideBlocks`).
 function writerGuarded(
   code: ReturnType<typeof disassemble>,
   member: (pc: number) => boolean,
@@ -447,6 +444,29 @@ function mappingTruthySide(cond: Expr, base: number): "jump" | "fall" | null {
     return null;
   }
   return parity % 2 === 1 ? "fall" : "jump";
+}
+
+// Whether the listed (set) side of a transfer gate is the blocking
+// side: it reaches a revert, while an exemption's set side proceeds.
+function listedSideBlocks(
+  bytecode: DetectorInput["bytecode"],
+  code: ReturnType<typeof disassemble>,
+  gateMember: (pc: number) => boolean,
+  jumpis: ReadonlyMap<number, Expr>,
+  base: number,
+): boolean {
+  for (const [pc, cond] of [...jumpis.entries()].sort((a, b) => a[0] - b[0])) {
+    if (!gateMember(pc) || !condBoolGatesOnBase(cond, base)) continue;
+    const truthy = mappingTruthySide(cond, base);
+    if (truthy === null) continue;
+    if (
+      hasRevertingSide(bytecode, code, gateMember, pc, truthy) ||
+      sideCanReachRevertUnpriced(bytecode, pc, truthy, jumpis)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Mapping base from an adjacent scratch word pair beside a gate hash
@@ -624,7 +644,15 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
     const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
     const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
-    if (!writerGuarded(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode)) {
+    const guarded = writerGuarded(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode);
+    // Subtraction-form owner guard: accepted only when a transfer gate
+    // for one of this writer's bases blocks on the listed side, which
+    // distinguishes a list from a fee/pair exemption at the gate.
+    const subGuarded =
+      !guarded &&
+      ownerSlot !== null &&
+      ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode, true) !== null;
+    if (!guarded && !subGuarded) {
       continue;
     }
     for (const write of region.stores) {
@@ -743,49 +771,14 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             writeBase,
           );
         }
+        // No getter-helper fallback: a mapping load beside an
+        // unrelated reverting jump does not prove the loaded entry
+        // feeds that jump, so this path stays silent until
+        // load-to-condition dataflow is proven.
         if (gateEvidencePc === null) {
-          // Getter-helper gate (SCAN-4): the entry load sits in an
-          // internal getter that returns it on the stack, so no compare
-          // sits beside the load and the gate jump in the caller tests
-          // the returned word instead of a load the interpreter can
-          // name. The load proves the gate when it hashes the written
-          // base, no equality or ISZERO sits beside it (a beside compare
-          // is the exemption shape the proofs above already weighed),
-          // and some member jump on the transfer path reverts on one
-          // side.
-          const v1Transfer = analyzeOwnerControl(input.bytecode).regions.find(
-            (candidate) => candidate.selector === transferSelector,
-          );
-          const helperLoads = [
-            ...transfer.loads,
-            ...((v1Transfer?.loads ?? []).filter(
-              (load) => !transfer.loads.some((seen) => seen.pc === load.pc),
-            ) as typeof transfer.loads),
-          ];
-          for (const load of helperLoads) {
-            if (load.slot.kind !== "mapping") {
-              continue;
-            }
-            if (mappingBaseNearAccess(code, gateMember, load.pc, gateSlotOf) !== writeBase) {
-              continue;
-            }
-            if (nearestFlavorPc(transfer, ["eq", "iszero"], load.pc) !== null) {
-              continue;
-            }
-            const reverting = code.some(
-              (insn) =>
-                insn.opcode === 0x57 &&
-                gateMember(insn.pc) &&
-                (hasRevertingSide(input.bytecode, code, gateMember, insn.pc, "fall") ||
-                  hasRevertingSide(input.bytecode, code, gateMember, insn.pc, "jump")),
-            );
-            if (reverting) {
-              gateEvidencePc = load.pc;
-              break;
-            }
-          }
+          continue;
         }
-        if (gateEvidencePc === null) {
+        if (subGuarded && !listedSideBlocks(input.bytecode, code, gateMember, transferExprs.jumpis, writeBase)) {
           continue;
         }
         // Shared code belongs to every entry that reaches it, so the

@@ -22,6 +22,7 @@ import { ModelId } from "../../domain/types.ts";
 import type { ModelId as ModelIdType } from "../../domain/types.ts";
 import type { ConfigError, SecretString } from "../../ports/config.ts";
 import {
+  createFetchChatCompletionsTransport,
   fetchChatCompletionsTransport,
   joinChatCompletionsUrl,
   stripJsonFence,
@@ -359,7 +360,12 @@ function resolveOptions(options: OverlayAdapterOptions): OverlayCallOptions {
     maxBytesIn: options.maxBytesIn ?? DEFAULT_OVERLAY_MAX_BYTES_IN,
     maxBytesOut: options.maxBytesOut ?? DEFAULT_OVERLAY_MAX_BYTES_OUT,
     maxTokens: resolveOverlayMaxTokens(options.maxTokens),
-    transport: options.transport ?? fetchOverlayTransport,
+    transport:
+      options.transport ??
+      createFetchChatCompletionsTransport({
+        timeoutMs: resolveOverlayTimeoutMs(options.timeoutMs),
+        maxBytes: options.maxBytesIn ?? DEFAULT_OVERLAY_MAX_BYTES_IN,
+      }),
   };
 }
 

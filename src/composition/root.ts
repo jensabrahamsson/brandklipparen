@@ -18,7 +18,17 @@ import { createAssessmentService } from "../application/assessmentService.ts";
 import type { AssessmentService } from "../application/assessmentService.ts";
 import { createPersonalizeService } from "../application/personalizeService.ts";
 import type { PersonalizeService } from "../application/personalizeService.ts";
-import { OverlayBudget } from "../application/overlayBudget.ts";
+import { OverlayBudget, SharedAiGlobalBudget } from "../application/overlayBudget.ts";
+export type { SharedAiGlobalBudget } from "../application/overlayBudget.ts";
+
+// One shared cross-feature AI ceiling for a built app: every feature
+// debits this single meter, so the configured global cap is global.
+export function createSharedAiGlobalBudget(config: AppConfig): SharedAiGlobalBudget {
+  return new SharedAiGlobalBudget({
+    globalDailyCap: aiGlobalDailyCap(config),
+    today: () => new Date().toISOString().slice(0, 10),
+  });
+}
 import { createMetaModelApiPersonalizeAdapterFromConfig } from "../adapters/personalize/metaModelApiPersonalizeAdapter.ts";
 import type { MetaModelApiPersonalizeTransport } from "../adapters/personalize/metaModelApiPersonalizeAdapter.ts";
 import type { PluginPersonalizeModelPort } from "../ports/pluginPersonalizeModel.ts";
@@ -289,6 +299,7 @@ export type PersonalizeTransportOverrides = {
 export function createPersonalizeServiceFromConfig(
   config: AppConfig,
   overrides: PersonalizeTransportOverrides = {},
+  globalBudget?: SharedAiGlobalBudget | undefined,
 ): Result<PersonalizeService | undefined, ConfigError> {
   const binding = selectPersonalizeBinding(config);
   if (!binding.ok) {
@@ -320,6 +331,7 @@ export function createPersonalizeServiceFromConfig(
       budget: new OverlayBudget({
         dailyCapPerKey: config.personalizeDailyCapPerKey ?? DEFAULT_PERSONALIZE_DAILY_CAP_PER_KEY,
         globalDailyCap: aiGlobalDailyCap(config),
+        globalBudget,
         today: () => new Date().toISOString().slice(0, 10),
       }),
     }),
@@ -383,6 +395,7 @@ export function createAssessmentServiceFromConfig(
   config: AppConfig,
   services: AppServices,
   overrides: AssessmentTransportOverrides = {},
+  globalBudget?: SharedAiGlobalBudget | undefined,
 ): Result<AssessmentService, ConfigError> {
   const binding = selectAssessmentBinding(config);
   if (!binding.ok) {
@@ -433,6 +446,7 @@ export function createAssessmentServiceFromConfig(
       promptVersion: promptVersion.value,
       dailyCapPerKey,
       globalDailyCap: aiGlobalDailyCap(config),
+      globalBudget,
     }),
   );
 }
@@ -469,6 +483,7 @@ function buildInvestigationService(
     maxTokens: DEFAULT_INVESTIGATION_LIMITS.maxTokens,
     deadlineMs: DEFAULT_INVESTIGATION_LIMITS.deadlineMs,
   },
+  globalBudget?: SharedAiGlobalBudget | undefined,
 ): InvestigationService {
   return createInvestigationService({
     adapter,
@@ -486,6 +501,7 @@ function buildInvestigationService(
         : (config.investigatePromptVersion as string),
     dailyCapPerKey: config.investigateDailyCapPerKey ?? PLACEHOLDER_INVESTIGATION_DAILY_CAP_PER_KEY,
     configured,
+    globalBudget,
   });
 }
 
@@ -502,6 +518,7 @@ export function createInvestigationServiceFromConfig(
   config: AppConfig,
   detectors: DetectorSet,
   overrides: { readonly transport?: MetaInvestigateTransport | undefined } = {},
+  globalBudget?: SharedAiGlobalBudget | undefined,
 ): Result<InvestigationService, ConfigError> {
   const selected = config.investigateProvider;
   if (selected !== "meta-model-api") {
@@ -511,7 +528,7 @@ export function createInvestigationServiceFromConfig(
       defaultModelId: defaultInvestigateModelId(),
       message: "investigation is not configured: set the Meta key",
     });
-    return ok(buildInvestigationService(adapter, config, detectors, false));
+    return ok(buildInvestigationService(adapter, config, detectors, false, undefined, globalBudget));
   }
   const built = createMetaModelApiInvestigateAdapterFromConfig(
     {
@@ -537,6 +554,7 @@ export function createInvestigationServiceFromConfig(
         maxTokens: META_INVESTIGATE_LOOP_MAX_TOKENS,
         deadlineMs: META_INVESTIGATE_LOOP_DEADLINE_MS,
       },
+      globalBudget,
     ),
   );
 }
@@ -680,6 +698,7 @@ export type OverlayTransportOverrides = {
 export function createExplainServiceFromConfig(
   config: AppConfig,
   overrides: OverlayTransportOverrides = {},
+  globalBudget?: SharedAiGlobalBudget | undefined,
 ): Result<ExplainService | undefined, ConfigError> {
   const binding = selectExplainBinding(config);
   if (!binding.ok) {
@@ -709,6 +728,7 @@ export function createExplainServiceFromConfig(
       new OverlayBudget({
         dailyCapPerKey: config.explainDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
         globalDailyCap: aiGlobalDailyCap(config),
+        globalBudget,
         today: () => new Date().toISOString().slice(0, 10),
       }),
     ),
@@ -722,6 +742,7 @@ export function createExplainServiceFromConfig(
 export function createChatServiceFromConfig(
   config: AppConfig,
   overrides: OverlayTransportOverrides = {},
+  globalBudget?: SharedAiGlobalBudget | undefined,
 ): Result<ChatService | undefined, ConfigError> {
   const binding = selectChatBinding(config);
   if (!binding.ok) {
@@ -751,6 +772,7 @@ export function createChatServiceFromConfig(
       new OverlayBudget({
         dailyCapPerKey: config.chatDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
         globalDailyCap: aiGlobalDailyCap(config),
+        globalBudget,
         today: () => new Date().toISOString().slice(0, 10),
       }),
     ),
@@ -764,6 +786,7 @@ export function createChatServiceFromConfig(
 export function createRugServiceFromConfig(
   config: AppConfig,
   overrides: OverlayTransportOverrides = {},
+  globalBudget?: SharedAiGlobalBudget | undefined,
 ): Result<RugService | undefined, ConfigError> {
   const binding = selectRugBinding(config);
   if (!binding.ok) {
@@ -793,6 +816,7 @@ export function createRugServiceFromConfig(
       new OverlayBudget({
         dailyCapPerKey: config.rugDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
         globalDailyCap: aiGlobalDailyCap(config),
+        globalBudget,
         today: () => new Date().toISOString().slice(0, 10),
       }),
     ),
@@ -806,6 +830,7 @@ export function createRugServiceFromConfig(
 export function createExplainCodeServiceFromConfig(
   config: AppConfig,
   overrides: OverlayTransportOverrides = {},
+  globalBudget?: SharedAiGlobalBudget | undefined,
 ): Result<ExplainCodeService | undefined, ConfigError> {
   const binding = selectExplainCodeBinding(config);
   if (!binding.ok) {
@@ -835,6 +860,7 @@ export function createExplainCodeServiceFromConfig(
       new OverlayBudget({
         dailyCapPerKey: config.explainCodeDailyCapPerKey ?? DEFAULT_OVERLAY_DAILY_CAP_PER_KEY,
         globalDailyCap: aiGlobalDailyCap(config),
+        globalBudget,
         today: () => new Date().toISOString().slice(0, 10),
       }),
     ),

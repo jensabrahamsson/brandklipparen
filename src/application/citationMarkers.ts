@@ -24,11 +24,23 @@ function citedIdsInText(text: string): ReadonlySet<string> {
 }
 
 export function withCitationMarkers(text: string, citations: readonly string[]): string {
-  const present = citedIdsInText(text);
-  const missing = [...new Set(citations)].filter((id) => !present.has(id));
+  const validated = [...new Set(citations)];
+  const validatedSet = new Set(validated);
+  // Embedded markers are model text, not evidence: strip every marker
+  // whose id was not validated; validated citations are regenerated
+  // deterministically below from the structured list.
+  const stripped = text
+    .replace(MARKER_PATTERN, (whole, inner: string) => {
+      const ids = inner.split(/[,;]/).map((entry) => entry.trim().replace(/^`+|`+$/g, "").trim()).filter((id) => id.length > 0);
+      return ids.length > 0 && ids.every((id) => validatedSet.has(id)) ? whole : "";
+    })
+    .replace(/[ \t]{2,}/g, " ")
+    .trimEnd();
+  const present = citedIdsInText(stripped);
+  const missing = validated.filter((id) => !present.has(id));
   if (missing.length === 0) {
-    return text;
+    return stripped;
   }
   const markers = missing.map((id) => `[E:${id}]`).join(" ");
-  return `${text} ${markers}`;
+  return stripped.length === 0 ? markers : `${stripped} ${markers}`;
 }

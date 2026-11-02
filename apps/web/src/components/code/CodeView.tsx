@@ -122,6 +122,7 @@ export function CodeView({
   endPc,
   unresolvedJumps,
   block,
+  codeHash,
   initialView,
   initialPc,
   expert,
@@ -144,6 +145,7 @@ export function CodeView({
   readonly endPc: number | null;
   readonly unresolvedJumps: number;
   readonly block?: number | null | undefined;
+  readonly codeHash?: string | undefined;
   readonly initialView?: CodePaneView | undefined;
   readonly initialPc?: number | undefined;
   readonly expert: boolean;
@@ -268,7 +270,7 @@ export function CodeView({
     }
     loading.current = true;
     setSnippet({ kind: "loading" });
-    fetchSnippet(address, selector, apiKey.length === 0 ? null : apiKey).then(
+    fetchSnippet(address, selector, apiKey.length === 0 ? null : apiKey, block ?? undefined).then(
       (result) => {
         loading.current = false;
         setSnippet({ kind: "ready", result });
@@ -278,7 +280,7 @@ export function CodeView({
         setSnippet({ kind: "failed" });
       },
     );
-  }, [snippet, address, selector, apiKey]);
+  }, [snippet, address, selector, apiKey, block]);
 
   useEffect(() => {
     if (source.kind !== "idle" || sourceLoading.current) {
@@ -286,7 +288,7 @@ export function CodeView({
     }
     sourceLoading.current = true;
     setSource({ kind: "loading" });
-    fetchSource(address, apiKey.length === 0 ? null : apiKey).then(
+    fetchSource(address, apiKey.length === 0 ? null : apiKey, block ?? undefined, codeHash).then(
       (result) => {
         sourceLoading.current = false;
         setSource({ kind: "ready", result });
@@ -296,7 +298,7 @@ export function CodeView({
         setSource({ kind: "failed" });
       },
     );
-  }, [source, sourceNonce, address, apiKey]);
+  }, [source, sourceNonce, address, apiKey, block, codeHash]);
 
   const lines: readonly CodeLineDatum[] = snippet.kind === "ready" ? snippet.result.lines : [];
   const hasPcs = lines.some((line) => line.pcs.length > 0);
@@ -423,6 +425,8 @@ export function CodeView({
     available: explainAvailable,
     paneLines: decompiledLineSet,
     lineElement: handleDecLineElement,
+    block: block ?? undefined,
+    codeHash,
   });
   const srcRuntime = useExplainCodeView({
     address,
@@ -432,6 +436,8 @@ export function CodeView({
     available: explainAvailable,
     paneLines: sourceLineSet,
     lineElement: handleSrcLineElement,
+    block: block ?? undefined,
+    codeHash,
   });
   const runtimeFor = (pane: CodePaneView): ExplainRuntime => (pane === "decompiled" ? decRuntime : srcRuntime);
   const anyReady = decRuntime.status === "ready" || srcRuntime.status === "ready";

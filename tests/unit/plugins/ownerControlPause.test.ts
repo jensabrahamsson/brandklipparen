@@ -339,11 +339,13 @@ describe("pause one-way switch precision (SCAN-1)", () => {
     return Object.freeze({ bytecode: parsed.value, codeHash: mustOk(CodeHash.of(parsed.value)) });
   }
 
-  test("one-way enable in a shared gate reports no pause fact", () => {
-    // The guarded setter only ever writes one to the flag the shared
-    // transfer helper gates on: trading can open but never freeze
-    // again, so no pause fact is proven.
-    expect(pauseDetectorPlugin.detect(hexInput(sharedPauseTokenHex(false)))).toEqual([]);
+  test("one-way writer into the shared gate blocking state reports a pause fact", () => {
+    // The guarded setter only ever writes one to the flag, and the
+    // shared transfer helper reverts while that flag reads set, so
+    // the one-way write permanently freezes transfers.
+    const findings = pauseDetectorPlugin.detect(hexInput(sharedPauseTokenHex(false)));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });
   });
 
   test("reversible flag in a shared gate reports an extended pause fact", () => {
@@ -370,8 +372,11 @@ describe("pause enforce-style gates (SCAN-2)", () => {
     expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });
   });
 
-  test("jump-side revert gate with a one-way writer stays silent", () => {
-    expect(pauseDetectorPlugin.detect(hexInput(jumpSidePauseTokenHex(false)))).toEqual([]);
+  test("jump-side revert gate with a one-way writer into the blocking state reports a freeze", () => {
+    const findings = pauseDetectorPlugin.detect(hexInput(jumpSidePauseTokenHex(false)));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });
   });
 
   test("role-only guard without an owner slot proves the flag writers", () => {
@@ -435,8 +440,12 @@ describe("pause packed-clear and subtraction-guard idioms (SCAN-R)", () => {
     expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 0, mode: "pause", proof: "extended" });
   });
 
-  test("packed set beside a plain constant writer without a clear stays silent", () => {
-    expect(pauseDetectorPlugin.detect(hexInput(scanRPackedClearTokenHex(false)))).toEqual([]);
+  test("packed set beside a plain constant writer without a clear still freezes", () => {
+    // No clear exists, but the gate reverts while the packed bit
+    // reads set, so the one-way set permanently blocks transfers.
+    const findings = pauseDetectorPlugin.detect(hexInput(scanRPackedClearTokenHex(false)));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 0, mode: "pause", proof: "extended" });
   });
 
   test("subtraction-guarded trading toggle reports an extended pause fact", () => {

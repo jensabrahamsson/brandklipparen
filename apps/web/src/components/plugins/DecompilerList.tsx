@@ -74,9 +74,13 @@ function FunctionBody({
   focusRequest,
   onFocusConsumed,
   onCopyWholeContract,
+  block,
+  codeHash,
 }: {
   readonly address: string;
   readonly apiKey: string;
+  readonly block?: number | undefined;
+  readonly codeHash?: string | undefined;
   readonly fn: DecompilerFunction;
   readonly expert: boolean;
   readonly codeView: CodePaneView | undefined;
@@ -92,6 +96,8 @@ function FunctionBody({
       <CodeView
         address={address}
         apiKey={apiKey}
+        block={block}
+        codeHash={codeHash}
         selector={fn.selector}
         title={fn.displayName}
         nameFrom={fn.named ? "table" : "unnamed"}
@@ -134,9 +140,13 @@ function DecompilerRow({
   focusRequest,
   onFocusConsumed,
   onCopyWholeContract,
+  block,
+  codeHash,
 }: {
   readonly address: string;
   readonly apiKey: string;
+  readonly block?: number | undefined;
+  readonly codeHash?: string | undefined;
   readonly fn: DecompilerFunction;
   readonly expert: boolean;
   readonly open: boolean;
@@ -204,6 +214,8 @@ function DecompilerRow({
                 focusRequest={focusRequest}
                 onFocusConsumed={onFocusConsumed}
                 onCopyWholeContract={onCopyWholeContract}
+                block={block}
+                codeHash={codeHash}
               />
               {expert ? (
                 <dl className="decompiler-raw" data-testid={`decompiler-raw-${fn.selector}`}>
@@ -312,9 +324,13 @@ export function DecompilerList({
   explainAvailable,
   evidenceIndex,
   ownerOnlySelectors,
+  block,
+  codeHash,
 }: {
   readonly address: string;
   readonly apiKey: string;
+  readonly block?: number | undefined;
+  readonly codeHash?: string | undefined;
   readonly findings: readonly PluginFindingView[];
   readonly expert: boolean;
   // Route `<selector>` (UI v2 §1.3): this row starts expanded and focused.
@@ -410,7 +426,7 @@ export function DecompilerList({
     const parts: string[] = [];
     for (const fn of all) {
       try {
-        const result = await fetchSnippet(address, fn.selector, key);
+        const result = await fetchSnippet(address, fn.selector, key, block);
         parts.push(`// ${fn.selector} ${fn.displayName}\n${result.lines.map((line) => line.text).join("\n")}`);
       } catch {
         parts.push(`// ${fn.selector}: readable code is not available`);
@@ -424,7 +440,7 @@ export function DecompilerList({
       // text and the sweep stays quiet without a page error.
     }
     return text;
-  }, [all, address, apiKey]);
+  }, [all, address, apiKey, block]);
   const registerButton = (selector: string, element: HTMLButtonElement | null): void => {
     if (element === null) {
       buttons.current.delete(selector.toLowerCase());
@@ -551,6 +567,8 @@ export function DecompilerList({
                 }
                 onFocusConsumed={clearFocusTarget}
                 onCopyWholeContract={copyWholeContract}
+                block={block}
+                codeHash={codeHash}
               />
             );
           })}

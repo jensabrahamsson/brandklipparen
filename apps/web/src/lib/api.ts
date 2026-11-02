@@ -513,8 +513,8 @@ export function clearSnippetCache(): void {
   snippetCache.clear();
 }
 
-function snippetKey(address: string, selector: string): string {
-  return `${address.toLowerCase()}:${selector.toLowerCase()}`;
+function snippetKey(address: string, selector: string, block?: number): string {
+  return `${address.toLowerCase()}:${selector.toLowerCase()}:${block === undefined ? "latest" : block}`;
 }
 
 function toSnippetResult(body: unknown): SnippetResult | null {
@@ -543,13 +543,13 @@ function toSnippetResult(body: unknown): SnippetResult | null {
   return { selector: snippet.selector, entryPc: snippet.entryPc, lines };
 }
 
-export function fetchSnippet(address: string, selector: string, apiKey: string | null): Promise<SnippetResult> {
-  const key = snippetKey(address, selector);
+export function fetchSnippet(address: string, selector: string, apiKey: string | null, block?: number): Promise<SnippetResult> {
+  const key = snippetKey(address, selector, block);
   const cached = snippetCache.get(key);
   if (cached !== undefined) {
     return cached;
   }
-  const pending: Promise<SnippetResult> = loadSnippet(address, selector, apiKey);
+  const pending: Promise<SnippetResult> = loadSnippet(address, selector, apiKey, block);
   snippetCache.set(key, pending);
   // A failed snippet must not poison the cache: the next expand retries
   // the request instead of replaying the failure.
@@ -561,9 +561,9 @@ export function fetchSnippet(address: string, selector: string, apiKey: string |
   return pending;
 }
 
-async function loadSnippet(address: string, selector: string, apiKey: string | null): Promise<SnippetResult> {
+async function loadSnippet(address: string, selector: string, apiKey: string | null, block?: number): Promise<SnippetResult> {
   const response = await fetch(
-    `/v1/snippet?address=${encodeURIComponent(address)}&selector=${encodeURIComponent(selector)}`,
+    `/v1/snippet?address=${encodeURIComponent(address)}&selector=${encodeURIComponent(selector)}${blockQuery(block)}`,
     { headers: apiHeaders(apiKey) },
   );
   if (!response.ok) {
@@ -980,8 +980,8 @@ export function clearExplainCodeCache(): void {
   explainCodeSettled.clear();
 }
 
-function explainCodeKey(address: string, selector: string, view: ExplainCodeView): string {
-  return `${address.toLowerCase()}:${selector.toLowerCase()}:${view}`;
+function explainCodeKey(address: string, selector: string, view: ExplainCodeView, block?: number, codeHash?: string): string {
+  return `${address.toLowerCase()}:${selector.toLowerCase()}:${view}:${block === undefined ? "latest" : block}:${codeHash ?? ""}`;
 }
 
 async function loadExplainCode(
@@ -989,13 +989,14 @@ async function loadExplainCode(
   selector: string,
   view: ExplainCodeView,
   apiKey: string | null,
+  block?: number,
 ): Promise<ExplainCodeState> {
   let response: Response;
   try {
     response = await fetch("/v1/explain-code", {
       method: "POST",
       headers: { ...apiHeaders(apiKey), "content-type": "application/json" },
-      body: JSON.stringify({ address, selector, view }),
+      body: JSON.stringify(block === undefined ? { address, selector, view } : { address, selector, view, block }),
     });
   } catch {
     return { status: "failed" };
@@ -1024,11 +1025,13 @@ export function refreshExplainCode(
   selector: string,
   view: ExplainCodeView,
   apiKey: string | null,
+  block?: number,
+  codeHash?: string,
 ): Promise<ExplainCodeState> {
-  const key = explainCodeKey(address, selector, view);
+  const key = explainCodeKey(address, selector, view, block, codeHash);
   explainCodeCache.delete(key);
   explainCodeSettled.delete(key);
-  return fetchExplainCode(address, selector, view, apiKey);
+  return fetchExplainCode(address, selector, view, apiKey, block, codeHash);
 }
 
 export function fetchExplainCode(
@@ -1036,13 +1039,15 @@ export function fetchExplainCode(
   selector: string,
   view: ExplainCodeView,
   apiKey: string | null,
+  block?: number,
+  codeHash?: string,
 ): Promise<ExplainCodeState> {
-  const key = explainCodeKey(address, selector, view);
+  const key = explainCodeKey(address, selector, view, block, codeHash);
   const cached = explainCodeCache.get(key);
   if (cached !== undefined) {
     return cached;
   }
-  const pending = loadExplainCode(address, selector, view, apiKey);
+  const pending = loadExplainCode(address, selector, view, apiKey, block);
   explainCodeCache.set(key, pending);
   void pending.then((state) => {
   if (state.status === "failed") {
@@ -1065,8 +1070,10 @@ export function peekExplainCode(
   address: string,
   selector: string,
   view: ExplainCodeView,
+  block?: number,
+  codeHash?: string,
 ): ExplainCodeState | null {
-  return explainCodeSettled.get(explainCodeKey(address, selector, view)) ?? null;
+  return explainCodeSettled.get(explainCodeKey(address, selector, view, block, codeHash)) ?? null;
 }
 
 // Extended-proof diagnostics (UI v2 §5.5, W-11): one GET per address
@@ -1132,10 +1139,10 @@ export function clearProofCache(): void {
   proofCache.clear();
 }
 
-async function loadProof(address: string, apiKey: string | null): Promise<ProofState> {
+async function loadProof(address: string, apiKey: string | null, block?: number): Promise<ProofState> {
   let response: Response;
   try {
-    response = await fetch(`/v1/proof?address=${encodeURIComponent(address)}`, { headers: apiHeaders(apiKey) });
+    response = await fetch(`/v1/proof?address=${encodeURIComponent(address)}${blockQuery(block)}`, { headers: apiHeaders(apiKey) });
   } catch {
     return { status: "failed" };
   }
@@ -1149,13 +1156,13 @@ async function loadProof(address: string, apiKey: string | null): Promise<ProofS
   }
 }
 
-export function fetchProof(address: string, apiKey: string | null): Promise<ProofState> {
-  const key = address.toLowerCase();
+export function fetchProof(address: string, apiKey: string | null, block?: number, codeHash?: string): Promise<ProofState> {
+  const key = `${address.toLowerCase()}:${block === undefined ? "latest" : block}:${codeHash ?? ""}`;
   const cached = proofCache.get(key);
   if (cached !== undefined) {
     return cached;
   }
-  const pending = loadProof(address, apiKey);
+  const pending = loadProof(address, apiKey, block);
   proofCache.set(key, pending);
   // A failed proof must not poison the cache: the next expand retries
   // the request instead of replaying the failure.

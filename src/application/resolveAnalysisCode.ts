@@ -1,8 +1,9 @@
 // Resolved analysis code shared by analyzeToken and the code routes
 // (C-4, F-6): one resolution path for the scored implementation. Reads the
 // entry code, resolves the proxy on the pinned block through RpcPort, then
-// fetches the implementation code when resolution yields one. An unreadable
-// implementation degrades to the entry bytecode, matching analyzeToken.
+// fetches the implementation code when resolution yields one. An
+// unresolved proxy or an unreadable implementation is a typed error:
+// the entry shell is never presented as the scored implementation.
 // This module performs no I/O of its own; every external call goes through
 // the port, and the module imports solely domain and ports.
 import { noneProxyResolution } from "../domain/proxy.ts";
@@ -20,7 +21,7 @@ import type {
   Timestamp as TimestampType,
 } from "../domain/types.ts";
 import type { CallContext, RpcError, RpcPort } from "../ports/rpc.ts";
-import { resolveProxy } from "./resolveProxy.ts";
+import { containsDelegateCall, resolveProxy } from "./resolveProxy.ts";
 
 export type ResolveAnalysisCodePorts = {
   readonly rpc: RpcPort;
@@ -99,16 +100,39 @@ export async function resolveAnalysisCode(
     deadline: input.deadline,
     ...(input.maxDepth === undefined ? {} : { maxDepth: input.maxDepth }),
   });
-  const proxy: ProxyResolution = resolved.ok ? resolved.value.resolution : noneProxyResolution();
+  let proxy: ProxyResolution;
+  if (!resolved.ok) {
+    // A proxy failure only fails the analysis when a proxy is proven or
+    // provable from the entry code. When the entry code never delegates,
+    // the storage probe cannot forward anywhere, so its failure (or a
+    // bare DELEGATECALL with every proxy slot empty, which proves no
+    // proxy pointer) leaves the entry code itself as the scored code.
+    // Proven-proxy failures (a populated beacon slot, an unreadable
+    // implementation) still propagate as typed errors.
+    const unprovenProxy =
+      resolved.error.error.message.startsWith(
+        "proxy-unresolved: code delegates but matches no known proxy template",
+      ) || !containsDelegateCall(fetched.value.bytecode);
+    if (!unprovenProxy) {
+      return err({ kind: "rpc-error", requestId: input.requestId, error: resolved.error.error });
+    }
+    proxy = noneProxyResolution();
+  } else {
+    proxy = resolved.value.resolution;
+  }
   const implementation = implementationOfProxy(proxy);
   let bytecode = fetched.value.bytecode;
   let codeAddress = input.address;
   if (implementation !== null) {
     const implFetched = await ports.rpc.getCode(implementation, blockCtx);
-    if (implFetched.ok) {
-      bytecode = implFetched.value.bytecode;
-      codeAddress = implementation;
+    if (!implFetched.ok) {
+      if (implFetched.error.kind === "no-code") {
+        return err({ kind: "no-contract", target: implementation, block });
+      }
+      return err({ kind: "rpc-error", requestId: input.requestId, error: implFetched.error });
     }
+    bytecode = implFetched.value.bytecode;
+    codeAddress = implementation;
   }
   const codeHash = CodeHash.of(bytecode);
   if (!codeHash.ok) {

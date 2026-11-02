@@ -790,6 +790,26 @@ function exprFlagGatePc(
   return null;
 }
 
+// Whether the transfer gate blocks while the flag reads set: the
+// truthy side of a member gate jump reaches a revert. A one-way
+// nonzero writer entering that blocking state is a permanent freeze,
+// not a launch switch that merely opens trading.
+function gateBlocksWhenSet(
+  bytecode: DetectorInput["bytecode"],
+  code: ReturnType<typeof disassemble>,
+  gateMember: (pc: number) => boolean,
+  jumpis: ReadonlyMap<number, Expr>,
+  slot: number,
+): boolean {
+  for (const [pc, cond] of [...jumpis.entries()].sort((a, b) => a[0] - b[0])) {
+    if (!gateMember(pc) || !condBoolGatesOnSlot(cond, slot)) continue;
+    const truthy = flagTruthySide(cond, slot);
+    if (truthy === null) continue;
+    if (hasRevertingSide(bytecode, code, gateMember, pc, truthy) || sideCanReachRevert(bytecode, pc, truthy)) return true;
+  }
+  return false;
+}
+
 function detectExtended(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -1013,42 +1033,10 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             const transferExprs = interpretRegionExprs(input.bytecode, transferSelector);
             gateEvidencePc = exprFlagGatePc(input.bytecode, code, gateMember, transferExprs.jumpis, slot);
           }
-          if (gateEvidencePc === null) {
-            // Getter-helper gate (SCAN-4): the flag load sits in an
-            // internal getter that returns it on the stack, so no
-            // compare sits beside the load and the gate jump in the
-            // caller tests the returned word instead of a load the
-            // interpreter can name. The load proves the gate when it
-            // reads the written slot, no equality or ISZERO sits beside
-            // it (a beside compare is the shape the proofs above
-            // already weighed), and some member jump on the transfer
-            // path reverts on one side.
-            const v1Transfer = analyzeOwnerControl(input.bytecode).regions.find(
-              (candidate) => candidate.selector === transferSelector,
-            );
-            const helperLoads = [
-              ...transfer.loads,
-              ...((v1Transfer?.loads ?? []).filter(
-                (load) => !transfer.loads.some((seen) => seen.pc === load.pc),
-              ) as typeof transfer.loads),
-            ];
-            for (const load of helperLoads) {
-              if (load.slot.kind !== "const" || load.slot.value !== slot) {
-                continue;
-              }
-              const reverting = code.some(
-                (insn) =>
-                  insn.opcode === 0x57 &&
-                  gateMember(insn.pc) &&
-                  (hasRevertingSide(input.bytecode, code, gateMember, insn.pc, "fall") ||
-                    hasRevertingSide(input.bytecode, code, gateMember, insn.pc, "jump")),
-              );
-              if (reverting) {
-                gateEvidencePc = load.pc;
-                break;
-              }
-            }
-          }
+          // No getter-helper fallback: a slot load beside an unrelated
+          // reverting jump does not prove the loaded value feeds that
+          // jump, so this path stays silent until load-to-condition
+          // dataflow (including helper returns) is proven.
           if (gateEvidencePc === null) {
             continue;
           }
@@ -1145,13 +1133,21 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           mode = "pause";
         }
         if (mode === "trading-toggle") {
-          continue;
+          // One-way writer polarity: only a nonzero write exists, so
+          // the flag is a launch switch only when the gate blocks
+          // while the flag reads clear. When the set state is the
+          // blocking state, the write permanently freezes transfers.
+          const transferExprsForPolarity = interpretRegionExprs(input.bytecode, transferSelector);
+          if (!gateBlocksWhenSet(input.bytecode, code, gateMember, transferExprsForPolarity.jumpis, slot)) {
+            continue;
+          }
+          mode = "pause";
         }
         return Object.freeze([
           Object.freeze({
             id: `${PLUGIN_ID}:pause-extended`,
             pluginId: MANIFEST.id,
-            title: "The owner can freeze all transfers. Found by extended analysis; not counted in the score.",
+            title: "A privileged account can freeze transfers. Found by extended analysis; not counted in the score.",
             evidence: nonEmpty,
             payload: Object.freeze({
               fact: "pause",

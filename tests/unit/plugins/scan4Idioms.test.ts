@@ -65,10 +65,8 @@ describe("SCAN-4 blacklist idioms", () => {
     expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
   });
 
-  test("getter-helper gate reports an extended blacklist fact", () => {
-    const findings = blacklistDetectorPlugin.detect(inputOf(getterHelperBlacklistTokenHex()));
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
+  test("getter-helper gate without load-to-condition dataflow stays silent", () => {
+    expect(blacklistDetectorPlugin.detect(inputOf(getterHelperBlacklistTokenHex()))).toEqual([]);
   });
 
   test("memory-key array writer with a two-entry gate reports an extended blacklist fact", () => {
@@ -136,9 +134,7 @@ describe("SCAN-4 pause idioms", () => {
     expect(findings[0]?.payload).toMatchObject({ fact: "pause", proof: "extended", mode: "pause" });
   });
 
-  test("getter-helper gate reports an extended pause fact", () => {
-    const findings = pauseDetectorPlugin.detect(inputOf(boolHelperPauseTokenHex()));
-    expect(findings).toHaveLength(1);
-    expect(findings[0]?.payload).toMatchObject({ fact: "pause", proof: "extended", mode: "pause" });
+  test("getter-helper gate without load-to-condition dataflow stays silent", () => {
+    expect(pauseDetectorPlugin.detect(inputOf(boolHelperPauseTokenHex()))).toEqual([]);
   });
 });

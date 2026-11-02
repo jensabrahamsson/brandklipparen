@@ -377,6 +377,10 @@ export type InvestigateClock = {
 export type InvestigateHooks = {
   readonly now: () => number;
   readonly onStep?: ((step: InvestigationTraceStep) => void) | undefined;
+  // Debited immediately before every provider request (including the
+  // forced final conclude): false ends the run as budget-exhausted
+  // with zero further provider calls.
+  readonly beforeProviderCall?: (() => boolean) | undefined;
 };
 
 function providerFailure(error: InvestigationModelError): InvestigationFailure | { kind: "provider-error"; message: string } {
@@ -479,6 +483,7 @@ async function attemptForcedConclusion(
   limits: InvestigationLimits,
   deadlineAt: number,
   now: () => number,
+  beforeProviderCall?: (() => boolean) | undefined,
 ): Promise<InvestigationEnvelope | null> {
   if (state.tokensSpent >= limits.maxTokens) {
     return null;
@@ -489,6 +494,9 @@ async function attemptForcedConclusion(
   }
   const built = buildModelInput(facts, catalogue, state, limits, remainingMs, true);
   if (!built.ok) {
+    return null;
+  }
+  if (beforeProviderCall !== undefined && !beforeProviderCall()) {
     return null;
   }
   const decided = await adapter.decide(built.value, ctx);
@@ -551,7 +559,7 @@ export async function investigateToken(
       if (limits.maxSteps <= 0) {
         return failed;
       }
-      return (await attemptForcedConclusion(adapter, facts, catalogue, ctx, state, limits, deadlineAt, now)) ?? failed;
+      return (await attemptForcedConclusion(adapter, facts, catalogue, ctx, state, limits, deadlineAt, now, hooks.beforeProviderCall)) ?? failed;
     }
     if (state.tokensSpent >= limits.maxTokens) {
       return {
@@ -585,6 +593,15 @@ export async function investigateToken(
         limits,
       };
     }
+    if (hooks.beforeProviderCall !== undefined && !hooks.beforeProviderCall()) {
+      return {
+        status: "failed",
+        reason: { kind: "budget-exhausted", message: "global daily AI budget spent" },
+        partial: state.trace.slice(),
+        collectedEvidenceIds: state.collected.slice(),
+        limits,
+      };
+    }
     const decided = await adapter.decide(built.value, ctx);
     if (!decided.ok) {
       if (decided.error.kind === "not-configured") {
@@ -600,7 +617,7 @@ export async function investigateToken(
       if (!concludeOnlyStep) {
         return failed;
       }
-      return (await attemptForcedConclusion(adapter, facts, catalogue, ctx, state, limits, deadlineAt, now)) ?? failed;
+      return (await attemptForcedConclusion(adapter, facts, catalogue, ctx, state, limits, deadlineAt, now, hooks.beforeProviderCall)) ?? failed;
     }
     const decision = decided.value;
     const advanced = advanceInvestigation(state, decision, catalogue, facts, limits);
@@ -615,7 +632,7 @@ export async function investigateToken(
       if (!concludeOnlyStep) {
         return failed;
       }
-      return (await attemptForcedConclusion(adapter, facts, catalogue, ctx, state, limits, deadlineAt, now)) ?? failed;
+      return (await attemptForcedConclusion(adapter, facts, catalogue, ctx, state, limits, deadlineAt, now, hooks.beforeProviderCall)) ?? failed;
     }
     state = advanced.value;
     if (decision.kind === "conclude") {

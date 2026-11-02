@@ -2126,7 +2126,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
       const result = await sourceService.getSource(codeAddress, {
         requestId,
         deadline: deadline.value,
-        block: gated.value.block,
+        block: resolved.value.block,
       });
       if (!result.ok) {
         if (result.error === "no-code") {
@@ -2134,6 +2134,8 @@ export function createRestServer(options: RestServerOptions): RestServer {
         }
         return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
       }
+      // The source service keys its answer by the code hash it reads
+      // at this same pinned block, so the block pin is the agreement.
       if (result.value.source.status !== "verified") {
         return sendError(
           reply,
@@ -2171,7 +2173,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
     const analysed = await options.services.analyzeToken(
       {
         address: gated.value.address,
-        block: gated.value.block,
+        block: resolved.value.block,
         requestId,
         deadline: deadline.value,
         modelVersion: options.modelVersion,
@@ -2197,6 +2199,9 @@ export function createRestServer(options: RestServerOptions): RestServer {
       return reply.code(200).header(REQUEST_ID_HEADER, requestId).type("application/json").send(body);
     }
     const envelope = analysed.value.envelope;
+    if ((envelope.codeHash as string) !== codeHashText) {
+      return sendError(reply, requestError(502, "upstream-unavailable", "Upstream data source unavailable; retry with the same request ID.", requestId));
+    }
     const meanings = envelopeMeanings(envelope).filter((meaning) =>
       meaning.selectors.some((labelled) => labelled.selector.toLowerCase() === wantedSelector),
     );
@@ -2290,6 +2295,7 @@ export function createRestServer(options: RestServerOptions): RestServer {
     // Resolved analysis code (C-4, F-6): the source pane shows the
     // implementation behind a proxy, matching the scored analysis.
     let codeAddress = gated.value.address;
+    let sourceBlock: typeof gated.value.block = gated.value.block;
     const codeRpc = options.snippetRpc;
     if (codeRpc !== undefined) {
       const resolved = await resolveAnalysisCode({ rpc: codeRpc }, {
@@ -2308,11 +2314,12 @@ export function createRestServer(options: RestServerOptions): RestServer {
         return sendError(reply, requestError(500, "internal-error", "Analysis failed; retry with the same request ID.", requestId));
       }
       codeAddress = resolved.value.codeAddress;
+      sourceBlock = resolved.value.block;
     }
     const result = await service.getSource(codeAddress, {
       requestId,
       deadline: deadline.value,
-      block: gated.value.block,
+      block: sourceBlock,
     });
     if (!result.ok) {
       if (result.error === "no-code") {

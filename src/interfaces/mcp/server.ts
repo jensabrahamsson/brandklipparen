@@ -39,7 +39,7 @@ import type { SnippetDecompile } from "../../application/snippetService.ts";
 import type { ProofService } from "../../application/proofService.ts";
 import type { VerifiedSourceService } from "../../application/verifiedSource.ts";
 import { decompilePreferV2 } from "../../domain/decompileV2.ts";
-import type { Bytecode as BytecodeType } from "../../domain/types.ts";
+import type { BlockNumber as BlockNumberType, Bytecode as BytecodeType } from "../../domain/types.ts";
 import type { LiveTokensReader } from "../../ports/liveTokens.ts";
 import { MARKET_CHAIN } from "../../ports/marketFeed.ts";
 import type { MarketNewReader } from "../../ports/marketFeed.ts";
@@ -621,6 +621,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
         readonly bytecode: BytecodeType;
         readonly codeHash: string;
         readonly codeAddress: AssessTokenInput["address"];
+        readonly block: BlockNumberType;
       },
       McpToolError
     >
@@ -664,6 +665,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       bytecode: resolved.value.bytecode,
       codeHash: resolved.value.codeHash as string,
       codeAddress: resolved.value.codeAddress,
+      block: resolved.value.block,
     });
   }
 
@@ -860,8 +862,10 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       const result = await sourceService.getSource(resolved.value.codeAddress, {
         requestId,
         deadline: deadline.value,
-        block: gated.value.input.block,
+        block: resolved.value.block,
       });
+      // The source service keys its answer by the code hash it reads
+      // at this same pinned block, so the block pin is the agreement.
       if (!result.ok) {
         if (result.error === "no-code") {
           return err(notFound(requestId as string));
@@ -914,7 +918,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     }
     const analysed = await options.services.analyzeToken({
       address: gated.value.input.address,
-      block: gated.value.input.block,
+      block: resolved.value.block,
       requestId,
       deadline: deadline.value,
       modelVersion: options.modelVersion,
@@ -935,6 +939,13 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       return ok({ content: Object.freeze([textBlock(body)]), isError: false });
     }
     const envelope = analysed.value.envelope;
+    if ((envelope.codeHash as string) !== codeHash) {
+      return err({
+        code: "upstream-unavailable",
+        message: "Upstream data source unavailable; retry with the same request ID.",
+        requestId,
+      } satisfies McpToolError);
+    }
     const meanings = envelopeMeanings(envelope).filter((meaning) =>
       meaning.selectors.some((labelled) => labelled.selector.toLowerCase() === wantedSelector),
     );

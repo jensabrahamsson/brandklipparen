@@ -30,6 +30,7 @@ import type {
 import type { ModelId as ModelIdType } from "../../domain/types.ts";
 import type { PromptVersion as PromptVersionType } from "../../domain/types.ts";
 import {
+  createFetchChatCompletionsTransport,
   fetchChatCompletionsTransport,
   joinChatCompletionsUrl,
   stripJsonFence,
@@ -436,7 +437,9 @@ export class MetaModelApiPersonalizeAdapter implements PluginPersonalizeModelPor
     this.maxOutputChars = options.maxOutputChars ?? DEFAULT_META_PERSONALIZE_MAX_OUTPUT_CHARS;
     this.maxTokens = resolveMetaPersonalizeMaxTokens(options.maxTokens);
     this.temperature = options.temperature;
-    this.transport = options.transport ?? fetchMetaModelApiPersonalizeTransport;
+    this.transport =
+      options.transport ??
+      createFetchChatCompletionsTransport({ timeoutMs: this.timeoutMs, maxBytes: this.maxBytesIn });
     this.onLog = options.onLog;
     this.onWarn = options.onWarn ?? ((line: string): void => console.warn(line));
   }

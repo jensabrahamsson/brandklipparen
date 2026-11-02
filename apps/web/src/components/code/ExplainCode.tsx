@@ -198,6 +198,8 @@ export function useExplainCodeView({
   available,
   paneLines,
   lineElement,
+  block,
+  codeHash,
 }: {
   readonly address: string;
   readonly apiKey: string | null;
@@ -206,6 +208,8 @@ export function useExplainCodeView({
   readonly available: boolean;
   readonly paneLines: ReadonlySet<number>;
   readonly lineElement: (line: number) => HTMLLIElement | null;
+  readonly block?: number | undefined;
+  readonly codeHash?: string | undefined;
 }): ExplainRuntime {
   const [status, setStatus] = useState<ExplainStatus>("idle");
   const [data, setData] = useState<Extract<ExplainCodeState, { status: "ready" }> | null>(null);
@@ -233,7 +237,7 @@ export function useExplainCodeView({
     if (!available || status !== "idle") {
       return;
     }
-    const settled = peekExplainCode(address, selector, view);
+    const settled = peekExplainCode(address, selector, view, block, codeHash);
     if (settled !== null && (settled.status === "ready" || settled.status === "invalid-output" || settled.status === "capped")) {
       if (settled.status === "ready") {
         setData(settled);
@@ -245,7 +249,7 @@ export function useExplainCodeView({
       setRestored(true);
       typing.set({ ...typing.getSnapshot(), chars: 0, finished: true });
     }
-  }, [address, selector, view, available, status, typing]);
+  }, [address, selector, view, available, status, typing, block, codeHash]);
 
   const staticEntries = useMemo(() => {
     if (data === null) {
@@ -451,9 +455,9 @@ export function useExplainCodeView({
     liveLines,
     citedLines,
     readyMessage,
-    request: () => run(() => fetchExplainCode(address, selector, view, apiKey)),
-    retry: () => run(() => refreshExplainCode(address, selector, view, apiKey)),
-    askAgain: () => run(() => refreshExplainCode(address, selector, view, apiKey)),
+    request: () => run(() => fetchExplainCode(address, selector, view, apiKey, block, codeHash)),
+    retry: () => run(() => refreshExplainCode(address, selector, view, apiKey, block, codeHash)),
+    askAgain: () => run(() => refreshExplainCode(address, selector, view, apiKey, block, codeHash)),
   };
 }
 

@@ -12,14 +12,52 @@ export type OverlayBudgetOptions = {
   // SEC-1 S-8: global daily cap across all keys. Absent means no
   // global cap; past it every key reads as capped for the day.
   readonly globalDailyCap?: number | undefined;
+  // Shared cross-feature global meter: when present it replaces the
+  // per-instance global count, so one cap covers every feature.
+  readonly globalBudget?: SharedAiGlobalBudget | undefined;
   // UTC day reader (S-106): injected so tests steer the day boundary; the
   // application layer owns no clock, so callers pass wall time explicitly.
   readonly today: () => string;
 };
 
+// One global daily reservation meter shared by every AI feature
+// (assessment, overlays, personalize, investigation): a successful
+// trySpend debits the single cross-feature ceiling immediately.
+export class SharedAiGlobalBudget {
+  private readonly cap: number;
+  private readonly today: () => string;
+  private readonly spent = new Map<string, number>();
+
+  constructor(options: { readonly globalDailyCap: number; readonly today: () => string }) {
+    this.cap = options.globalDailyCap;
+    this.today = options.today;
+  }
+
+  isExhausted(day?: string): boolean {
+    const today = day ?? this.today();
+    for (const spentDay of this.spent.keys()) {
+      if (spentDay !== today) this.spent.delete(spentDay);
+    }
+    return (this.spent.get(today) ?? 0) >= this.cap;
+  }
+
+  record(day?: string): void {
+    const today = day ?? this.today();
+    if (this.isExhausted(today)) return;
+    this.spent.set(today, (this.spent.get(today) ?? 0) + 1);
+  }
+
+  trySpend(day?: string): boolean {
+    if (this.isExhausted(day)) return false;
+    this.record(day);
+    return true;
+  }
+}
+
 export class OverlayBudget {
   private readonly dailyCapPerKey: number;
   private readonly globalDailyCap: number | undefined;
+  private readonly globalBudget: SharedAiGlobalBudget | undefined;
   private readonly today: () => string;
   private readonly spent = new Map<string, number>();
   private readonly globalSpent = new Map<string, number>();
@@ -28,6 +66,7 @@ export class OverlayBudget {
   constructor(options: OverlayBudgetOptions) {
     this.dailyCapPerKey = options.dailyCapPerKey;
     this.globalDailyCap = options.globalDailyCap;
+    this.globalBudget = options.globalBudget;
     this.today = options.today;
   }
 
@@ -64,7 +103,11 @@ export class OverlayBudget {
     if (used >= this.dailyCapPerKey) {
       return false;
     }
-    if (this.globalDailyCap !== undefined) {
+    if (this.globalBudget !== undefined) {
+      if (!this.globalBudget.trySpend(today)) {
+        return false;
+      }
+    } else if (this.globalDailyCap !== undefined) {
       for (const spentDay of this.globalSpent.keys()) {
         if (spentDay !== today) {
           this.globalSpent.delete(spentDay);

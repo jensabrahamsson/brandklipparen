@@ -63,20 +63,31 @@ export type ChatCompletionsTransport = (
 // Production transport over the built-in fetch of Node. The endpoint URL
 // (which may carry deployment routing) is used solely as the request
 // target and is never logged or copied into errors.
+export function createFetchChatCompletionsTransport(limits: {
+  readonly timeoutMs: number;
+  readonly maxBytes: number;
+}): ChatCompletionsTransport {
+  return async (url, init) =>
+    safeFetchText(url, {
+      method: "POST",
+      headers: init.headers,
+      body: init.body,
+      timeoutMs: limits.timeoutMs,
+      maxBytes: limits.maxBytes,
+      signal: init.signal,
+    });
+}
+
 export async function fetchChatCompletionsTransport(
   url: string,
   init: ChatCompletionsTransportInit,
 ): Promise<ChatCompletionsTransportResponse> {
   // BK-25: stream through the bounded helper so an oversize body is
   // refused while reading, never buffered whole first.
-  return safeFetchText(url, {
-    method: "POST",
-    headers: init.headers,
-    body: init.body,
+  return createFetchChatCompletionsTransport({
     timeoutMs: DEFAULT_CHAT_COMPLETIONS_TIMEOUT_MS,
-    maxBytes: DEFAULT_CHAT_COMPLETIONS_MAX_BYTES_OUT,
-    signal: init.signal,
-  });
+    maxBytes: DEFAULT_CHAT_COMPLETIONS_MAX_BYTES_IN,
+  })(url, init);
 }
 
 // One log entry per assessment call (K-305, K-309, K-509): provider and
@@ -553,7 +564,9 @@ export class ChatCompletionsAdapter implements AssessmentModelPort {
     this.temperature = options.temperature;
     this.omitSamplingParams = options.omitSamplingParams ?? false;
     this.reasoningEffort = options.reasoningEffort;
-    this.transport = options.transport ?? fetchChatCompletionsTransport;
+    this.transport =
+      options.transport ??
+      createFetchChatCompletionsTransport({ timeoutMs: this.timeoutMs, maxBytes: this.maxBytesIn });
     this.onLog = options.onLog;
     this.onWarn = options.onWarn ?? ((line: string): void => console.warn(line));
   }

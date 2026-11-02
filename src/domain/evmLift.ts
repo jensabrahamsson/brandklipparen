@@ -365,6 +365,7 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
     return pushConstantValue(immediate);
   };
   const calleeTargets = new Set<number>();
+  const returnTargets = new Set<number>();
   for (const block of cfg.blocks) {
     const instructions = block.instructions;
     for (let at = 0; at + 2 < instructions.length; at += 1) {
@@ -374,15 +375,26 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
       if (first === undefined || second === undefined || third === undefined || third.opcode !== 0x56) {
         continue;
       }
+      const retValue = pushValueOf(first.opcode, first.immediate);
       const funcValue = pushValueOf(second.opcode, second.immediate);
-      if (funcValue === null || pushValueOf(first.opcode, first.immediate) === null) {
+      if (funcValue === null || retValue === null) {
         continue;
       }
       const callee = jumpTargets.get(funcValue);
       if (callee !== undefined) {
         calleeTargets.add(callee);
       }
+      const ret = jumpTargets.get(retValue);
+      if (ret !== undefined) {
+        returnTargets.add(ret);
+      }
     }
+  }
+  // A block that is also a proven return destination stays a candidate:
+  // dual-purpose targets (helper entry and return continuation) must
+  // never be hidden by an unrelated, possibly unreachable, call triple.
+  for (const ret of returnTargets) {
+    calleeTargets.delete(ret);
   }
   const reached = new Set<number>([from]);
   const resolved = new Set<number>();

@@ -35,6 +35,7 @@ import {
   packedPauseToken,
   push1,
   byteMaskPauseTokenHex,
+  roleOnlyPauseTokenHex,
   sharedBaseGateTokenHex,
   sharedBlacklistTokenHex,
   shortCircuitPackedPauseTokenHex,
@@ -60,6 +61,16 @@ function firstFailed(proof: ExtendedProof): string {
 }
 
 describe("extended-proof diagnostics (P-11 follow-up)", () => {
+  test("role-only pause proof does not fail at the owner slot", () => {
+    const [pause] = explainOf(roleOnlyPauseTokenHex());
+    if (pause === undefined) throw new Error("expected a pause report");
+    expect(pause.detector).toBe("dev.brandklipparen.pause");
+    expect(pause.steps[0]?.step).toBe("owner-slot");
+    expect(pause.steps[0]?.ok).toBe(true);
+    expect(pause.steps[0]?.detail).toContain("role guard");
+    expect(pause.steps.every((entry) => entry.ok)).toBe(true);
+  });
+
   test("masked pause fact reports every pause step ok in order", () => {
     const [pause, blacklist] = explainOf(`0x${Buffer.from(maskedPackedPauseToken()).toString("hex")}`);
     if (pause === undefined || blacklist === undefined) {

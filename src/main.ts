@@ -95,6 +95,7 @@ async function startupPorts(config: AppConfig): Promise<AnalyzeTokenPorts> {
     rpcUrls: config.rpcUrls,
     rpcDeadlineMs: config.rpcDeadlineMs,
     rpcMaxResponseBytes: config.rpcMaxResponseBytes,
+    rpcMaxConcurrency: config.rpcMaxConcurrency,
     // SEC-1 S-3: re-check mainnet at most once every 10 minutes.
     chainRecheckIntervalMs: DEFAULT_CHAIN_RECHECK_INTERVAL_MS,
   });

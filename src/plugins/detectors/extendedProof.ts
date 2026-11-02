@@ -255,18 +255,7 @@ function openExtended(bytecode: BytecodeType): ExtendedOpening {
   }
   const attribution = attributeFunctions(bytecode, { mode: "v2" });
   const view = analyzeOwnerControl(bytecode, { reach: "v2" });
-  if (view.ownerSlot === null) {
-    const firstFailed = OWNER_SLOT;
-    return {
-      kind: "blocked",
-      firstFailed,
-      steps: Object.freeze([
-        step(OWNER_SLOT, false, "no constant owner slot beside a caller guard"),
-        step(WRITER_REGIONS, false, `not evaluated: ${firstFailed} failed`),
-      ]),
-    };
-  }
-  const ownerSlot: number = view.ownerSlot;
+  const ownerSlot: number = view.ownerSlot ?? -1;
   const code = disassemble(bytecode);
   const writers: GuardedWriter[] = [];
   for (const region of view.regions) {
@@ -277,11 +266,14 @@ function openExtended(bytecode: BytecodeType): ExtendedOpening {
     const slotOf: SlotLookup = (pc) => slots.get(pc);
     const exprs = interpretRegionExprs(bytecode, region.selector);
     const member = (pc: number): boolean => attribution.holdersOf(pc).includes(region.selector);
-    let via = ownerCheckVia(code, member, ownerSlot, slotOf, exprs.jumpis, bytecode);
+    let via =
+      view.ownerSlot === null
+        ? null
+        : ownerCheckVia(code, member, view.ownerSlot, slotOf, exprs.jumpis, bytecode);
     if (
       via === null &&
-      (privilegedGuardKind(code, member, ownerSlot, slotOf, exprs.jumpis, bytecode) !== null ||
-        compoundPrivilegedGate(code, member, ownerSlot, exprs.jumpis, bytecode))
+      (privilegedGuardKind(code, member, view.ownerSlot, slotOf, exprs.jumpis, bytecode) !== null ||
+        compoundPrivilegedGate(code, member, view.ownerSlot, exprs.jumpis, bytecode))
     ) {
       via = "expr";
     }
@@ -290,9 +282,22 @@ function openExtended(bytecode: BytecodeType): ExtendedOpening {
     }
     writers.push({ region, slotOf, exprs, guardVia: via });
   }
+  if (view.ownerSlot === null && writers.length === 0) {
+    const firstFailed = OWNER_SLOT;
+    return {
+      kind: "blocked",
+      firstFailed,
+      steps: Object.freeze([
+        step(OWNER_SLOT, false, "no constant owner slot beside a caller guard"),
+        step(WRITER_REGIONS, false, `not evaluated: ${firstFailed} failed`),
+      ]),
+    };
+  }
   const guardList = writers.map((writer) => `${writer.region.selector as string} (via ${writer.guardVia})`).sort();
   const steps: ExtendedProofStep[] = [
-    step(OWNER_SLOT, true, `owner slot ${ownerSlot} proven beside a caller guard`),
+    view.ownerSlot === null
+      ? step(OWNER_SLOT, true, "no constant owner slot; privileged role guard proven by the writer regions")
+      : step(OWNER_SLOT, true, `owner slot ${ownerSlot} proven beside a caller guard`),
     step(
       WRITER_REGIONS,
       writers.length > 0,

@@ -390,6 +390,29 @@ describe("muse console overlays", () => {
     }
   });
 
+  test("proof pins the analysis block and caches per snapshot", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string): Promise<Response> => {
+        seen.push(String(url));
+        return jsonResponse(200, { codeHash: "0xabc", proofs: [] });
+      }),
+    );
+    try {
+      clearProofCache();
+      const pinned = `0x5ab1e${"0".repeat(34)}1`;
+      await fetchProof(pinned, null, 24000000, "0xabc");
+      await fetchProof(pinned, null, 24000000, "0xabc");
+      await fetchProof(pinned, null, 24000001, "0xdef");
+      expect(seen).toHaveLength(2);
+      expect(seen[0]).toContain("&block=24000000");
+      expect(seen[1]).toContain("&block=24000001");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test("proof_failures_read_as_failed_and_retry", async () => {
     let calls = 0;
     vi.stubGlobal(

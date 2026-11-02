@@ -29,6 +29,7 @@ import {
   pairOnlyPauseTokenHex,
   removableLimitTokenHex,
   scaledLimitTokenHex,
+  timestampPoppedLimitTokenHex,
   storedRecipientMintTokenHex,
   structFeeTokenHex,
   tradingToggleExemptTokenHex,
@@ -128,6 +129,12 @@ describe("SCAN-3 fee and limit idioms", () => {
 
   test("scaled limit setter with a shared balance gate reports an extended limits fact", () => {
     const findings = transferLimitsDetectorPlugin.detect(inputOf(scaledLimitTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.payload).toMatchObject({ fact: "transfer-limits", proof: "extended" });
+  });
+
+  test("popped timestamp read beside a limit compare keeps the limits fact", () => {
+    const findings = transferLimitsDetectorPlugin.detect(inputOf(timestampPoppedLimitTokenHex()));
     expect(findings).toHaveLength(1);
     expect(findings[0]?.payload).toMatchObject({ fact: "transfer-limits", proof: "extended" });
   });

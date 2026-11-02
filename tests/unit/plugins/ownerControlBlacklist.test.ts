@@ -42,6 +42,7 @@ import {
   packedMappingBlacklistToken,
   push1,
   scanRExemptLimitTokenHex,
+  scanRSubGuardBlacklistTokenHex,
   scanRSubGuardFeeExemptTokenHex,
   sharedBaseGateTokenHex,
   sharedBlacklistTokenHex,
@@ -491,9 +492,15 @@ describe("blacklist exemption precision (SCAN-R)", () => {
 
   test("subtraction-guarded fee-exempt setter beside a trading flag stays silent", () => {
     // The exempt entry only opens the transfer beside the trading
-    // flag, and its setter proves its caller check by subtraction
-    // alone: no list writer is proven, so no blacklist fact stands.
+    // flag: its subtraction-guarded setter is a proven writer, but
+    // the transfer gate is an exemption, so no blacklist fact stands.
     expect(blacklistDetectorPlugin.detect(hexInput(scanRSubGuardFeeExemptTokenHex()))).toEqual([]);
+  });
+
+  test("subtraction-guarded blacklist setter reports an extended fact", () => {
+    const findings = blacklistDetectorPlugin.detect(hexInput(scanRSubGuardBlacklistTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.blacklist:blacklist-extended");
   });
 
   test("exempt entry that still runs a reverting limit check stays silent", () => {

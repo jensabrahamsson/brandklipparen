@@ -82,6 +82,7 @@ export type JsonRpcAdapterOptions = {
   readonly endpoint: SecretString;
   readonly timeoutMs?: number | undefined;
   readonly maxResponseBytes?: number | undefined;
+  readonly maxConcurrency?: number | undefined;
   readonly transport?: RpcTransport | undefined;
   // SEC-1 S-3: when set to a positive interval, eth_chainId is
   // re-checked lazily at most once per interval before a call and a
@@ -102,6 +103,7 @@ export type RpcAdapterConfig = {
   readonly rpcUrls: readonly SecretString[] | undefined;
   readonly rpcDeadlineMs: number | undefined;
   readonly rpcMaxResponseBytes: number | undefined;
+  readonly rpcMaxConcurrency?: number | undefined;
   readonly chainRecheckIntervalMs?: number | undefined;
   readonly nowMs?: (() => number) | undefined;
 };
@@ -176,6 +178,7 @@ export function createRpcAdapterFromConfig(
       endpoint: first,
       timeoutMs: config.rpcDeadlineMs,
       maxResponseBytes: config.rpcMaxResponseBytes,
+      maxConcurrency: config.rpcMaxConcurrency,
       transport,
       chainRecheckIntervalMs: config.chainRecheckIntervalMs,
       nowMs: config.nowMs,
@@ -313,6 +316,9 @@ export class JsonRpcAdapter implements RpcPort {
   private readonly endpoint: SecretString;
   private readonly timeoutMs: number;
   private readonly maxResponseBytes: number;
+  private readonly maxConcurrency: number;
+  private activeTransports = 0;
+  private readonly transportWaiters: Array<() => void> = [];
   private readonly transport: RpcTransport;
   private readonly chainRecheckIntervalMs: number;
   private readonly nowMs: () => number;
@@ -323,6 +329,10 @@ export class JsonRpcAdapter implements RpcPort {
     this.endpoint = options.endpoint;
     this.timeoutMs = resolveRpcTimeoutMs(options.timeoutMs);
     this.maxResponseBytes = resolveRpcMaxResponseBytes(options.maxResponseBytes);
+    this.maxConcurrency =
+      options.maxConcurrency !== undefined && Number.isSafeInteger(options.maxConcurrency) && options.maxConcurrency > 0
+        ? options.maxConcurrency
+        : 1;
     this.transport = options.transport ?? fetchRpcTransport;
     this.chainRecheckIntervalMs =
       options.chainRecheckIntervalMs !== undefined &&
@@ -371,9 +381,29 @@ export class JsonRpcAdapter implements RpcPort {
       deadlineMs: this.timeoutMs,
       maxBytesIn: this.maxResponseBytes,
       maxBytesOut: this.maxResponseBytes,
-      maxConcurrency: 1,
+      maxConcurrency: this.maxConcurrency,
       retryBudget: 0,
     };
+  }
+
+  private async acquireTransport(): Promise<void> {
+    if (this.activeTransports < this.maxConcurrency) {
+      this.activeTransports += 1;
+      return;
+    }
+    // Slot transferred by releaseTransport: do not increment again.
+    await new Promise<void>((resolve) => {
+      this.transportWaiters.push(resolve);
+    });
+  }
+
+  private releaseTransport(): void {
+    const next = this.transportWaiters.shift();
+    if (next !== undefined) {
+      next();
+      return;
+    }
+    this.activeTransports -= 1;
   }
 
   async getCode(address: AddressType, ctx: CallContext): Promise<Result<BytecodeResult, RpcError>> {
@@ -651,6 +681,14 @@ export class JsonRpcAdapter implements RpcPort {
     }
     const url = allowed.value;
     const body = JSON.stringify({ jsonrpc: "2.0", id, method, params });
+    await this.acquireTransport();
+    // A queued request whose deadline passed while waiting fails as a
+    // timeout without ever reaching the transport.
+    const queuedTimeout = this.effectiveTimeoutMs(ctx);
+    if (!queuedTimeout.ok) {
+      this.releaseTransport();
+      return queuedTimeout;
+    }
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -659,7 +697,7 @@ export class JsonRpcAdapter implements RpcPort {
         timer = setTimeout(() => {
           controller.abort();
           reject(new RpcTimeout());
-        }, timeout.value);
+        }, queuedTimeout.value);
       });
       const response = await Promise.race([pending, onTimeout]);
       return ok({ id, response });
@@ -679,6 +717,7 @@ export class JsonRpcAdapter implements RpcPort {
       if (timer !== undefined) {
         clearTimeout(timer);
       }
+      this.releaseTransport();
     }
   }
 

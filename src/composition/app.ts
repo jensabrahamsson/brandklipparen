@@ -47,7 +47,7 @@ import type {
   AppServices,
   DetectorSet,
 } from "../application/analyzeToken.ts";
-import { createAssessmentServiceFromConfig } from "./root.ts";
+import { createAssessmentServiceFromConfig, createSharedAiGlobalBudget } from "./root.ts";
 import type { AssessmentTransportOverrides } from "./root.ts";
 import { PERSONALIZE_PROMPT_VERSION, createPersonalizeServiceFromConfig } from "./root.ts";
 import type { PersonalizeTransportOverrides } from "./root.ts";
@@ -293,11 +293,12 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
         : toDetectorExecution(deps.detectorExecution),
   });
   const services: AppServices = wireAppServices(deps.ports, wired);
-  const assessment = createAssessmentServiceFromConfig(config, services, deps.assessmentTransports);
+  const aiGlobalBudget = createSharedAiGlobalBudget(config);
+  const assessment = createAssessmentServiceFromConfig(config, services, deps.assessmentTransports, aiGlobalBudget);
   if (!assessment.ok) {
     return err(assessment.error);
   }
-  const investigation = createInvestigationServiceFromConfig(config, wired);
+  const investigation = createInvestigationServiceFromConfig(config, wired, {}, aiGlobalBudget);
   if (!investigation.ok) {
     return err(investigation.error);
   }
@@ -307,29 +308,29 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
   // baseline stands. The prompt version travels beside the service for
   // the route cache key; an absent service disables the route like an
   // absent version.
-  const personalize = createPersonalizeServiceFromConfig(config, deps.personalizeTransports);
+  const personalize = createPersonalizeServiceFromConfig(config, deps.personalizeTransports, aiGlobalBudget);
   if (!personalize.ok) {
     return err(personalize.error);
   }
   // Opt-in explain, chat and rug overlays: each service when its provider
   // is configured, otherwise undefined so the routes answer not-configured
   // with zero provider calls and the deterministic explanation stands.
-  const explain = createExplainServiceFromConfig(config, deps.overlayTransports);
+  const explain = createExplainServiceFromConfig(config, deps.overlayTransports, aiGlobalBudget);
   if (!explain.ok) {
     return err(explain.error);
   }
-  const chat = createChatServiceFromConfig(config, deps.overlayTransports);
+  const chat = createChatServiceFromConfig(config, deps.overlayTransports, aiGlobalBudget);
   if (!chat.ok) {
     return err(chat.error);
   }
-  const rug = createRugServiceFromConfig(config, deps.overlayTransports);
+  const rug = createRugServiceFromConfig(config, deps.overlayTransports, aiGlobalBudget);
   if (!rug.ok) {
     return err(rug.error);
   }
   // Per-function code explanation (VS-B3): the service when its provider
   // is configured, otherwise undefined so the route answers not-configured
   // with zero provider calls and the deterministic code view stands.
-  const explainCode = createExplainCodeServiceFromConfig(config, deps.overlayTransports);
+  const explainCode = createExplainCodeServiceFromConfig(config, deps.overlayTransports, aiGlobalBudget);
   if (!explainCode.ok) {
     return err(explainCode.error);
   }
