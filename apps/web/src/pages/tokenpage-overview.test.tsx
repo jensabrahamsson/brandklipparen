@@ -255,3 +255,28 @@ describe("expert mode detail (K-034)", () => {
     expect(renderOverview("", "simple")).not.toContain('data-testid="expert-detail"');
   });
 });
+
+describe("desktop grid balance (R3 D-13)", () => {
+  test("signals_choose_the_side_grid_and_empty_signals_choose_the_flat_grid", () => {
+    const withSignals = renderOverview("");
+    expect(withSignals).toContain("token-grid--side");
+    expect(withSignals).not.toContain("token-grid--flat");
+    const empty = assessedResult();
+    const noSignals = { ...empty, signals: [] };
+    const flat = renderToString(
+      <OverviewSections
+        result={noSignals}
+        plugins={PLUGINS}
+        address={syntheticAddress(7)}
+        mode="simple"
+        question=""
+        sorted={[]}
+        liveEntry={null}
+        apiKey=""
+        onchainAvailability="available"
+      />,
+    );
+    expect(flat).toContain("token-grid--flat");
+    expect(flat).not.toContain("token-grid--side");
+  });
+});

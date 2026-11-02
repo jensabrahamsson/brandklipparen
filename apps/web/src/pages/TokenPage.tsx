@@ -814,9 +814,14 @@ export function OverviewSections({
   };
   // Rendered ids only: drop any section without an overview block.
   const renderedSections = shownSections.filter((sectionId) => blocks[sectionId] !== undefined);
+  // R3 D-13: the desktop grid follows the data. With no signals there is
+  // no side column: the facts become a full-width two-column card after
+  // the board. Otherwise the facts stay beside the main column as a
+  // static aside, so no column sits empty beside tall content.
+  const hasSignals = result.signals.length > 0;
   return (
     <div>
-      <div className="token-grid">
+      <div className={`token-grid ${hasSignals ? "token-grid--side" : "token-grid--flat"}`}>
         {renderedSections.map((sectionId, sectionIndex) => (
           <div
             key={sectionId}

@@ -457,71 +457,83 @@ export function PluginDetailView({
         </section>
       )}
       {tile === null ? null : (
-        <div className="detail-stack">
-          {slug === "decompiler" ? (
-            <DecompilerList
-              address={address}
-              apiKey={apiKey}
-              findings={findings}
-              expert={expert}
-              initialSelector={fn}
-              initialView={codeView}
-              initialPc={codePc}
-              explainAvailable={(availability?.explainCode ?? "available") === "available"}
-              evidenceIndex={evidenceIndex}
-              ownerOnlySelectors={ownerOnlySelectors}
-            />
-          ) : (
-            <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} />
-          )}
-          <ProofSection
-            address={address}
-            apiKey={apiKey}
-            pluginId={tile.pluginId}
-            slug={slug}
-            expert={expert}
-          />
-          <section className="card detail-limits" aria-label="What this check can't tell you">
-            <h2>What this check can&apos;t tell you</h2>
-            <p className="detail-limits-text">{tile.copy.limits}</p>
-          </section>
-          {!expert ? null : (
-            <section className="card detail-raw" aria-label="Expert raw" data-testid="detail-expert-raw">
-              <h2>Expert raw</h2>
-              {findings.length === 0 ? (
-                <p className="muted">No findings: no payload to show.</p>
+        <div className={slug === "decompiler" ? "detail-cols detail-cols--code" : "detail-cols"}>
+          <div className="detail-main">
+            <div className="detail-stack">
+              {slug === "decompiler" ? (
+                <DecompilerList
+                  address={address}
+                  apiKey={apiKey}
+                  findings={findings}
+                  expert={expert}
+                  initialSelector={fn}
+                  initialView={codeView}
+                  initialPc={codePc}
+                  explainAvailable={(availability?.explainCode ?? "available") === "available"}
+                  evidenceIndex={evidenceIndex}
+                  ownerOnlySelectors={ownerOnlySelectors}
+                />
               ) : (
-                findings.map((finding) => (
-                  <article key={finding.id} className="detail-raw-finding">
-                    <h3 className="mono">{finding.id}</h3>
-                    <p>{finding.title}</p>
-                    {finding.payload === undefined ? null : (
-                      <SchemaValue value={finding.payload} schema={entry?.outputSchema} />
-                    )}
-                  </article>
-                ))
+                <EvidenceSection address={address} apiKey={apiKey} findings={findings} names={names} expert={expert} />
               )}
+              <ProofSection
+                address={address}
+                apiKey={apiKey}
+                pluginId={tile.pluginId}
+                slug={slug}
+                expert={expert}
+              />
+              <section className="card detail-limits" aria-label="What this check can't tell you">
+                <h2>What this check can&apos;t tell you</h2>
+                <p className="detail-limits-text">{tile.copy.limits}</p>
+              </section>
+              {!expert ? null : (
+                <section className="card detail-raw" aria-label="Expert raw" data-testid="detail-expert-raw">
+                  <h2>Expert raw</h2>
+                  {findings.length === 0 ? (
+                    <p className="muted">No findings: no payload to show.</p>
+                  ) : (
+                    findings.map((finding) => (
+                      <article key={finding.id} className="detail-raw-finding">
+                        <h3 className="mono">{finding.id}</h3>
+                        <p>{finding.title}</p>
+                        {finding.payload === undefined ? null : (
+                          <SchemaValue value={finding.payload} schema={entry?.outputSchema} />
+                        )}
+                      </article>
+                    ))
+                  )}
+                </section>
+              )}
+            </div>
+          </div>
+          <aside className="detail-aside" aria-label="About this check">
+            <section className="card detail-about">
+              <h2>About this check</h2>
+              <p className="quiet numeric detail-about-version">
+                Check v{entry?.version ?? "0.0.0"} · Model {modelVersion}
+              </p>
             </section>
-          )}
+            {prev === null && next === null ? null : (
+              <nav className="detail-prevnext detail-prevnext--aside" aria-label="More checks">
+                {prev === null ? (
+                  <span />
+                ) : (
+                  <a className="button-ghost" href={tileHref(address, prev)}>
+                    ← {prev.copy.title}
+                  </a>
+                )}
+                {next === null ? (
+                  <span />
+                ) : (
+                  <a className="button-ghost" href={tileHref(address, next)}>
+                    {next.copy.title} →
+                  </a>
+                )}
+              </nav>
+            )}
+          </aside>
         </div>
-      )}
-      {prev === null && next === null ? null : (
-        <nav className="detail-prevnext" aria-label="More checks">
-          {prev === null ? (
-            <span />
-          ) : (
-            <a className="button-ghost" href={tileHref(address, prev)}>
-              ← {prev.copy.title}
-            </a>
-          )}
-          {next === null ? (
-            <span />
-          ) : (
-            <a className="button-ghost" href={tileHref(address, next)}>
-              {next.copy.title} →
-            </a>
-          )}
-        </nav>
       )}
     </div>
   );

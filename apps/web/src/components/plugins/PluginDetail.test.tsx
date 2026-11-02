@@ -178,6 +178,51 @@ describe("plugin detail header (D-7)", () => {
     expect(html).toContain("Check v1.0.0");
   });
 
+  test("the desktop body splits evidence from an about aside", () => {
+    const html = detail("found-scored", 3);
+    expect(html).toContain("detail-cols");
+    expect(html).toContain("detail-main");
+    expect(html).toContain('aria-label="About this check"');
+    expect(html).toContain("About this check");
+  });
+
+  test("the decompiler detail keeps the code panes at full width with the about aside below", () => {
+    const html = renderToString(
+      <PluginDetailView
+        address={ADDRESS}
+        apiKey=""
+        symbol="TST"
+        slug="decompiler"
+        tile={{
+          pluginId: "dev.brandklipparen.decompiler",
+          slug: "decompiler",
+          copy: PLUGIN_COPY["decompiler"] as BoardTile["copy"],
+          state: "ran",
+          severity: "medium",
+          payloads: [],
+          evidenceCount: 1,
+          orderIndex: 10,
+        }}
+        entry={entry(0)}
+        findings={[]}
+        names={new Map()}
+        modelVersion="1.0.1"
+        mode="simple"
+        onModeChange={() => undefined}
+        prev={null}
+        next={null}
+      />,
+    );
+    expect(html).toContain("detail-cols--code");
+    expect(html).toContain('aria-label="About this check"');
+  });
+
+  test("other checks keep the capped two-column body", () => {
+    const html = detail("found-scored", 3);
+    expect(html).toContain("detail-cols");
+    expect(html).not.toContain("detail-cols--code");
+  });
+
   test("an unavailable on-chain read names it with no button and no request", () => {
     const html = renderToString(
       <PluginDetailView

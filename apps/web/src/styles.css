@@ -2872,6 +2872,32 @@ a:focus-visible {
     grid-template-columns: minmax(0, 1fr) 340px;
     grid-template-areas: "main facts" "board board" "cant cant";
   }
+
+  /* R3 D-13: with signals the facts ride beside the main column, so
+     the side column never reads as an 800 px void. Without signals
+     there is no side column: the facts span the full width with the
+     768 two-column fact rows. The facts stay static: a stuck aside
+     taller than the viewport covers the full-width board tiles sliding
+     under it at the row boundary, leaving dead controls (the spec
+     already says "not sticky"). */
+  .token-grid--side > .token-facts {
+    align-self: start;
+  }
+
+  .token-grid--flat {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "main" "board" "cant" "facts";
+  }
+
+  .token-grid--flat > .token-facts {
+    position: static;
+    align-self: auto;
+  }
+
+  .token-grid--flat .contract-facts-list {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 24px;
+  }
 }
 
 /* R2-6: the merged why-rows above own the severity rails, so the old
@@ -4430,8 +4456,84 @@ a {
 .detail-stack {
   display: grid;
   gap: var(--s4);
+  min-width: 0;
+}
+
+/* R3 D-18: the detail body is one column on phones and two columns at
+   desktop: evidence and limits in a capped main column, version and
+   prev/next in the aside. The 760 px cap keeps evidence actions close
+   to the function name; every shadow stays token-based. */
+.detail-cols {
+  display: grid;
+  gap: var(--s4);
   margin-top: var(--s4);
   min-width: 0;
+}
+
+.detail-main {
+  min-width: 0;
+}
+
+.detail-aside {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+  align-content: start;
+}
+
+.detail-about h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.detail-about-version {
+  margin: 0;
+}
+
+.detail-prevnext--aside {
+  margin-top: 0;
+}
+
+@media (min-width: 1100px) {
+  .detail-cols {
+    grid-template-columns: minmax(0, min(760px, 100%)) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .detail-main {
+    max-width: 760px;
+  }
+
+  .detail-evidence {
+    max-width: 760px;
+  }
+
+  .detail-aside {
+    position: sticky;
+    top: 16px;
+  }
+}
+
+/* Code views need the full measure: two panes plus the 244 px
+   margin-note reserve (R3 D-24) never fit beside an aside inside a
+   760 px cap, so the decompiler detail stays single-column and
+   static. Evidence lists on the other checks keep the capped
+   two-column body above. */
+.detail-cols--code {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.detail-cols--code > .detail-main {
+  max-width: none;
+}
+
+.detail-cols--code .detail-evidence {
+  max-width: none;
+}
+
+.detail-cols--code > .detail-aside {
+  position: static;
 }
 
 .detail-evidence h2,
