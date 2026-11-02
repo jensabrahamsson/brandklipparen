@@ -548,6 +548,9 @@ describe("overlay meanings and meta-statement guard", () => {
     expect(system).toContain("non-expert buyer");
     expect(system).toContain("NOT known");
     expect(system).toContain("not in score");
+    // SCORE-5: a floored finding must never be described as not in
+    // score; the system text carries the floor wording too.
+    expect(system).toContain("sets the minimum score");
     expect(system).toContain("meta-statements");
     const meanings = user["meanings"] as Record<string, unknown>[];
     expect(meanings[0]).toMatchObject({

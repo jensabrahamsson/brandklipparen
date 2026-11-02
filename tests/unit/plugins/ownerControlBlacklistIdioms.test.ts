@@ -197,6 +197,63 @@ describe("blacklist transfer-path idioms (SCORE-2)", () => {
     expect(blacklistDetectorPlugin.detect(input)).toEqual([]);
   });
 
+  test("masked entry read that jumps straight to a revert reports a finding", () => {
+    // Packed-bool style gate: the loaded entry is masked with AND 1
+    // and tested directly (no ISZERO beside the load), so the set
+    // side jumps straight to the revert block while the clear side
+    // falls through to the transfer store.
+    const input = inputFor([
+      { selector: SET_STATUS, body: setterBody() },
+      {
+        selector: TRANSFER,
+        body: [
+          ...mappingLoad(),
+          ...push1(1),
+          0x16,
+          ...branchOk(),
+          ...push1(2),
+          SSTORE,
+          STOP,
+          0x5b,
+          ...push1(0),
+          0x80,
+          REVERT,
+        ],
+      },
+    ]);
+    const findings = blacklistDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.payload).toEqual(
+      expect.objectContaining({ fact: "blacklist", proof: "extended" }),
+    );
+  });
+
+  test("masked entry whose set side only proceeds stays silent", () => {
+    // Same masked read, opposite polarity: a set entry jumps to the
+    // transfer store and the clear side falls through to the revert,
+    // which is an allowlist shape, never a list.
+    const input = inputFor([
+      { selector: SET_STATUS, body: setterBody() },
+      {
+        selector: TRANSFER,
+        body: [
+          ...mappingLoad(),
+          ...push1(1),
+          0x16,
+          ...branchOk(),
+          ...push1(0),
+          0x80,
+          REVERT,
+          0x5b,
+          ...push1(2),
+          SSTORE,
+          STOP,
+        ],
+      },
+    ]);
+    expect(blacklistDetectorPlugin.detect(input)).toEqual([]);
+  });
+
   test("fee-exempt entry that only skips a priced limit check stays silent", () => {
     // A set entry is exempt: it falls through to the store. The clear
     // side jumps to a priced limit compare that can revert. The entry

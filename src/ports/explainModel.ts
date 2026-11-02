@@ -6,7 +6,8 @@
 // Meanings pair each id with its stated meaning (plugin, kind, severity,
 // direction, template meaning, temporality, selector names); an entry whose
 // meaning says "not counted in the score" is an extended fact for extra
-// context only. The suggestions are a labelled overlay only: they never
+// context only, while one that says "sets the minimum score" is counted
+// through the score floor. The suggestions are a labelled overlay only: they never
 // enter the score, the evidence or the finding text. A null port (the
 // default wiring) answers `not-configured` with zero provider calls and
 // the deterministic explanation stands.

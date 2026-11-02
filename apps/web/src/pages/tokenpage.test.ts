@@ -250,6 +250,59 @@ describe("score-floor verdict agreement (SCORE-4)", () => {
     expect(meaningSentence(result, tiles)).toBe("High risk. The owner controls blacklist.");
   });
 
+  test("score5_floor_facts_blacklist_and_limits_both_name_owner_controls", () => {
+    // The screenshot token: blacklist and transfer limits are both in
+    // scoreFloor.facts, so the hero counts both as controlled powers
+    // and never calls either one not-in-score.
+    const result = assessed({
+      score: 60,
+      signals: [],
+      scoreFloor: {
+        rule: "owner-can-block-holders",
+        minimum: 60,
+        label: "floor: owner can block holders (blacklist)",
+        facts: ["blacklist", "transfer-limits"],
+      },
+    });
+    if (result.kind !== "assessed") {
+      throw new Error("fixture must assess");
+    }
+    const tiles = [
+      ownerTile("blacklist", "Blacklist", "extended", [{ fact: "blacklist", proof: "extended" }]),
+      ownerTile("transfer-limits", "Transfer limits", "extended", [{ fact: "transfer-limits", proof: "extended" }]),
+    ];
+    const sentence = meaningSentence(result, tiles);
+    expect(sentence).toBe("High risk. The owner controls blacklist and transfer limits.");
+    expect(sentence).not.toContain("doesn't count");
+    expect(sentence).not.toContain("not in the score");
+  });
+
+  test("score5_mixed_floor_and_unfloored_extended_names_each_side_exactly", () => {
+    // Only blacklist is in scoreFloor.facts: the hero counts it as a
+    // controlled power and names transfer limits separately as the
+    // one power not in the score.
+    const result = assessed({
+      score: 60,
+      signals: [],
+      scoreFloor: {
+        rule: "owner-can-block-holders",
+        minimum: 60,
+        label: "floor: owner can block holders (blacklist)",
+        facts: ["blacklist"],
+      },
+    });
+    if (result.kind !== "assessed") {
+      throw new Error("fixture must assess");
+    }
+    const tiles = [
+      ownerTile("blacklist", "Blacklist", "extended", [{ fact: "blacklist", proof: "extended" }]),
+      ownerTile("transfer-limits", "Transfer limits", "extended", [{ fact: "transfer-limits", proof: "extended" }]),
+    ];
+    expect(meaningSentence(result, tiles)).toBe(
+      "High risk. The owner controls blacklist. Extended analysis also found 1 owner power not in the score: transfer limits.",
+    );
+  });
+
   test("score4_renounced_lifted_fact_names_owner_renounced", () => {
     const result = assessed({
       score: 19,
@@ -284,8 +337,13 @@ describe("verdict caret takes the risk colour (S-132)", () => {
 });
 
 describe("calibration note", () => {
-  test("model 1.0.1 warns that Low is not a safety pass", () => {
-    expect(calibrationNote("1.0.1")).toContain("Low is not a safety pass");
+  test("model 1.0.1 states the floor and that Low is not a guarantee", () => {
+    // SCORE-5: proven owner powers lift the score through the floor,
+    // so the old cluster wording is gone; Low only means nothing was
+    // proven, never that the token is safe.
+    expect(calibrationNote("1.0.1")).toBe(
+      "Proven owner powers set the minimum score. Low means no proven owner power and no strong pattern; still not a guarantee.",
+    );
     expect(calibrationNote("1.0.2")).toBeNull();
   });
 });

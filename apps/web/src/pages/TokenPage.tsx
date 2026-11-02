@@ -54,7 +54,7 @@ export function tokenPageTitle(symbol: string, score: number): string {
 // so caret, border and badge can never disagree.
 export function calibrationNote(modelVersion: string): string | null {
   return modelVersion === "1.0.1"
-    ? "Model 1.0.1 calibration: scores cluster at 19\u201330, so Low is not a safety pass. Check the owner powers above."
+    ? "Proven owner powers set the minimum score. Low means no proven owner power and no strong pattern; still not a guarantee."
     : null;
 }
 
@@ -985,19 +985,27 @@ export function meaningSentence(
   const found = ownerTiles.filter(
     (tile) => markOf(tile) !== "renounced" && (tile.state === "found-scored" || markOf(tile) === "floor"),
   );
+  // SCORE-5: extended tiles still named here are exactly the ones the
+  // floor did not count (a floored tile is in `found` above), so the
+  // not-in-score clause can only ever name non-floor facts.
+  const extended = ownerTiles.filter((tile) => tile.state === "extended" && markOf(tile) === null);
   if (found.length > 0) {
     const named = found.filter((tile) => tile.copy.slug !== "ownership");
     const source = named.length > 0 ? named : found;
     const names = source.slice(0, 2).map((tile) => tile.copy.title.toLowerCase());
     const including = names.length === 2 ? `${names[0]} and ${names[1]}` : `${names[0]}`;
     const count = privilegedFunctionCount(found);
-    if (count !== null) {
-      const noun = count === 1 ? "function" : "functions";
-      return `${word} risk. The owner controls ${count} ${noun}, including ${including}.`;
+    const base =
+      count !== null
+        ? `${word} risk. The owner controls ${count} ${count === 1 ? "function" : "functions"}, including ${including}.`
+        : `${word} risk. The owner controls ${including}.`;
+    if (extended.length === 0) {
+      return base;
     }
-    return `${word} risk. The owner controls ${including}.`;
+    const extraNames = extended.map((tile) => tile.copy.title.toLowerCase()).join(", ");
+    const extraNoun = extended.length === 1 ? "owner power" : "owner powers";
+    return `${base} Extended analysis also found ${extended.length} ${extraNoun} not in the score: ${extraNames}.`;
   }
-  const extended = ownerTiles.filter((tile) => tile.state === "extended" && markOf(tile) === null);
   if (extended.length > 0) {
     const names = extended.map((tile) => tile.copy.title.toLowerCase()).join(", ");
     const noun = extended.length === 1 ? "owner power" : "owner powers";

@@ -174,6 +174,10 @@ export function explainCoverageMeanings(envelope: AssessmentEnvelope): readonly 
         `Checked ${envelope.pluginResults.length} detectors: ${envelope.signals.length} scored signals found, ` +
         `${unreadable} detectors could not be read. Bytecode ${decompiled ? "decompiled" : "not decompiled"}; ` +
         `proxy: ${proxyKind}; ${envelope.cantTell.length} questions remain open. ` +
+        (envelope.scoreFloor === undefined
+          ? ""
+          : `Score floor: ${envelope.scoreFloor.label} (minimum ${envelope.scoreFloor.minimum}); ` +
+            `the served score is at least the minimum because of the proven owner powers named there. `) +
         (counts === null
           ? "The deterministic analysis lists only patterns its detectors proved in the functions they could follow; an absent finding means no proof was found, not proof that the pattern is absent."
           : `Detectors proved a pattern in ${counts.proved} of ${counts.total} decompiled functions; the remaining functions yielded no proof. Absence of a finding is not proof that the pattern is absent.`),

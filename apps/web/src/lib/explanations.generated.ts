@@ -164,7 +164,7 @@ export const EXPLANATIONS = Object.freeze({
   },
   "powers:extended": {
     "title": "Extended analysis",
-    "body": "Extended analysis is newer and not yet calibrated. Most findings do not move the score, but a proven power that can block holders sets a minimum score. The finding is still real: open it to see the proof."
+    "body": "Extended analysis is newer and not yet calibrated. A proven owner power sets a minimum score: High if it can block holders, Elevated for other risky powers. Other findings do not move the score, but the finding is still real: open it to see the proof."
   },
   "explanation:claim": {
     "title": "About these claims",
@@ -324,7 +324,7 @@ export const EXPLANATION_PAYLOAD = {
     },
     "powers:extended": {
       "title": "Extended analysis",
-      "body": "Extended analysis is newer and not yet calibrated. Most findings do not move the score, but a proven power that can block holders sets a minimum score. The finding is still real: open it to see the proof."
+      "body": "Extended analysis is newer and not yet calibrated. A proven owner power sets a minimum score: High if it can block holders, Elevated for other risky powers. Other findings do not move the score, but the finding is still real: open it to see the proof."
     },
     "explanation:claim": {
       "title": "About these claims",

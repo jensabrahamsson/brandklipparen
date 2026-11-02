@@ -79,15 +79,18 @@ function chipFor(item: MarketItem, recentByToken: ReadonlyMap<string, RecentAnal
   if (chip.kind === "powers") {
     if (chip.found > 0) {
       // Short chip (U-12): the full line-1 row must stay within the 130 px
-      // phone budget, so extended findings read as "+N" with the "not in
-      // score" meaning in the tooltip. The score never renders beside it:
-      // the chip replaces the score bar and text (P9).
+      // phone budget, so extended findings read as "+N" with their
+      // meaning in the tooltip. The feed carries no score-floor data,
+      // so the tooltip never claims a finding is outside the score:
+      // a proven power may set the minimum score on the token page.
+      // The score never renders beside the chip: the chip replaces
+      // the score bar and text (P9).
       return (
         <span
           className="feed-chip"
           title={
             chip.extended > 0
-              ? `${chip.found} owner powers, ${chip.extended} more by extended analysis (not in score)`
+              ? `${chip.found} owner powers, ${chip.extended} more found by extended analysis`
               : `${chip.found} owner powers`
           }
         >
@@ -96,7 +99,7 @@ function chipFor(item: MarketItem, recentByToken: ReadonlyMap<string, RecentAnal
         </span>
       );
     }
-    return <span className="feed-chip">◌ {chip.extended} not in score</span>;
+    return <span className="feed-chip">◌ {chip.extended} by extended analysis</span>;
   }
   if (chip.kind === "none") {
     return <span className="feed-chip feed-chip-dim">○ No owner power found</span>;

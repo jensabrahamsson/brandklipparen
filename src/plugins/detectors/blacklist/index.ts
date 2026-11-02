@@ -1634,9 +1634,28 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           continue;
         }
         // Subtraction-form writers (main) prove a list only when the
-        // listed side of the gate is the blocking side.
+        // listed side of the gate is the blocking side. The
+        // interpreter-side check names that side from the jump
+        // condition; when it cannot (a masked helper load whose slot
+        // the interpreter never resolved), the raw helper-body proof
+        // gets the same question: a load on this base in the transfer
+        // body whose set side reverts soon while the clear side stays
+        // open (SCORE-5). An exemption gate fails both, because its
+        // set side proceeds into the transfer stores.
         if (subGuarded && !listedSideBlocks(input.bytecode, code, gateMember, transferExprs.jumpis, writeBase)) {
-          continue;
+          const bodyPc = bodyMappingGatePc(
+            input.bytecode,
+            code,
+            transfer.entryPc,
+            gateSlotOf,
+            transferExprs.jumpis,
+            transferExprs.loads,
+            writeBase,
+          );
+          if (bodyPc === null) {
+            continue;
+          }
+          gateEvidencePc = bodyPc;
         }
         // Shared code belongs to every entry that reaches it, so the
         // single holder stays null there: fall back to the sorted holders

@@ -106,11 +106,17 @@ export function applyScoreFloor(calibratedScore: number, facts: ScoreFloorFacts)
   }
   const block = orderedPresent(BLOCK_HOLDER_FACTS, new Set(facts.block));
   if (block.length > 0) {
+    // `facts` names every proven fact, not only the governing group:
+    // a risky capability proven beside a block-holder power still
+    // feeds this floor, so page copy derived from `facts` (chips,
+    // hero, titles) must count it as floored, never as not-in-score.
+    // The label names the governing group that sets the minimum.
+    const all = Object.freeze([...block, ...orderedPresent(RISKY_FACTS, new Set(facts.risky))]);
     const floor: AppliedScoreFloor = Object.freeze({
       rule: "owner-can-block-holders",
       minimum: SCORE_FLOOR_HIGH,
       label: `floor: owner can block holders (${block.join(", ")})`,
-      facts: Object.freeze(block),
+      facts: all,
     });
     return Object.freeze({
       score: toScore(Math.max(calibrated as number, SCORE_FLOOR_HIGH)),

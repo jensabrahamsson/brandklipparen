@@ -1696,14 +1696,14 @@ a.chip {
      (phone technique) so each block takes its own grid area; the dial
      stays top-aligned, so no void survives beside it. */
   .score-ring-wrap {
-    grid-template-columns: minmax(0, 1fr) clamp(170px, 24vw, 240px);
+    grid-template-columns: minmax(0, 1fr) clamp(150px, 22vw, 220px);
     grid-template-areas:
-      "verdict dial"
-      "powers powers"
+      "verdict verdict"
+      "powers dial"
       "gauges gauges";
     align-items: start;
     column-gap: 16px;
-    row-gap: 16px;
+    row-gap: 12px;
   }
 
   .score-ring-wrap > .hero-copy {
@@ -1713,9 +1713,10 @@ a.chip {
   .score-ring-wrap .risk-meaning {
     grid-area: verdict;
     align-self: start;
-    /* A touch smaller than the global clamp: the longest real verdict
-       (extended-analysis sentence, ~110 chars) must stay within 3 lines
-       in the ~410 px tablet column at 768. */
+    /* A touch smaller than the global clamp, across the full hero
+       width: the longest mixed verdict (scored powers plus extended
+       powers not in the score, ~165 chars) must stay within 3 lines
+       at 768. In a beside-the-dial column it needed 5. */
     font-size: clamp(17px, calc(0.7vw + 12px), 21px);
   }
 
@@ -2164,13 +2165,31 @@ a.chip {
    no reading depends on colour alone. Opacity, colour and glow only,
    never movement. */
 @media (min-width: 1100px) {
+  /* SCORE-5 follow-up: the longer not-in-score verdict sentence wrapped
+     to four lines and pushed the hero past the first-viewport budget.
+     A slightly smaller headline at laptop widths keeps the full
+     sentence, the 44 px chips and the gauges inside the hero diet. */
+  .verdict .risk-meaning {
+    font-size: 22px;
+    line-height: 1.32;
+  }
+
+  .verdict .token-sym {
+    font-size: clamp(40px, 5vw, 56px);
+  }
+
+  .card.verdict {
+    padding-top: var(--s4);
+    padding-bottom: 12px;
+  }
+
   .verdict .gauge {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
     column-gap: 12px;
     row-gap: 6px;
-    padding: 10px 14px 12px;
+    padding: 8px 14px 10px;
   }
 
   .verdict .gauge-top {

@@ -69,6 +69,16 @@ describe("score floor branches (SCORE-1)", () => {
     expect(floored.floor?.rule).toBe("owner-can-block-holders");
   });
 
+  test("floor_facts_name_every_proven_fact_beside_the_governing_group", () => {
+    // SCORE-5: a risky capability proven beside a block-holder power
+    // still feeds the floor, so `facts` names it too; the label keeps
+    // naming only the governing block-holder group.
+    const floored = applyScoreFloor(29, facts({ block: ["blacklist"], risky: ["transfer-limits", "mint"] }));
+    expect(floored.score as number).toBe(60);
+    expect(floored.floor?.label).toBe("floor: owner can block holders (blacklist)");
+    expect(floored.floor?.facts).toEqual(["blacklist", "mint", "transfer-limits"]);
+  });
+
   test("floor_renounced_proven_means_no_floor", () => {
     const floored = applyScoreFloor(
       29,
