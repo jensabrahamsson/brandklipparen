@@ -351,6 +351,39 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
       jumpTargets.set(block.range.startPc, block.index);
     }
   }
+  // Callee entries named by a proven internal-call pattern anywhere in
+  // the code (SCAN-R): the second push of a `PUSH ret, PUSH func, JUMP`
+  // triple names the callee. A dynamic return jump can only continue at
+  // an address some caller pushed as its return address, never at a
+  // callee entry, so callee entries stay out of the return candidate
+  // set below; the old blanket scan admitted them and let one entry's
+  // return flow into unrelated function bodies.
+  const pushValueOf = (opcode: number, immediate: readonly number[]): number | null => {
+    if (opcode < 0x60 || opcode > 0x63) {
+      return null;
+    }
+    return pushConstantValue(immediate);
+  };
+  const calleeTargets = new Set<number>();
+  for (const block of cfg.blocks) {
+    const instructions = block.instructions;
+    for (let at = 0; at + 2 < instructions.length; at += 1) {
+      const first = instructions[at];
+      const second = instructions[at + 1];
+      const third = instructions[at + 2];
+      if (first === undefined || second === undefined || third === undefined || third.opcode !== 0x56) {
+        continue;
+      }
+      const funcValue = pushValueOf(second.opcode, second.immediate);
+      if (funcValue === null || pushValueOf(first.opcode, first.immediate) === null) {
+        continue;
+      }
+      const callee = jumpTargets.get(funcValue);
+      if (callee !== undefined) {
+        calleeTargets.add(callee);
+      }
+    }
+  }
   const reached = new Set<number>([from]);
   const resolved = new Set<number>();
   const capped = new Set<number>();
@@ -394,7 +427,7 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
       for (const instruction of block.instructions) {
         if (instruction.opcode === 0x61 || instruction.opcode === 0x62) {
           const target = jumpTargets.get(pushConstantValue(instruction.immediate));
-          if (target !== undefined) {
+          if (target !== undefined && !calleeTargets.has(target)) {
             candidates.add(target);
           }
         }

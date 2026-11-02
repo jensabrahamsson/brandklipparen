@@ -1089,21 +1089,17 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         // mode stays unknown and the fact still stands. A zero write
         // proven only through the expression view (a clear carried
         // into a shared helper) still proves the flag flips back.
-        let mode = toggleMode(view.regions, slot);
-        if (mode === "trading-toggle" && exprProvesZeroWrite(input.bytecode, view.regions, slot)) {
-          mode = "pause";
-        }
-        if (mode !== "pause" && exprProvesBoolArgWrite(input.bytecode, view.regions, slot)) {
-          // A bool-argument writer stores both flag values through
-          // one entry (SCAN-P), so the flag flips both ways even
-          // though no constant write proves either direction.
-          mode = "pause";
-        }
-        if (mode === "unknown" && packedWrite !== null && packedWrite.shift !== null) {
-          // A packed clear among the guarded writers (SCAN-4): the
-          // legacy toggle scan sees no constant beside a packed
-          // store, but an AND-mask store that drops the writer bit
-          // proves the flag flips back, so the mode is a pause.
+        // A packed clear of the writer bit among the guarded writers
+        // (SCAN-R): an AND-mask store that drops the same bit the writer
+        // sets proves the flag flips back, even when the legacy toggle
+        // scan saw only the set side (a nonzero constant beside a packed
+        // set store) and called the flag one-way.
+        const packedBit =
+          packedWrite !== null && packedWrite.shift !== null ? packedWrite.shift : null;
+        const hasPackedClear = (): boolean => {
+          if (packedBit === null) {
+            return false;
+          }
           for (const candidate of view.regions) {
             if (isStandardTokenWriter(candidate.selector)) {
               continue;
@@ -1120,13 +1116,33 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             const cleared = [...candidateExprs.stores.values()].some(
               (record) =>
                 exprConstValue(record.slot) === BigInt(slot) &&
-                packedClearStore(record, packedWrite.shift as number),
+                packedClearStore(record, packedBit),
             );
             if (cleared) {
-              mode = "pause";
-              break;
+              return true;
             }
           }
+          return false;
+        };
+        let mode = toggleMode(view.regions, slot);
+        if (mode === "trading-toggle" && exprProvesZeroWrite(input.bytecode, view.regions, slot)) {
+          mode = "pause";
+        }
+        if (mode === "trading-toggle" && hasPackedClear()) {
+          mode = "pause";
+        }
+        if (mode !== "pause" && exprProvesBoolArgWrite(input.bytecode, view.regions, slot)) {
+          // A bool-argument writer stores both flag values through
+          // one entry (SCAN-P), so the flag flips both ways even
+          // though no constant write proves either direction.
+          mode = "pause";
+        }
+        if (mode === "unknown" && hasPackedClear()) {
+          // A packed clear among the guarded writers (SCAN-4): the
+          // legacy toggle scan sees no constant beside a packed
+          // store, but an AND-mask store that drops the writer bit
+          // proves the flag flips back, so the mode is a pause.
+          mode = "pause";
         }
         if (mode === "trading-toggle") {
           continue;

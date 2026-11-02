@@ -44,6 +44,8 @@ import {
   jumpSidePauseTokenHex,
   maskGatePauseTokenHex,
   roleOnlyPauseTokenHex,
+  scanRPackedClearTokenHex,
+  scanRSubGuardPauseTokenHex,
   shortCircuitPackedPauseTokenHex,
 } from "../../helpers/ownerControlFixtures.ts";
 import { ownershipDetectorPlugin } from "../../../src/plugins/detectors/ownership/index.ts";
@@ -407,6 +409,41 @@ describe("pause enforce-style gates (SCAN-2)", () => {
 
   test("compound owner-or-role guard proves the flag writers", () => {
     const findings = pauseDetectorPlugin.detect(hexInput(compoundGuardPauseTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });
+  });
+});
+
+describe("pause packed-clear and subtraction-guard idioms (SCAN-R)", () => {
+  function hexInput(hex: string): DetectorInput {
+    const parsed = Bytecode.parse(hex);
+    if (!parsed.ok) {
+      throw new Error("fixture bytecode must parse");
+    }
+    return Object.freeze({ bytecode: parsed.value, codeHash: mustOk(CodeHash.of(parsed.value)) });
+  }
+
+  test("packed clear beside a plain constant writer reports an extended pause fact", () => {
+    // The plain constant writer makes the legacy toggle scan read a
+    // one-way flag, while the AND-NOT writer clears the same packed
+    // bit the gate reads: the flag flips both ways, so the mode is a
+    // proven pause rather than a trading toggle.
+    const findings = pauseDetectorPlugin.detect(hexInput(scanRPackedClearTokenHex(true)));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 0, mode: "pause", proof: "extended" });
+  });
+
+  test("packed set beside a plain constant writer without a clear stays silent", () => {
+    expect(pauseDetectorPlugin.detect(hexInput(scanRPackedClearTokenHex(false)))).toEqual([]);
+  });
+
+  test("subtraction-guarded trading toggle reports an extended pause fact", () => {
+    // The flag writers prove their caller check by subtraction
+    // (owner load minus CALLER gated to a revert), an equality idiom
+    // with no EQ beside the load.
+    const findings = pauseDetectorPlugin.detect(hexInput(scanRSubGuardPauseTokenHex()));
     expect(findings).toHaveLength(1);
     expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
     expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });

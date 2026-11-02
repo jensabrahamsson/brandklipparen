@@ -41,6 +41,8 @@ import {
   ownerGuard,
   packedMappingBlacklistToken,
   push1,
+  scanRExemptLimitTokenHex,
+  scanRSubGuardFeeExemptTokenHex,
   sharedBaseGateTokenHex,
   sharedBlacklistTokenHex,
   tokenBytecode,
@@ -475,5 +477,29 @@ describe("blacklist enforce-style gates (SCAN-2)", () => {
   test("balance compare on the credited mapping stays silent", () => {
     expect(blacklistDetectorPlugin.detect(hexInput(balanceGateTokenHex()))).toEqual([]);
     expect(BALANCE_GATE_SET).toBe("0x0a9c6c1e");
+  });
+});
+
+describe("blacklist exemption precision (SCAN-R)", () => {
+  function hexInput(hex: string): DetectorInput {
+    const parsed = Bytecode.parse(hex);
+    if (!parsed.ok) {
+      throw new Error("fixture bytecode must parse");
+    }
+    return Object.freeze({ bytecode: parsed.value, codeHash: mustOk(CodeHash.of(parsed.value)) });
+  }
+
+  test("subtraction-guarded fee-exempt setter beside a trading flag stays silent", () => {
+    // The exempt entry only opens the transfer beside the trading
+    // flag, and its setter proves its caller check by subtraction
+    // alone: no list writer is proven, so no blacklist fact stands.
+    expect(blacklistDetectorPlugin.detect(hexInput(scanRSubGuardFeeExemptTokenHex()))).toEqual([]);
+  });
+
+  test("exempt entry that still runs a reverting limit check stays silent", () => {
+    // Both continuations of the exempt read run a limit compare
+    // that can revert before the balance store: a reachable revert
+    // past an exemption never proves the entry blocks a transfer.
+    expect(blacklistDetectorPlugin.detect(hexInput(scanRExemptLimitTokenHex()))).toEqual([]);
   });
 });

@@ -26,8 +26,10 @@ import {
   compoundPrivilegedGate,
   exprMappingBase,
   flavorBetween,
+  gateSideOutcomes,
   hasRevertingGateAfter,
   hasRevertingSide,
+  hasRevertingSideBounded,
   interpretRegionExprs,
   interpretRegionSlots,
   isStandardTokenWriter,
@@ -38,7 +40,7 @@ import {
   packedMappingGateExpr,
   packedMappingGateShift,
   privilegedGuardKind,
-  sideCanReachRevert,
+  sideCanReachRevertUnpriced,
 } from "../../../domain/ownerControl.ts";
 import type { Expr, RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
@@ -336,7 +338,7 @@ function revertingMappingGatePc(
     if (candidate.pc <= afterPc || candidate.pc > afterPc + 64) {
       continue;
     }
-    if (!hasRevertingSide(bytecode, code, gateMember, candidate.pc, "fall")) {
+    if (!hasRevertingSideBounded(bytecode, gateMember, candidate.pc, "fall")) {
       continue;
     }
     if (condReferencesMappingBase(jumpis.get(candidate.pc), base)) {
@@ -349,7 +351,12 @@ function revertingMappingGatePc(
 // Writer guard for extended analysis (SCAN-2): the proven owner check,
 // a role-slot or auth-mapping guard, or a compound owner-or-role gate.
 // Writers behind a shared check helper never reduce to one beside-window
-// caller compare, so all three proofs get their chance.
+// caller compare, so all three proofs get their chance. The owner check
+// here stays equality-only (SCAN-R): a subtraction-form owner guard
+// alone never proves a list writer, because the fee and pair setters
+// of trading-toggle tokens share that guard shape while their mapping
+// gates are exemptions, not lists. Role-slot and auth-mapping guards
+// keep their full proof, as does a compound gate.
 function writerGuarded(
   code: ReturnType<typeof disassemble>,
   member: (pc: number) => boolean,
@@ -358,10 +365,14 @@ function writerGuarded(
   jumpis: ReadonlyMap<number, Expr>,
   bytecode: DetectorInput["bytecode"],
 ): boolean {
-  if (ownerSlot !== null && ownerCheckVia(code, member, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+  if (
+    ownerSlot !== null &&
+    ownerCheckVia(code, member, ownerSlot, slotOf, jumpis, bytecode, false) !== null
+  ) {
     return true;
   }
-  if (privilegedGuardKind(code, member, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+  const kind = privilegedGuardKind(code, member, ownerSlot, slotOf, jumpis, bytecode);
+  if (kind === "role-slot" || kind === "role-mapping") {
     return true;
   }
   return compoundPrivilegedGate(code, member, ownerSlot, jumpis, bytecode);
@@ -550,9 +561,26 @@ export function exprMappingGatePc(
     ) {
       return pc;
     }
+    // A merely reachable revert down the set side is not enough
+    // (SCAN-R): a fee-exemption branch also reaches reverts further
+    // down (a trading-flag or wallet-limit check past the exemption),
+    // while the entry itself never blocks the transfer. The set side
+    // must instead prove like a gate: it reaches a revert without
+    // crossing a priced gate or a state write (a short-circuit list
+    // gate `listed && !exempt` reverts through one more boolean
+    // gate), or it halts before any store while the other side
+    // still stores (an early-return block).
     const truthySide = mappingTruthySide(cond, base);
-    if (truthySide !== null && sideCanReachRevert(bytecode, pc, truthySide)) {
+    if (truthySide !== null && sideCanReachRevertUnpriced(bytecode, pc, truthySide, jumpis)) {
       return pc;
+    }
+    if (truthySide !== null) {
+      const otherSide = truthySide === "jump" ? "fall" : "jump";
+      const truthyOutcomes = gateSideOutcomes(bytecode, pc, truthySide);
+      const otherOutcomes = gateSideOutcomes(bytecode, pc, otherSide);
+      if (truthyOutcomes.haltsWithoutStore && otherOutcomes.canStore) {
+        return pc;
+      }
     }
   }
   return null;
@@ -666,7 +694,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             gateBase !== null &&
             gateBase === writeBase &&
             gateJumpi !== undefined &&
-            hasRevertingSide(input.bytecode, code, gateMember, gateJumpi.pc, "fall")
+            hasRevertingSideBounded(input.bytecode, gateMember, gateJumpi.pc, "fall")
           ) {
             gateEvidencePc = gate.loadPc;
           }
@@ -682,7 +710,12 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           if (
             exprGate !== null &&
             exprGate.base === writeBase &&
-            hasRevertingSide(input.bytecode, code, gateMember, exprGate.jumpiPc, "fall")
+            hasRevertingSideBounded(input.bytecode, gateMember, exprGate.jumpiPc, "fall") &&
+            // A blocked side that still reaches a store is not blocked
+            // (SCAN-R): a fee-exemption read branches the same way, but
+            // its set side flows on into the balance writes, while a
+            // list gate's set side reverts before any store.
+            !gateSideOutcomes(input.bytecode, exprGate.jumpiPc, "fall").canStore
           ) {
             gateEvidencePc = exprGate.jumpiPc;
           }

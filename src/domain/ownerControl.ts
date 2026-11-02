@@ -2516,6 +2516,26 @@ export function hasRevertingSide(
   }
 }
 
+// Bounded-only reverting side (SCAN-R): the universal proof without
+// the positional fast path. The fast path credits any member REVERT
+// within 32 PCs past the jump, which a shared require revert further
+// down an OR chain (`flag || exempt[from] || exempt[to]`) satisfies
+// positionally even though the side under test flows on to the
+// transfer's stores. Callers that must tell a list gate from an
+// exemption branch use this stricter proof.
+export function hasRevertingSideBounded(
+  bytecode: BytecodeType,
+  isMember: (pc: number) => boolean,
+  jumpiPc: number,
+  side: "jump" | "fall",
+): boolean {
+  try {
+    return revertingSideBounded(bytecode, isMember, jumpiPc, side);
+  } catch {
+    return false;
+  }
+}
+
 // Existential revert reachability from one JUMPI side (SCAN-2): some
 // bounded path from the side reaches REVERT or INVALID. Unlike the
 // universal proof above, sibling branches may complete normally: a
@@ -2568,6 +2588,122 @@ export function sideCanReachRevert(
         const target = block.successors.find((candidate) => candidate.kind === "jump");
         next = target !== undefined ? [target.to] : dynamicReturnTargets(bytecode, current, true);
       } else if (block.terminal === "jumpi") {
+        const conditional = block.successors.find((candidate) => candidate.kind === "conditional");
+        next = conditional !== undefined && conditional.kind === "conditional"
+          ? [conditional.to, conditional.fallThrough]
+          : [];
+      } else if (block.terminal === "fall") {
+        const through = block.successors.find((candidate) => candidate.kind === "fall-through");
+        next = through !== undefined ? [through.to] : [];
+      }
+      for (const candidate of next) {
+        if (!seen.has(candidate)) {
+          seen.add(candidate);
+          queue.push(candidate);
+        }
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// Whether an expression prices a value through an amount compare or
+// arithmetic anywhere inside it (SCAN-R).
+function exprIsPriced(expr: Expr): boolean {
+  if (expr.kind === "op") {
+    if (["LT", "GT", "SLT", "SGT", "MUL", "DIV", "ADD", "SUB", "MOD"].includes(expr.name)) {
+      return true;
+    }
+    return expr.args.some((arg) => exprIsPriced(arg));
+  }
+  if (expr.kind === "calldata") {
+    return exprIsPriced(expr.offset);
+  }
+  if (expr.kind === "sload") {
+    return exprIsPriced(expr.slot);
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprIsPriced(word));
+  }
+  return false;
+}
+
+// Existential revert reachability that never crosses a priced gate
+// or a state write (SCAN-R): some bounded path from the side reaches
+// REVERT or INVALID without passing a JUMPI whose condition prices
+// an amount and without crossing SSTORE or a CALL-family opcode. A
+// short-circuit list gate (`listed && !exempt`) reaches its revert
+// through one more boolean gate, so it proves here; an exemption
+// branch whose only reverts sit past a limit compare or past the
+// transfer's own stores never does.
+export function sideCanReachRevertUnpriced(
+  bytecode: BytecodeType,
+  jumpiPc: number,
+  side: "jump" | "fall",
+  jumpis: ReadonlyMap<number, Expr>,
+): boolean {
+  try {
+    const cfg = cfgOf(bytecode);
+    const atJump = blockIndexAtPc(bytecode, jumpiPc);
+    if (atJump < 0 || atJump >= cfg.blocks.length) {
+      return false;
+    }
+    const jump = cfg.blocks[atJump];
+    if (
+      jump === undefined ||
+      !jump.instructions.some((instruction) => instruction.pc === jumpiPc && instruction.opcode === 0x57)
+    ) {
+      return false;
+    }
+    const edge = jump.successors.find((candidate) => candidate.kind === "conditional");
+    if (edge === undefined || edge.kind !== "conditional") {
+      return false;
+    }
+    const start = side === "jump" ? edge.to : edge.fallThrough;
+    const seen = new Set<number>([start]);
+    const queue: number[] = [start];
+    let visited = 0;
+    while (queue.length > 0) {
+      const current = queue.shift() ?? -1;
+      visited += 1;
+      if (visited > SIDE_REACH_MAX_BLOCKS) {
+        return false;
+      }
+      const block = cfg.blocks[current];
+      if (block === undefined) {
+        continue;
+      }
+      let blocked = false;
+      for (const instruction of block.instructions) {
+        if (instruction.opcode === 0xfd || instruction.opcode === 0xfe) {
+          return true;
+        }
+        if (
+          instruction.opcode === 0x55 ||
+          instruction.opcode === 0xf1 ||
+          instruction.opcode === 0xf2 ||
+          instruction.opcode === 0xf4 ||
+          instruction.opcode === 0xfa
+        ) {
+          blocked = true;
+          break;
+        }
+      }
+      if (blocked) {
+        continue;
+      }
+      let next: readonly number[] = [];
+      if (block.terminal === "jump") {
+        const target = block.successors.find((candidate) => candidate.kind === "jump");
+        next = target !== undefined ? [target.to] : dynamicReturnTargets(bytecode, current, true);
+      } else if (block.terminal === "jumpi") {
+        const jumpiInstruction = block.instructions[block.instructions.length - 1];
+        const cond = jumpiInstruction === undefined ? undefined : jumpis.get(jumpiInstruction.pc);
+        if (cond !== undefined && cond.kind !== "unknown" && exprIsPriced(cond)) {
+          continue;
+        }
         const conditional = block.successors.find((candidate) => candidate.kind === "conditional");
         next = conditional !== undefined && conditional.kind === "conditional"
           ? [conditional.to, conditional.fallThrough]
@@ -3030,6 +3166,22 @@ function exprIsOwnerEq(expr: Expr, ownerSlot: number): boolean {
   );
 }
 
+// Equality by subtraction (SCAN-R): a difference of the owner load and
+// the caller used as a jump condition is an equality test with the
+// opposite polarity (nonzero exactly when the two differ), an idiom
+// some owner checks compile to instead of an EQ.
+function exprIsOwnerSubEq(expr: Expr, ownerSlot: number): boolean {
+  if (expr.kind !== "op" || expr.name !== "SUB" || expr.args.length !== 2) {
+    return false;
+  }
+  const left = expr.args[0] ?? EXPR_UNKNOWN;
+  const right = expr.args[1] ?? EXPR_UNKNOWN;
+  return (
+    (exprIsOwnerLoadSide(left, ownerSlot) && exprIsCallerSide(right)) ||
+    (exprIsOwnerLoadSide(right, ownerSlot) && exprIsCallerSide(left))
+  );
+}
+
 // Owner caller check through expressions: a member JUMPI whose condition
 // (through ISZERO chains) is EQ of the owner load and caller (each
 // masked or not), with a revert on the failing side. An even ISZERO
@@ -3043,6 +3195,7 @@ export function ownerCheckExpr(
   ownerSlot: number,
   jumpis: ReadonlyMap<number, Expr>,
   bytecode?: BytecodeType,
+  allowSubEq: boolean = true,
 ): number | null {
   for (const [pc, cond] of jumpis) {
     if (!isMember(pc)) {
@@ -3052,10 +3205,20 @@ export function ownerCheckExpr(
       continue;
     }
     const { inner, count } = exprStripIszero(cond);
-    if (!exprIsOwnerEq(inner, ownerSlot)) {
+    const isEq = exprIsOwnerEq(inner, ownerSlot);
+    const isSubEq = allowSubEq && !isEq && exprIsOwnerSubEq(inner, ownerSlot);
+    if (!isEq && !isSubEq) {
       continue;
     }
-    const side = count % 2 === 1 ? "jump" : "fall";
+    // A subtraction test flips the failing side: the difference is
+    // nonzero (the jump is taken) exactly for a non-owner caller.
+    const side = isSubEq
+      ? count % 2 === 1
+        ? "fall"
+        : "jump"
+      : count % 2 === 1
+        ? "jump"
+        : "fall";
     if (bytecode !== undefined) {
       if (hasRevertingSide(bytecode, code, isMember, pc, side)) {
         return pc;
@@ -3076,8 +3239,9 @@ export function ownerCheckVia(
   slotOf?: SlotLookup,
   jumpis?: ReadonlyMap<number, Expr>,
   bytecode?: BytecodeType,
+  allowSubEq: boolean = true,
 ): "expr" | "window" | null {
-  if (jumpis !== undefined && ownerCheckExpr(code, isMember, ownerSlot, jumpis, bytecode) !== null) {
+  if (jumpis !== undefined && ownerCheckExpr(code, isMember, ownerSlot, jumpis, bytecode, allowSubEq) !== null) {
     return "expr";
   }
   if (hasOwnerCallerCheck(code, isMember, ownerSlot, slotOf)) {

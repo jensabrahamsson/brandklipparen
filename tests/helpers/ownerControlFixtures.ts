@@ -2892,3 +2892,170 @@ export function rawCalldataRateTokenHex(): string {
   asm.push1(0x04).op(0x35).push1(0x05).op(0x55, 0x00);
   return asm.build();
 }
+
+// SCAN-R fixtures: synthetic mirrors of the real-bytecode idioms the
+// recall round fixed. No real bytecode, selectors or addresses.
+export const SCANR_PLAIN_SET = "0x1c2d3e4f";
+export const SCANR_SUB_SET = "0x2d3e4f50";
+export const SCANR_SUB_CLEAR = "0x3e4f5061";
+export const SCANR_OWNER_SET = "0x4f506172";
+
+// Owner guard by subtraction (SCAN-R): the caller check compares the
+// owner load and CALLER with SUB instead of EQ, jumping to its revert
+// while the difference reads nonzero. The guarded body follows the
+// guard and ends before the revert label.
+function scanRSubGuard(asm: Asm, revertLabel: string): void {
+  asm.op(0x33).push1(0x00).op(0x54, 0x03);
+  asm.pushLabel2(revertLabel).op(0x57);
+}
+
+function scanRRevert(asm: Asm, revertLabel: string): void {
+  asm.label(revertLabel).op(0x5b).push1(0x00).op(0x80, 0xfd);
+}
+
+// Packed pause with a plain constant writer beside it (SCAN-R): one
+// guarded setter sets bit 8 of slot 0 with a shifted OR, another
+// guarded setter writes the whole slot as constant one (the legacy
+// toggle scan therefore reads a one-way flag), and with `withClear`
+// a third guarded setter clears the same bit with an AND-NOT mask.
+// The transfer path reverts while bit 8 reads set.
+export function scanRPackedClearTokenHex(withClear: boolean): string {
+  const asm = new Asm();
+  const entries: (readonly [string, string])[] = [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [PACKED_PAUSE_SET, "setPackedEntry"],
+    [SCANR_PLAIN_SET, "setPlainEntry"],
+  ];
+  if (withClear) {
+    entries.push([PACKED_PAUSE_CLEAR, "clearPackedEntry"]);
+  }
+  scan3Dispatcher(asm, entries);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x00).op(0x54);
+  asm.push1(0x08).op(0x1c);
+  asm.push1(0xff).op(0x16, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setPackedEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setPackedOk", "setPackedBlocked");
+  asm.push1(0x00).op(0x54);
+  asm.push1(0x01).push1(0x08).op(0x1b, 0x17);
+  asm.push1(0x00).op(0x55, 0x00);
+  asm.label("setPlainEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setPlainOk", "setPlainBlocked");
+  asm.push1(0x01).push1(0x00).op(0x55, 0x00);
+  if (withClear) {
+    asm.label("clearPackedEntry").op(0x5b);
+    scan3OwnerGuard(asm, "clearPackedOk", "clearPackedBlocked");
+    asm.push1(0x00).op(0x54);
+    asm.push1(0x01).push1(0x08).op(0x1b, 0x19, 0x16);
+    asm.push1(0x00).op(0x55, 0x00);
+  }
+  return asm.build();
+}
+
+// Trading toggle behind a subtraction owner guard (SCAN-R): two
+// guarded setters write one and zero to flag slot 4, the transfer
+// path reverts while the flag reads clear, and a separate equality-
+// guarded writer stores CALLER into owner slot 0 so the owner seat
+// is proven. The flag writers carry no EQ, so only the subtraction
+// guard proof can prove them.
+export function scanRSubGuardPauseTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCANR_SUB_SET, "setEntry"],
+    [SCANR_SUB_CLEAR, "clearEntry"],
+    [SCANR_OWNER_SET, "ownerEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x04).op(0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scanRSubGuard(asm, "setRevert");
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  scanRRevert(asm, "setRevert");
+  asm.label("clearEntry").op(0x5b);
+  scanRSubGuard(asm, "clearRevert");
+  asm.push1(0x00).push1(0x04).op(0x55, 0x00);
+  scanRRevert(asm, "clearRevert");
+  asm.label("ownerEntry").op(0x5b);
+  scan3OwnerGuard(asm, "ownerOk", "ownerBlocked");
+  asm.op(0x33).push1(0x00).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Fee-exempt setter behind a subtraction owner guard (SCAN-R
+// negative): the transfer path opens while a trading flag (slot 4)
+// reads set or while the caller's entry of mapping base 7 reads set,
+// and a guarded equality writer proves owner slot 0. The exemption
+// setter is privileged in fact, but its subtraction guard alone
+// never proves a list writer for the blacklist proof.
+export function scanRSubGuardFeeExemptTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [TRANSFER_FROM_SELECTOR, "transferFromEntry"],
+    [FEE_EXEMPT_SET, "setEntry"],
+    [SCANR_OWNER_SET, "ownerEntry"],
+  ]);
+  scan3SharedHead(asm);
+  asm.label("setEntry").op(0x5b);
+  scanRSubGuard(asm, "setRevert");
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  scanRRevert(asm, "setRevert");
+  asm.label("ownerEntry").op(0x5b);
+  scan3OwnerGuard(asm, "ownerOk", "ownerBlocked");
+  asm.op(0x33).push1(0x00).op(0x55, 0x00);
+  asm.label("shared").op(0x5b);
+  asm.push1(0x04).op(0x54);
+  asm.pushLabel2("sharedOk").op(0x57);
+  scan3MappingLoad(asm, 7);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  scan3SharedTail(asm);
+  return asm.build();
+}
+
+// Exempt entry that still runs a limit check (SCAN-R negative): the
+// transfer path reads mapping base 7 as a cleaned boolean; both the
+// exempt and the non-exempt continuation run a limit compare on
+// slot 6 that can revert, then store balances. A guarded setter
+// writes base 7 and an equality-guarded writer proves owner slot 0.
+// The exempt read branches around no list gate, so no blacklist
+// fact is proven even though a revert is reachable past it.
+export function scanRExemptLimitTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [FEE_EXEMPT_SET, "setEntry"],
+    [SCANR_OWNER_SET, "ownerEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.push1(0xff).op(0x16, 0x15);
+  asm.pushLabel2("limit").op(0x57);
+  asm.label("limit").op(0x5b);
+  asm.push1(0x06).op(0x54);
+  asm.push1(0x24).op(0x35, 0x10, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  asm.label("ownerEntry").op(0x5b);
+  scan3OwnerGuard(asm, "ownerOk", "ownerBlocked");
+  asm.op(0x33).push1(0x00).op(0x55, 0x00);
+  return asm.build();
+}

@@ -84,16 +84,18 @@ function sharedReturnFixture(): SharedReturnFixture {
   return { hex: asm.build(), fallbackPc, sharedPc, sharedJumpPc, ret1GatePc, ret2GatePc };
 }
 
-// Seventeen JUMPDEST constants visible from one entry: sixteen dead
-// targets plus the shared helper. The shared return stays unresolved past
-// the per-jump cap of sixteen.
+// Seventeen JUMPDEST constants visible from one entry: seventeen dead
+// targets plus the shared helper. The helper is a proven callee and
+// stays out of the return candidate set, leaving seventeen candidates
+// past the per-jump cap of sixteen, so the shared return stays
+// unresolved.
 function cappedFixture(): { hex: string; entryPc: number; sharedJumpPc: number } {
   const asm = new Asm();
   asm.label("entry");
   const entryPc = asm.pc;
   asm.op(0x5b);
   const dead: string[] = [];
-  for (let index = 1; index <= 16; index += 1) {
+  for (let index = 1; index <= 17; index += 1) {
     const name = `dead${index.toString().padStart(2, "0")}`;
     dead.push(name);
     asm.pushLabel2(name);
@@ -370,5 +372,66 @@ describe("reachability v2 in owner control", () => {
     // scored detector path is untouched by the v2 wiring.
     expect(analyzeOwnerControl(code)).toEqual(analyzeOwnerControl(code, { reach: "v1" }));
     expect(analyzeOwnerControl(code)).toEqual(analyzeOwnerControl(code, {}));
+  });
+});
+
+describe("reachability v2 callee-entry exclusion (SCAN-R)", () => {
+  test("scanr_return_never_lands_on_a_callee_entry", () => {
+    // One entry calls a shared helper that returns through a dynamic
+    // JUMP; the helper also carries a stray push naming a second
+    // function that another entry calls as a proven internal callee.
+    // A return can only continue at a caller-pushed return address,
+    // never at a callee entry, so the callee block stays out of the
+    // first entry's reach while its own continuation joins it.
+    const asm = new Asm();
+    asm.op(0x80).push4("a9059cbb").op(0x14);
+    asm.pushLabel2("transferEntry").op(0x57);
+    asm.op(0x80).push4("23b872dd").op(0x14);
+    asm.pushLabel2("transferFromEntry").op(0x57);
+    asm.op(0x80).push4("11111111").op(0x14);
+    asm.pushLabel2("calleeEntry").op(0x57);
+    asm.label("fallback");
+    asm.op(0x5b).push1(0x00).op(0x80, 0xfd);
+    asm.label("transferEntry").op(0x5b);
+    asm.pushLabel2("ret1");
+    asm.pushLabel2("shared");
+    asm.op(0x56);
+    asm.label("ret1");
+    const ret1Pc = asm.pc;
+    asm.op(0x5b, 0x00);
+    asm.label("transferFromEntry").op(0x5b);
+    asm.pushLabel2("ret2");
+    asm.pushLabel2("calleeEntry");
+    asm.op(0x56);
+    asm.label("ret2");
+    asm.op(0x5b, 0x00);
+    asm.label("calleeEntry");
+    const calleePc = asm.pc;
+    asm.op(0x5b, 0x00);
+    asm.label("shared");
+    asm.op(0x5b);
+    asm.pushLabel2("calleeEntry");
+    asm.op(0x50);
+    const sharedJumpPc = asm.pc;
+    asm.op(0x56);
+    asm.op(0xfe);
+    const code = bytecodeOf(asm.build());
+    const cfg = buildCfg(lift(code));
+    const entries = findFunctionEntries(code, cfg);
+    const transfer = entries.find((entry) => entry.selector === TRANSFER);
+    if (transfer === undefined) {
+      throw new Error("expected the transfer entry to resolve");
+    }
+    const blockIndexOf = (pc: number): number => {
+      const block = cfg.blocks.find((candidate) => candidate.range.startPc === pc);
+      if (block === undefined) {
+        throw new Error(`expected a block starting at ${pc}`);
+      }
+      return block.index;
+    };
+    const reach = resolveEntryReachV2(cfg, transfer.entryBlock);
+    expect(reach.resolvedJumpAtPc).toEqual([sharedJumpPc]);
+    expect(reach.reachedBlocks.has(blockIndexOf(ret1Pc))).toBe(true);
+    expect(reach.reachedBlocks.has(blockIndexOf(calleePc))).toBe(false);
   });
 });
