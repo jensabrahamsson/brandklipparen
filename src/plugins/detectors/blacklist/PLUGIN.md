@@ -108,3 +108,13 @@ per-address mapping that only exempts its holder from fees, limits or
 a trading flag branches around a revert on another value; that nearby
 revert no longer proves a blacklist, while a gate that reverts on the
 entry itself (one or both transfer parties) still proves.
+
+SCAN-B precision: every extended gate proof now checks polarity: the
+blocking side must be the side taken while the gated entry reads set.
+A gate that reverts while its entry reads clear (an allowlist
+requirement on an exemption or pair entry) never proves a list. The
+extended proof also follows the transfer entry's internal-call body,
+so a gate in a guard helper below the transfer update hook proves
+the same way, and a list writer that loops over an array or delegates
+to a helper, or whose caller guard sits in a shared modifier helper
+or behind a second address seat, still counts as a writer.

@@ -163,10 +163,10 @@ function measure(power: Power): { tp: number; fp: number; fn: number; tn: number
 }
 
 describe("SCAN-4 synthetic fixture measurement (per class, unweighted)", () => {
-  test("blacklist synthetic classes: getter-helper class is a known miss", () => {
+  test("blacklist synthetic classes: getter-helper class is now detected", () => {
     const result = measure("blacklist");
     console.log(`blacklist synthetic classes TP=${result.tp} FP=${result.fp} FN=${result.fn} TN=${result.tn}`);
-    expect(result).toEqual({ tp: 7, fp: 0, fn: 1, tn: 3 });
+    expect(result).toEqual({ tp: 8, fp: 0, fn: 0, tn: 3 });
   });
 
   test("pause synthetic classes: getter-helper classes are known misses", () => {

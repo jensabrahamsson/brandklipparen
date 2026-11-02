@@ -3123,3 +3123,136 @@ export function scanRExemptLimitTokenHex(): string {
   asm.op(0x33).push1(0x00).op(0x55, 0x00);
   return asm.build();
 }
+
+// Allowlist-and token (SCAN-B, negative): a guarded writer sets
+// mapping base 7, and the transfer entry requires both entries of
+// base 7 to read set before it stores. A set entry lets a transfer
+// through and a clear entry blocks it, which is an allowlist power,
+// never a list, so no blacklist fact is proven.
+export function allowlistAndBlacklistTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.op(0x15);
+  asm.pushLabel2("blocked").op(0x57);
+  scan3MappingLoad(asm, 7);
+  asm.op(0x15);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  return asm.build();
+}
+
+// Allowlist-or token (SCAN-B, negative): a guarded writer sets
+// mapping base 7, and the transfer entry passes while either entry
+// of base 7 reads set and reverts while both read clear. The set
+// side is the passing side, so no blacklist fact is proven.
+export function allowlistOrBlacklistTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.pushLabel2("pass").op(0x57);
+  scan3MappingLoad(asm, 7);
+  asm.pushLabel2("pass").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("pass").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  return asm.build();
+}
+
+// Nested-helper blacklist token (SCAN-B): both transfer entries jump
+// into a mid helper that jumps into a gate helper, which loads
+// mapping base 7 and reverts while the entry reads set. A guarded
+// writer sets base 7. The gate sits two internal jumps below the
+// transfer entry, outside every entry-scoped walk.
+export function nestedHelperBlacklistTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [TRANSFER_FROM_SELECTOR, "transferFromEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("tAfter");
+  asm.pushLabel2("mid");
+  asm.op(0x56);
+  asm.label("transferFromEntry").op(0x5b);
+  asm.pushLabel2("tAfter");
+  asm.pushLabel2("mid");
+  asm.op(0x56);
+  asm.label("tAfter").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("mid").op(0x5b);
+  asm.pushLabel2("mAfter");
+  asm.pushLabel2("gate");
+  asm.op(0x56);
+  asm.label("mAfter").op(0x5b);
+  asm.op(0x56);
+  asm.label("gate").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.op(0x15);
+  asm.pushLabel2("gOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("gOk").op(0x5b);
+  asm.op(0x56);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  return asm.build();
+}
+
+// Listed-and-not-exempt token (SCAN-B): the gate helper loads the
+// list entry of base 7 and, while it reads set, loads the exemption
+// entry of base 8 and reverts unless that reads set too. Guarded
+// writers set both bases. The list gate proves through the second
+// boolean test.
+export function listedNotExemptBlacklistTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+    [SCAN3_CLEAR, "exemptEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("tAfter");
+  asm.pushLabel2("gate");
+  asm.op(0x56);
+  asm.label("tAfter").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("gate").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.op(0x15);
+  asm.pushLabel2("gOk").op(0x57);
+  scan3MappingLoad(asm, 8);
+  asm.pushLabel2("gOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("gOk").op(0x5b);
+  asm.op(0x56);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  asm.label("exemptEntry").op(0x5b);
+  scan3OwnerGuard(asm, "exemptOk", "exemptBlocked");
+  scan3MappingWrite(asm, 8);
+  asm.op(0x00);
+  return asm.build();
+}

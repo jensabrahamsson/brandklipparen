@@ -23,11 +23,11 @@ import {
   TRANSFER_FROM_SELECTOR,
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
+  callGraphBodyPcs,
   compoundPrivilegedGate,
   exprMappingBase,
   flavorBetween,
   gateSideOutcomes,
-  hasRevertingGateAfter,
   hasRevertingSide,
   hasRevertingSideBounded,
   interpretRegionExprs,
@@ -35,6 +35,7 @@ import {
   isStandardTokenWriter,
   mappingBaseNearAccess,
   mappingLoadNearFlavor,
+  nearestFlavorPc,
   ownerCheckVia,
   packedMappingGateExpr,
   packedMappingGateShift,
@@ -232,7 +233,7 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
       if (
         revertingMappingGatePc(input.bytecode, code, gateMember, transferExprs.jumpis, precise.cmpPc, writeBase) ===
           null &&
-        exprMappingGatePc(input.bytecode, code, gateMember, transferExprs.jumpis, writeBase) === null
+        exprMappingGatePc(input.bytecode, code, gateMember, transferExprs.jumpis, writeBase, transferExprs.loads) === null
       ) {
         continue;
       }
@@ -340,7 +341,16 @@ function revertingMappingGatePc(
     if (!hasRevertingSideBounded(bytecode, gateMember, candidate.pc, "fall")) {
       continue;
     }
-    if (condReferencesMappingBase(jumpis.get(candidate.pc), base)) {
+    const cond = jumpis.get(candidate.pc);
+    if (!condReferencesMappingBase(cond, base)) {
+      continue;
+    }
+    // Polarity (SCAN-B): a list blocks while its entry reads set, so the
+    // reverting fall side must be the side taken while the entry is set.
+    // A gate that reverts while the entry reads clear (a `require` on
+    // `exempt`) is an allowlist shape, never a list, and stays silent here.
+    const truthy = cond === undefined ? null : mappingTruthySide(cond, base);
+    if (truthy === null || truthy === "fall") {
       return candidate.pc;
     }
   }
@@ -557,6 +567,59 @@ export function scratchPairBase(
   return null;
 }
 
+// Whether the fall side of a gate jump is the side taken while the
+// gated entry reads set (SCAN-B): from the jump condition when the
+// interpreter proves it, else from the ISZERO parity between the
+// nearest preceding load and the jump. Null stays undecided.
+function fallIsTruthySide(
+  code: ReturnType<typeof disassemble>,
+  jumpis: ReadonlyMap<number, Expr>,
+  jumpiPc: number,
+  base: number,
+  member?: (pc: number) => boolean,
+): boolean | null {
+  const cond = jumpis.get(jumpiPc);
+  if (cond !== undefined && cond.kind !== "unknown") {
+    if (!condReferencesMappingBase(cond, base)) {
+      return false;
+    }
+    const truthy = mappingTruthySide(cond, base);
+    return truthy === null ? null : truthy === "fall";
+  }
+  const jumpiIndex = code.findIndex((insn) => insn.pc === jumpiPc);
+  if (jumpiIndex < 0) {
+    return null;
+  }
+  let iszero = 0;
+  for (let back = jumpiIndex - 1, steps = 0; back >= 0 && steps < 40; back -= 1, steps += 1) {
+    const cand = code[back];
+    if (cand === undefined) {
+      return null;
+    }
+    if (cand.opcode === 0x15) {
+      iszero += 1;
+      continue;
+    }
+    if (cand.opcode === 0x14) {
+      return null;
+    }
+    if (cand.opcode === 0x54) {
+      // The parity only names the gate when the load hashes the
+      // written base; a constant-slot load beside the jump (a trading
+      // flag past an exemption branch) is a different power.
+      if (member !== undefined) {
+        const loadBase =
+          mappingBaseNearAccess(code, member, cand.pc) ?? scratchPairBase(code, member, cand.pc);
+        if (loadBase !== null && loadBase !== base) {
+          return false;
+        }
+      }
+      return iszero % 2 === 1;
+    }
+  }
+  return null;
+}
+
 // First member JUMPI whose condition bool-gates on `base` with a
 // reverting side, or null (SCAN-2): the enforce-style gate jumps
 // straight to its revert block while the entry reads set, with no
@@ -569,16 +632,29 @@ export function exprMappingGatePc(
   gateMember: (pc: number) => boolean,
   jumpis: ReadonlyMap<number, Expr>,
   base: number,
+  loads?: ReadonlyMap<number, Expr>,
 ): number | null {
+  const indexAt = new Map<number, number>();
+  for (let at = 0; at < code.length; at += 1) {
+    const insn = code[at];
+    if (insn !== undefined) {
+      indexAt.set(insn.pc, at);
+    }
+  }
   const ordered = [...jumpis.entries()].sort((left, right) => left[0] - right[0]);
   for (const [pc, cond] of ordered) {
     if (!gateMember(pc) || !condBoolGatesOnBase(cond, base)) {
       continue;
     }
-    if (
-      hasRevertingSide(bytecode, code, gateMember, pc, "fall") ||
-      hasRevertingSide(bytecode, code, gateMember, pc, "jump")
-    ) {
+    // Polarity (SCAN-B): only the side taken while the entry reads set
+    // may block. A jump that reverts on either side proves nothing: an
+    // allowlist gate (a `require` on `exempt[from] && exempt[to]`)
+    // reverts while its entry reads clear, which is the opposite power.
+    const truthySide = mappingTruthySide(cond, base);
+    if (truthySide === null) {
+      continue;
+    }
+    if (hasRevertingSide(bytecode, code, gateMember, pc, truthySide)) {
       return pc;
     }
     // A merely reachable revert down the set side is not enough
@@ -590,20 +666,457 @@ export function exprMappingGatePc(
     // gate `listed && !exempt` reverts through one more boolean
     // gate), or it halts before any store while the other side
     // still stores (an early-return block).
-    const truthySide = mappingTruthySide(cond, base);
-    if (truthySide !== null && sideCanReachRevertUnpriced(bytecode, pc, truthySide, jumpis)) {
+    const otherSide = truthySide === "jump" ? "fall" : "jump";
+    // The clear side must stay open: if it reverts on every path the
+    // entry is an allowlist requirement, not a list (SCAN-B).
+    if (
+      truthyReachesRevertSoon(code, indexAt, pc, truthySide, base, gateMember, undefined, false, loads) &&
+      !hasRevertingSideBounded(bytecode, gateMember, pc, otherSide)
+    ) {
       return pc;
     }
-    if (truthySide !== null) {
-      const otherSide = truthySide === "jump" ? "fall" : "jump";
-      const truthyOutcomes = gateSideOutcomes(bytecode, pc, truthySide);
-      const otherOutcomes = gateSideOutcomes(bytecode, pc, otherSide);
-      if (truthyOutcomes.haltsWithoutStore && otherOutcomes.canStore) {
-        return pc;
-      }
+    // Silent no-op gate: the set side halts soon while the clear side
+    // still stores (SCAN-B, bounded like the helper-body proof).
+    const otherOutcomes = gateSideOutcomes(bytecode, pc, otherSide);
+    if (
+      truthyReachesRevertSoon(code, indexAt, pc, truthySide, base, gateMember, undefined, true, loads) &&
+      otherOutcomes.canStore
+    ) {
+      return pc;
     }
   }
   return null;
+}
+
+// Bounded set-side revert reach (SCAN-B): from one side of a gate jump,
+// a REVERT or INVALID within a short instruction walk that crosses at
+// most one further conditional jump and no priced opcode (an amount
+// compare or arithmetic), no store and no call. A short-circuit list
+// gate (`listed && !exempt`) reaches its revert through exactly one
+// more boolean gate; an allowlist pass side continues into the priced
+// transfer body, whose reverts sit past priced compares and stores.
+function truthyReachesRevertSoon(
+  code: ReturnType<typeof disassemble>,
+  indexAt: ReadonlyMap<number, number>,
+  jumpiPc: number,
+  side: "jump" | "fall",
+  base?: number,
+  member?: (pc: number) => boolean,
+  slotOf?: SlotLookup,
+  halt = false,
+  loads?: ReadonlyMap<number, Expr>,
+): boolean {
+  const startIndex = indexAt.get(jumpiPc);
+  if (startIndex === undefined) {
+    return false;
+  }
+  const destOf = (at: number): number | null => {
+    for (let back = at - 1, steps = 0; back >= 0 && steps < 4; back -= 1, steps += 1) {
+      const cand = code[back];
+      if (cand === undefined) {
+        return null;
+      }
+      if (cand.opcode >= 0x60 && cand.opcode <= 0x63 && cand.immediate !== undefined) {
+        let value = 0;
+        for (const byte of cand.immediate) {
+          value = value * 256 + byte;
+        }
+        return value;
+      }
+      if (cand.opcode !== 0x80 && cand.opcode !== 0x90) {
+        return null;
+      }
+    }
+    return null;
+  };
+  // Amount compares and scaling only: ADD and SUB also build revert
+  // messages and memory pointers, so they never price a gate here.
+  const priced = new Set([0x10, 0x11, 0x12, 0x13, 0x02, 0x04, 0x05, 0x06]);
+  type Frame = {
+    readonly at: number;
+    readonly crossed: number;
+    readonly steps: number;
+    readonly seenBase: number | null;
+  };
+  const seen = new Set<string>();
+  const queue: Frame[] = [];
+  if (side === "fall") {
+    queue.push(Object.freeze({ at: startIndex + 1, crossed: 0, steps: 0, seenBase: null }));
+  } else {
+    const dest = destOf(startIndex);
+    const destIndex = dest === null ? undefined : indexAt.get(dest);
+    if (destIndex !== undefined) {
+      queue.push(Object.freeze({ at: destIndex, crossed: 0, steps: 0, seenBase: null }));
+    }
+  }
+  while (queue.length > 0) {
+    const frame = queue.shift();
+    if (frame === undefined || frame.steps > 96) {
+      continue;
+    }
+    const key = `${frame.at}:${frame.crossed}:${frame.seenBase ?? -1}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    let at = frame.at;
+    let crossed = frame.crossed;
+    let steps = frame.steps;
+    let seenBase = frame.seenBase;
+    while (at < code.length && steps <= 96) {
+      const insn = code[at];
+      if (insn === undefined) {
+        break;
+      }
+      steps += 1;
+      if (insn.opcode === 0xfd || insn.opcode === 0xfe) {
+        return !halt;
+      }
+      if (halt && (insn.opcode === 0x00 || insn.opcode === 0xf3)) {
+        return true;
+      }
+      if (insn.opcode === 0x55 || insn.opcode === 0xf1 || insn.opcode === 0xf2 || insn.opcode === 0xf4 || insn.opcode === 0xfa) {
+        break;
+      }
+      if (priced.has(insn.opcode)) {
+        break;
+      }
+      if (insn.opcode === 0x57) {
+        if (crossed >= 1) {
+          break;
+        }
+        // Cross only a boolean gate on another entry (SCAN-B): a
+        // second test of the same mapping (a `require` on
+        // `exempt[from] && exempt[to]`) can still revert on the other
+        // party, so the
+        // first entry alone never blocks there. A second test whose
+        // entry was loaded before the gate (a stack-cached exemption)
+        // loads nothing on this walk, so it still crosses.
+        if (base !== undefined && seenBase === base) {
+          break;
+        }
+        // The crossed test must negate a boolean entry (SCAN-B): a
+        // short-circuit list gate tests `!exempt` on its second jump,
+        // which carries an ISZERO just before it. A bare stack bool
+        // from an amount compare (`amount <= max` cached on the stack)
+        // carries none, and its revert is a limit, not a list.
+        let negated = false;
+        for (let back = at - 1, steps = 0; back >= 0 && steps < 5; back -= 1, steps += 1) {
+          const cand = code[back];
+          if (cand === undefined || cand.opcode === 0x5b) {
+            break;
+          }
+          if (cand.opcode === 0x15) {
+            negated = true;
+            break;
+          }
+        }
+        if (!negated) {
+          break;
+        }
+        crossed += 1;
+        const dest = destOf(at);
+        const destIndex = dest === null ? undefined : indexAt.get(dest);
+        if (destIndex !== undefined) {
+          queue.push(Object.freeze({ at: destIndex, crossed, steps, seenBase }));
+        }
+        at += 1;
+        continue;
+      }
+      if (insn.opcode === 0x54 && base !== undefined && member !== undefined) {
+        seenBase =
+          exprMappingBase(loads?.get(insn.pc)) ??
+          mappingBaseNearAccess(code, member, insn.pc, slotOf) ??
+          mappingBaseNearAccess(code, () => true, insn.pc, slotOf);
+      }
+      if (insn.opcode === 0x56) {
+        const dest = destOf(at);
+        const destIndex = dest === null ? undefined : indexAt.get(dest);
+        if (destIndex === undefined) {
+          break;
+        }
+        at = destIndex;
+        continue;
+      }
+      if (insn.opcode === 0x00 || insn.opcode === 0xf3 || insn.opcode === 0xff) {
+        break;
+      }
+      at += 1;
+    }
+  }
+  return false;
+}
+
+// Helper-body mapping gate (SCAN-B): the gate load sits in an internal
+// helper two or more jumps below the transfer entry (a guard helper
+// called from the transfer update hook), so neither the entry region
+// nor its expression walk ever names the load. The transfer entry's
+// internal-call body still contains it: a load there that hashes the
+// written base, followed by a first jump whose set side blocks (a
+// revert on every set-side path, a revert reachable from the set side
+// without crossing a priced gate or a store while the clear side
+// stays open, or a silent halt while the clear side still stores),
+// proves the same list gate. Polarity is required throughout: a jump
+// that reverts while the entry reads clear is an allowlist shape.
+function bodyMappingGatePc(
+  bytecode: DetectorInput["bytecode"],
+  code: ReturnType<typeof disassemble>,
+  entryPc: number,
+  gateSlotOf: SlotLookup,
+  jumpis: ReadonlyMap<number, Expr>,
+  loads: ReadonlyMap<number, Expr>,
+  base: number,
+): number | null {
+  const body = callGraphBodyPcs(code, entryPc);
+  if (body.size === 0) {
+    return null;
+  }
+  const inBody = (pc: number): boolean => body.has(pc);
+  const indexAt = new Map<number, number>();
+  for (let at = 0; at < code.length; at += 1) {
+    const insn = code[at];
+    if (insn !== undefined) {
+      indexAt.set(insn.pc, at);
+    }
+  }
+  for (const insn of code) {
+    if (insn.opcode !== 0x54 || !inBody(insn.pc)) {
+      continue;
+    }
+    // A load the interpreter proves constant (a flag or seat slot) is
+    // never a mapping entry, however near a mapping hash sits (SCAN-B).
+    const loadExpr = loads.get(insn.pc);
+    if (loadExpr !== undefined && loadExpr.kind === "sload" && loadExpr.slot.kind === "const") {
+      continue;
+    }
+    const interpretedSlot = gateSlotOf(insn.pc);
+    if (interpretedSlot !== undefined && interpretedSlot.kind === "const") {
+      continue;
+    }
+    const loadBase =
+      exprMappingBase(loads.get(insn.pc)) ??
+      mappingBaseNearAccess(code, inBody, insn.pc, gateSlotOf) ??
+      scratchPairBase(code, inBody, insn.pc);
+    if (loadBase === null || loadBase === undefined || loadBase !== base) {
+      continue;
+    }
+    const loadIndex = indexAt.get(insn.pc);
+    if (loadIndex === undefined) {
+      continue;
+    }
+    for (let at = loadIndex + 1; at < code.length; at += 1) {
+      const cand = code[at];
+      if (cand === undefined || cand.pc > insn.pc + 192) {
+        break;
+      }
+      if (!inBody(cand.pc)) {
+        continue;
+      }
+      if (cand.opcode === 0x54 || cand.opcode === 0x55) {
+        break;
+      }
+      if (cand.opcode !== 0x57) {
+        continue;
+      }
+      const cond = jumpis.get(cand.pc);
+      let truthy: "jump" | "fall" | null = null;
+      if (
+        cond !== undefined &&
+        cond.kind !== "unknown" &&
+        condReferencesMappingBase(cond, base) &&
+        condBoolGatesOnBase(cond, base)
+      ) {
+        truthy = mappingTruthySide(cond, base);
+      } else {
+        let iszero = 0;
+        let clean = true;
+        for (let back = loadIndex + 1; back < at; back += 1) {
+          const between = code[back];
+          if (between === undefined) {
+            clean = false;
+            break;
+          }
+          if (between.opcode === 0x15) {
+            iszero += 1;
+          } else if (
+            between.opcode === 0x20 ||
+            between.opcode === 0x52 ||
+            between.opcode === 0x51 ||
+            // A priced compare or arithmetic between the load and the
+            // jump (`balance >= amount`, a cooldown, a limit) is an
+            // amount gate, never a boolean list gate (SCAN-B).
+            [0x10, 0x11, 0x12, 0x13, 0x02, 0x04, 0x05, 0x03, 0x01, 0x06].includes(between.opcode)
+          ) {
+            clean = false;
+            break;
+          }
+        }
+        if (!clean) {
+          break;
+        }
+        truthy = iszero % 2 === 1 ? "fall" : "jump";
+      }
+      if (truthy === null) {
+        break;
+      }
+      const other = truthy === "jump" ? "fall" : "jump";
+      if (
+        truthyReachesRevertSoon(code, indexAt, cand.pc, truthy, base, inBody, gateSlotOf, false, loads) &&
+        !hasRevertingSideBounded(bytecode, inBody, cand.pc, other)
+      ) {
+        return insn.pc;
+      }
+      // Silent no-op gate: the set side halts soon (a return with no
+      // store, no priced gate and at most one further boolean gate)
+      // while the clear side still reaches the transfer stores.
+      const otherOutcomes = gateSideOutcomes(bytecode, cand.pc, other);
+      if (
+        truthyReachesRevertSoon(code, indexAt, cand.pc, truthy, base, inBody, gateSlotOf, true, loads) &&
+        otherOutcomes.canStore
+      ) {
+        return insn.pc;
+      }
+      break;
+    }
+  }
+  return null;
+}
+
+// Constant slots equality-compared just after their load anywhere in
+// the code (SCAN-B): the seats a caller guard may read, whether or not
+// any single region walk proves one. A token may guard different
+// writers by different address seats (an owner seat beside a fee-wallet
+// seat), so every such slot gets its chance as a writer guard. The
+// caller itself may sit in a sender helper far away in code order, so
+// its proximity is not required here; the guard proof proper, which
+// does require the caller, runs on each candidate.
+function callerGuardSlots(code: ReturnType<typeof disassemble>): readonly number[] {
+  const slots = new Set<number>();
+  for (let at = 0; at < code.length; at += 1) {
+    const insn = code[at];
+    if (insn === undefined || insn.opcode !== 0x54) {
+      continue;
+    }
+    let slot: number | null = null;
+    for (let back = at - 1, steps = 0; back >= 0 && steps < 4; back -= 1, steps += 1) {
+      const cand = code[back];
+      if (cand === undefined) {
+        break;
+      }
+      if (cand.opcode === 0x5f) {
+        slot = 0;
+        break;
+      }
+      if (cand.opcode >= 0x60 && cand.opcode <= 0x63 && cand.immediate !== undefined) {
+        let value = 0;
+        for (const byte of cand.immediate) {
+          value = value * 256 + byte;
+        }
+        slot = value;
+        break;
+      }
+      if (cand.opcode !== 0x80 && cand.opcode !== 0x90 && cand.opcode !== 0x91) {
+        break;
+      }
+    }
+    if (slot === null || slot > 4096) {
+      continue;
+    }
+    for (let near = at + 1; near < Math.min(code.length, at + 25); near += 1) {
+      const cand = code[near];
+      if (cand !== undefined && cand.opcode === 0x14) {
+        slots.add(slot);
+        break;
+      }
+    }
+  }
+  return Object.freeze([...slots].sort((a, b) => a - b).slice(0, 16));
+}
+
+// Raw caller guard over an entry's internal-call body (SCAN-B): the
+// body holds a caller opcode, a revert, and a constant-seat load of
+// one of the candidate slots with an equality test just after it.
+// Some list writers' region walks never reach their modifier at all,
+// so the expression and window proofs stay silent there; the body
+// still contains every piece of the guard.
+function rawBodyGuard(
+  code: ReturnType<typeof disassemble>,
+  body: ReadonlySet<number>,
+  slots: readonly number[],
+  slotOf: SlotLookup,
+): boolean {
+  let hasCaller = false;
+  let hasRevert = false;
+  for (const insn of code) {
+    if (!body.has(insn.pc)) {
+      continue;
+    }
+    if (insn.opcode === 0x33) {
+      hasCaller = true;
+    }
+    if (insn.opcode === 0xfd) {
+      hasRevert = true;
+    }
+  }
+  if (!hasCaller || !hasRevert) {
+    return false;
+  }
+  const indexAt = new Map<number, number>();
+  for (let at = 0; at < code.length; at += 1) {
+    const insn = code[at];
+    if (insn !== undefined) {
+      indexAt.set(insn.pc, at);
+    }
+  }
+  for (const insn of code) {
+    if (insn.opcode !== 0x54 || !body.has(insn.pc)) {
+      continue;
+    }
+    const interpreted = slotOf(insn.pc);
+    let slot: number | null =
+      interpreted !== undefined && interpreted.kind === "const" ? interpreted.value : null;
+    if (slot === null) {
+      const at = indexAt.get(insn.pc);
+      if (at === undefined) {
+        continue;
+      }
+      for (let back = at - 1, steps = 0; back >= 0 && steps < 4; back -= 1, steps += 1) {
+        const cand = code[back];
+        if (cand === undefined) {
+          break;
+        }
+        if (cand.opcode === 0x5f) {
+          slot = 0;
+          break;
+        }
+        if (cand.opcode >= 0x60 && cand.opcode <= 0x63 && cand.immediate !== undefined) {
+          let value = 0;
+          for (const byte of cand.immediate) {
+            value = value * 256 + byte;
+          }
+          slot = value;
+          break;
+        }
+        if (cand.opcode !== 0x80 && cand.opcode !== 0x90 && cand.opcode !== 0x91) {
+          break;
+        }
+      }
+    }
+    if (slot === null || !slots.includes(slot)) {
+      continue;
+    }
+    const at = indexAt.get(insn.pc);
+    if (at === undefined) {
+      continue;
+    }
+    for (let near = at + 1; near < Math.min(code.length, at + 25); near += 1) {
+      const cand = code[near];
+      if (cand !== undefined && cand.opcode === 0x14 && body.has(cand.pc)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // Extended analysis (P-11, weight-0 fact): the mapping-gate proof over
@@ -628,8 +1141,13 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
   }
   const attribution = attributeFunctions(input.bytecode, { mode: "v2" });
   const view = analyzeOwnerControl(input.bytecode, { reach: "v2" });
-  const ownerSlot = view.ownerSlot;
+  // Some tokens prove their owner seat only on the v1 walk (a two-step
+  // ownership seat beside a caller guard): fall back to that seat for
+  // the writer guard so a role- or owner-guarded list writer on such a
+  // token still gets its chance (SCAN-B).
+  const ownerSlot = view.ownerSlot ?? analyzeOwnerControl(input.bytecode).ownerSlot;
   const code = disassemble(input.bytecode);
+  const guardSlotCandidates = callerGuardSlots(code);
   const memberOf = (selector: SelectorType): ((pc: number) => boolean) => {
     return (pc: number): boolean => attribution.holdersOf(pc).includes(selector);
   };
@@ -644,10 +1162,34 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
     const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
     const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
-    const guarded = writerGuarded(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode);
-    // Subtraction-form owner guard: accepted only when a transfer gate
-    // for one of this writer's bases blocks on the listed side, which
-    // distinguishes a list from a fee/pair exemption at the gate.
+    // The caller guard may sit in a shared modifier helper the
+    // attribution never names for this entry (SCAN-B): retry the same
+    // guard proofs over the entry's internal-call body and over every
+    // candidate caller-guard seat, not only the proven owner slot.
+    const writerGuardBody = callGraphBodyPcs(code, region.entryPc);
+    const writerBodyMember = (pc: number): boolean => writerGuardBody.has(pc);
+    const guardSlots: (number | null)[] = [ownerSlot];
+    for (const slot of guardSlotCandidates) {
+      if (slot !== ownerSlot) {
+        guardSlots.push(slot);
+      }
+    }
+    const guarded =
+      guardSlots.some(
+        (slot) =>
+          writerGuarded(code, writerMember, slot, writerSlotOf, writerExprs.jumpis, input.bytecode) ||
+          writerGuarded(code, writerBodyMember, slot, writerSlotOf, writerExprs.jumpis, input.bytecode),
+      ) ||
+      rawBodyGuard(
+        code,
+        writerGuardBody,
+        guardSlots.filter((slot): slot is number => slot !== null),
+        writerSlotOf,
+      );
+    // Subtraction-form owner guard (main): accepted only when a
+    // transfer gate for one of this writer's bases blocks on the
+    // listed side, which distinguishes a list from a fee/pair
+    // exemption at the gate (see `listedSideBlocks` below).
     const subGuarded =
       !guarded &&
       ownerSlot !== null &&
@@ -655,6 +1197,12 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     if (!guarded && !subGuarded) {
       continue;
     }
+    // Writer stores: the region stores first, then any mapping store
+    // in the writer entry's internal-call body (SCAN-B). A list writer
+    // that loops over an array or delegates to a helper keeps its
+    // SSTORE out of the entry region, so the region alone misses it;
+    // the body scan names the same store with its hash base.
+    const writes: { readonly pc: number; readonly base: number; readonly body: boolean }[] = [];
     for (const write of region.stores) {
       if (write.slot.kind !== "mapping") {
         continue;
@@ -665,6 +1213,25 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       if (writeBase === null || writeBase === undefined) {
         continue;
       }
+      writes.push(Object.freeze({ pc: write.pc, base: writeBase, body: false }));
+    }
+    const writerBody = callGraphBodyPcs(code, region.entryPc);
+    for (const insn of code) {
+      if (insn.opcode !== 0x55 || !writerBody.has(insn.pc)) {
+        continue;
+      }
+      if (writes.some((seen) => seen.pc === insn.pc)) {
+        continue;
+      }
+      const bodyBase =
+        mappingBaseNearAccess(code, (pc) => writerBody.has(pc), insn.pc, writerSlotOf) ??
+        scratchPairBase(code, (pc) => writerBody.has(pc), insn.pc);
+      if (bodyBase !== null) {
+        writes.push(Object.freeze({ pc: insn.pc, base: bodyBase, body: true }));
+      }
+    }
+    for (const write of writes) {
+      const writeBase = write.base;
       const transferSelectors = [TRANSFER_SELECTOR, TRANSFER_FROM_SELECTOR]
         .filter((selector) => selector !== region.selector)
         .sort();
@@ -722,7 +1289,11 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             gateBase !== null &&
             gateBase === writeBase &&
             gateJumpi !== undefined &&
-            hasRevertingSideBounded(input.bytecode, gateMember, gateJumpi.pc, "fall")
+            hasRevertingSideBounded(input.bytecode, gateMember, gateJumpi.pc, "fall") &&
+            // Polarity (SCAN-B): the fall revert must be the side taken
+            // while the entry reads set; a clear-side revert belongs to
+            // an allowlist shape, never to a list.
+            fallIsTruthySide(code, transferExprs.jumpis, gateJumpi.pc, writeBase) !== false
           ) {
             gateEvidencePc = gate.loadPc;
           }
@@ -735,9 +1306,15 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           // entry (same base) through a shift-and-mask read whose blocked
           // side reverts.
           const exprGate = packedMappingGateExpr(transferExprs.jumpis, gateMember);
+          const exprGateCond = exprGate === null ? undefined : transferExprs.jumpis.get(exprGate.jumpiPc);
+          const exprGateTruthy =
+            exprGateCond === undefined || exprGateCond.kind === "unknown"
+              ? null
+              : mappingTruthySide(exprGateCond, writeBase);
           if (
             exprGate !== null &&
             exprGate.base === writeBase &&
+            exprGateTruthy !== "jump" &&
             hasRevertingSideBounded(input.bytecode, gateMember, exprGate.jumpiPc, "fall") &&
             // A blocked side that still reaches a store is not blocked
             // (SCAN-R): a fee-exemption read branches the same way, but
@@ -748,15 +1325,22 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             gateEvidencePc = exprGate.jumpiPc;
           }
         }
-        if (gateEvidencePc === null) {
+        if (gateEvidencePc === null && !write.body) {
           // Window packed shift-and-mask fallback (P-11 follow-up).
           const packedGate = packedMappingGateShift(code, gateMember, gateSlotOf);
-          if (
-            packedGate !== null &&
-            packedGate.base === writeBase &&
-            hasRevertingGateAfter(input.bytecode, code, gateMember, packedGate.cmpPc)
-          ) {
-            gateEvidencePc = packedGate.loadPc;
+          if (packedGate !== null && packedGate.base === writeBase) {
+            const packedJumpi = code.find(
+              (insn) =>
+                insn.opcode === 0x57 &&
+                gateMember(insn.pc) &&
+                insn.pc > packedGate.cmpPc &&
+                insn.pc <= packedGate.cmpPc + 64 &&
+                hasRevertingSide(input.bytecode, code, gateMember, insn.pc, "fall") &&
+                fallIsTruthySide(code, transferExprs.jumpis, insn.pc, writeBase) !== false,
+            );
+            if (packedJumpi !== undefined) {
+              gateEvidencePc = packedGate.loadPc;
+            }
           }
         }
         if (gateEvidencePc === null) {
@@ -769,15 +1353,143 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             gateMember,
             transferExprs.jumpis,
             writeBase,
+            transferExprs.loads,
           );
         }
-        // No getter-helper fallback: a mapping load beside an
-        // unrelated reverting jump does not prove the loaded entry
-        // feeds that jump, so this path stays silent until
-        // load-to-condition dataflow is proven.
+        // Subtraction-form writers (main) may not use this loosest
+        // gate proof: beside an unrelated reverting jump it reads
+        // pause-style gates as lists.
+        if (gateEvidencePc === null && !write.body && !subGuarded) {
+          // Getter-helper gate (SCAN-4): the entry load sits in an
+          // internal getter that returns it on the stack, so no compare
+          // sits beside the load and the gate jump in the caller tests
+          // the returned word instead of a load the interpreter can
+          // name. The load proves the gate when it hashes the written
+          // base, no equality or ISZERO sits beside it (a beside compare
+          // is the exemption shape the proofs above already weighed),
+          // and some member jump on the transfer path reverts on one
+          // side.
+          const v1Transfer = analyzeOwnerControl(input.bytecode).regions.find(
+            (candidate) => candidate.selector === transferSelector,
+          );
+          const helperLoads = [
+            ...transfer.loads,
+            ...((v1Transfer?.loads ?? []).filter(
+              (load) => !transfer.loads.some((seen) => seen.pc === load.pc),
+            ) as typeof transfer.loads),
+          ];
+          for (const load of helperLoads) {
+            if (load.slot.kind !== "mapping") {
+              continue;
+            }
+            if (mappingBaseNearAccess(code, gateMember, load.pc, gateSlotOf) !== writeBase) {
+              continue;
+            }
+            if (nearestFlavorPc(transfer, ["eq", "iszero"], load.pc) !== null) {
+              continue;
+            }
+            const reverting = code.some((insn) => {
+              if (insn.opcode !== 0x57 || !gateMember(insn.pc)) {
+                return false;
+              }
+              const cond = transferExprs.jumpis.get(insn.pc);
+              // Polarity (SCAN-B): when the jump condition is known and
+              // tests this entry, only its set side may revert. A known
+              // condition on another entry proves nothing here.
+              if (cond !== undefined && cond.kind !== "unknown") {
+                if (!condReferencesMappingBase(cond, writeBase)) {
+                  return false;
+                }
+                const truthy = mappingTruthySide(cond, writeBase);
+                if (truthy === null) {
+                  return false;
+                }
+                const indexAt = new Map<number, number>();
+                for (let at = 0; at < code.length; at += 1) {
+                  const item = code[at];
+                  if (item !== undefined) {
+                    indexAt.set(item.pc, at);
+                  }
+                }
+                return truthyReachesRevertSoon(
+                  code,
+                  indexAt,
+                  insn.pc,
+                  truthy,
+                  writeBase,
+                  gateMember,
+                  gateSlotOf,
+                  false,
+                  transferExprs.loads,
+                );
+              }
+              // Unknown condition (SCAN-B): the caller jump sits just
+              // past the getter return and tests the returned word, so
+              // its ISZERO parity names the set side; only a soon
+              // revert on that side proves the gate.
+              if (Math.abs(insn.pc - load.pc) > 256) {
+                return false;
+              }
+              const indexAt = new Map<number, number>();
+              for (let at = 0; at < code.length; at += 1) {
+                const item = code[at];
+                if (item !== undefined) {
+                  indexAt.set(item.pc, at);
+                }
+              }
+              const jumpiIndex = indexAt.get(insn.pc);
+              if (jumpiIndex === undefined) {
+                return false;
+              }
+              let iszero = 0;
+              for (let back = jumpiIndex - 1, steps = 0; back >= 0 && steps < 6; back -= 1, steps += 1) {
+                const cand = code[back];
+                if (cand === undefined || cand.opcode === 0x5b || cand.opcode === 0x56) {
+                  break;
+                }
+                if (cand.opcode === 0x15) {
+                  iszero += 1;
+                }
+              }
+              const truthy = iszero % 2 === 1 ? "fall" : "jump";
+              return truthyReachesRevertSoon(
+                code,
+                indexAt,
+                insn.pc,
+                truthy,
+                writeBase,
+                gateMember,
+                gateSlotOf,
+                false,
+                transferExprs.loads,
+              );
+            });
+            if (reverting) {
+              gateEvidencePc = load.pc;
+              break;
+            }
+          }
+        }
+        if (gateEvidencePc === null) {
+          // Helper-body gate (SCAN-B): the gate sits in a guard helper
+          // below the transfer update hook, outside every entry-scoped
+          // walk above. The internal-call body of the transfer entry
+          // still contains the load and its blocking jump.
+          gateEvidencePc = bodyMappingGatePc(
+            input.bytecode,
+            code,
+            transfer.entryPc,
+            gateSlotOf,
+            transferExprs.jumpis,
+            transferExprs.loads,
+            writeBase,
+          );
+        }
         if (gateEvidencePc === null) {
           continue;
         }
+        // Subtraction-form writers (main) prove a list only when the
+        // listed side of the gate is the blocking side.
         if (subGuarded && !listedSideBlocks(input.bytecode, code, gateMember, transferExprs.jumpis, writeBase)) {
           continue;
         }
@@ -788,12 +1500,14 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         const firstWriteHolder = holdersOfWrite[0] === undefined ? null : holdersOfWrite[0];
         const holder =
           attribution.holderOf(write.pc) ??
-          (holdersOfWrite.includes(transferSelector) ? transferSelector : firstWriteHolder);
+          (holdersOfWrite.includes(transferSelector) ? transferSelector : firstWriteHolder) ??
+          region.selector;
         const holdersOfGate = [...attribution.holdersOf(gateEvidencePc)].sort();
         const firstGateHolder = holdersOfGate[0] === undefined ? null : holdersOfGate[0];
         const gateHolder =
           attribution.holderOf(gateEvidencePc) ??
-          (holdersOfGate.includes(transferSelector) ? transferSelector : firstGateHolder);
+          (holdersOfGate.includes(transferSelector) ? transferSelector : firstGateHolder) ??
+          transferSelector;
         if (holder === null || gateHolder === null) {
           continue;
         }

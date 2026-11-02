@@ -130,10 +130,27 @@ export type Instruction = {
   readonly immediate: Uint8Array;
 };
 
+// Per-object memo: the sweep and the dispatcher scan are pure functions
+// of the bytecode bytes, and one analysis reads them once per detector.
+// Callers never mutate a Bytecode value, so the cached result is the
+// value every call returns; a WeakMap lets superseded codes be collected.
+const disassemblyCache = new WeakMap<Bytecode, readonly Instruction[]>();
+const selectorCache = new WeakMap<Bytecode, readonly SelectorEntry[]>();
+
 // Linear sweep over the executable prefix. PUSH data bytes are skipped,
 // so data never decodes as opcodes. A truncated trailing PUSH takes the
 // bytes that remain and ends the sweep; the sweep never throws.
 export function disassemble(bytecode: Bytecode): readonly Instruction[] {
+  const cached = disassemblyCache.get(bytecode);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const swept = sweep(bytecode);
+  disassemblyCache.set(bytecode, swept);
+  return swept;
+}
+
+function sweep(bytecode: Bytecode): readonly Instruction[] {
   const executable = stripCborFooter(bytecode);
   const end = executable.length;
   const out: Instruction[] = [];
@@ -227,6 +244,16 @@ function selectorPushBytes(inst: Instruction): Uint8Array | null {
 // selectors keep their first occurrence in PC order; the result sorts by
 // selector.
 export function extractSelectors(bytecode: Bytecode): readonly SelectorEntry[] {
+  const cached = selectorCache.get(bytecode);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const scanned = scanSelectors(bytecode);
+  selectorCache.set(bytecode, scanned);
+  return scanned;
+}
+
+function scanSelectors(bytecode: Bytecode): readonly SelectorEntry[] {
   const code = disassemble(bytecode);
   const found: SelectorEntry[] = [];
   const seen = new Set<string>();

@@ -5127,13 +5127,15 @@ a.button-ghost {
   box-shadow: var(--shadow-none);
 }
 
-/* Below-fold loading placeholders (console and board size): faint,
-   glow-free cards that push the footer below the fold exactly as the
-   result page does, so the footer never contributes layout shift. */
+/* Below-fold loading placeholders (console and board size): faint
+   cards that push the footer below the fold exactly as the result page
+   does, so the footer never contributes layout shift. Like every card
+   surface they carry the lowest elevation token (S-121), so the page
+   material never changes while the result loads. */
 .loading-below {
   margin-top: 12px;
   border-color: var(--rule);
-  box-shadow: var(--shadow-none);
+  box-shadow: var(--elev-1);
 }
 
 .loading-console {

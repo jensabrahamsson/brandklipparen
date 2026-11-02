@@ -3938,16 +3938,25 @@ const GRAPH_HALT_OPS: ReadonlySet<number> = new Set([0x00, 0xfd, 0xfe, 0xf3, 0xf
 // the per-jump cap gives up.
 const GRAPH_BACK_STOP_OPS: ReadonlySet<number> = new Set([0x00, 0x5b, 0xfd, 0xfe, 0xf3, 0xff]);
 
-// Seeds default to the entry alone; extended writers also seed every
-// member jump, so dynamic edges the entry walk cannot reproduce still
-// resolve from the blocks the reachability walk already proved.
-export function callGraphBodyPcs(
-  code: readonly Instruction[],
-  entryPc: number,
-  seeds: readonly number[] = [],
-  maxBlocks = 2000,
-): ReadonlySet<number> {
-  const pcs = new Set<number>();
+// Per-code graph index and body sets: one analysis asks for the body of
+// every entry over the same instruction list, so rebuilding the PC index
+// per entry repeats the whole scan dozens of times. The walk is a pure
+// function of the list, entry, seeds and block bound; callers only read
+// the returned set (or copy it), so sharing it changes no result.
+const graphIndexCache = new WeakMap<
+  readonly Instruction[],
+  { readonly indexAt: ReadonlyMap<number, number>; readonly starts: ReadonlySet<number> }
+>();
+const graphBodyCache = new WeakMap<readonly Instruction[], Map<string, ReadonlySet<number>>>();
+
+function graphIndexOf(code: readonly Instruction[]): {
+  readonly indexAt: ReadonlyMap<number, number>;
+  readonly starts: ReadonlySet<number>;
+} {
+  const cached = graphIndexCache.get(code);
+  if (cached !== undefined) {
+    return cached;
+  }
   const indexAt = new Map<number, number>();
   const starts = new Set<number>();
   for (let index = 0; index < code.length; index += 1) {
@@ -3960,6 +3969,43 @@ export function callGraphBodyPcs(
       starts.add(instruction.pc);
     }
   }
+  const built = { indexAt, starts };
+  graphIndexCache.set(code, built);
+  return built;
+}
+
+// Seeds default to the entry alone; extended writers also seed every
+// member jump, so dynamic edges the entry walk cannot reproduce still
+// resolve from the blocks the reachability walk already proved.
+export function callGraphBodyPcs(
+  code: readonly Instruction[],
+  entryPc: number,
+  seeds: readonly number[] = [],
+  maxBlocks = 2000,
+): ReadonlySet<number> {
+  const cacheKey = `${entryPc}|${maxBlocks}|${seeds.join(",")}`;
+  let bodies = graphBodyCache.get(code);
+  const hit = bodies?.get(cacheKey);
+  if (hit !== undefined) {
+    return hit;
+  }
+  const pcs = callGraphBodyPcsUncached(code, entryPc, seeds, maxBlocks);
+  if (bodies === undefined) {
+    bodies = new Map<string, ReadonlySet<number>>();
+    graphBodyCache.set(code, bodies);
+  }
+  bodies.set(cacheKey, pcs);
+  return pcs;
+}
+
+function callGraphBodyPcsUncached(
+  code: readonly Instruction[],
+  entryPc: number,
+  seeds: readonly number[],
+  maxBlocks: number,
+): ReadonlySet<number> {
+  const pcs = new Set<number>();
+  const { indexAt, starts } = graphIndexOf(code);
   // Iterative worklist: the walk stays total on adversarial bytecode
   // with no recursion depth to overflow.
   const visited = new Set<number>();
