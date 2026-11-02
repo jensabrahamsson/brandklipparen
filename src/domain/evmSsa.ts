@@ -65,6 +65,11 @@ function formatPush(immediate: readonly number[]): string {
   return `0x${immediate.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
+// BK-01: a symbolic string doubles on every DUP+binop over a shared
+// value, so past this length the value degrades to a placeholder
+// instead of expanding exponentially on tiny hostile bytecode.
+const MAX_SYMBOLIC_EXPR_CHARS = 1024;
+
 function binaryExpr(op: string, stack: SymbolicStack): string | null {
   // Stack top is the EVM first operand (μs[0]); print (top op second).
   const top = stack.pop();
@@ -73,7 +78,7 @@ function binaryExpr(op: string, stack: SymbolicStack): string | null {
     return null;
   }
   const expr = `(${top} ${op} ${second})`;
-  stack.push(expr);
+  stack.push(expr.length > MAX_SYMBOLIC_EXPR_CHARS ? "unknown" : expr);
   return expr;
 }
 
@@ -83,7 +88,7 @@ function unaryExpr(op: string, stack: SymbolicStack): string | null {
     return null;
   }
   const expr = `${op}(${value})`;
-  stack.push(expr);
+  stack.push(expr.length > MAX_SYMBOLIC_EXPR_CHARS ? "unknown" : expr);
   return expr;
 }
 

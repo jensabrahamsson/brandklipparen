@@ -158,6 +158,13 @@ describe("strict assessment schema with template fallback (K-306)", () => {
     expect(result.error.kind).toBe("invalid-output");
   });
 
+  test("bk11_nonempty_text_without_claims_rejected", () => {
+    const evidence = fixedEvidence();
+    const raw = { ...validRaw(evidence), claims: [] };
+    const result = validateAssessmentOutput(raw, evidence, fixedExpectation());
+    expect(result.ok).toBe(false);
+  });
+
   test("k306_output_limit_comes_from_config_with_placeholder_default", () => {
     expect(resolveAssessmentOutputLimit(undefined)).toBe(DEFAULT_ASSESSMENT_MAX_OUTPUT_CHARS);
     expect(resolveAssessmentOutputLimit(8192)).toBe(8192);

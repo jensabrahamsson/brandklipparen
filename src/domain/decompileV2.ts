@@ -37,6 +37,50 @@ const MAX_BLOCK_VISITS = 64;
 const MAX_IF_DEPTH = 4;
 const REQUIRE = "require";
 
+// BK-01: hard resource caps for hostile bytecode. Expression trees are
+// built over shared (DAG) subexpressions, so size is counted over the
+// tree expansion with identity memoization; past the caps the value
+// degrades to unknown. A global step budget bounds total work per
+// decompilation and fails closed through DecompileBudgetError.
+export class DecompileBudgetError extends Error {
+  constructor() {
+    super("decompiler work budget exhausted");
+    this.name = "DecompileBudgetError";
+  }
+}
+const MAX_EXPR_DEPTH = 32;
+const MAX_EXPR_TREE_NODES = 512;
+const MAX_WORK_STEPS = 2000000;
+let workLeft = MAX_WORK_STEPS;
+function spendWork(steps: number): void {
+  workLeft -= steps;
+  if (workLeft <= 0) throw new DecompileBudgetError();
+}
+type ExprShape = { readonly depth: number; readonly nodes: number };
+const shapeMemo = new WeakMap<Expr, ExprShape>();
+function exprShape(e: Expr): ExprShape {
+  const hit = shapeMemo.get(e);
+  if (hit !== undefined) return hit;
+  spendWork(1);
+  let depth = 0;
+  let nodes = 1;
+  const children: readonly Expr[] =
+    e.kind === "op" ? e.args : e.kind === "calldata" ? [e.offset] : e.kind === "sload" ? [e.slot] : e.kind === "keccak" ? e.words : [];
+  for (const child of children) {
+    const s = exprShape(child);
+    if (s.depth + 1 > depth) depth = s.depth + 1;
+    nodes += s.nodes;
+    if (nodes > MAX_EXPR_TREE_NODES) nodes = MAX_EXPR_TREE_NODES + 1;
+  }
+  const shape: ExprShape = { depth, nodes };
+  shapeMemo.set(e, shape);
+  return shape;
+}
+function overExprCaps(e: Expr): boolean {
+  const s = exprShape(e);
+  return s.depth > MAX_EXPR_DEPTH || s.nodes > MAX_EXPR_TREE_NODES;
+}
+
 function cst(value: bigint): Expr {
   return Object.freeze({ kind: "const", value: value & MASK256 }) as Expr;
 }
@@ -46,6 +90,8 @@ function pushExpr(immediate: readonly number[]): Expr {
   return cst(v);
 }
 function eqExpr(a: Expr, b: Expr): boolean {
+  if (a === b) return true;
+  spendWork(1);
   if (a.kind !== b.kind) return false;
   if (a.kind === "const" && b.kind === "const") return a.value === b.value;
   if (a.kind === "op" && b.kind === "op")
@@ -80,12 +126,19 @@ function fold(name: string, a: bigint, b: bigint): bigint | null {
   }
 }
 function op(name: string, args: readonly Expr[]): Expr {
+  spendWork(1);
+  for (const arg of args) {
+    if (overExprCaps(arg)) return UNKNOWN;
+  }
   const [x, y] = [args[0] ?? UNKNOWN, args[1] ?? UNKNOWN];
   if (name === "AND" && args.length === 2) {
     if (eqExpr(x, y)) return x;
     // Flatten nested ANDs and drop duplicate leaves (double masks).
     const leaves: Expr[] = [];
+    const collected = new Set<Expr>();
     const collect = (e: Expr): void => {
+      if (collected.has(e)) return;
+      collected.add(e);
       if (e.kind === "op" && e.name === "AND") { collect(e.args[0] ?? UNKNOWN); collect(e.args[1] ?? UNKNOWN); }
       else leaves.push(e);
     };
@@ -99,10 +152,6 @@ function op(name: string, args: readonly Expr[]): Expr {
     }
   }
   if (name === "DIV" && args.length === 2 && (exprConstValue(y) === 1n)) return x;
-  if (name === "SUB" && args.length === 2) {
-    const l = exprConstValue(x), r = exprConstValue(y);
-    if ((l === 1n && r === (1n << 160n)) || (l === (1n << 160n) && r === 1n)) return cst(MASK160);
-  }
   if (name === "AND" && args.length === 2) {
     if (exprConstValue(x) === MASK256) return y;
     if (exprConstValue(y) === MASK256) return x;
@@ -116,7 +165,6 @@ function op(name: string, args: readonly Expr[]): Expr {
     if (exprConstValue(y) === 0n) return op("ISZERO", [x]);
     if (exprConstValue(x) === 0n) return op("ISZERO", [y]);
   }
-  if (name === "ISZERO" && x.kind === "op" && x.name === "ISZERO") return x.args[0] ?? UNKNOWN;
   const cx = exprConstValue(x), cy = exprConstValue(y);
   if (args.length === 2 && cx !== null && cy !== null) { const f = fold(name, cx, cy); if (f !== null) return cst(f); }
   if (name === "ISZERO" && cx !== null) return cst(cx === 0n ? 1n : 0n);
@@ -169,6 +217,7 @@ function simulateBlock(block: CfgBlock, entry: Sim): BlockResult {
   const pop = (): Expr => sim.stack.pop() ?? UNKNOWN;
   const push = (e: Expr): void => { if (sim.stack.length >= 64) sim.stack.shift(); sim.stack.push(e); };
   for (const ins of block.instructions) {
+    spendWork(1);
     const oc = ins.opcode;
     if (oc === 0x5b) continue;
     if (oc === 0x5f) { push(cst(0n)); continue; }
@@ -367,6 +416,7 @@ function slotTarget(slot: Expr, ctx: Ctx): string {
 const PREC: Readonly<Record<string, number>> = { OR: 1, XOR: 2, AND: 3, EQ: 6, LT: 6, GT: 6, ADD: 7, SUB: 7, MUL: 8, DIV: 8, MOD: 8 };
 const SYM: Readonly<Record<string, string>> = { ADD: "+", SUB: "-", MUL: "*", DIV: "/", MOD: "%", AND: "&", OR: "|", XOR: "^", EQ: "==", LT: "<", GT: ">", SHL: "<<", SHR: ">>" };
 function printValue(e: Expr, ctx: Ctx, parentPrec: number): string {
+  spendWork(1);
   if (e.kind === "const") return constStr(e.value);
   if (e.kind === "caller") return "msg.sender";
   if (e.kind === "callvalue") return "msg.value";
@@ -465,6 +515,7 @@ function negatedBool(e: Expr, ctx: Ctx): string {
 // back except SHL/SHR, whose stored [value, shift] already matches the
 // printer. Symmetric ops are unaffected by the swap.
 function toPrinterOrder(e: Expr): Expr {
+  spendWork(1);
   if (e.kind === "op") {
     const mapped = e.args.map(toPrinterOrder);
     const ordered =
@@ -767,7 +818,15 @@ function paramsOf(signature: string | null): string {
 const MAPPING_VAR: Readonly<Record<string, string>> = { balanceOf: "balances", allowance: "allowances" };
 
 export function decompileContractV2(bytecode: BytecodeType): DecompiledContract {
-  try { return decompileV2Inner(bytecode); } catch { return Object.freeze({ functions: Object.freeze([]), unresolvedJumps: Object.freeze([]), fallbackCount: 0, text: "" }); }
+  workLeft = MAX_WORK_STEPS;
+  try {
+    return decompileV2Inner(bytecode);
+  } catch (error) {
+    if (error instanceof DecompileBudgetError) throw error;
+    return Object.freeze({ functions: Object.freeze([]), unresolvedJumps: Object.freeze([]), fallbackCount: 0, text: "" });
+  } finally {
+    workLeft = MAX_WORK_STEPS;
+  }
 }
 
 function decompileV2Inner(bytecode: BytecodeType): DecompiledContract {

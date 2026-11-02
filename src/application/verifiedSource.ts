@@ -463,7 +463,7 @@ function canonicalInputType(input: Record<string, unknown>): string | null {
       }
       inner.push(nested);
     }
-    return `tuple(${inner.join(",")})${type.slice("tuple".length)}`;
+    return `(${inner.join(",")})${type.slice("tuple".length)}`;
   }
   return type;
 }
@@ -473,6 +473,7 @@ type AbiFunction = {
   readonly signature: string;
   readonly selector: string;
   readonly arity: number;
+  readonly types: readonly string[];
 };
 
 function abiFunctionsOf(abi: readonly unknown[]): AbiFunction[] {
@@ -508,6 +509,7 @@ function abiFunctionsOf(abi: readonly unknown[]): AbiFunction[] {
       signature,
       selector: keccak256HexOfUtf8(signature).slice(0, 10),
       arity: types.length,
+      types: Object.freeze(types.slice()),
     });
   }
   return functions;
@@ -527,6 +529,37 @@ export type MappableDeclaration = {
   readonly contractName?: string | null | undefined;
   readonly contractKind?: "contract" | "library" | "interface" | null | undefined;
 };
+
+// BK-21: canonical parameter types of one source declaration, or null
+// when a parameter carries no resolvable type (a bare name). A trailing
+// parameter name and data-location keywords are dropped; tuple
+// parameters keep their parenthesised form.
+function declarationTypes(paramsText: string): readonly string[] | null {
+  const parts = splitTopLevel(paramsText);
+  const types: string[] = [];
+  for (const part of parts) {
+    const tokens = part.replace(/\s+/g, " ").trim().split(" ").filter((token) => token.length > 0);
+    const typeTokens = tokens.filter((token) => !["memory", "calldata", "storage", "payable"].includes(token));
+    if (typeTokens.length === 0) {
+      return null;
+    }
+    const type = typeTokens.length > 1 ? typeTokens.slice(0, -1).join("") : (typeTokens[0] ?? "");
+    if (type === "") {
+      return null;
+    }
+    types.push(type.replace(/\s/g, ""));
+  }
+  return Object.freeze(types);
+}
+
+function typesMatch(fn: AbiFunction, declaration: MappableDeclaration): boolean | null {
+  const declared = declarationTypes(declaration.paramsText);
+  if (declared === null || declared.length !== fn.types.length) {
+    return declared === null ? null : false;
+  }
+  const wanted = fn.types.map((type) => type.replace(/\s/g, ""));
+  return declared.every((type, index) => type === wanted[index]);
+}
 
 // ABI functions located in the published sources (VS-B2, C-25): matched
 // by name, then by parameter count for overloads, then ranked so the
@@ -554,6 +587,26 @@ export function mapSourceFunctions(
     }
     if (candidates.length === 0) {
       continue;
+    }
+    // BK-21: same-arity overloads pair by canonical parameter types.
+    // When every candidate's types resolve and none matches, abstain
+    // instead of pairing by declaration order.
+    if (candidates.length > 1) {
+      const matching = candidates.filter((index) => {
+        const declaration = declarations[index];
+        return declaration !== undefined && typesMatch(fn, declaration) === true;
+      });
+      if (matching.length > 0) {
+        candidates.length = 0;
+        candidates.push(...matching);
+      } else if (
+        candidates.every((index) => {
+          const declaration = declarations[index];
+          return declaration !== undefined && typesMatch(fn, declaration) !== null;
+        })
+      ) {
+        continue;
+      }
     }
     const rankOf = (index: number): readonly number[] => {
       const declaration = declarations[index];

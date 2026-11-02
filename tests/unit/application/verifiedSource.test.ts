@@ -219,6 +219,44 @@ describe("verified-source ABI mapping (VS-B2)", () => {
       startLine: 2,
     });
   });
+
+  test("bk21_same_arity_overloads_pair_by_parameter_types", () => {
+    const declarations = [
+      { file: "a.sol", name: "foo", paramsText: "uint256 x", startLine: 2, endLine: 4 },
+      { file: "a.sol", name: "foo", paramsText: "address x", startLine: 5, endLine: 7 },
+    ];
+    const abi = [
+      { type: "function", name: "foo", inputs: [{ type: "address" }] },
+      { type: "function", name: "foo", inputs: [{ type: "uint256" }] },
+    ];
+    const mapped = mapSourceFunctions(abi, declarations);
+    expect(mapped.find((entry) => entry.signature === "foo(address)")).toMatchObject({ startLine: 5 });
+    expect(mapped.find((entry) => entry.signature === "foo(uint256)")).toMatchObject({ startLine: 2 });
+  });
+
+  test("bk22_tuple_inputs_use_parenthesised_canonical_form", () => {
+    const declarations = [
+      { file: "a.sol", name: "bar", paramsText: "(uint256,address) x", startLine: 2, endLine: 4 },
+    ];
+    const abi = [
+      {
+        type: "function",
+        name: "bar",
+        inputs: [
+          {
+            type: "tuple",
+            components: [{ type: "uint256" }, { type: "address" }],
+          },
+        ],
+      },
+    ];
+    const mapped = mapSourceFunctions(abi, declarations);
+    expect(mapped).toHaveLength(1);
+    expect(mapped[0]).toMatchObject({
+      signature: "bar((uint256,address))",
+      selector: keccak256HexOfUtf8("bar((uint256,address))").slice(0, 10),
+    });
+  });
 });
 
 describe("verified-source size cap (VS-B2)", () => {

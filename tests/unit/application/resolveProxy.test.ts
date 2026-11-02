@@ -30,11 +30,14 @@ function headBlock(): BlockNumberType {
 
 const PROXY = "0x0102030405060708090a0b0c0d0e0f1011121314";
 const IMPL = "0x1112131415161718191a1b1c1d1e1f2021222324";
-const ADMIN = "0x3132333435363738393a3b3c3d3e3f4041424344";
-const OTHER = "0x5152535455565758595a5b5c5d5e5f6061626364";
-const BEACON = "0x7172737475767778797a7b7c7d7e7f8081828384";
+const ADMIN = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+const OTHER = "0x5ab1e00000000000000000000000000000000022";
+const BEACON = "0x0102030405060708090a0b0c0d0e0f1011121315";
 
-const PROXY_BYTECODE = "0x6001600a600b600c600d600e600f55";
+// BK-02: the entry fixture carries a paired dispatcher and a
+// DELEGATECALL so the populated implementation slot is a proven
+// forwarding proxy.
+const PROXY_BYTECODE = "0x8063a9059cbb14600a575b6001600a600b600c600d600e600f55f4";
 const IMPL_BYTECODE = "0x6001600055";
 const ADMIN_BYTECODE = "0x6002600055";
 
@@ -203,7 +206,7 @@ describe("proxy resolution through RpcPort (K-002, K-005)", () => {
   test("k005_reports_upgrade_function_and_caller", async () => {
     const { proxiableUUIDSelector } = await import("../../../src/domain/proxy.ts");
     const selector = proxiableUUIDSelector();
-    const bytecode = `0x8063${(selector as string).slice(2)}14600a57${"00".repeat(16)}`;
+    const bytecode = `0x8063${(selector as string).slice(2)}14600a57${"00".repeat(16)}f4`;
     void Bytecode.parse(bytecode);
     const { IMPLEMENTATION_SLOT, ADMIN_SLOT } = await import("../../../src/domain/proxy.ts");
     const codes = codesFor([
@@ -229,7 +232,7 @@ describe("proxy resolution through RpcPort (K-002, K-005)", () => {
       "../../../src/domain/proxy.ts"
     );
     const selector = proxiableUUIDSelector();
-    const bytecode = `0x8063${(selector as string).slice(2)}14600a57${"00".repeat(16)}`;
+    const bytecode = `0x8063${(selector as string).slice(2)}14600a57${"00".repeat(16)}f4`;
     const codes = codesFor([
       [PROXY, bytecode],
       [IMPL, bytecode],
@@ -566,5 +569,23 @@ describe("proxy resolution through RpcPort (K-002, K-005)", () => {
     if (result.ok) {
       expect(result.value.resolution.kind).not.toBe("none");
     }
+  });
+
+  test("bk02_populated_slot_without_delegatecall_is_not_a_proxy", async () => {
+    const { IMPLEMENTATION_SLOT } = await import("../../../src/domain/proxy.ts");
+    // An ordinary contract that merely writes the EIP-1967 slot but
+    // never delegates: the entry code stays the analysis target.
+    const code = "0x6001600055";
+    const codes = codesFor([
+      [PROXY, code],
+      [IMPL, IMPL_BYTECODE],
+    ]);
+    const storage = storageFor([[PROXY, IMPLEMENTATION_SLOT as string, addressWord(IMPL)]]);
+    const result = await resolveWith(codes, storage, PROXY);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error("expected an ok resolution");
+    }
+    expect(result.value.resolution.kind).toBe("none");
   });
 });

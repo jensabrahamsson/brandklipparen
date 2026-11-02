@@ -214,6 +214,7 @@ export function ExplainFallback({
 
 export function ExplainPanel({
   address,
+  block,
   apiKey,
   source,
   signals,
@@ -225,6 +226,7 @@ export function ExplainPanel({
   onRetry,
 }: {
   readonly address: string;
+  readonly block?: number | undefined;
   readonly apiKey: string;
   readonly source: Extract<ExplainSource, "explain" | "rug">;
   readonly signals: readonly Signal[];
@@ -239,7 +241,7 @@ export function ExplainPanel({
 
   useEffect(() => {
     let cancelled = false;
-    const run = source === "rug" ? fetchRug(address, apiKey) : fetchExplain(address, apiKey);
+    const run = source === "rug" ? fetchRug(address, apiKey, block) : fetchExplain(address, apiKey, block);
     run.then(
       (next) => {
         if (!cancelled) {
@@ -255,7 +257,7 @@ export function ExplainPanel({
     return () => {
       cancelled = true;
     };
-  }, [address, apiKey, source]);
+  }, [address, apiKey, source, block]);
 
   if (state === null) {
     return (

@@ -21,6 +21,7 @@ import { createRpcLogsAdapter } from "../adapters/lpFeed/rpcLogsAdapter.ts";
 import { createMarketFeedAdapter } from "../adapters/market/dexscreenerAdapter.ts";
 import { createMarketService } from "../application/marketService.ts";
 import { createProofService } from "../application/proofService.ts";
+import { calibrationViewOf } from "../application/calibrationView.ts";
 import { createSourcifySourceAdapter } from "../adapters/source/sourcifyAdapter.ts";
 import type { SourcifyTransport } from "../adapters/source/sourcifyAdapter.ts";
 import { ExplorerSourceAdapter } from "../adapters/source/explorerSourceAdapter.ts";
@@ -403,6 +404,16 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
           rpc: deps.ports.rpc,
           clock: deps.ports.clock,
         });
+  // BK-23: readiness and calibration come from the artifact loaded
+  // above; a failed load leaves both absent so /ready fails closed.
+  const calibration = loaded.ok ? calibrationViewOf(loaded.value.artifact, loaded.value.checksum) : undefined;
+  const readiness = loaded.ok
+    ? Object.freeze({
+        artifactChecksum: loaded.value.checksum as string,
+        expectedArtifactChecksum: loaded.value.checksum as string,
+        feedConfigured: config.feedWethAddress !== undefined,
+      })
+    : undefined;
   const rest: RestServerOptions = Object.freeze({
     services,
     apiKeys,
@@ -413,6 +424,8 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     catalogue: DEFAULT_CAPABILITY_CATALOGUE,
     detectors: wired,
     pluginWeights,
+    calibration,
+    readiness,
     assessmentService: assessment.value,
     investigationService: investigation.value,
     explainService: explain.value,

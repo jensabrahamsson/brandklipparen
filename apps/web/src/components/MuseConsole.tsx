@@ -53,6 +53,7 @@ function chatModelId(health: HealthState | null): string {
 
 export function MuseConsole({
   address,
+  block,
   apiKey,
   health,
   availability,
@@ -74,6 +75,7 @@ export function MuseConsole({
   foundSlugs = [],
 }: {
   readonly address: string;
+  readonly block?: number | undefined;
   readonly apiKey: string;
   readonly health: HealthState | null;
   readonly availability: AiFeatureAvailability;
@@ -143,7 +145,7 @@ export function MuseConsole({
     }
     setRequest({ kind: "chat" });
     setChatPending(true);
-    void fetchChat(address, apiKey, trimmed).then((next) => {
+    void fetchChat(address, apiKey, trimmed, block).then((next) => {
       setChatPending(false);
       setChat(next);
     });
@@ -199,6 +201,7 @@ export function MuseConsole({
             <ExplainPanel
               key={`${request.source}-${explainNonce}`}
               address={address}
+              block={block}
               apiKey={apiKey}
               source={request.source}
               signals={signals}

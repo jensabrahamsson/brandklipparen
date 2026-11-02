@@ -36,7 +36,7 @@ const PINNED_BLOCK_HEX = "0x16e3600";
 
 const PROXY_ADDRESS = "0x0102030405060708090a0b0c0d0e0f1011121314";
 const IMPL_ADDRESS = "0x1112131415161718191a1b1c1d1e1f2021222324";
-const ADMIN_EOA = "0x3132333435363738393a3b3c3d3e3f4041424344";
+const ADMIN_EOA = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 
 // Route keys carry the checksummed form, matching the addresses the
 // adapter sends on the wire after Address.parse at the boundary.
@@ -52,7 +52,8 @@ const PROXY_WIRE = onWire(PROXY_ADDRESS);
 const IMPL_WIRE = onWire(IMPL_ADDRESS);
 const ADMIN_WIRE = onWire(ADMIN_EOA);
 
-const PROXY_BYTECODE = "0x6001600a600b600c600d600e600f55";
+// BK-02: paired dispatcher plus DELEGATECALL proves forwarding.
+const PROXY_BYTECODE = "0x8063a9059cbb14600a575b6001600a600b600c600d600e600f55f4";
 const IMPL_BYTECODE = "0x6001600055";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
@@ -219,7 +220,7 @@ describe("proxy resolution golden paths (K-002, K-005)", () => {
 
   test("k005_uups_returns_implementation", async () => {
     const selector = proxiableUUIDSelector();
-    const proxyBytecode = `0x8063${(selector as string).slice(2)}14600a57${"00".repeat(16)}`;
+    const proxyBytecode = `0x8063${(selector as string).slice(2)}14600a57${"00".repeat(16)}f4`;
     expect(bytecodeHasSelector(mustOk(Bytecode.parse(proxyBytecode)), selector)).toBe(true);
     const routes = proxyRoutes({
       proxyBytecode,

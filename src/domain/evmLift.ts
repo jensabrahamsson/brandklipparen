@@ -505,7 +505,14 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
   const pending: number[] = [];
   for (const index of reached) {
     const block = cfg.blocks[index];
-    if (block === undefined || resolved.has(index) || !isDynamicJumpBlock(block)) {
+    if (block === undefined || resolved.has(index)) {
+      continue;
+    }
+    // BK-26: an unresolved conditional jump is just as incomplete as a
+    // dynamic JUMP: its taken edge was never proven.
+    const dynamicJumpi =
+      block.terminal === "jumpi" && !block.successors.some((edge) => edge.kind === "conditional");
+    if (!isDynamicJumpBlock(block) && !dynamicJumpi) {
       continue;
     }
     const last = block.instructions[block.instructions.length - 1];
@@ -519,6 +526,6 @@ export function resolveEntryReachV2(cfg: ControlFlowGraph, from: number): EntryR
     resolvedJumpAtPc: Object.freeze(resolvedJumpAtPc),
     unresolvedJumpAtPc: Object.freeze(pending),
     cappedJumpAtPc: Object.freeze(cappedJumpAtPc),
-    complete: givenUp.size === 0 && capped.size === 0,
+    complete: givenUp.size === 0 && capped.size === 0 && pending.length === 0,
   });
 }

@@ -357,4 +357,16 @@ describe("composition main wiring (S-105)", () => {
     expect(routed.findings.length).toBe(1);
     expect(byId.get("dev.brandklipparen.capability")?.outcome).toBe("ok");
   });
+
+  test("bk23_built_app_carries_readiness_and_calibration", () => {
+    const built = buildApp(baseConfig(), { ports: testPorts() });
+    if (!built.ok) {
+      throw new Error(`expected the build to succeed, got ${built.error.kind}`);
+    }
+    expect(built.value.rest.calibration).toMatchObject({ version: "0.1.0", checksum: "cd".repeat(32) });
+    expect(built.value.rest.readiness).toMatchObject({
+      artifactChecksum: "cd".repeat(32),
+      expectedArtifactChecksum: "cd".repeat(32),
+    });
+  });
 });

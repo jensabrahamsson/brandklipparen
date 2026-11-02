@@ -16,7 +16,7 @@
 import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import { CodeSnippet } from "../../domain/evidence.ts";
-import { decompilePreferV2 } from "../../domain/decompileV2.ts";
+import { DecompileBudgetError, decompilePreferV2 } from "../../domain/decompileV2.ts";
 import { DEFAULT_MAX_BYTECODE_BYTES, Selector } from "../../domain/types.ts";
 import type {
   Bytecode as BytecodeType,
@@ -97,7 +97,12 @@ export class InternalDecompilerAdapter implements DecompilerPort {
     let decompiled: ReturnType<typeof decompilePreferV2>;
     try {
       decompiled = decompilePreferV2(bytecode);
-    } catch {
+    } catch (error) {
+      if (error instanceof DecompileBudgetError) {
+        return Promise.resolve(
+          err({ kind: "resource-limit", message: "decompiler work budget exhausted on hostile input" }),
+        );
+      }
       return Promise.resolve(
         err({ kind: "invalid-output", message: "decompiler output failed on hostile input" }),
       );

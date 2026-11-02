@@ -188,6 +188,12 @@ export async function resolveProxy(
     isZos = true;
   }
   const implementation = decoded.address;
+  // BK-02: a populated slot alone does not prove a proxy. Without a
+  // DELEGATECALL in the entry code nothing forwards to the slot, so the
+  // entry code stands as the analysis target.
+  if (!containsDelegateCall(entryCode)) {
+    return ok({ resolution: NONE_RESOLUTION, block });
+  }
   const implCode = await readCode(ports, codeCache, implementation, ctx);
   if (implCode === null || implCode === undefined) {
     if (implCode === undefined) {

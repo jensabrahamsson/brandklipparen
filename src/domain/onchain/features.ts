@@ -75,7 +75,21 @@ export function lpBucketsOf(input: {
     .reduce((total, entry) => total + at(entry.address), 0n);
   const deployerHeld = input.deployer === null ? 0n : at(input.deployer);
   const ownerHeld = input.owner === null ? 0n : at(input.owner);
-  const counted = burned + lockerHeld + deployerHeld + ownerHeld;
+  // BK-19: the remainder counts each holder once; overlapping roles
+  // (owner == deployer, a locker that is also the owner, ...) must not
+  // be subtracted twice. Role shares above stay separately labelled.
+  const uniqueHeld = new Set<string>([
+    "0x0000000000000000000000000000000000000000",
+    "0x000000000000000000000000000000000000dead",
+    ...LOCKER_REGISTRY.filter((entry) => entry.kind === "v2-lp").map((entry) => entry.address.toLowerCase()),
+    ...(input.deployer === null ? [] : [input.deployer.toLowerCase()]),
+    ...(input.owner === null ? [] : [input.owner.toLowerCase()]),
+  ]);
+  let uniqueCounted = 0n;
+  for (const address of uniqueHeld) {
+    uniqueCounted += at(address);
+  }
+  const counted = uniqueCounted;
   const other = input.lpTotalSupply - counted;
   return Object.freeze({
     status: "ok",
@@ -120,11 +134,17 @@ export function liquidityOf(input: {
     return { status: "cant-tell", reason: "quote reserves are missing" };
   }
   if (input.quoteIsWeth) {
+    // BK-18: wethAmount is always whole WETH (the stable branch below
+    // already reports whole units); the raw reserve stays in
+    // quoteAmount, so one WETH never displays as 10^18 WETH.
+    const wei = input.quoteReserve;
+    const whole = wei / 10n ** 18n;
+    const fraction = (wei % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, "");
     return Object.freeze({
       status: "ok",
       quote: input.quote,
       quoteAmount: input.quoteReserve.toString(),
-      wethAmount: input.quoteReserve.toString(),
+      wethAmount: fraction === "" ? whole.toString() : `${whole.toString()}.${fraction}`,
       usdAmount: null,
     });
   }

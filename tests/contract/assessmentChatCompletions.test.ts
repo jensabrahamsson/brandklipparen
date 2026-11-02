@@ -85,7 +85,7 @@ function innerAssessment(provider: string, model: string, link: string): unknown
       {
         text: "Recorded claim linked to the request evidence.",
         signalLinks: [link],
-        temporality: { kind: "can-change", changer: "0xe943a4b43ad372355be29445a2532cc0920a7108" },
+        temporality: { kind: "can-change", changer: "0x0102030405060708090a0b0c0d0e0f1011121314" },
       },
     ],
   };
@@ -328,7 +328,7 @@ describe("assessment chat-completions request shape", () => {
       "fetch",
       (async (url: string, init: { method: string; headers: unknown; body: unknown }) => {
         seen.push({ url, init });
-        return { status: 200, text: async () => "{}" };
+        return new Response("{}", { status: 200 });
       }) as typeof fetch,
     );
     try {

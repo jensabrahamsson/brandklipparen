@@ -143,7 +143,7 @@ describe("analysis cache per code hash (K-013)", () => {
     const second = mustOk(Address.parse("0x02030405060708090a0b0c0d0e0f101112131415"));
     const implA = mustOk(Address.parse("0x1112131415161718191a1b1c1d1e1f2021222324"));
     const implB = mustOk(Address.parse("0x2122232425262728292a2b2c2d2e2f3031323334"));
-    const sharedCode = "0x6001600a600b600c600d600e600f55";
+    const sharedCode = "0x8063a9059cbb14600a575b6001600a600b600c600d600e600f55f4";
     const implCode = "0x6001600055";
     const wordOf = (raw: string): string => `0x${"0".repeat(24)}${raw.slice(2).toLowerCase()}`;
     const block = mustOk(BlockNumber.of(24000000));
@@ -387,7 +387,7 @@ describe("analysis cache per code hash (K-013)", () => {
     const impl = mustOk(Address.parse(syntheticAddress(61)));
     const proxyAddr = mustOk(Address.parse(syntheticAddress(62)));
     const implCode = "0x6001600055";
-    const proxyCode = "0x6001600a600b600c600d600e600f55";
+    const proxyCode = "0x8063a9059cbb14600a575b6001600a600b600c600d600e600f55f4";
     const wordOf = (raw: string): string => `0x${"0".repeat(24)}${raw.slice(2).toLowerCase()}`;
     const block = mustOk(BlockNumber.of(24000000));
     const cache = new InMemoryCacheAdapter();

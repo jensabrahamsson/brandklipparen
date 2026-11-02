@@ -66,8 +66,8 @@ const TEST_CATALOGUE: CapabilityCatalogue = Object.freeze({
 
 const PROXY = "0x0102030405060708090a0b0c0d0e0f1011121314";
 const IMPL = "0x1112131415161718191a1b1c1d1e1f2021222324";
-const ADMIN = "0x3132333435363738393a3b3c3d3e3f4041424344";
-const BEACON_ADDR = "0x7172737475767778797a7b7c7d7e7f8081828384";
+const ADMIN = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+const BEACON_ADDR = "0x0102030405060708090a0b0c0d0e0f1011121315";
 
 function addressWord(raw: string): string {
   return `0x${"0".repeat(24)}${raw.slice(2).toLowerCase()}`;
@@ -78,7 +78,7 @@ describe("assessment envelope carries proxy information (K-002, K-005)", () => {
     const proxy = mustOk(Address.parse(PROXY));
     const block = mustOk(BlockNumber.of(24000000));
     const codes = new Map<string, string>([
-      [proxy as string, "0x6001600a600b600c600d600e600f55"],
+      [proxy as string, "0x8063a9059cbb14600a575b6001600a600b600c600d600e600f55f4"],
       [mustOk(Address.parse(IMPL)) as string, "0x6001600055"],
     ]);
     const storage = new Map<string, Map<string, string>>([
@@ -128,7 +128,7 @@ describe("assessment envelope carries proxy information (K-002, K-005)", () => {
     const impl = mustOk(Address.parse(IMPL));
     const block = mustOk(BlockNumber.of(24000000));
     const codes = new Map<string, string>([
-      [proxy as string, "0x6001600a600b600c600d600e600f55"],
+      [proxy as string, "0x8063a9059cbb14600a575b6001600a600b600c600d600e600f55f4"],
       // Dispatcher jumps to a real body at 0x0c holding SELFDESTRUCT, so the
       // occurrence is attributable to the paired function (no guessing).
       [impl as string, "0x8063a9059cbb1461000c57005bff"],
@@ -190,7 +190,7 @@ describe("assessment envelope carries proxy information (K-002, K-005)", () => {
     const impl = mustOk(Address.parse(IMPL));
     const block = mustOk(BlockNumber.of(24000000));
     const codes = new Map<string, string>([
-      [proxy as string, "0x6001600a600b600c600d600e600f55"],
+      [proxy as string, "0x8063a9059cbb14600a575b6001600a600b600c600d600e600f55f4"],
       [impl as string, "0x8063a9059cbb1461000c57005bff"],
       [mustOk(Address.parse(ADMIN)) as string, "0x6002600055"],
     ]);

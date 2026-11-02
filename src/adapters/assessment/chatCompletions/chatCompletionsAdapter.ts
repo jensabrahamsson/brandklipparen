@@ -38,6 +38,7 @@ import {
   resolveAssessmentOutputLimit,
   validateAssessmentOutput,
 } from "../validateAssessment.ts";
+import { safeFetchText } from "../../http/safeFetch.ts";
 
 // Single HTTP round trip over an injected byte channel. Headers travel
 // beside the body so the adapter builds the authorization header from
@@ -66,13 +67,16 @@ export async function fetchChatCompletionsTransport(
   url: string,
   init: ChatCompletionsTransportInit,
 ): Promise<ChatCompletionsTransportResponse> {
-  const response = await fetch(url, {
+  // BK-25: stream through the bounded helper so an oversize body is
+  // refused while reading, never buffered whole first.
+  return safeFetchText(url, {
     method: "POST",
     headers: init.headers,
     body: init.body,
+    timeoutMs: DEFAULT_CHAT_COMPLETIONS_TIMEOUT_MS,
+    maxBytes: DEFAULT_CHAT_COMPLETIONS_MAX_BYTES_OUT,
     signal: init.signal,
   });
-  return { status: response.status, bodyText: await response.text() };
 }
 
 // One log entry per assessment call (K-305, K-309, K-509): provider and

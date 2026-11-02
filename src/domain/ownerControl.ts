@@ -312,17 +312,25 @@ export function exprConstValue(expr: Expr | undefined): bigint | null {
 
 
 
+// BK-01: expressions are DAGs (DUP shares one object), so depth and
+// node counts are memoized by identity; an unmemoized tree walk over a
+// shared subtree costs 2^n on tiny hostile bytecode.
+const depthMemo = new WeakMap<Expr, number>();
+const nodeMemo = new WeakMap<Expr, number>();
+
 function exprDepth(expr: Expr): number {
+  const memo = depthMemo.get(expr);
+  if (memo !== undefined) {
+    return memo;
+  }
+  let result: number;
   if (expr.kind === "const" || expr.kind === "caller" || expr.kind === "callvalue" || expr.kind === "unknown") {
-    return 0;
-  }
-  if (expr.kind === "calldata") {
-    return 1 + exprDepth(expr.offset);
-  }
-  if (expr.kind === "sload") {
-    return 1 + exprDepth(expr.slot);
-  }
-  if (expr.kind === "keccak") {
+    result = 0;
+  } else if (expr.kind === "calldata") {
+    result = 1 + exprDepth(expr.offset);
+  } else if (expr.kind === "sload") {
+    result = 1 + exprDepth(expr.slot);
+  } else if (expr.kind === "keccak") {
     let depth = 0;
     for (const word of expr.words) {
       const wordDepth = exprDepth(word);
@@ -330,40 +338,50 @@ function exprDepth(expr: Expr): number {
         depth = wordDepth;
       }
     }
-    return 1 + depth;
-  }
-  let depth = 0;
-  for (const arg of expr.args) {
-    const argDepth = exprDepth(arg);
-    if (argDepth > depth) {
-      depth = argDepth;
+    result = 1 + depth;
+  } else {
+    let depth = 0;
+    for (const arg of expr.args) {
+      const argDepth = exprDepth(arg);
+      if (argDepth > depth) {
+        depth = argDepth;
+      }
     }
+    result = 1 + depth;
   }
-  return 1 + depth;
+  depthMemo.set(expr, result);
+  return result;
 }
 
 function exprNodeCount(expr: Expr): number {
+  const memo = nodeMemo.get(expr);
+  if (memo !== undefined) {
+    return memo;
+  }
+  let result: number;
   if (expr.kind === "const" || expr.kind === "caller" || expr.kind === "callvalue" || expr.kind === "unknown") {
-    return 1;
-  }
-  if (expr.kind === "calldata") {
-    return 1 + exprNodeCount(expr.offset);
-  }
-  if (expr.kind === "sload") {
-    return 1 + exprNodeCount(expr.slot);
-  }
-  if (expr.kind === "keccak") {
+    result = 1;
+  } else if (expr.kind === "calldata") {
+    result = 1 + exprNodeCount(expr.offset);
+  } else if (expr.kind === "sload") {
+    result = 1 + exprNodeCount(expr.slot);
+  } else if (expr.kind === "keccak") {
     let total = 1;
     for (const word of expr.words) {
       total += exprNodeCount(word);
     }
-    return total;
+    result = total;
+  } else {
+    let total = 1;
+    for (const arg of expr.args) {
+      total += exprNodeCount(arg);
+    }
+    result = total;
   }
-  let total = 1;
-  for (const arg of expr.args) {
-    total += exprNodeCount(arg);
-  }
-  return total;
+  // Cap the stored count: past the cap only the over-cap verdict matters,
+  // and storing the cap keeps shared-subtree sums from exploding.
+  nodeMemo.set(expr, Math.min(result, EXPR_MAX_NODES + 1));
+  return result;
 }
 
 function exprOverCaps(depth: number, nodes: number): boolean {
@@ -474,7 +492,12 @@ function exprNormalizeOp(name: string, args: readonly Expr[]): Expr | null {
       return left;
     }
     const leaves: Expr[] = [];
+    const collected = new Set<Expr>();
     const collect = (expr: Expr): void => {
+      if (collected.has(expr)) {
+        return;
+      }
+      collected.add(expr);
       if (expr.kind === "op" && expr.name === "AND" && expr.args.length === 2) {
         collect(expr.args[0] ?? EXPR_UNKNOWN);
         collect(expr.args[1] ?? EXPR_UNKNOWN);
@@ -595,7 +618,27 @@ function exprMakeKeccak(words: readonly Expr[]): Expr {
   return Object.freeze({ kind: "keccak", words: frozen }) as Expr;
 }
 
+const equalMemo = new WeakMap<Expr, WeakMap<Expr, boolean>>();
+
 export function exprEqual(left: Expr, right: Expr): boolean {
+  if (left === right) {
+    return true;
+  }
+  const memoHit = equalMemo.get(left)?.get(right);
+  if (memoHit !== undefined) {
+    return memoHit;
+  }
+  const result = exprEqualUncached(left, right);
+  let byRight = equalMemo.get(left);
+  if (byRight === undefined) {
+    byRight = new WeakMap<Expr, boolean>();
+    equalMemo.set(left, byRight);
+  }
+  byRight.set(right, result);
+  return result;
+}
+
+function exprEqualUncached(left: Expr, right: Expr): boolean {
   if (left.kind !== right.kind) {
     return false;
   }

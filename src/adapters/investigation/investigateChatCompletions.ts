@@ -29,6 +29,7 @@ import {
   DEFAULT_INVESTIGATION_MAX_OUTPUT_CHARS,
   validateInvestigationDecision,
 } from "./validateInvestigation.ts";
+import { safeFetchText } from "../http/safeFetch.ts";
 
 export type InvestigateChatTransportResponse = {
   readonly status: number;
@@ -50,13 +51,16 @@ export async function fetchInvestigateChatTransport(
   url: string,
   init: InvestigateChatTransportInit,
 ): Promise<InvestigateChatTransportResponse> {
-  const response = await fetch(url, {
+  // BK-25: stream through the bounded helper so an oversize body is
+  // refused while reading, never buffered whole first.
+  return safeFetchText(url, {
     method: "POST",
     headers: init.headers,
     body: init.body,
+    timeoutMs: DEFAULT_INVESTIGATE_TIMEOUT_MS,
+    maxBytes: DEFAULT_INVESTIGATE_MAX_BYTES_OUT,
     signal: init.signal,
   });
-  return { status: response.status, bodyText: await response.text() };
 }
 
 export type InvestigateChatLogEntry = {

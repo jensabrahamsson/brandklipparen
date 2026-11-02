@@ -285,4 +285,14 @@ describe("c09 strict CBOR footer (F-3, part 1)", () => {
     expect(executableEnd(full)).toBe(full.length);
     expect(hasCodeAfterMetadata(full)).toBe(true);
   });
+
+  test("bk03_fallthrough_into_footer_is_not_cut", () => {
+    // No jump references the footer, but execution falls straight into
+    // it: the last prefix instruction is not a terminator.
+    const prefix = [0x5b, 0x60, 0x00];
+    const full = codeFromBytes([...prefix, ...standardFooter()]);
+    expect(strictCborFooterStart(full)).toBe(prefix.length);
+    expect(executableEnd(full)).toBe(full.length);
+    expect(hasCodeAfterMetadata(full)).toBe(true);
+  });
 });

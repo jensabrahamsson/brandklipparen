@@ -169,4 +169,48 @@ describe("decompiler v2", () => {
       expect(typeof out.text).toBe("string");
     }), { numRuns: 50 });
   });
+
+  test("tiny hostile bytecode with shared-subexpression blowup stays bounded", () => {
+    const asm = new Asm();
+    dispatcher(asm, [["a9059cbb", "body"]]);
+    asm.label("body").op(0x5b);
+    asm.op(0x33);
+    for (let index = 0; index < 40; index += 1) {
+      asm.op(0x80, 0x01);
+    }
+    asm.op(0x80, 0x16);
+    asm.push1(0x00).op(0x52);
+    asm.push1(0x20).push1(0x00).op(0xf3);
+    const started = Date.now();
+    const out = decompileContractV2(bc(asm.build()));
+    expect(Date.now() - started).toBeLessThan(5000);
+    expect(out.text).toContain("function transfer(address arg0, uint256 arg1) /* selector 0xa9059cbb */ {");
+    expect(out.text).toContain("return unknown;");
+    expect(out.text.length).toBeLessThan(20000);
+  });
+
+  test("subtraction of 1 and 2^160 is not rendered as the address mask", () => {
+    const asm = new Asm();
+    dispatcher(asm, [["a9059cbb", "body"]]);
+    asm.label("body").op(0x5b);
+    push256pow20(asm);
+    asm.push1(0x01).op(0x03);
+    asm.push1(0x00).op(0x52);
+    asm.push1(0x20).push1(0x00).op(0xf3);
+    const out = decompileContractV2(bc(asm.build()));
+    const expected = `0x${((1n - (1n << 160n)) & ((1n << 256n) - 1n)).toString(16)}`;
+    expect(out.text).toContain(expected);
+  });
+
+  test("double iszero of a non-constant stays a boolean check", () => {
+    const asm = new Asm();
+    dispatcher(asm, [["a9059cbb", "body"]]);
+    asm.label("body").op(0x5b);
+    asm.push1(0x04).op(0x35).op(0x15, 0x15);
+    asm.push1(0x00).op(0x52);
+    asm.push1(0x20).push1(0x00).op(0xf3);
+    const out = decompileContractV2(bc(asm.build()));
+    expect(out.text).not.toContain("return arg0;");
+    expect(out.text).toContain("!= 0");
+  });
 });

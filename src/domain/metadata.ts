@@ -202,6 +202,20 @@ function sweepAll(code: Uint8Array): SweptInstruction[] {
 function cutIsSafe(code: Uint8Array, start: number): boolean {
   const total = code.length;
   const instructions = sweepAll(code);
+  // BK-03: direct fall-through into the footer is execution, not a
+  // referenced jump. Only an unconditional terminator immediately
+  // before the cut proves the footer unreachable; an instruction
+  // spanning the boundary is likewise executable past it.
+  const TERMINATORS: ReadonlySet<number> = new Set([0x00, 0x56, 0xf3, 0xfd, 0xfe, 0xff]);
+  for (const instruction of instructions) {
+    const end = instruction.pc + 1 + instruction.immLen;
+    if (instruction.pc < start && end > start) {
+      return false;
+    }
+    if (end === start && !TERMINATORS.has(instruction.opcode)) {
+      return false;
+    }
+  }
   const jumpdests = new Set<number>();
   for (const instruction of instructions) {
     if (instruction.opcode === 0x5b) {

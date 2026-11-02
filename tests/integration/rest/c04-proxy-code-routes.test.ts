@@ -62,10 +62,11 @@ function placeholderArtifact(): FakeModelArtifactAdapter {
 // Synthetic addresses only for tests.
 const PROXY = "0x0102030405060708090a0b0c0d0e0f1011121314";
 const IMPL = "0x1112131415161718191a1b1c1d1e1f2021222324";
-const ADMIN = "0x3132333435363738393a3b3c3d3e3f4041424344";
+const ADMIN = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 // Proxy stub with no dispatcher entries; the implementation carries the
 // transfer (0xa9059cbb) entry, so only the resolved code answers it.
-const PROXY_BYTECODE = "0x6001600a600b600c600d600e600f55";
+// BK-02: paired dispatcher plus DELEGATECALL proves forwarding.
+const PROXY_BYTECODE = "0x8063a9059cbb14600a575b6001600a600b600c600d600e600f55f4";
 const IMPL_BYTECODE =
   "0x608060405234801561001057600080fd5b508063a9059cbb1461002d57806370a0823114610047575b600080fd5b600035331461003b57600080fd5b60015460023501600155005b6000355460005260206000f3";
 const TEST_BLOCK = 18000000;

@@ -7,6 +7,7 @@ import {
   clearProofCache,
   fetchAssessment,
   fetchChat,
+  fetchExplain,
   fetchExplainCode,
   fetchHealth,
   fetchProof,
@@ -592,6 +593,23 @@ describe("explain code overlay", () => {
       } finally {
         vi.unstubAllGlobals();
       }
+    }
+  });
+
+  test("bk20_supplementary_requests_pin_the_displayed_block", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        seen.push(String(url));
+        return jsonResponse(200, { explain: { kind: "not-configured" } });
+      }),
+    );
+    try {
+      await fetchExplain(ADDRESS, null, 18000000);
+      expect(seen[0]).toContain("block=18000000");
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 

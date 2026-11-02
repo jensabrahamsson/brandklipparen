@@ -496,7 +496,13 @@ async function readOwner(
   if (ownerWord === null) {
     return { feature: { status: "cant-tell", reason: "no proven owner slot and no owner() answer" }, address: null };
   }
-  const holder = addressValue(ownerWord);
+  // BK-17: a proven slot read is a full 32-byte word; decode it to the
+  // 20-byte address before classification (the owner() path already
+  // returns a decoded address). Unproven words stay untouched and
+  // classify as unknown.
+  const classifiedWord =
+    slotProven && /^0x[0-9a-f]{64}$/.test(ownerWord) ? decodeAddressWord(ownerWord) : ownerWord;
+  const holder = classifiedWord === null ? null : addressValue(classifiedWord);
   let hasCode = false;
   if (holder !== null) {
     const holderCode = await rpc.getCode(holder, ctxFor(input, at));
@@ -506,8 +512,8 @@ async function readOwner(
   if (hasCode && holder !== null) {
     masterCopy = await ethCallAddress(rpc, holder, masterCopyCallData(), at, input);
   }
-  const feature = ownerFeatureOf({ ownerWord, ownerHasCode: hasCode, masterCopy, slotProven });
-  const proved = classifyOwner({ ownerWord, ownerHasCode: hasCode, masterCopy });
+  const feature = ownerFeatureOf({ ownerWord: classifiedWord, ownerHasCode: hasCode, masterCopy, slotProven });
+  const proved = classifyOwner({ ownerWord: classifiedWord, ownerHasCode: hasCode, masterCopy });
   const address = feature.status === "ok" && (proved.kind === "eoa" || proved.kind === "contract" || proved.kind === "safe")
     ? proved.address
     : null;

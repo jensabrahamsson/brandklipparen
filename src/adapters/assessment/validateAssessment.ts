@@ -460,6 +460,14 @@ export function validateAssessmentOutput(
     );
   }
 
+  // BK-11: displayed prose must be backed by checked claims. Nonempty
+  // text with an empty claim list would bypass citation validation.
+  if (textRaw.trim().length > 0 && claims.length === 0) {
+    return err(
+      invalid("assessment text carries no checked claims", "text", "claims-required", "semantic"),
+    );
+  }
+
   return ok(
     Object.freeze({
       text: textRaw,

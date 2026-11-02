@@ -58,8 +58,14 @@ function analyzeUrl(address: string): string {
   return `/v1/analyze?address=${encodeURIComponent(address)}`;
 }
 
-function assessmentUrl(address: string): string {
-  return `/v1/assessment?address=${encodeURIComponent(address)}`;
+function assessmentUrl(address: string, block?: number): string {
+  return `/v1/assessment?address=${encodeURIComponent(address)}${blockQuery(block)}`;
+}
+
+// BK-20: supplementary requests pin the displayed block so commentary
+// can never describe a newer snapshot than the scored page.
+function blockQuery(block?: number): string {
+  return block !== undefined && Number.isSafeInteger(block) && block >= 0 ? `&block=${block}` : "";
 }
 
 function toAnalyzeResult(body: unknown, _response: Response): AnalyzeResult {
@@ -86,8 +92,8 @@ export async function analyzeToken(address: string, apiKey: string | null): Prom
   return toAnalyzeResult(await response.json(), response);
 }
 
-export async function fetchAssessment(address: string, apiKey: string | null): Promise<AssessmentState> {
-  const response = await fetch(assessmentUrl(address), { headers: apiHeaders(apiKey) });
+export async function fetchAssessment(address: string, apiKey: string | null, block?: number): Promise<AssessmentState> {
+  const response = await fetch(assessmentUrl(address, block), { headers: apiHeaders(apiKey) });
   if (!response.ok) {
     throw await readError(response, "request-failed");
   }
@@ -112,12 +118,12 @@ export async function fetchHealth(): Promise<HealthState> {
   return (await response.json()) as HealthState;
 }
 
-function investigateUrl(address: string): string {
-  return `/v1/investigate?address=${encodeURIComponent(address)}`;
+function investigateUrl(address: string, block?: number): string {
+  return `/v1/investigate?address=${encodeURIComponent(address)}${blockQuery(block)}`;
 }
 
-function investigateEventsUrl(address: string): string {
-  return `/v1/investigate/events?address=${encodeURIComponent(address)}`;
+function investigateEventsUrl(address: string, block?: number): string {
+  return `/v1/investigate/events?address=${encodeURIComponent(address)}${blockQuery(block)}`;
 }
 
 type RawStep = {
@@ -197,8 +203,8 @@ function toInvestigationState(body: unknown): InvestigationState {
 
 // Completed-report path (S-076 fallback): POST-equivalent GET of the final
 // envelope renders the same trace when the events transport is absent.
-export async function fetchInvestigation(address: string, apiKey: string | null): Promise<InvestigationState> {
-  const response = await fetch(investigateUrl(address), { headers: apiHeaders(apiKey) });
+export async function fetchInvestigation(address: string, apiKey: string | null, block?: number): Promise<InvestigationState> {
+  const response = await fetch(investigateUrl(address, block), { headers: apiHeaders(apiKey) });
   if (!response.ok) {
     const failure = await readError(response, "request-failed");
     if (failure.code === "investigation-not-configured" || response.status === 501) {
@@ -217,8 +223,9 @@ export async function streamInvestigationEvents(
   address: string,
   apiKey: string | null,
   onStep: (step: InvestigationStep) => void,
+  block?: number,
 ): Promise<InvestigationState> {
-  const response = await fetch(investigateEventsUrl(address), { headers: apiHeaders(apiKey) });
+  const response = await fetch(investigateEventsUrl(address, block), { headers: apiHeaders(apiKey) });
   if (!response.ok) {
     const failure = await readError(response, "request-failed");
     if (failure.code === "investigation-not-configured" || response.status === 501) {
@@ -276,6 +283,7 @@ export async function requestInvestigation(
   address: string,
   apiKey: string | null,
   onStep: (step: InvestigationStep) => void,
+  block?: number,
 ): Promise<{ state: InvestigationState; streamed: InvestigationStep[] }> {
   const streamed: InvestigationStep[] = [];
   const collect = (step: InvestigationStep): void => {
@@ -283,7 +291,7 @@ export async function requestInvestigation(
     onStep(step);
   };
   try {
-    const state = await streamInvestigationEvents(address, apiKey, collect);
+    const state = await streamInvestigationEvents(address, apiKey, collect, block);
     if (state.status === "done") {
       return { state: { ...state, steps: streamed.length > 0 ? streamed : state.steps }, streamed };
     }
@@ -292,7 +300,7 @@ export async function requestInvestigation(
     }
     return { state, streamed };
   } catch {
-    const state = await fetchInvestigation(address, apiKey);
+    const state = await fetchInvestigation(address, apiKey, block);
     return { state, streamed };
   }
 }
@@ -363,9 +371,9 @@ export type ExplainState =
   | { readonly status: "fallback" }
   | { readonly status: "failed" };
 
-export async function fetchExplain(address: string, apiKey: string | null): Promise<ExplainState> {
+export async function fetchExplain(address: string, apiKey: string | null, block?: number): Promise<ExplainState> {
   try {
-    const response = await fetch(`/v1/explain?address=${encodeURIComponent(address)}`, {
+    const response = await fetch(`/v1/explain?address=${encodeURIComponent(address)}${blockQuery(block)}`, {
       headers: apiHeaders(apiKey),
     });
     if (!response.ok) {
@@ -427,7 +435,7 @@ export type ChatState =
 // server rejects anything longer before analysis starts). Surviving
 // answers render like Explain sentences; uncited answers only move the
 // drop count. Scores, evidence and finding text are untouched.
-export async function fetchChat(address: string, apiKey: string | null, question: string): Promise<ChatState> {
+export async function fetchChat(address: string, apiKey: string | null, question: string, block?: number): Promise<ChatState> {
   const trimmed = question.trim();
   if (trimmed.length === 0 || trimmed.length > 500) {
     return { status: "failed" };
@@ -436,7 +444,7 @@ export async function fetchChat(address: string, apiKey: string | null, question
     const response = await fetch("/v1/chat", {
       method: "POST",
       headers: { ...apiHeaders(apiKey), "content-type": "application/json" },
-      body: JSON.stringify({ address, question: trimmed }),
+      body: JSON.stringify(block === undefined ? { address, question: trimmed } : { address, question: trimmed, block }),
     });
     if (!response.ok) {
       return { status: "failed" };
@@ -583,9 +591,9 @@ export type RugState =
 // Capability summary for the top risk type (S-097, K-302): one opt-in
 // overlay call beside Explain. The narrative renders like Explain
 // sentences with the same drop count; scores and evidence are untouched.
-export async function fetchRug(address: string, apiKey: string | null): Promise<RugState> {
+export async function fetchRug(address: string, apiKey: string | null, block?: number): Promise<RugState> {
   try {
-    const response = await fetch(`/v1/rug?address=${encodeURIComponent(address)}`, {
+    const response = await fetch(`/v1/rug?address=${encodeURIComponent(address)}${blockQuery(block)}`, {
       headers: apiHeaders(apiKey),
     });
     if (!response.ok) {

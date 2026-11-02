@@ -284,7 +284,7 @@ export function TokenPage({
           return;
         }
         setProvider({ status: "ready", provider: health.assessment.provider, modelId: health.assessment.modelId });
-        return fetchAssessment(address, key).then(
+        return fetchAssessment(address, key, result?.block).then(
           (state) => setAssessment(state),
           (reason: unknown) => {
             if (reason instanceof ApiError && reason.code === "assessment-not-configured") {
@@ -301,7 +301,7 @@ export function TokenPage({
           message: reason instanceof Error ? reason.message : "Assessment failed.",
         });
       });
-  }, [address, apiKey]);
+  }, [address, apiKey, result]);
 
   const runInvestigation = useCallback(() => {
     setInvestigation({ status: "loading", steps: [] });
@@ -314,7 +314,7 @@ export function TokenPage({
         return { status: "loading", steps: [...previous.steps, step] };
       });
     };
-    requestInvestigation(address, key, onStep).then(
+    requestInvestigation(address, key, onStep, result?.block).then(
       ({ state }) => setInvestigation(state),
       (reason: unknown) => {
         setInvestigation({
@@ -324,7 +324,7 @@ export function TokenPage({
         });
       },
     );
-  }, [address, apiKey]);
+  }, [address, apiKey, result]);
 
   if (!isValidAddress(address)) {
     return (
@@ -632,6 +632,7 @@ function AssessedView({
       </section>
       <MuseConsole
         address={address}
+        block={result.block}
         apiKey={apiKey}
         health={health}
         availability={availability}
