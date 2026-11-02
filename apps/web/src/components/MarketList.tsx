@@ -13,7 +13,6 @@ import { riskBand } from "../lib/risk.ts";
 import { formatAgeCompact, isSectionEngaged } from "../lib/liveTokens.ts";
 import {
   fetchMarketNew,
-  formatPriceChange,
   formatUsdCompact,
   marketAgeSeconds,
   marketChip,
@@ -79,10 +78,21 @@ function chipFor(item: MarketItem, recentByToken: ReadonlyMap<string, RecentAnal
   const chip = marketChip(item, recentByToken);
   if (chip.kind === "powers") {
     if (chip.found > 0) {
+      // Short chip (U-12): the full line-1 row must stay within the 130 px
+      // phone budget, so extended findings read as "+N" with the "not in
+      // score" meaning in the tooltip. The score never renders beside it:
+      // the chip replaces the score bar and text (P9).
       return (
-        <span className="feed-chip">
-          ● {chip.found} owner power{chip.found === 1 ? "" : "s"}
-          {chip.extended > 0 ? ` · ${chip.extended} not in score` : null}
+        <span
+          className="feed-chip"
+          title={
+            chip.extended > 0
+              ? `${chip.found} owner powers, ${chip.extended} more by extended analysis (not in score)`
+              : `${chip.found} owner powers`
+          }
+        >
+          ● {chip.found} power{chip.found === 1 ? "" : "s"}
+          {chip.extended > 0 ? ` +${chip.extended}` : null}
         </span>
       );
     }
@@ -98,15 +108,10 @@ function chipFor(item: MarketItem, recentByToken: ReadonlyMap<string, RecentAnal
 }
 
 function scoreFor(item: MarketItem, recentByToken: ReadonlyMap<string, RecentAnalysis>): JSX.Element | null {
+  // U-12 (P9): analysed rows show the owner-power chip instead of any
+  // score, so only a recent visit (analysis known from this browser, no
+  // attached summary) keeps its compact score text.
   const chip = marketChip(item, recentByToken);
-  if (chip.kind === "powers" || chip.kind === "none") {
-    const score = item.analysis?.score;
-    return typeof score === "number" ? (
-      <span className="feed-score numeric">
-        <RiskBadge score={score} />
-      </span>
-    ) : null;
-  }
   if (chip.kind === "recent") {
     return (
       <span className="feed-score numeric">
@@ -117,11 +122,13 @@ function scoreFor(item: MarketItem, recentByToken: ReadonlyMap<string, RecentAna
   return null;
 }
 
+// Line 2 carries three items (U-12): DEX, liquidity and volume. The
+// 24 h price move is dropped: on newborn pairs it is noise, and the
+// fourth item pushed phone rows past the 130 px budget.
 function metaFor(item: MarketItem, updatedTitle: string): JSX.Element {
   const liquidity = formatUsdCompact(item.liquidityUsd);
   const volume = marketVolumeFor(item, Date.now());
   const volumeText = formatUsdCompact(volume.value);
-  const price = formatPriceChange(item.priceChange24hPct);
   return (
     <>
       <span className="meta-item" title={`Pair ${toChecksumAddress(item.pairAddress)}`}>
@@ -148,9 +155,6 @@ function metaFor(item: MarketItem, updatedTitle: string): JSX.Element {
         </span>{" "}
         {volume.label}{" "}
         {volumeText === null ? <span className="muted">can&apos;t tell</span> : volumeText}
-      </span>
-      <span className="meta-item" title={updatedTitle}>
-        {price === null ? "—" : price}
       </span>
     </>
   );
@@ -199,20 +203,22 @@ export function MarketListRows({
 
   return (
     <>
-      <p className="quiet numeric" aria-live="polite" style={{ margin: "8px 0 0" }}>
+      <p className="quiet numeric" aria-live="polite" style={{ margin: "4px 0 0" }}>
         {marketShownLabel(Math.min(shown, items.length), items.length)}
       </p>
       {/*
-        Buffered-rows pill slot: always rendered at a fixed height so the
-        pill appearing never moves an existing row by even a pixel.
+        Buffered-rows pill (S-124, U-12): rendered only while unseen rows
+        wait, as a floating overlay with no in-flow height. The pill
+        appearing never moves an existing row by even a pixel, and the
+        list keeps no dead gap between the count line and the rows.
       */}
-      <p style={{ margin: "8px 0 0", minHeight: 44, display: "flex", alignItems: "center" }}>
-        {buffered.length > 0 && onShowBuffered !== null ? (
+      {buffered.length > 0 && onShowBuffered !== null ? (
+        <div className="feed-buffer">
           <button type="button" className="button-ghost" onClick={onShowBuffered}>
             {`${marketCountLabel(buffered.length)} · Show`}
           </button>
-        ) : null}
-      </p>
+        </div>
+      ) : null}
       {items.length === 0 ? (
         <div className="card" style={{ marginTop: 16 }}>
           <p className="muted" style={{ margin: 0 }}>
@@ -237,14 +243,19 @@ export function MarketListRows({
                   ageDateTime={new Date(entry.createdAt).toISOString()}
                   ageTitle={`Listed ${new Date(entry.createdAt).toISOString()}`}
                   lamp={lampFor(entry, recentByToken)}
-                  chip={
+                  chip={chipFor(entry, recentByToken)}
+                  score={scoreFor(entry, recentByToken)}
+                  meta={
+                    // The cross-list marker rides the meta line (U-12): it
+                    // keeps line 1 to symbol, age, powers chip and score so
+                    // rows stay within the 92 px desktop budget.
                     <>
-                      {chipFor(entry, recentByToken)}
-                      {liveTokens.has(key) ? <span className="feed-chip feed-chip-dim">Also in New pairs</span> : null}
+                      {metaFor(entry, updatedTitle)}
+                      {liveTokens.has(key) ? (
+                        <span className="feed-chip feed-chip-dim">Also in New pairs</span>
+                      ) : null}
                     </>
                   }
-                  score={scoreFor(entry, recentByToken)}
-                  meta={metaFor(entry, updatedTitle)}
                   copyLabel="Copy contract address"
                   tokenTestId={tokenTestId}
                   marker={

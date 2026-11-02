@@ -1,14 +1,17 @@
-// Shared feed row (DX-1 §A3.2): one three-line design for both the
-// on-chain New pairs list and the DexScreener market list, at every
-// width. Line 1 carries the lamp, the symbol link, the name, the compact
-// age, the owner-power chip, the score and the copy icon on the right
-// before the chevron; line 2 carries DEX, liquidity and volume; line 3
+// Shared feed row (U-12, DX-1 §A3.2): one three-line design for both
+// the on-chain New pairs list and the DexScreener market list, at every
+// width. The row is a fixed grid: a 20 px lamp slot, the three content
+// lines, a 44 px copy slot and a 16 px chevron slot. Fixed slots keep
+// the copy and chevron x identical across rows. Line 1 carries the
+// symbol link, the name, the compact age, the owner-power chip and the
+// compact score text (no score bar: the chip replaces it, P9); line 2
+// carries DEX, liquidity and volume with no separator dots; line 3
 // carries the full EIP-55 token address alone, wrapping only between
 // its 4-character groups. The whole row is a link stretched over the
-// row; the copy button sits above it (stopPropagation in CopyButton) so
-// a copy click never navigates. Nothing here moves: insertion flashes
-// run once through the existing arrive glow, static under reduced
-// motion.
+// row, so the row itself is the touch target; the copy button sits
+// above it (stopPropagation in CopyButton) so a copy click never
+// navigates. Nothing here moves: insertion flashes run once through the
+// existing arrive glow, static under reduced motion.
 import { Fragment, type JSX, type ReactNode } from "react";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { groupAddressChunks } from "./TokenHeader.tsx";
@@ -67,40 +70,46 @@ export function FeedRow({
   }
   return (
     <li className={classes.join(" ")}>
-      <div className="feed-line1">
+      <span className="feed-lamp-slot" aria-hidden={lamp === null ? true : undefined}>
         {lamp}
-        <a className="feed-link" href={href} title={name ?? checksummed}>
-          {shown}
-        </a>
-        {marker}
-        {name === null || name.length === 0 ? null : <span className="feed-name">{name}</span>}
-        {ageDateTime === null ? (
-          <span className="feed-age numeric quiet" title={ageTitle} data-nowrap>
-            {ageLabel}
+      </span>
+      <div className="feed-main">
+        <div className="feed-line1">
+          <a className="feed-link" href={href} title={name ?? checksummed}>
+            {shown}
+          </a>
+          {marker}
+          {name === null || name.length === 0 ? null : <span className="feed-name">{name}</span>}
+          {ageDateTime === null ? (
+            <span className="feed-age numeric quiet" title={ageTitle} data-nowrap>
+              {ageLabel}
+            </span>
+          ) : (
+            <time className="feed-age numeric" dateTime={ageDateTime} title={ageTitle} data-nowrap>
+              {ageLabel}
+            </time>
+          )}
+          {chip}
+          {score}
+        </div>
+        <div className="feed-line2">{meta}</div>
+        <div className="feed-line3">
+          <span className="addr-full numeric" data-testid={tokenTestId}>
+            {groupAddressChunks(checksummed).map((chunk, index) => (
+              <Fragment key={index}>
+                {index === 0 ? null : <wbr />}
+                <span className="addr-chunk">{chunk}</span>
+              </Fragment>
+            ))}
           </span>
-        ) : (
-          <time className="feed-age numeric" dateTime={ageDateTime} title={ageTitle} data-nowrap>
-            {ageLabel}
-          </time>
-        )}
-        {chip}
-        {score}
+        </div>
+      </div>
+      <span className="feed-actions">
         <CopyButton value={checksummed} label={copyLabel} />
-        <span className="feed-go" aria-hidden="true">
-          ›
-        </span>
-      </div>
-      <div className="feed-line2">{meta}</div>
-      <div className="feed-line3">
-        <span className="addr-full numeric" data-testid={tokenTestId}>
-          {groupAddressChunks(checksummed).map((chunk, index) => (
-            <Fragment key={index}>
-              {index === 0 ? null : <wbr />}
-              <span className="addr-chunk">{chunk}</span>
-            </Fragment>
-          ))}
-        </span>
-      </div>
+      </span>
+      <span className="feed-go" aria-hidden="true">
+        ›
+      </span>
     </li>
   );
 }

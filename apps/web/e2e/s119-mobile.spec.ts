@@ -136,6 +136,12 @@ async function expectTapTargets(page: Page): Promise<void> {
       if (element instanceof HTMLButtonElement && element.disabled) {
         return;
       }
+      // U-12: feed symbol links stretch over their whole row (::after
+      // inset 0), so the row box is the hit area and the anchor text is
+      // compact. Rows are checked separately below.
+      if (element instanceof HTMLAnchorElement && element.classList.contains("feed-link")) {
+        return;
+      }
       const rect = element.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0 || rect.right < 0 || rect.left > viewportWidth) {
         return;
@@ -167,6 +173,17 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
     await expect(live.locator(".feed-row").first()).toContainText("PEPE");
     expect(await live.locator(".live-table").count()).toBe(0);
     expect(await live.locator(".live-cards").count()).toBe(0);
+    // U-12: each stretched row is the link target, so every row box
+    // meets the 44 px target even though the anchor text is compact.
+    for (const box of await live.locator(".feed-row").evaluateAll((rows) =>
+      rows.map((row) => {
+        const rect = (row as HTMLElement).getBoundingClientRect();
+        return { width: Math.round(rect.width), height: Math.round(rect.height) };
+      }),
+    )) {
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
     await expectFitsViewport(page);
     await expectBadgesVisible(page);
     await expectTapTargets(page);

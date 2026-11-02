@@ -7,8 +7,7 @@ import { MarketList } from "../components/MarketList.tsx";
 import { FeedTabs, readFeedTab, FEED_TAB_STORAGE_KEY, type FeedTabId } from "../components/FeedTabs.tsx";
 import { fetchHealth } from "../lib/api.ts";
 import { toMarketAvailability } from "../lib/capabilities.ts";
-import { tokenCountLabel } from "../lib/liveTokens.ts";
-import { marketShownLabel, type MarketItem, type RecentAnalysis } from "../lib/market.ts";
+import type { MarketItem, RecentAnalysis } from "../lib/market.ts";
 import { useMediaQuery } from "../lib/useMediaQuery.ts";
 import { ELEVATED_BAND, HIGH_BAND, LOW_BAND, RISK_SHORT } from "../lib/risk.ts";
 import { recentRowTitle } from "../lib/tokenIdentity.ts";
@@ -160,14 +159,11 @@ export function StartPage({
     return map;
   }, [marketItems]);
 
-  const liveCountLabel =
-    liveCount === null
-      ? null
-      : liveCount.total <= liveCount.shown
-        ? tokenCountLabel(liveCount.total)
-        : `${liveCount.shown} of ${liveCount.total} new tokens`;
-  const marketCountLabel =
-    marketCount === null ? null : marketShownLabel(marketCount.shown, marketCount.total);
+  // Tab badges stay short so both tabs fit on one line at 320 px
+  // (U-12, R2-9): the list totals only. The full "10 of 30 new tokens"
+  // label stays in each list's own count line.
+  const liveCountLabel = liveCount === null ? null : `${liveCount.total}`;
+  const marketCountLabel = marketCount === null ? null : `${marketCount.total}`;
   const showTabs = marketAvailable && !wide;
 
   const submit = (event: { preventDefault: () => void }): void => {

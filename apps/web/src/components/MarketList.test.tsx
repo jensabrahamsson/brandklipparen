@@ -1,7 +1,8 @@
-// DexScreener market rows (DX-1, W-13): owner-power chips, score only
-// when analysed, compact money, "—" for missing market data, paging with
-// the total in the label, and a 44 px copy per full address. Synthetic
-// addresses only; no network (MarketListRows renders from a snapshot).
+// DexScreener market rows (DX-1, W-13, U-12): owner-power chips instead
+// of scores (the score survives only for recent visits), compact money,
+// "can't tell" for missing market data, paging with the total in the
+// label, and a 44 px copy per full address. Synthetic addresses only; no network
+// (MarketListRows renders from a snapshot).
 import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
 import { MarketListRows } from "./MarketList.tsx";
@@ -44,15 +45,19 @@ function stripped(html: string): string {
 }
 
 describe("market list rows", () => {
-  test("dx1_rows_show_symbol_age_chip_score_and_full_address", () => {
+  test("dx1_rows_show_symbol_age_chip_and_full_address", () => {
     const html = rows([
       item({ analysis: { score: 45, powersFound: 3, powersExtended: 1 } }),
     ]);
     const text = stripped(html);
     expect(text).toContain("SYN");
-    expect(text).toContain("3 owner powers");
-    expect(text).toContain("1 not in score");
-    expect(html).toContain('data-testid="risk-badge"');
+    // U-12 (P9): the owner-power chip replaces the score, so analysed
+    // rows carry no risk badge. The extended count reads "+N" with its
+    // meaning in the tooltip.
+    expect(text).toContain("3 powers +1");
+    expect(text).not.toContain("1 not in score");
+    expect(html).toContain("not in score");
+    expect(html).not.toContain('data-testid="risk-badge"');
     expect(text).toContain(item().tokenAddress);
     expect(html).toContain('aria-label="Copy contract address"');
     expect(html).toContain('class="feed-row');
@@ -77,10 +82,13 @@ describe("market list rows", () => {
     expect(stripped(html)).not.toContain("owner powers");
   });
 
-  test("dx1_missing_market_data_reads_cant_tell_and_dash", () => {
+  test("dx1_missing_market_data_reads_cant_tell", () => {
+    // U-12: line 2 carries DEX, liquidity and volume only; the price
+    // move is dropped as newborn-pair noise. Missing money reads as
+    // "can't tell", never a dash or a zero.
     const html = rows([item({ liquidityUsd: null, volume1hUsd: null, volume24hUsd: null, priceChange24hPct: null })]);
     expect(stripped(html)).toContain("can't tell");
-    expect(stripped(html)).toContain("—");
+    expect(stripped(html)).not.toContain("—");
   });
 
   test("dx1_also_in_new_pairs_marks_shared_tokens", () => {

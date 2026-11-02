@@ -886,10 +886,11 @@ a {
 }
 
 /* Feed tabs at phone widths (320/390): two equal columns instead of a
-   scrolling row, labels wrap with the count on its own line, so the
-   tablist never scrolls sideways. Only layout changes: the roving
-   tabindex WAI-ARIA pattern, the 44 px targets and the row alignment
-   fix are untouched. No motion, no transform. */
+   scrolling row. Short labels ("New pairs", "DexScreener") with a compact
+   "(N)" badge stay on one line at 320; longer totals ellipsis instead of
+   wrapping or pushing the page wide. Only layout changes: the roving
+   tabindex WAI-ARIA pattern and the 44 px targets are untouched. No
+   motion, no transform. */
 @media (max-width: 640px) {
   .tabs.feed-tabs {
     display: grid;
@@ -898,14 +899,14 @@ a {
   }
 
   .tabs.feed-tabs .tab {
-    white-space: normal;
+    white-space: nowrap;
     min-width: 0;
     min-height: 44px;
-    overflow-wrap: anywhere;
-  }
-
-  .tabs.feed-tabs .tab-count {
-    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+    padding-left: 8px;
+    padding-right: 8px;
   }
 }
 
@@ -959,22 +960,46 @@ a {
 
 .feed-rows {
   list-style: none;
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   padding: 0;
   display: grid;
   gap: 8px;
 }
 
+/* Buffered-rows pill (S-124, U-12): a floating overlay with no in-flow
+   height, so showing it never moves an existing row. The pill floats
+   over the list head while unseen rows wait behind it. */
+.feed-buffer {
+  position: relative;
+  min-height: 0;
+  margin: 0;
+}
+
+.feed-buffer .button-ghost {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  z-index: 2;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Feed row grid (U-12): lamp slot, content lines, copy slot, chevron
+   slot. Fixed slots keep the copy button and chevron x identical
+   across rows at every width. Tight padding and gaps keep rows within
+   130 px at 390 and 92 px at 1440. */
 .feed-row {
   position: relative;
   background: var(--surface);
   border: 1px solid var(--edge);
   border-radius: var(--radius-row);
-  padding: 8px 12px;
+  padding: 4px 12px;
   min-width: 0;
   box-shadow: var(--elev-1);
   display: grid;
-  gap: 2px;
+  grid-template-columns: 20px minmax(0, 1fr) 44px 16px;
+  column-gap: 12px;
+  align-items: start;
   transition:
     box-shadow var(--dur-hover) var(--ease-out),
     border-color var(--dur-hover) var(--ease-out);
@@ -999,6 +1024,23 @@ a {
   animation: bk-settle var(--settle) var(--ease-out) 1;
 }
 
+/* U-12 grid slots: the lamp hangs in a fixed 20 px slot, the copy
+   button in a fixed 44 px slot and the chevron in a fixed 16 px slot.
+   All three lines share the content column's left edge by construction,
+   so no inset or absolute gutter hack is needed. */
+.feed-lamp-slot {
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+  min-height: 24px;
+}
+
+.feed-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
 .feed-line1 {
   display: flex;
   align-items: center;
@@ -1010,20 +1052,28 @@ a {
 .feed-link {
   font-size: 15px;
   font-weight: 600;
+  line-height: 1.4;
   color: var(--phosphor-hi);
   text-decoration: none;
-  /* Touch-target contract (WCAG 2.5.8): the symbol link keeps a real
-     44x44 box on every width like every other control. The extra floor
-     lands to the right of short symbols, so the left text edge never
-     moves and wrapping flex rows never push the page wide. */
-  min-width: 44px;
-  min-height: 44px;
+  /* Touch-target contract (WCAG 2.5.8): the row is the target. The link
+     stretches over the whole row (::after below), so the row's own box
+     (always 44 px or taller from the copy slot) is the hit area and the
+     anchor text stays a compact one-line label. Layout-contract runners
+     allowlist `.feed-link` for the same reason. */
+  min-width: 0;
+  min-height: 0;
 }
 
 .feed-link::after {
   content: "";
   position: absolute;
   inset: 0;
+}
+
+.feed-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
 }
 
 .feed-name {
@@ -1065,10 +1115,11 @@ a {
 
 .feed-chip {
   font-size: 12px;
+  line-height: 1.5;
   color: var(--phosphor);
   border: 1px solid var(--edge);
   border-radius: 999px;
-  padding: 2px 10px;
+  padding: 1px 10px;
   white-space: nowrap;
 }
 
@@ -1082,28 +1133,45 @@ a {
   align-items: center;
 }
 
-.feed-score .risk .segs {
+/* U-12 (P9): the owner-power chip replaces the score bar in feed rows.
+   The bar never paints here; rows keep the compact "19 · Low" text. */
+.feed-score .segs {
   display: none;
 }
 
 .feed-go {
   color: var(--dim);
-  margin-left: auto;
+  font-size: 16px;
+  line-height: 1.4;
+  display: flex;
+  justify-content: center;
+  padding-top: 1px;
 }
 
-.feed-line2 {
+/* Specificity (0,2,0) beats the shared separator-system row rules
+   below, so feed rows keep their own gaps and no inline-start clip. */
+.feed-row .feed-line2 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   row-gap: 2px;
-  column-gap: 1.8em;
+  column-gap: 20px;
   overflow-x: clip;
   overflow-y: visible;
-  padding-inline-start: 4px;
-  margin-inline-start: -4px;
+  /* No separator inline-start clip (U-12): without ::before separators
+     the line starts flush with its siblings. */
+  padding-inline-start: 0;
+  margin-inline-start: 0;
   font-size: 13px;
+  line-height: 1.35;
   color: var(--dim);
   min-width: 0;
+}
+
+/* U-12: no baseline "." separators between feed meta items. Column gaps
+   separate the items; the feedhead meta keeps its own middots. */
+.feed-row .feed-line2 > .meta-item + .meta-item::before {
+  content: none;
 }
 
 /* Feed meta items wrap only between each other: they never shrink
@@ -1111,6 +1179,42 @@ a {
    wrapped lines instead of overlapping on one line. */
 .feed-line2 > .meta-item {
   flex-shrink: 0;
+}
+
+/* Feed rows at phone widths (U-12): the content column is only about
+   150 px, so every horizontal pixel counts. Tighter row padding and
+   gaps widen the column; a 12 px meta line with 10 px gaps fits two
+   items per line; the decorative meta pictograms rest (the status lamp
+   stays in its slot); a 12 px age and slimmer chips let the age and chip
+   share line 1's second line. Slots stay fixed, so copy and chevron x
+   are unchanged. No motion. */
+@media (max-width: 640px) {
+  .feed-row {
+    padding: 4px 8px;
+    column-gap: 8px;
+  }
+
+  .feed-row .feed-line1 {
+    gap: 4px 6px;
+  }
+
+  .feed-row .feed-line1 .feed-age {
+    font-size: 12px;
+  }
+
+  .feed-row .feed-chip {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .feed-row .feed-line2 {
+    font-size: 12px;
+    column-gap: 10px;
+  }
+
+  .feed-row .feed-line2 .feed-pic {
+    display: none;
+  }
 }
 
 .feed-pic {
@@ -1125,42 +1229,18 @@ a {
   flex-wrap: wrap;
   gap: 4px 8px;
   font-size: 12px;
+  line-height: 1.35;
   color: var(--dim);
   min-width: 0;
 }
 
-/* Gestalt alignment: the three lines of a feed row share one left text
-   edge. Line 2's leading pictogram and line 1's status lamp hang in a
-   fixed 20 px gutter through absolute positioning, while every line
-   carries the same 20 px inline-start inset, so the first glyph of each
-   line starts at the same x independent of font metrics. The icons stay
-   inside their boxes, so the separator inline-start clip, the 44 px
-   targets and the stretched row link (.feed-row stays the positioning
-   context) are unchanged. No motion, no transform. */
-.feed-line1 {
-  padding-inline-start: 20px;
-}
-
-.feed-line1 > .feed-lamp {
-  position: absolute;
-  inset-inline-start: 12px;
-  top: 8px;
-}
-
-.feed-line3 {
-  padding-inline-start: 20px;
-}
-
-.feed-line2 > .meta-item:first-child {
-  padding-inline-start: 20px;
-}
-
-.feed-line2 > .meta-item:first-child > .feed-pic {
-  position: absolute;
-  inset-inline-start: 0;
-  top: 50%;
-  margin-top: -8px;
-}
+/* Gestalt alignment (U-12): the three lines of a feed row share one
+   left text edge through the row grid itself. Line 1's status lamp and
+   line 2's leading pictogram sit in normal flow (lamp slot, inline
+   pictogram), so the first glyph of each line starts at the same x with
+   no absolute gutter. The 44 px copy target and the stretched row link
+   (.feed-row stays the positioning context) are unchanged. No motion,
+   no transform. */
 
 .live-new {
   display: inline-block;

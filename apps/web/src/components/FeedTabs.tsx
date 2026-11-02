@@ -1,9 +1,10 @@
-// Start-page list tabs (DX-1 §A3.1): below 1280 px the two lists share
-// one column behind two tabs ("New pairs · on-chain" and "DexScreener ·
-// market"), each with its pictogram slot and count. Real tab pattern:
-// roving tabindex with ArrowRight/ArrowLeft/Home/End switching, the
-// choice remembered in sessionStorage by the parent. Static motion: no
-// animation of its own.
+// Start-page list tabs (U-12, R2-9, DX-1 §A3.1): below 1280 px the two
+// lists share one column behind two tabs ("New pairs" and "DexScreener"),
+// each with its total as a short badge, for example "New pairs (30)".
+// Short labels with nowrap keep every tab on one line at 320 px. Real
+// tab pattern: roving tabindex with ArrowRight/ArrowLeft/Home/End
+// switching, the choice remembered in sessionStorage by the parent.
+// Static motion: no animation of its own.
 import { useRef, type JSX, type KeyboardEvent } from "react";
 
 export type FeedTabId = "live" | "market";
@@ -31,8 +32,8 @@ export function FeedTabs({
   readonly marketCount: string | null;
 }): JSX.Element {
   const tabs: readonly { readonly id: FeedTabId; readonly label: string; readonly count: string | null }[] = [
-    { id: "live", label: "New pairs · on-chain", count: liveCount },
-    { id: "market", label: "DexScreener · market", count: marketCount },
+    { id: "live", label: "New pairs", count: liveCount },
+    { id: "market", label: "DexScreener", count: marketCount },
   ];
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -77,7 +78,7 @@ export function FeedTabs({
           onKeyDown={(event) => move(event, index)}
         >
           {tab.label}
-          {tab.count === null ? null : <span className="tab-count numeric"> · {tab.count}</span>}
+          {tab.count === null ? null : <span className="tab-count numeric"> ({tab.count})</span>}
         </button>
       ))}
     </div>

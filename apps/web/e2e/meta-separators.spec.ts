@@ -525,9 +525,14 @@ test("brief40_mobile_separators_found_generically", async ({ page }) => {
     'section[aria-label="Recently analyzed"]',
   ]);
   expect(startScan.labels.length).toBeGreaterThan(0);
-  expect(startScan.rowCount).toBeGreaterThanOrEqual(3);
+  // U-12 removed the feed rows' own separator dots, so the scan now
+  // covers the feedhead meta line plus the DEX interior separator.
+  expect(startScan.rowCount).toBeGreaterThanOrEqual(2);
   expect(startScan.failures, startScan.failures.join("; ")).toEqual([]);
-  expect(startScan.wrapped).toBe(true);
+  // U-12: feed rows carry no separator dots and the feedhead meta line
+  // plus the DEX interior separator fit on one line at 390, so no
+  // separator row wraps here; the token-page scan below covers the same.
+  expect(startScan.wrapped).toBe(false);
 
   // Feed rows share one left text edge per row (DX-1 replaces the old
   // card/table layouts with one FeedRow at every width): the symbol line,
@@ -543,24 +548,17 @@ test("brief40_mobile_separators_found_generically", async ({ page }) => {
     expect(Math.abs(line3Left - line1Left), `feed row ${i} address shares left edge`).toBeLessThanOrEqual(0.5);
   }
 
-  // The feed meta line keeps real separators between items at phone
-  // width (DX-1 points the scan at the new row component's meta line):
-  // every meta item after the first draws its own dot, a wrapped line
-  // starts with a bare item, and mid-line dots stay painted.
+  // U-12 removed the baseline "." separators between feed meta items
+  // (column gaps separate DEX and liquidity now): no feed meta item may
+  // draw its own ::before middot. The left-edge checks above still hold.
   for (let i = 0; i < feedRowCount; i += 1) {
     const metaItems = await itemCount(page, 'section[aria-label="New tokens"] .feed-line2', i);
-    expect(metaItems).toBeGreaterThanOrEqual(2);
-    let painted = 0;
-    for (let k = 1; k < metaItems; k += 1) {
+    expect(metaItems).toBeGreaterThanOrEqual(1);
+    for (let k = 0; k < metaItems; k += 1) {
       const sep = await sepStatus(page, 'section[aria-label="New tokens"] .feed-line2', i, k);
       expect(sep.found).toBe(true);
-      expect(sep.beforeContent, `feed meta row ${i} item ${k} separator`).toContain("·");
-      if (!sep.startsLine) {
-        expect(sep.hitIsItem, `feed meta row ${i} item ${k} separator painted`).toBe(true);
-        painted += 1;
-      }
+      expect(sep.beforeContent, `feed meta row ${i} item ${k} separator`).not.toContain("·");
     }
-    expect(painted).toBeGreaterThanOrEqual(1);
   }
 
   // Note: hash URLs build by concatenation (see token-symbol-heading).

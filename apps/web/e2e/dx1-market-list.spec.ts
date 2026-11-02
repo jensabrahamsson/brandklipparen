@@ -204,8 +204,9 @@ test("dx1_market_copy_and_labelling", async ({ page }) => {
   await expect(market.getByText("Tokens someone paid to promote. Market data from DexScreener. Not part of the score.")).toBeVisible();
   await expect(market.getByText("Market data from DexScreener. Not part of the score.")).toBeVisible();
   // Owner-power chip follows the attached analysis; unscanned otherwise.
-  await expect(market.getByText("3 owner powers")).toBeVisible();
-  await expect(market.getByText("1 not in score")).toBeVisible();
+  // U-12 (P9): the short chip replaces the score, with the extended
+  // meaning in its tooltip.
+  await expect(market.getByText("3 powers +1")).toBeVisible();
   await expect(market.getByText("Not scanned")).toBeVisible();
   // Every row shows a 42-character address with a 44 px copy button.
   const addresses = market.locator('[data-testid="market-token-full"]');
@@ -288,6 +289,78 @@ test("dx1_market_buffered_inserts_move_nothing_until_shown", async ({ page }) =>
   await expect(market.getByText("5 new tokens")).toBeVisible();
 });
 
+test("u12_feed_tabs_and_rows", async ({ page }) => {
+  await mockFeeds(page);
+
+  // Tabs: one line at 320 and unclipped at 768.
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto("/#/");
+  const tabs = page.getByRole("tab");
+  await expect(tabs).toHaveCount(2);
+  for (const box of await tabs.evaluateAll((elements) =>
+    elements.map((element) => {
+      const node = element as HTMLElement;
+      return {
+        height: Math.round(node.getBoundingClientRect().height),
+        clipped: node.scrollWidth > node.clientWidth + 1,
+      };
+    }),
+  )) {
+    expect(box.height).toBeLessThanOrEqual(52);
+    expect(box.clipped).toBe(false);
+  }
+  await page.setViewportSize({ width: 768, height: 900 });
+  for (const box of await tabs.evaluateAll((elements) =>
+    elements.map((element) => {
+      const node = element as HTMLElement;
+      return { clipped: node.scrollWidth > node.clientWidth + 1 };
+    }),
+  )) {
+    expect(box.clipped).toBe(false);
+  }
+
+  // Rows: compact, aligned, and free of feed noise.
+  async function expectRows(section: string, maxRow: number): Promise<void> {
+    const rows = page.locator(`${section} .feed-row`);
+    await expect(rows.first()).toBeVisible();
+    for (const height of await rows.evaluateAll((elements) =>
+      elements.map((element) => Math.round((element as HTMLElement).getBoundingClientRect().height)),
+    )) {
+      expect(height).toBeLessThanOrEqual(maxRow);
+    }
+    // Copy buttons share one x, chevrons share one x.
+    for (const selector of ['[aria-label="Copy contract address"]', ".feed-go"] as const) {
+      const xs = await rows.locator(selector).evaluateAll((elements) =>
+        elements.map((element) => Math.round((element as HTMLElement).getBoundingClientRect().x)),
+      );
+      for (const x of xs) {
+        expect(Math.abs(x - (xs[0] as number))).toBeLessThanOrEqual(1);
+      }
+    }
+  }
+
+  // Below 1280 the lists switch behind tabs; at 1440 both show at once.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("tab", { name: /New pairs/ }).click();
+  await expectRows('section[aria-label="New tokens"]', 130);
+  await page.getByRole("tab", { name: /DexScreener/ }).click();
+  await expectRows('section[aria-label="Promoted on DexScreener"]', 130);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expectRows('section[aria-label="New tokens"]', 92);
+  await expectRows('section[aria-label="Promoted on DexScreener"]', 92);
+
+  // No "Market —", no "block N", no baseline "." separators in rows.
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.locator(".feed-row").getByText("Market —").count()).toBe(0);
+  expect(await page.locator(".feed-row").getByText(/block \d+/).count()).toBe(0);
+  const dots = await page.locator(".feed-row .feed-line2 > .meta-item").evaluateAll((elements) =>
+    elements.map((element) => getComputedStyle(element, "::before").content),
+  );
+  for (const content of dots) {
+    expect(content === "none" || content === '""' || !content.includes("·")).toBe(true);
+  }
+});
+
 test("dx1_start_page_layout_contract_and_height_budget", async ({ page }) => {
   const range = (count: number, base: string): Record<string, unknown>[] =>
     Array.from({ length: count }, (_, index) => {
@@ -313,7 +386,9 @@ test("dx1_start_page_layout_contract_and_height_budget", async ({ page }) => {
   const market = page.locator('section[aria-label="Promoted on DexScreener"]');
   await expect(market.getByText("10 of 30 new tokens")).toBeVisible();
   await expect(page.locator(".feed-row")).toHaveCount(20);
-  await assertLayout(page, { widths: [320, 390, 768, 1024, 1280, 1440, 1920] });
+  // U-12: feed symbol links stretch over their rows, so the row box is
+  // the target and the compact anchor text is allowlisted here.
+  await assertLayout(page, { widths: [320, 390, 768, 1024, 1280, 1440, 1920], allow: [".feed-link"] });
 
   // At 768 px the page is exactly viewport-wide and the search input
   // keeps a usable width (W-12 D2: never crushed below 12ch).

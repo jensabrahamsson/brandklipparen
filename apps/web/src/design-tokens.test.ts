@@ -365,7 +365,9 @@ test("r1_r3_r4_touch_targets_wrap_and_separator", () => {
   expect(code).toMatch(/\.explain-trigger\s+\.q\s*\{[^}]*width:\s*20px[^}]*height:\s*20px/);
   expect(code).not.toMatch(/\.explain-trigger::after/);
   // R-4: the "·" separator renders at ~1.2 em, never a 14 px speck.
-  const separator = code.match(/\.meta-item\s*\+\s*\.meta-item::before\s*\{[^}]*\}/)?.[0] ?? "";
+  // U-12 adds a feed-row override that disables the dot there, so anchor
+  // to the shared separator-system rule at its own line start.
+  const separator = code.match(/^\.meta-item\s*\+\s*\.meta-item::before\s*\{[^}]*\}/m)?.[0] ?? "";
   expect(separator).toContain('content: "·"');
   expect(separator).toMatch(/position:\s*absolute/);
   expect(separator).toMatch(/top:\s*50%/);

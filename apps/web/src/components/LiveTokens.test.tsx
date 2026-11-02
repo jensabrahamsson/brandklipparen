@@ -97,6 +97,16 @@ describe("live tokens list", () => {
     expect(html).toContain("can&#x27;t tell");
   });
 
+  test("u12_rows_carry_no_market_dash_or_block_number", () => {
+    const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} marketByToken={NO_MARKET} />);
+    const text = renderedText(html);
+    expect(text).not.toContain("Market —");
+    expect(text).not.toContain("block 21600002");
+    expect(text).not.toContain("block 21600001");
+    // The block number survives as tooltip provenance on the age stamp.
+    expect(html).toContain('title="Block 21600002"');
+  });
+
   test("duplicate symbols stay distinguishable by fee tier", () => {
     const first = { ...PENDING, symbol: "NEW" };
     const second = { ...PENDING, symbol: "NEW", pairAddress: syntheticAddress(30), feeTier: 10000 };
@@ -180,17 +190,19 @@ describe("live tokens list", () => {
     expect(html).not.toContain('aria-label="Copy pair address"');
   });
 
-  test("r2-4_copy_controls_ride_line_1_never_under_the_address", () => {
+  test("u12_copy_and_chevron_ride_fixed_slots_never_under_the_address", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} marketByToken={NO_MARKET} />);
-    // The copy control renders before the address line opens.
-    const copyAt = html.indexOf('aria-label="Copy contract address"');
-    const line3At = html.indexOf("feed-line3");
-    expect(copyAt).toBeGreaterThanOrEqual(0);
-    expect(line3At).toBeGreaterThan(copyAt);
-    // Line 3 carries the grouped address and no button of its own.
+    // U-12 grid: one copy button per row in the fixed actions slot, one
+    // chevron, and the address line carries no button of its own.
+    expect(html.match(/feed-actions/g)).toHaveLength(1);
+    expect(html.match(/aria-label="Copy contract address"/g)).toHaveLength(1);
+    expect(html.match(/feed-go/g)).toHaveLength(1);
     const line3 = (html.split("feed-line3")[1] ?? "").split("</div>")[0] ?? "";
     expect(line3).toContain(toChecksumAddress(NEW.tokenAddress).slice(0, 6));
     expect(line3).not.toContain("<button");
+    // The compact score text stays (the bar itself is hidden by CSS:
+    // `.feed-score .segs` never paints, P9).
+    expect(html).toContain('data-testid="risk-badge"');
   });
 
   test("s36_live_list_shows_checksummed_addresses_but_routes_on_raw", () => {

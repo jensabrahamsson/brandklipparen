@@ -105,24 +105,19 @@ function riskCell(entry: LiveTokenEntry): JSX.Element {
   return <span className="muted">{entry.reason ?? "error"}</span>;
 }
 
-// DexScreener market enrichment for one on-chain row (W-13): liquidity
-// USD, 24 h volume and price change when the market listing holds this
-// token, clearly labelled and display only. Missing data reads "—".
+// DexScreener market enrichment for one on-chain row (W-13, U-12):
+// liquidity USD, 24 h volume and price change when the market listing
+// holds this token, clearly labelled and display only. When the market
+// listing does not hold the token, nothing renders: the empty
+// "Market —" placeholder is noise in a feed.
 function marketSegment(
   entry: LiveTokenEntry,
   marketByToken: ReadonlyMap<string, MarketItem>,
-): JSX.Element {
+): JSX.Element | null {
   const market = marketByToken.get(entry.tokenAddress.toLowerCase());
   const title = "Market data from DexScreener, not part of the score.";
   if (market === undefined) {
-    return (
-      <span className="meta-item" title={title}>
-        <span className="feed-pic" aria-hidden="true">
-          <Pictogram name="market" size={16} />
-        </span>{" "}
-        Market —
-      </span>
-    );
+    return null;
   }
   const liquidity = formatUsdCompact(market.liquidityUsd);
   const volume = marketVolumeFor(market, Date.now());
@@ -250,20 +245,22 @@ export function LiveTokensList({
           ))}
         </div>
       </div>
-      <p className="quiet numeric" aria-live="polite" style={{ margin: "8px 0 0" }}>
+      <p className="quiet numeric" aria-live="polite" style={{ margin: "4px 0 0" }}>
         {items.length <= visible ? tokenCountLabel(items.length) : `${visible} of ${items.length} new tokens`}
       </p>
       {/*
-        Buffered-rows pill slot (S-124): always rendered at a fixed height
-        so the pill appearing never moves the focused row by even a pixel.
+        Buffered-rows pill (S-124, U-12): rendered only while unseen rows
+        wait, as a floating overlay with no in-flow height. The pill
+        appearing never moves the focused row by even a pixel, and an
+        empty feed keeps no dead gap between the count line and the rows.
       */}
-      <p style={{ margin: "8px 0 0", minHeight: 44, display: "flex", alignItems: "center" }}>
-        {buffered.length > 0 && onShowBuffered !== null ? (
+      {buffered.length > 0 && onShowBuffered !== null ? (
+        <div className="feed-buffer">
           <button type="button" className="button-ghost" onClick={onShowBuffered}>
             {`${tokenCountLabel(buffered.length)} · Show`}
           </button>
-        ) : null}
-      </p>
+        </div>
+      ) : null}
       {items.length === 0 ? (
         filter === "All" ? (
           <div className="card" style={{ marginTop: 16 }}>
@@ -331,7 +328,6 @@ export function LiveTokensList({
                         )}
                       </span>
                       {marketSegment(entry, marketByToken)}
-                      <span className="meta-item">block {entry.block}</span>
                     </>
                   }
                   copyLabel="Copy contract address"

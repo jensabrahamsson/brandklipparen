@@ -120,10 +120,14 @@ test("live_list_dex_and_human_age", async ({ page }) => {
     // Liquidity can't-tell carries its reason.
     await expect(feed.getByTitle("No WETH liquidity seen in the pair's first logs").first()).toBeVisible();
     // The repeated symbol stays distinguishable: three fee variants with
-    // the full token address and the block number in each row.
+    // the full token address in each row. The block number is tooltip
+    // provenance on the age stamp now (U-12), never row text.
     expect(await feed.getByText("DUP").count()).toBeGreaterThanOrEqual(3);
-    expect(await feed.getByText("block 21600010").count()).toBeGreaterThanOrEqual(1);
-    expect(await feed.getByText("block 21600008").count()).toBeGreaterThanOrEqual(1);
-    expect(await feed.getByText("block 21600006").count()).toBeGreaterThanOrEqual(1);
+    expect(await feed.getByText("block 21600010").count()).toBe(0);
+    expect(await feed.getByText("block 21600008").count()).toBe(0);
+    expect(await feed.getByText("block 21600006").count()).toBe(0);
+    await expect(feed.locator('[title="Block 21600010"]').first()).toBeVisible();
+    await expect(feed.locator('[title="Block 21600008"]').first()).toBeVisible();
+    await expect(feed.locator('[title="Block 21600006"]').first()).toBeVisible();
   }
 });
