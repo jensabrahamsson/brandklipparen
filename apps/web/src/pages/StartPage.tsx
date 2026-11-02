@@ -177,7 +177,7 @@ export function StartPage({
           <h1 className="hero-title">
             Scan before
             <br />
-            <em>you ape.</em>
+            <em>you swap.</em>
           </h1>
           <p className="hero-sub">
             Paste a contract address. Rug pull, honeypot and bot-pump risk from bytecode alone, explained in plain

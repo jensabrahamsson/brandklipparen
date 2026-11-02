@@ -22,7 +22,7 @@ import {
 import type { ErrorBucket } from "./helpers/clickSweep.ts";
 
 async function readyStart(page: Page): Promise<void> {
-  await expect(page.getByRole("heading", { name: "Scan before you ape." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Scan before you swap." })).toBeVisible();
 }
 
 async function readyToken(page: Page, score: number): Promise<void> {

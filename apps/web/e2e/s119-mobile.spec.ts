@@ -157,7 +157,7 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Scan before you ape." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Scan before you swap." })).toBeVisible();
     await expectFitsViewport(page);
 
     // The live list renders as shared rows at every width: no table,

@@ -105,7 +105,7 @@ test("phosphor_reduced_motion_is_fully_static_on_start_and_analysis", async ({ p
   await mockRest(page, () => [liveEntry("aa", "AAA"), liveEntry("bb", "BBB"), LIVE_ANALYZING]);
   await page.goto("/#/");
 
-  await expect(page.getByRole("heading", { name: "Scan before you ape." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Scan before you swap." })).toBeVisible();
   await expect(page.getByText("3 new tokens")).toBeVisible();
   expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
 
