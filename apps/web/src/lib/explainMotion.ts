@@ -2,8 +2,7 @@
 // `runSequence`, built on element.animate() with the allowed
 // properties only (opacity, colour, glow). Every sequence is one-shot,
 // finishes instantly on any user input, and under prefers-reduced-motion
-// or data-motion="off" applies end states synchronously without ever
-// creating an animation.
+// applies end states synchronously without ever creating an animation.
 export type MotionStep = {
   // A null element skips the animation but still runs the end state.
   readonly element: Element | null;
@@ -30,13 +29,10 @@ function installCancelOnInput(): void {
   window.addEventListener("wheel", finish, { passive: true });
 }
 
-// Reduced motion or the Motion switch off: the end state renders at
-// once, exactly what the static equivalent teaches.
+// Reduced motion: the end state renders at once, exactly what the
+// static equivalent teaches.
 export function motionAllowed(): boolean {
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    return false;
-  }
-  if (document.documentElement.dataset["motion"] === "off") {
+  if (typeof window === "undefined") {
     return false;
   }
   return (

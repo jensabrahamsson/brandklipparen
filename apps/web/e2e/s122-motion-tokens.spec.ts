@@ -216,33 +216,23 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
   await reduced.close();
 });
 
-test("s122_motion_switch_settings_toggles_data_motion", async ({ page }) => {
+test("s122_no_motion_switch_anywhere", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.locator(".card").first()).toBeVisible();
 
   // No switch in any footer; the token footer links to Settings instead.
   await expect(page.getByTestId("motion-switch")).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "Animations" })).toHaveCount(0);
   await expect(page.locator(".page-foot")).toContainText("Deterministic score · Muse is advisory");
   await expect(page.locator(".page-foot .foot-model")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Use your own API key" })).toHaveAttribute("href", "#/settings");
 
-  // In Settings the Animations switch keeps a real 44 px box.
+  // Settings holds the API key field and no motion switch: motion
+  // follows only the operating-system reduced-motion setting.
   await page.goto("/#/settings");
-  const motion = page.getByTestId("motion-switch");
-  await expect(motion).toBeVisible();
-  await expect(motion).toHaveAccessibleName("Animations");
-  const box = await motion.boundingBox();
-  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
-
-  // Off pins data-motion and kills running loops; on removes it again.
-  await motion.click();
-  await expect(motion).toHaveAttribute("aria-checked", "false");
-  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBe("off");
-  await page.waitForTimeout(300);
-  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
-  await motion.click();
-  await expect(motion).toHaveAttribute("aria-checked", "true");
-  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBeUndefined();
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByLabel("API key", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("motion-switch")).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "Animations" })).toHaveCount(0);
 });

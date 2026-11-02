@@ -432,48 +432,13 @@ test("hover_leaves_cards_flat_without_perspective", async ({ page }) => {
   expect(await graph.evaluate((element) => getComputedStyle(element).perspective)).toBe("none");
 });
 
-test("motion_switch_off_is_static_without_emulation", async ({ page }) => {
+test("reduced_motion_settings_hold_no_motion_switch", async ({ page }) => {
+  // No motion switch exists anywhere: motion follows only the
+  // operating-system prefers-reduced-motion setting.
   await mockRest(page);
   await page.goto("/#/settings");
-  const motion = page.getByTestId("motion-switch");
-  await expect(motion).toHaveAttribute("aria-checked", "true");
-  await motion.click();
-  await expect(motion).toHaveAttribute("aria-checked", "false");
-  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBe("off");
-  await page.goto(`/#/token/${ADDRESS}`);
-
-  const cards = page.locator(".card, .cant-tell");
-  await expect(cards.first()).toBeVisible();
-
-  // Same interaction script as the reduced-motion run: hover, open a
-  // tooltip, expand a signal and run the investigation. Nothing may
-  // animate or transition while the switch is off.
-  await cards.first().hover();
-  await page.locator('[data-testid="explain-score:combined"]').focus();
-  await page.locator('section[aria-label="Why this score"] article details > summary').first().click();
-  await page.getByRole("button", { name: "Investigate", exact: true }).click();
-  const graph = page.locator('ol[aria-label="Investigation steps"]');
-  await expect(graph.locator("li")).toHaveCount(2);
-  await page.waitForTimeout(600);
-  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
-
-  const violations = await page.evaluate(() => {
-    const bad: string[] = [];
-    document.querySelectorAll("*").forEach((element) => {
-      const style = getComputedStyle(element);
-      const animated =
-        style.animationName !== "none" &&
-        style.animationDuration.split(",").some((part) => Number.parseFloat(part) > 0);
-      const transitioned =
-        style.transitionProperty !== "none" &&
-        style.transitionDuration.split(",").some((part) => Number.parseFloat(part) > 0);
-      if (animated || transitioned) {
-        bad.push(`${element.tagName}<${element.getAttribute("class") ?? ""}>`);
-      }
-    });
-    return bad;
-  });
-  expect(violations).toEqual([]);
+  await expect(page.getByTestId("motion-switch")).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "Animations" })).toHaveCount(0);
 });
 
 test("investigation_graph_runs_no_animations", async ({ page }) => {

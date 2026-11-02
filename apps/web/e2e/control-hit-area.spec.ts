@@ -1,7 +1,7 @@
-// Switch and ask-button hit-area pattern (R2-8, W-10): the Expert and
-// Animations switches keep a 44x44 box with a visible keyboard ring and a
-// themed on-state, and the Ask button always looks enabled: an empty
-// submit focuses the field with an error hint and sends nothing.
+// Switch and ask-button hit-area pattern (R2-8): the Expert switch
+// keeps a 44x44 box with a visible keyboard ring and a themed on-state
+// (there is no motion switch), and the Ask button always looks enabled:
+// an empty submit focuses the field with an error hint and sends nothing.
 import { expect, test } from "@playwright/test";
 
 const ADDRESS = "0x5ab1e0000000000000000000000000000000f005";
@@ -93,7 +93,7 @@ test("control_hit_area_visual_boundary_and_states", async ({ page }) => {
   await expect(page.getByTestId("ask-hint")).toContainText("Type a question first, then press Ask.");
 });
 
-test("control_motion_switch_hit_area_and_keyboard", async ({ page }) => {
+test("control_no_motion_switch_in_settings", async ({ page }) => {
   await page.route("**/health", async (route) => {
     await route.fulfill({
       status: 200,
@@ -115,22 +115,9 @@ test("control_motion_switch_hit_area_and_keyboard", async ({ page }) => {
 
   await page.goto("/#/settings");
 
-  // The Animations switch keeps a real 44x44 box in Settings.
-  const motion = page.getByTestId("motion-switch");
-  await expect(motion).toBeVisible();
-  const box = await motion.boundingBox();
-  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
-
-  // Space flips it off and pins data-motion; Space flips it back on.
-  await expect(motion).toHaveAttribute("aria-checked", "true");
-  await motion.focus();
-  await expect.poll(() => motion.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
-  expect(await motion.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe("solid");
-  await page.keyboard.press("Space");
-  await expect(motion).toHaveAttribute("aria-checked", "false");
-  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBe("off");
-  await page.keyboard.press("Space");
-  await expect(motion).toHaveAttribute("aria-checked", "true");
-  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBeUndefined();
+  // No motion switch exists: motion follows only the operating-system
+  // reduced-motion setting. Settings keeps the API key field.
+  await expect(page.getByLabel("API key", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("motion-switch")).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "Animations" })).toHaveCount(0);
 });

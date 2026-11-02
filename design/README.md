@@ -19,7 +19,7 @@ v1 notes below are archived history and do not describe the app.
   evidence and code. The start page is search first, then live token feeds.
 - **Motion**: blink or pulse/glow only, under 3 flashes per second, never
   movement (no transform, translate, slide, scale or height motion). Under
-  `prefers-reduced-motion` or the Motion switch everything is static.
+  `prefers-reduced-motion` everything is static.
 - **Accessibility**: WCAG 2.2 AA. Touch targets at least 44x44 CSS px on
   all widths. Token addresses stay in full EIP-55 form with a copy button.
 - **Scores**: 0-29 Low, 30-59 Elevated, 60-100 High.

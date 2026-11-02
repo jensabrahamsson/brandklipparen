@@ -3,8 +3,8 @@
 // pending it shows the text with a blinking block cursor and three tiny
 // lamps breathing on a 3 s period with 0 / 1 / 2 s phase offsets. The
 // whole line unmounts on completion, so the loops never outlive the
-// wait. Under reduced motion or with the Motion switch off it renders
-// the static text only. Glow comes from the elevation tokens only.
+// wait. Under reduced motion it renders the static text only. Glow
+// comes from the elevation tokens only.
 import type { JSX } from "react";
 import { useReducedMotion } from "../lib/motion.ts";
 

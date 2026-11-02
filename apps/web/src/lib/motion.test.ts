@@ -67,17 +67,13 @@ describe("reduced motion keeps added highlights static (P2-20)", () => {
     expect(reducedMotionRequested()).toBe(false);
   });
 
-  test("the motion switch off counts as reduced motion", () => {
-    stubMatchMedia(false);
-    const dataset: Record<string, string | undefined> = { motion: "off" };
-    vi.stubGlobal("document", { documentElement: { dataset } });
-    try {
-      expect(reducedMotionRequested()).toBe(true);
-    } finally {
-      vi.unstubAllGlobals();
-      stubMatchMedia(false);
-    }
-    expect(reducedMotionRequested()).toBe(false);
+  test("reduced motion reduce gives a static ui with no stored override", () => {
+    // No motion switch or storage key exists: only the operating-system
+    // setting decides. Reduce renders final values at once.
+    stubMatchMedia(true);
+    expect(reducedMotionRequested()).toBe(true);
+    expect(renderToString(createElement(CountProbe, { target: 84 }))).toContain("84");
+    expect(renderToString(createElement(ReducedProbe))).toContain("true");
   });
 });
 

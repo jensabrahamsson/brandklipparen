@@ -4432,7 +4432,7 @@ a.button-ghost {
    owner tiles can't tell. The toggle is a full-width 44 px row in the
    dashed can't-tell language; the body opens instantly (no height
    motion) with a 180 ms opacity pulse and collapses instantly. Reduced
-   motion and Motion off render every end state statically through the
+   motion renders every end state statically through the
    global kill. Motion is glow only, under 3 flashes per second. */
 .canttell-group {
   margin-top: 12px;
@@ -4726,11 +4726,11 @@ a.button-ghost {
   min-height: 44px;
 }
 
-/* Shared switch (UI v2 §1.4/§5.6, round-3 D-19): one component for the
-   Expert and Motion switches. A text label, a 32x18 track with a knob,
-   and the state word, so the on/off difference never rests on glow
-   alone. The knob side swaps instantly via justify-content (no position
-   or movement transition); only colour and glow transition. */
+/* Shared switch (UI v2 §1.4, round-3 D-19): the Expert switch component.
+   A text label, a 32x18 track with a knob, and the state word, so the
+   on/off difference never rests on glow alone. The knob side swaps
+   instantly via justify-content (no position or movement transition);
+   only colour and glow transition. */
 .switch {
   display: inline-flex;
   align-items: center;
@@ -4816,7 +4816,7 @@ a.button-ghost {
   box-shadow: var(--glow-seg);
 }
 
-/* Page footer (UI v2 §1.1): one row with the Motion switch and the
+/* Page footer (UI v2 §1.1): one row with the trust line and the
    model and version line. Wraps on narrow widths, never scrolls: the
    note line breaks instead of pushing the page wide. */
 .page-foot {
@@ -4880,7 +4880,7 @@ a.button-ghost {
 
 /* Found-high header (UI v2 §5.2, M-1/M-2): the alert edge lands once on
    entry, and the lamp breathes 2 cycles (4.4 s) then rests at its glow.
-   One shot per entry; static under reduced motion and the Motion switch. */
+   One shot per entry; static under reduced motion. */
 @keyframes bk-alertin {
   0% {
     box-shadow: var(--alert-glow);
@@ -5128,8 +5128,8 @@ a.button-ghost {
 /* M-8 lamps: three tiny lamps breathing opacity on a 3 s period with
    0 / 1 / 2 s phase offsets, capped at 12 cycles (36 s). The line only
    renders while its request is pending and unmounts on completion, so
-   the loops never outlive the wait. Static under reduced motion and
-   with the Motion switch off through the global kill switches. */
+   the loops never outlive the wait. Static under reduced motion
+   through the global kill switch. */
 .scan-lamps {
   display: inline-flex;
   flex: none;
@@ -5156,7 +5156,7 @@ a.button-ghost {
 
 /* Loading skeleton rows (UI v2 §6.1): glass blocks breathing opacity
    on the 3 s period, stopped after 2 cycles (6 s). Static under reduced
-   motion and with the Motion switch off. */
+   motion. */
 .skel {
   display: block;
   height: 14px;
@@ -5819,8 +5819,8 @@ a.button-ghost {
    stays crisp (no text-shadow on code), motion is opacity/colour/glow
    one-shots only (M-5 row stagger, E-6 rename fade, E-9 badge ignite)
    plus element.animate pulses (E-2); the approved X-2 header sweep is
-   the only background-position animation. Reduced motion and
-   data-motion="off" render every end state statically. No inner
+   the only background-position animation. Reduced motion renders
+   every end state statically. No inner
    scroll anywhere: long lines wrap with a hanging indent. */
 :root {
   --code-target-glow: 0 0 0 1px var(--phosphor-hi), inset 0 0 18px var(--glow-soft);
@@ -6194,23 +6194,13 @@ ol.code {
   }
 }
 
-/* Motion switch (UI v2 §5.6): data-motion="off" applies the same
-   static rules as prefers-reduced-motion: reduce. The switch itself
-   lands with W-10; the code view already honours the attribute. */
-:root[data-motion="off"] *,
-:root[data-motion="off"] *::before,
-:root[data-motion="off"] *::after {
-  animation: none !important;
-  transition: none !important;
-}
-
 /* "Explain this code" (addendum §A2, VS-2). Phosphor Console: the
    summary card carries the Muse dashed double border; notes are
    indented callouts with the Muse glyph. Glow comes only from the
    existing elevation tokens; code text stays crisp (no text-shadow).
    Motion is opacity/colour/glow one-shots plus the approved X-1 height
-   expand; reduced motion and data-motion="off" render every end state
-   statically through the kill switches above. */
+   expand; reduced motion renders every end state statically through
+   the kill switch above. */
 .explain-code-btn {
   display: inline-flex;
   align-items: center;

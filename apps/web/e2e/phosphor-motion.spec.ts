@@ -283,33 +283,19 @@ test("phosphor_loaded_token_page_has_no_infinite_animation", async ({ page }) =>
   expect(infinite).toEqual([]);
 });
 
-// The Settings Animations switch pins data-motion="off", and the whole
-// page goes static with the choice persisting across reload.
-test("phosphor_motion_switch_off_gives_zero_animations", async ({ page }) => {
+// No motion switch exists anywhere: motion follows only the
+// operating-system prefers-reduced-motion setting (static coverage
+// lives in reduced-motion.spec.ts under emulation).
+test("phosphor_no_motion_switch", async ({ page }) => {
   await mockRest(page, () => [liveEntry("aa", "AAA")]);
   await page.goto("/#/settings");
-  const motion = page.getByTestId("motion-switch");
-  await expect(motion).toBeVisible();
-  await expect(motion).toHaveAttribute("aria-checked", "true");
-  await motion.click();
-  await expect(motion).toHaveAttribute("aria-checked", "false");
-  expect(await page.evaluate(() => document.documentElement.dataset["motion"])).toBe("off");
+  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+  await expect(page.getByTestId("motion-switch")).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "Animations" })).toHaveCount(0);
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  // Full interaction script while off: hover, tooltip focus, signal
-  // expand, console open. Nothing may animate or transition.
-  await page.locator(".card").first().hover();
-  await page.locator('[data-testid="explain-score:combined"]').focus();
-  await page.locator('section[aria-label="Why this score"] article details > summary').first().click();
-  await page.getByRole("button", { name: "Explain this result" }).click();
-  await page.waitForTimeout(600);
-  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
-  // The choice persists across reload and stays static from the start.
-  await page.reload();
-  await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
-  await page.goto("/#/settings");
-  await expect(page.getByTestId("motion-switch")).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByTestId("motion-switch")).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "Animations" })).toHaveCount(0);
 });
 
 function registryEntry(id: string, weight: number): Record<string, unknown> {

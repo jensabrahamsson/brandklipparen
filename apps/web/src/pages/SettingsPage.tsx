@@ -1,8 +1,8 @@
 import type { JSX } from "react";
-import { MotionSwitch } from "../components/MotionSwitch.tsx";
 
-// Settings: the API key and the Animations switch live here, each with
-// one plain line on what it does. Nothing else is stored.
+// Settings: the API key lives here, with one plain line on what it
+// does. Nothing else is stored. Motion follows only the operating
+// system setting: under prefers-reduced-motion everything is static.
 export function SettingsPage({
   apiKey,
   onApiKeyChange,
@@ -28,10 +28,6 @@ export function SettingsPage({
             onChange={(event) => onApiKeyChange(event.target.value)}
           />
           <p className="muted settings-note">Your own key, if you have one. Kept only in this browser session.</p>
-        </div>
-        <div className="settings-row">
-          <MotionSwitch />
-          <p className="muted settings-note">Blink and glow only. Off keeps everything still; your system reduced-motion setting always applies.</p>
         </div>
         <p style={{ marginTop: 24 }}>
           <a className="foot-settings" href="#/">

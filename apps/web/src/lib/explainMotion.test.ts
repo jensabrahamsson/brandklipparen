@@ -1,8 +1,8 @@
 // Explanatory motion unit test (addendum §A4): sequences run end
-// states synchronously under reduced motion or Motion off without
-// creating animations, and a newer sequence finishes the older one
-// first. Node environment: the window, document and animated elements
-// are stubs, matching the motion.test.ts pattern.
+// states synchronously under reduced motion without creating
+// animations, and a newer sequence finishes the older one first. Node
+// environment: the window and animated elements are stubs, matching
+// the motion.test.ts pattern.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   finishAll,
@@ -26,7 +26,7 @@ type FakeAnimation = {
   oncancel: null | (() => void);
 };
 
-function stubViewer(options: { reduce: boolean; motionOff: boolean }): void {
+function stubViewer(options: { reduce: boolean }): void {
   vi.stubGlobal("window", {
     matchMedia: (query: string) => ({
       matches: options.reduce && String(query).includes("reduce"),
@@ -34,9 +34,6 @@ function stubViewer(options: { reduce: boolean; motionOff: boolean }): void {
     }),
     addEventListener: () => undefined,
     removeEventListener: () => undefined,
-  });
-  vi.stubGlobal("document", {
-    documentElement: { dataset: options.motionOff ? { motion: "off" } : {} },
   });
 }
 
@@ -69,23 +66,7 @@ afterEach(() => {
 
 describe("explanatory motion", () => {
   test("reduced motion applies end states with no animations", async () => {
-    stubViewer({ reduce: true, motionOff: false });
-    expect(motionAllowed()).toBe(false);
-    const calls: FakeAnimation[] = [];
-    let settled = false;
-    await runSequence([
-      {
-        element: fakeElement(calls, true) as unknown as Element,
-        keyframes: pulseKeyframes(),
-        endState: () => (settled = true),
-      },
-    ]);
-    expect(settled).toBe(true);
-    expect(calls).toEqual([]);
-  });
-
-  test("motion off applies end states with no animations", async () => {
-    stubViewer({ reduce: false, motionOff: true });
+    stubViewer({ reduce: true });
     expect(motionAllowed()).toBe(false);
     const calls: FakeAnimation[] = [];
     let settled = false;
@@ -101,7 +82,7 @@ describe("explanatory motion", () => {
   });
 
   test("a newer sequence finishes the older one first", async () => {
-    stubViewer({ reduce: false, motionOff: false });
+    stubViewer({ reduce: false });
     expect(motionAllowed()).toBe(true);
     const calls: FakeAnimation[] = [];
     const target = fakeElement(calls, false) as unknown as Element;
@@ -127,7 +108,7 @@ describe("explanatory motion", () => {
   });
 
   test("cited ignite creates no animations when static", async () => {
-    stubViewer({ reduce: true, motionOff: false });
+    stubViewer({ reduce: true });
     const calls: FakeAnimation[] = [];
     await runCitedIgnite([
       fakeElement(calls, true) as unknown as Element,
@@ -138,7 +119,7 @@ describe("explanatory motion", () => {
   });
 
   test("notes intro creates no animations when static", async () => {
-    stubViewer({ reduce: true, motionOff: false });
+    stubViewer({ reduce: true });
     const calls: FakeAnimation[] = [];
     const elements = Array.from({ length: 8 }, () => fakeElement(calls, true) as unknown as Element);
     await runNotesIntro(elements);
@@ -146,7 +127,7 @@ describe("explanatory motion", () => {
   });
 
   test("proof walk lights steps in order", async () => {
-    stubViewer({ reduce: false, motionOff: false });
+    stubViewer({ reduce: false });
     const calls: FakeAnimation[] = [];
     const order: string[] = [];
     await runProofWalk([
@@ -159,7 +140,7 @@ describe("explanatory motion", () => {
   });
 
   test("proof stop never animates the failed step", async () => {
-    stubViewer({ reduce: false, motionOff: false });
+    stubViewer({ reduce: false });
     const calls: FakeAnimation[] = [];
     const order: string[] = [];
     await runProofStop(
@@ -172,7 +153,7 @@ describe("explanatory motion", () => {
   });
 
   test("proof sequences apply every end state with no animations when static", async () => {
-    stubViewer({ reduce: false, motionOff: true });
+    stubViewer({ reduce: true });
     const calls: FakeAnimation[] = [];
     const order: string[] = [];
     await runProofWalk([

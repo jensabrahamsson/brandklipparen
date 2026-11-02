@@ -8,8 +8,8 @@
 // finishes the typing and every running animation instantly. The full
 // text stays in the accessibility tree from the first frame (typed copy
 // is aria-hidden) and a polite live region announces once, when ready.
-// Reduced motion or Motion off renders everything at rest with no
-// animation and no cursor. Scores, evidence and finding text are never
+// Reduced motion renders everything at rest with no animation and no
+// cursor. Scores, evidence and finding text are never
 // touched: this is a labelled advisory overlay with the standing
 // footer "AI explanation · does not change the score".
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type JSX, type ReactNode } from "react";

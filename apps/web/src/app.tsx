@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState, type JSX, type MouseEvent } from "react";
 import { parseHash, type Route } from "./lib/route.ts";
 import { initialApiKey } from "./lib/initialApiKey.ts";
-import { applyMotionPref, readStoredMotion } from "./lib/motionPref.ts";
 import { Pictogram } from "./components/Pictogram.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
@@ -26,10 +25,6 @@ function loadApiKey(): string {
 export function App(): JSX.Element {
   const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash));
   const [apiKey, setApiKey] = useState(loadApiKey);
-
-  useEffect(() => {
-    applyMotionPref(readStoredMotion());
-  }, []);
 
   useEffect(() => {
     const onChange = (): void => setRoute(parseHash(window.location.hash));

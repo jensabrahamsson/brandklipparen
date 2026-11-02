@@ -1,17 +1,10 @@
 // Shared reduced-motion flag for components that adapt to the viewer
-// preference. Read once per mount: the reduced-motion e2e run sets the
-// emulation before load, so the first read already carries the tested value.
+// preference: the operating-system prefers-reduced-motion setting only.
+// Read once per mount: the reduced-motion e2e run sets the emulation
+// before load, so the first read already carries the tested value.
 import { useEffect, useState } from "react";
 
 export function reducedMotionRequested(): boolean {
-  // The Motion switch pins the same static end states as the operating
-  // system setting (UI v2 §5.6): data-motion="off" counts as reduced.
-  if (
-    typeof document !== "undefined" &&
-    document.documentElement?.dataset?.["motion"] === "off"
-  ) {
-    return true;
-  }
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -29,14 +22,8 @@ export function useReducedMotion(): boolean {
       media = window.matchMedia("(prefers-reduced-motion: reduce)");
       media.addEventListener?.("change", update);
     }
-    let observer: MutationObserver | null = null;
-    if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
-      observer = new MutationObserver(update);
-      observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-motion"] });
-    }
     return () => {
       media?.removeEventListener?.("change", update);
-      observer?.disconnect();
     };
   }, []);
   return reduced;

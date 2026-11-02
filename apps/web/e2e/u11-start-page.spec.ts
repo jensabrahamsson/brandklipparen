@@ -78,7 +78,7 @@ test("u11_stale_start_copy_and_chain_pill_are_gone", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Use your own API key" })).toHaveAttribute("href", "#/settings");
 });
 
-test("u11_settings_hold_api_key_and_animations", async ({ page }) => {
+test("u11_settings_hold_api_key_without_motion_switch", async ({ page }) => {
   await mockRest(page);
   await page.goto("/");
   await page.getByRole("link", { name: "Use your own API key" }).click();
@@ -86,12 +86,9 @@ test("u11_settings_hold_api_key_and_animations", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   await expect(page.getByLabel("API key", { exact: true })).toBeVisible();
   await expect(page.getByText("Your own key, if you have one. Kept only in this browser session.")).toBeVisible();
-  const animations = page.getByRole("switch", { name: "Animations" });
-  await expect(animations).toBeVisible();
-  await expect(page.getByText(/Blink and glow only/)).toBeVisible();
-  const box = await animations.boundingBox();
-  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  // No motion switch: motion follows only the operating-system setting.
+  await expect(page.getByTestId("motion-switch")).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "Animations" })).toHaveCount(0);
 });
 
 test("u11_topbar_items_do_not_intersect_at_320", async ({ page }) => {

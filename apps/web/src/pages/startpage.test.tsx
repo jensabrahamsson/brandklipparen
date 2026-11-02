@@ -54,8 +54,7 @@ describe("start page first 30 seconds (D-14)", () => {
     expect(page).toContain("Use your own API key");
     expect(page).toContain('href="#/settings"');
     expect(page).not.toContain('aria-label="Animations"');
-    expect(page).not.toContain(">Motion<");
-    expect(page).not.toContain("Follows your system setting until switched off.");
+    expect(page).not.toContain("motion-switch");
     expect(page).toContain("Deterministic score");
   });
 });
