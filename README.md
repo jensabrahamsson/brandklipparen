@@ -1,6 +1,74 @@
 # Brandklipparen
 
-Bytecode-only, deterministic, calibrated ERC-20 rug-pull risk assessment with evidence behind every score.
+**Scan before you swap.** A deterministic risk scanner for ERC-20 tokens
+on Ethereum mainnet: paste a token address and see what the contract's
+owner can do to you, proven from the bytecode.
+
+*The name: Brandklipparen was the royal horse of Sweden's Charles XI and
+XII, a horse that never flinched at fire. The tool does the same: it
+stays calm and reads the contract while the market is on fire.*
+
+Demo video: (link added at submission)
+
+Meta Global AI Developer Hackathon entry · Indie Developer track ·
+"Build for Your World".
+
+## What it does
+
+- **Reads the contract, not the hype.** For a new token (a memecoin
+  launched ten minutes ago, say) it lists the owner powers written into
+  the code: pause transfers, mint, blacklist wallets, change the transfer
+  fee, cap wallets, block sells, upgrade the code.
+- **Its own EVM decompiler.** Written in this project and run
+  in-process (no external binary): disassembly, control-flow graph, a
+  symbolic pass over storage slots and caller guards, then readable
+  pseudo-Solidity. Verified source is shown beside it when published.
+- **Proof, not a verdict.** Every finding is pinned to the function,
+  selector and byte offset. Pause, blacklist, transfer fee, transfer
+  limits and mint also get a step-by-step proof trace that shows each
+  check and where a failed proof stopped.
+- **Meta Muse explains, never decides.** Optional Explain, Ask, Explain
+  this code and Investigate run on the Meta Model API (Muse,
+  `muse-spark-1.3`). Every claim must cite evidence the analysis
+  collected, or it is dropped. Model output never changes the score or
+  the evidence.
+- **For people and for agents.** The web UI, the versioned REST API
+  (`/v1`) and the MCP server over stdio return the same deterministic
+  result: same bytecode, same pinned block, same answer.
+- **Honest about what it can't see.** A check that cannot finish reads
+  "Can't tell", never "safe". The baseline score is weak and labelled
+  so (see [Calibration and limits](#calibration-and-limits)). Bytecode
+  says nothing about liquidity locks, insider holdings or the team.
+
+## What it is
+
+Brandklipparen assesses the rug-pull risk of ERC-20 tokens from
+contract bytecode. Every score is shown together with the evidence that
+produced it, so the result can be inspected and reproduced.
+
+- **Deterministic core.** Pure TypeScript with no I/O. Runtime
+  bytecode is read with `eth_getCode` at a pinned block, and proxies are
+  followed to their implementation.
+- **Plugins.** Thirteen detector plugins are statically registered:
+  nine owner-power detectors (mint, pause, blacklist, transfer fee,
+  transfer limits, sell block, transfer hooks, ownership, proxy upgrade)
+  and four analysis plugins (capability, decompiler, clone match, hard
+  to analyze). Six on-chain plugins (age, concentration, deployer,
+  liquidity, LP, owner) are shown for context and carry weight 0 in the
+  score. One assessment plugin, `meta-model-api`, provides the
+  "Contract assessment with Muse".
+- **Baseline score.** A frozen, checksummed model artifact (1.0.1)
+  maps findings to probabilities and a 0-100 score.
+- **Muse layer (optional).** Explain, Ask, Explain this code,
+  Investigate, the contract assessment and personalization all run on
+  the Meta Model API. They read the frozen result only, are offered
+  separately from the score, and are labelled with their model id.
+  Without a key each one reports `not-configured` and the rest of the
+  product works unchanged.
+- **Three interfaces.** A web UI, a REST API and an MCP server, all
+  over the same services.
+
+All code was written during the hackathon window (from Oct 26, 12:00 ET).
 
 ## Quick start
 
@@ -15,7 +83,7 @@ the portable bin directory instead:
 export PATH="$HOME/.local/node22/bin:$PATH"
 ```
 
-Clone the private repo and enter it:
+Clone the repo and enter it:
 
 ```sh
 git clone https://github.com/jensabrahamsson/brandklipparen
@@ -197,6 +265,48 @@ stdout). Point an MCP client at the command above as a stdio server; no
 port is opened. List tools first (`tools/list`), then call one per
 frame (`tools/call` with `name` and `arguments`).
 
+Generic MCP client configuration (copy, then replace the two
+`<...>` values). `npm run start:mcp` does not read `.env.local`, so the
+variables the server needs at startup go in `env`; the values below
+are the same defaults `npm run demo` uses. Node 22 must be first on the
+`PATH` the client launches `npm` with.
+
+```json
+{
+  "mcpServers": {
+    "brandklipparen": {
+      "command": "npm",
+      "args": ["run", "start:mcp"],
+      "cwd": "<path to repo>",
+      "env": {
+        "BRANDKLIPPAREN_API_KEYS_FILE": "<path to a file with your key>",
+        "BRANDKLIPPAREN_ENV": "local",
+        "BRANDKLIPPAREN_MODEL_VERSION": "1.0.1",
+        "BRANDKLIPPAREN_MODEL_ARTIFACT_PATH": "model/artifact-1.0.1.json",
+        "BRANDKLIPPAREN_CLONE_INDEX_VERSION": "1.0.0",
+        "BRANDKLIPPAREN_LOG_LEVEL": "info",
+        "BRANDKLIPPAREN_HTTP_PORT": "8080",
+        "BRANDKLIPPAREN_CACHE_DIR": ".cache/brandklipparen",
+        "BRANDKLIPPAREN_RPC_URLS": "https://ethereum-rpc.publicnode.com",
+        "BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_PER_MINUTE": "300",
+        "BRANDKLIPPAREN_QUOTA_PER_KEY_PER_DAY": "1000",
+        "BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE": "600"
+      }
+    }
+  }
+}
+```
+
+The server checks at startup that the RPC endpoint answers Ethereum
+mainnet. The `initialize` handshake accepts MCP protocol version
+`2025-06-18`. The Muse tools stay `not-configured` until their
+`BRANDKLIPPAREN_*_PROVIDER` and `*_META_*` variables are added to `env`
+(names in `.env.example`; keys only through `*_FILE` pointers). When a
+key file is set, every `tools/call` frame must carry a key in the
+top-level `auth` field described below; a client that cannot add that
+field gets `missing-api-key`. With neither `BRANDKLIPPAREN_API_KEYS`
+nor its `*_FILE` pointer set, the MCP server runs without the key gate.
+
 Tool calls carry the API key in the JSON-RPC `auth` field of each
 frame. MCP hosts may log JSON-RPC frames, so a logged frame can expose
 that key: use a host that does not persist frames (or that redacts the
@@ -254,25 +364,6 @@ If the web UI or the e2e tests fail with connection refused on
 NODE_OPTIONS=--dns-result-order=ipv4first npm run demo
 NODE_OPTIONS=--dns-result-order=ipv4first npm run e2e:web
 ```
-
-## What it is
-
-Brandklipparen assesses the rug-pull risk of ERC-20 tokens from contract
-bytecode alone. Every score is shown together with the evidence that
-produced it, so the result can be inspected and reproduced.
-
-The same assessment is available through three interfaces:
-
-- a web UI
-- a REST API
-- an MCP server
-
-## Contract assessment with Muse
-
-An optional add-on, "Contract assessment with Muse", provides a
-plain-language explanation layer on top of the assessment. It is
-offered separately from the score and never affects the score or
-the evidence.
 
 ## Calibration and limits
 
