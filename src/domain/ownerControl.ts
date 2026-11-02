@@ -40,6 +40,12 @@ function mustSelector(raw: string): SelectorType {
 export const TRANSFER_SELECTOR: SelectorType = mustSelector("0xa9059cbb");
 export const TRANSFER_FROM_SELECTOR: SelectorType = mustSelector("0x23b872dd");
 
+// Owner getters: the slot one of these returns is the owner seat, so a
+// caller check against that same slot is owner-attributed even when the
+// check sits in a shared helper no single region owns.
+export const OWNER_GETTER_SELECTOR: SelectorType = mustSelector("0x8da5cb5b");
+export const GET_OWNER_GETTER_SELECTOR: SelectorType = mustSelector("0x893d20e8");
+
 // Best-effort storage slot reference for one SLOAD or SSTORE. A mapping
 // slot carries its hashed base slot when the v2 stack interpreter proves
 // it (`base` is null when the base stays unknown); old consumers keep
@@ -146,11 +152,22 @@ export function slotLoadFeedsCallerEq(region: RegionFacts, loadPc: number): bool
   return false;
 }
 
+export type OwnerCheckLocation = {
+  readonly selector: SelectorType;
+  readonly pc: number;
+};
+
 export type OwnerControlView = {
   readonly regions: readonly RegionFacts[];
   // Constant slot compared against CALLER with EQ in at least one
   // region (the onlyOwner shape), or null when no region proves one.
   readonly ownerSlot: number | null;
+  // Proven caller checks against `ownerSlot` whose check lives in a
+  // shared helper (an internal `_checkOwner` reached by JUMP), so no
+  // single region holds the load: the selector reaching the helper with
+  // the proving JUMPI pc. Empty when the in-region proof already names
+  // the checks. Sorted by selector then pc.
+  readonly ownerChecks: readonly OwnerCheckLocation[];
   // Selectors whose region carries a caller guard: CALLER compared with
   // EQ beside a revert or a conditional jump, or a write to the owner
   // slot. Sorted canonically.
@@ -4613,6 +4630,85 @@ export type OwnerControlOptions = {
 // maps to a view, possibly with no regions, no owner slot and no transfer
 // paths, and the detectors below turn an empty proof into no findings
 // rather than a guess.
+function isOwnerGetter(selector: SelectorType): boolean {
+  return selector === OWNER_GETTER_SELECTOR || selector === GET_OWNER_GETTER_SELECTOR;
+}
+
+// Slots an owner getter can return: the constant loads in its region,
+// plus loads the v2 interpreter resolves through DUP/SWAP chains or a
+// shared internal `owner()` helper (where the region load stays
+// unknown). A masked or packed return still loads the same slot, so
+// the load alone names the candidate; the caller check below decides.
+function getterSlotCandidates(
+  bytecode: BytecodeType,
+  regions: readonly RegionFacts[],
+): readonly number[] {
+  const found = new Set<number>();
+  for (const region of regions) {
+    if (!isOwnerGetter(region.selector)) {
+      continue;
+    }
+    for (const load of region.loads) {
+      if (load.slot.kind === "const") {
+        found.add(load.slot.value);
+      }
+    }
+    const exprs = interpretRegionExprs(bytecode, region.selector);
+    for (const slot of exprs.loads.values()) {
+      const value = exprConstValue(slot);
+      if (value !== null && value >= 0n && value <= 4294967295n) {
+        found.add(Number(value));
+      }
+    }
+  }
+  return Object.freeze([...found].sort((left, right) => left - right));
+}
+
+// Caller checks against `slot` proven through the v2 expression view:
+// each non-getter entry whose walk reaches a reverting JUMPI comparing
+// CALLER with the (possibly masked) load of `slot`, including checks in
+// a shared `_checkOwner` helper reached by an internal JUMP. A check
+// against any other slot or a role mapping never matches here.
+function ownerChecksForSlot(
+  bytecode: BytecodeType,
+  code: readonly Instruction[],
+  regions: readonly RegionFacts[],
+  slot: number,
+): readonly OwnerCheckLocation[] {
+  const attribution = attributeFunctions(bytecode, { mode: "v2" });
+  const checks: OwnerCheckLocation[] = [];
+  for (const region of regions) {
+    if (isOwnerGetter(region.selector)) {
+      continue;
+    }
+    const exprs = interpretRegionExprs(bytecode, region.selector);
+    if (!exprs.complete) {
+      continue;
+    }
+    const member = (pc: number): boolean => attribution.holdersOf(pc).includes(region.selector);
+    let pc = ownerCheckExpr(code, member, slot, exprs.jumpis, bytecode);
+    if (pc === null) {
+      const slots = interpretRegionSlots(bytecode, region.selector);
+      const via = ownerCheckVia(code, member, slot, (at) => slots.get(at), exprs.jumpis, bytecode);
+      if (via === "window") {
+        const loadPcs = [...exprs.loads.entries()]
+          .filter(([, loadSlot]) => exprConstValue(loadSlot) === BigInt(slot))
+          .map(([loadPc]) => loadPc)
+          .sort((left, right) => left - right);
+        pc = loadPcs[0] ?? null;
+      }
+    }
+    if (pc !== null) {
+      checks.push(Object.freeze({ selector: region.selector, pc }));
+    }
+  }
+  checks.sort((left, right) => {
+    const bySelector = (left.selector as string).localeCompare(right.selector as string);
+    return bySelector === 0 ? left.pc - right.pc : bySelector;
+  });
+  return Object.freeze(checks);
+}
+
 export function analyzeOwnerControl(bytecode: BytecodeType, options?: OwnerControlOptions): OwnerControlView {
   const reach = options?.reach ?? "v1";
   // One view per mode per bytecode: detectors share the regions instead of
@@ -4705,13 +4801,36 @@ function analyzeOwnerControlUncached(bytecode: BytecodeType, reach: ReachMode): 
     }
   }
 
+  // Getter-derived attribution (SCORE-3): when the in-region proof
+  // misses the check because it lives in a shared `_checkOwner` helper
+  // (reached by an internal JUMP, returning through a dynamic JUMP, with
+  // the owner word masked to its low 160 bits), derive the seat from
+  // the slot `owner()`/`getOwner()` returns and prove the check through
+  // the expression view. The lowest getter slot with a proven caller
+  // check wins; a check against a different slot stays non-owner.
+  let ownerChecks: readonly OwnerCheckLocation[] = Object.freeze([]);
+  const getterCandidates = getterSlotCandidates(bytecode, regions);
+  if (ownerSlot === null) {
+    for (const candidate of getterCandidates) {
+      const checks = ownerChecksForSlot(bytecode, code, regions, candidate);
+      if (checks.length > 0) {
+        ownerSlot = candidate;
+        ownerChecks = checks;
+        break;
+      }
+    }
+  } else if (getterCandidates.includes(ownerSlot)) {
+    ownerChecks = ownerChecksForSlot(bytecode, code, regions, ownerSlot);
+  }
+
   const privilegedSet = new Set<SelectorType>();
   for (const region of regions) {
     const guarded = region.hasCaller && region.hasEq && (region.hasRevert || region.hasJumpi);
     const writesOwner =
       ownerSlot !== null &&
       region.stores.some((store) => store.slot.kind === "const" && store.slot.value === ownerSlot);
-    if (guarded || writesOwner) {
+    const ownerAttributed = ownerChecks.some((check) => check.selector === region.selector);
+    if (guarded || writesOwner || ownerAttributed) {
       privilegedSet.add(region.selector);
     }
   }
@@ -4729,6 +4848,7 @@ function analyzeOwnerControlUncached(bytecode: BytecodeType, reach: ReachMode): 
   return Object.freeze({
     regions: Object.freeze(regions),
     ownerSlot,
+    ownerChecks: Object.freeze(ownerChecks.slice()),
     privileged: Object.freeze(privileged),
     transfers: Object.freeze(transfers),
     incompleteSelectors: Object.freeze(incompleteSelectors),

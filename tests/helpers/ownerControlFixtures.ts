@@ -3224,6 +3224,71 @@ export function nestedHelperBlacklistTokenHex(): string {
 // entry of base 8 and reverts unless that reads set too. Guarded
 // writers set both bases. The list gate proves through the second
 // boolean test.
+// Helper-owner token (SCORE-3): `owner()`/`getOwner()` returns the
+// masked low 160 bits of `ownerSlot`, while every setter reaches a
+// shared internal `_checkOwner` helper by JUMP. The helper calls
+// internal owner/sender helpers (each returning through a dynamic
+// JUMP), masks the loaded owner word, compares it with CALLER and
+// reverts on mismatch. No single function region holds the whole
+// check, so only getter-derived attribution can name the seat.
+// Synthetic selectors and hand-assembled bytecode only.
+export const HELPER_OWNER_SET = "0x5ab1e001";
+
+export function helperOwnerTokenHex(
+  ownerSlot = 3,
+  guardSlot: number = ownerSlot,
+  getter: "owner" | "getOwner" | null = "owner",
+): string {
+  const asm = new Asm();
+  const mask = Array.from({ length: 20 }, () => 0xff);
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(HELPER_OWNER_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  if (getter !== null) {
+    asm.op(0x80).push4(getter === "owner" ? "8da5cb5b" : "893d20e8").op(0x14);
+    asm.pushLabel2("getterEntry").op(0x57);
+  }
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(4).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("gateOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("gateOk").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.pushLabel2("retCheck").pushLabel2("funcCheck").op(0x56);
+  asm.label("retCheck").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(4).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55, 0x00);
+  if (getter !== null) {
+    asm.label("getterEntry").op(0x5b);
+    asm.push1(ownerSlot).op(0x54);
+    asm.op(0x73, ...mask, 0x16);
+    asm.push1(0x00).op(0x52);
+    asm.push1(0x20).push1(0x00).op(0xf3);
+  }
+  asm.label("funcCheck").op(0x5b);
+  asm.pushLabel2("retOwner").pushLabel2("funcOwner").op(0x56);
+  asm.label("retOwner").op(0x5b);
+  asm.pushLabel2("retSender").pushLabel2("funcSender").op(0x56);
+  asm.label("retSender").op(0x5b);
+  asm.op(0x14);
+  asm.pushLabel2("checkOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("checkOk").op(0x5b, 0x56);
+  asm.label("funcOwner").op(0x5b);
+  asm.push1(guardSlot).op(0x54);
+  asm.op(0x73, ...mask, 0x16, 0x90, 0x56);
+  asm.label("funcSender").op(0x5b);
+  asm.op(0x33, 0x90, 0x56);
+  asm.label("end").op(0x5b, 0xfe);
+  return asm.build();
+}
+
 export function listedNotExemptBlacklistTokenHex(): string {
   const asm = new Asm();
   scan3Dispatcher(asm, [

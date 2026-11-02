@@ -148,6 +148,22 @@ function detect(input: DetectorInput): readonly PluginFinding[] {
       }
     }
   }
+  // Shared-helper checks (SCORE-3): when the caller compare lives in an
+  // internal `_checkOwner` helper no single region owns, the shared
+  // analysis names the reaching selector and proving pc instead. Those
+  // locations are evidence only when no in-region load proved a check.
+  if (checks.length === 0) {
+    for (const check of view.ownerChecks) {
+      const offset = PcOffset.of(check.pc, input.bytecode);
+      if (!offset.ok) {
+        continue;
+      }
+      const entry = Evidence.create({ selector: check.selector, offset: offset.value });
+      if (entry.ok) {
+        checks.push(entry.value);
+      }
+    }
+  }
   const checkEvidence = toNonEmpty(checks.slice(0, MANIFEST.limits.maxEvidencePerFinding));
   if (checkEvidence !== null) {
     out.push(
