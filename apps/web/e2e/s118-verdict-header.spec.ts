@@ -102,7 +102,7 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     // gauges own the percents.
     await expect(page.getByText("Rug pull", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Honeypot", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Bot-pump", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Bot pump", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("91%", { exact: true }).first()).toBeVisible();
     // The dial number counts up once to the score; the badge names the band.
     await expect(header.locator(".score-dial .num")).toHaveText("84");
@@ -329,7 +329,7 @@ test("score4_floor_blacklist_chip_agrees_with_high_score", async ({ page }) => {
       facts: ["blacklist"],
     },
     pluginResults: PEPE_ANALYZE.pluginResults.map((entry) =>
-      entry.pluginId === "dev.brandklipparen.mint"
+      entry.pluginId === "dev.brandklipparen.blacklist"
         ? {
             pluginId: "dev.brandklipparen.blacklist",
             pluginVersion: "1.0.0",
@@ -343,7 +343,9 @@ test("score4_floor_blacklist_chip_agrees_with_high_score", async ({ page }) => {
               },
             ],
           }
-        : entry,
+        : entry.pluginId === "dev.brandklipparen.mint"
+          ? { ...entry, findings: [] }
+          : entry,
     ),
   };
   await page.route("**/health", async (route) => {
@@ -367,6 +369,28 @@ test("score4_floor_blacklist_chip_agrees_with_high_score", async ({ page }) => {
   const strip = page.getByTestId("powers-strip");
   await expect(strip).toContainText("Sets minimum score");
   await expect(strip).not.toContainText("Not in score");
-  await expect(strip).toContainText("1 found. 1 sets the minimum score.");
   await expect(page.getByTestId("power-chip-blacklist")).toBeVisible();
+  const cards = page.locator(".gauges-hero > section");
+  await expect(cards.first()).toHaveAttribute("data-testid", "floor-card");
+  await expect(cards.first()).toHaveClass(/\bhigh\b/);
+  await expect(cards.first()).toContainText("Owner can block holders: blacklist");
+  await expect(page.getByText("Pattern model · history-based estimate")).toBeVisible();
+  await expect(page.locator('section[aria-label="Why this score"]')).toContainText(
+    "Owner can block holders (blacklist) — that sets the minimum score of 60.",
+  );
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    const bot = page.locator('section[aria-label="Bot pump: 12 percent"]');
+    await expect(bot).toHaveClass(/\bfloor-muted\b/);
+    const title = bot.getByText("Bot pump", { exact: true });
+    const prior = bot.getByText("Prior · uncalibrated", { exact: true });
+    const geometry = await title.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return { lines: range.getClientRects().length, bottom: element.getBoundingClientRect().bottom };
+    });
+    const priorBox = await prior.boundingBox();
+    expect(geometry.lines).toBe(1);
+    expect(priorBox?.y ?? 0).toBeGreaterThanOrEqual(geometry.bottom);
+  }
 });

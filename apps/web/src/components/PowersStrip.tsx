@@ -14,8 +14,8 @@ import { Explain } from "./Explain.tsx";
 import { Pictogram } from "./Pictogram.tsx";
 import { pluginHref } from "../lib/pluginCopy.ts";
 import { powersSummaryCopy } from "../lib/signals.ts";
-import { floorMarkFor } from "../lib/floorPowers.ts";
-import type { FloorMark } from "../lib/floorPowers.ts";
+import { powerStatusFor } from "../lib/floorPowers.ts";
+import type { PowerStatus } from "../lib/floorPowers.ts";
 import type { BoardTile } from "./plugins/PluginBoard.tsx";
 import type { TileSeverity } from "./plugins/PluginTile.tsx";
 import type { PluginListEntry } from "./PluginsPanel.tsx";
@@ -29,19 +29,21 @@ const CHIP_LAMP: Record<"found-scored" | "extended" | "cant-tell", "found" | "ex
 
 type ChipState = "found-scored" | "extended" | "cant-tell" | "renounced";
 
-function chipStatus(state: string, severity: TileSeverity, mark: FloorMark): string {
-  if (state === "renounced" || mark === "renounced") {
+// SCORE-6: the chip status reads the single power status, so the hero
+// agrees with the grid tile for the same power.
+function chipStatus(status: PowerStatus, severity: TileSeverity): string {
+  if (status === "renounced") {
     return "owner renounced";
   }
-  if (mark === "floor") {
+  if (status === "floor") {
     const level = severity === "high" ? "high" : severity === "medium" ? "medium" : "low";
     return `found, ${level}, sets the minimum score`;
   }
-  if (state === "found-scored") {
+  if (status === "found") {
     const level = severity === "high" ? "high" : severity === "medium" ? "medium" : "low";
     return `found, ${level}`;
   }
-  if (state === "extended") {
+  if (status === "extended") {
     return "found, not in score";
   }
   return "can't tell";
@@ -79,22 +81,33 @@ export function PowersStrip({
     }
     return null;
   }
-  // SCORE-4: a floor fact promotes its chip to a found power; a
-  // renounced-lifted fact stays visible but muted, never as found.
+  // SCORE-6: every chip reads the single power status, so the hero
+  // agrees with the grid tile for the same power. A floor fact promotes
+  // its chip to a found power; a renounced-lifted fact stays visible but
+  // muted, never as found. The strip recomputes from its own floor
+  // context (the same result the grid was built with), so chips and
+  // tiles cannot disagree.
   const marked = tiles.map((tile) => {
-    const mark: FloorMark =
-      tile.floorMark !== undefined && tile.floorMark !== null
-        ? tile.floorMark
-        : floorMarkFor(tile.copy.slug, tile.state, { scoreFloor, ownerState });
+    const status: PowerStatus = powerStatusFor(tile.copy.slug, tile.state, { scoreFloor, ownerState }, tile.payloads);
     const chipState: ChipState | BoardTile["state"] =
-      mark === "renounced" ? "renounced" : mark === "floor" ? "found-scored" : tile.state;
-    return { tile, mark, chipState };
+      status === "renounced"
+        ? "renounced"
+        : status === "floor" || status === "found"
+          ? "found-scored"
+          : status === "extended"
+            ? "extended"
+            : status === "cant-tell"
+              ? "cant-tell"
+              : tile.state;
+    return { tile, status, chipState };
   });
-  const found = marked.filter((entry) => entry.chipState === "found-scored").length;
-  const floor = marked.filter((entry) => entry.mark === "floor" && entry.tile.state === "extended").length;
-  const renounced = marked.filter((entry) => entry.mark === "renounced").length;
-  const extended = marked.filter((entry) => entry.chipState === "extended").length;
-  const cantTell = tiles.filter((tile) => tile.state === "cant-tell").length;
+  const found = marked.filter(
+    (entry) => entry.status === "found" || entry.status === "floor",
+  ).length;
+  const floor = marked.filter((entry) => entry.status === "floor").length;
+  const renounced = marked.filter((entry) => entry.status === "renounced").length;
+  const extended = marked.filter((entry) => entry.status === "extended").length;
+  const cantTell = marked.filter((entry) => entry.status === "cant-tell").length;
   // D-4 (hero diet): once a found or extended chip exists, every
   // can't-tell chip collapses into the one "+N can't tell ›" link at
   // every width, so the strip never towers 3 rows on desktop. With no
@@ -103,10 +116,11 @@ export function PowersStrip({
   const collapseCantTell = found + extended + renounced > 0 && cantTell > 0;
   const shown = marked.filter(
     (entry) =>
-      entry.chipState === "found-scored" ||
-      entry.chipState === "extended" ||
-      entry.chipState === "renounced" ||
-      (entry.chipState === "cant-tell" && !collapseCantTell),
+      entry.status === "found" ||
+      entry.status === "floor" ||
+      entry.status === "extended" ||
+      entry.status === "renounced" ||
+      (entry.status === "cant-tell" && !collapseCantTell),
   );
   const boardHref = `#/token/${encodeURIComponent(address)}/plugins`;
   const cantTellLabel = `+${cantTell} can't tell ›`;
@@ -136,12 +150,12 @@ export function PowersStrip({
       ) : null}
       {shown.length === 0 && !collapseCantTell ? null : (
         <ul className="powers-chips">
-          {shown.map(({ tile, mark, chipState }) => (
+          {shown.map(({ tile, status, chipState }) => (
             <li key={tile.pluginId}>
               <a
                 className={`power-chip state-${chipState} sev-${tile.severity}`}
                 href={pluginHref(address, tile.pluginId, allIds)}
-                aria-label={`${tile.copy.title}: ${chipStatus(chipState, tile.severity, mark)}. ${tile.copy.question} Open details.`}
+                aria-label={`${tile.copy.title}: ${chipStatus(status, tile.severity)}. ${tile.copy.question} Open details.`}
                 data-testid={`power-chip-${tile.copy.slug}`}
               >
                 <span className="power-lamp" aria-hidden="true">
@@ -151,15 +165,15 @@ export function PowersStrip({
                   />
                 </span>
                 <span className="power-name">{tile.copy.title}</span>
-                {mark === "renounced" ? <span className="power-tag">Owner renounced</span> : null}
-                {mark === "floor" && tile.state === "extended" ? (
+                {status === "renounced" ? <span className="power-tag">Owner renounced</span> : null}
+                {status === "floor" ? (
                   <span className="power-tag">Sets minimum score</span>
                 ) : null}
-                {chipState === "extended" && mark !== "renounced" ? (
+                {status === "extended" ? (
                   <span className="power-tag">Not in score</span>
                 ) : null}
-                {chipState === "cant-tell" ? <span className="power-tag">Can&apos;t tell</span> : null}
-                {chipState === "found-scored" && mark !== "floor" ? (
+                {status === "cant-tell" ? <span className="power-tag">Can&apos;t tell</span> : null}
+                {status === "found" ? (
                   <span className="sr-only">{chipSeverityWord(tile.severity)}</span>
                 ) : null}
               </a>

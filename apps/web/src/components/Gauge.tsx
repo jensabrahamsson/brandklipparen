@@ -10,10 +10,12 @@ import { reducedMotionRequested, useCountUp } from "../lib/motion.ts";
 // depends on colour alone. The gauge carries no "?" of its own (R2-5,
 // D-17): the reason line beside it already explains it, and the shared
 // help lives in the "Risk breakdown" heading popover.
+// SCORE-6: the bot-pump gauge reads "Bot pump" (space, never wrapped
+// onto two lines) so it fits the narrow hero column at every width.
 const TITLES: Record<RiskKind, string> = {
   "rug-pull": "Rug pull",
   honeypot: "Honeypot",
-  "bot-pump": "Bot-pump",
+  "bot-pump": "Bot pump",
 };
 
 const SEGMENTS = 20;
@@ -24,12 +26,17 @@ export function Gauge({
   signalCount,
   reason,
   uncalibrated = false,
+  mutedBand = false,
 }: {
   readonly kind: RiskKind;
   readonly probability: number;
   readonly signalCount: number;
   readonly reason: string;
   readonly uncalibrated?: boolean | undefined;
+  // SCORE-6: when a score floor drives the score, the pattern-model
+  // band word renders neutral (never green "LOW" that reads as
+  // all-clear); the number and bar keep their values.
+  readonly mutedBand?: boolean | undefined;
 }): JSX.Element {
   const percent = Math.round(probability * 100);
   const band = riskBand(percent);
@@ -53,7 +60,10 @@ export function Gauge({
   }, [reduce]);
   const signalWord = signalCount === 1 ? "signal" : "signals";
   return (
-    <section className={`card gauge ${bandClass}`} aria-label={`${TITLES[kind]}: ${percent} percent`}>
+    <section
+      className={`card gauge ${bandClass}${mutedBand ? " floor-muted" : ""}`}
+      aria-label={`${TITLES[kind]}: ${percent} percent`}
+    >
       <div className="gauge-top">
         <h3 className="lab" style={{ margin: "0 0 4px" }}>
           <span className="t">{TITLES[kind]}</span>

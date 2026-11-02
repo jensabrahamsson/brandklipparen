@@ -8,7 +8,7 @@ import { renderToString } from "react-dom/server";
 import { Explain } from "./Explain.tsx";
 import { PowersStrip } from "./PowersStrip.tsx";
 import { explanationFor } from "../lib/explanations.ts";
-import { buildBoardModel } from "./plugins/PluginBoard.tsx";
+import { buildBoardModel, PluginBoard } from "./plugins/PluginBoard.tsx";
 import { syntheticAddress } from "../lib/syntheticAddresses.ts";
 import type { PluginListEntry, PluginResultView } from "./PluginsPanel.tsx";
 
@@ -52,6 +52,24 @@ function htmlFor(results: PluginResultView[]): string {
 }
 
 describe("owner-powers strip (UI v2 §1.1)", () => {
+  test("floor, renounced and clean blacklist statuses agree between strip and grid", () => {
+    const floor = { rule: "owner-can-block-holders" as const, minimum: 60, label: "floor: owner can block holders (blacklist)", facts: ["blacklist"] };
+    const ownerState = { status: "renounced" as const, getter: "owner()" as const, address: "0x0000000000000000000000000000000000000000", block: 24000000, reason: "owner renounced" };
+    const proven = [...quietResults().filter((result) => result.pluginId !== "dev.brandklipparen.blacklist"), ok("dev.brandklipparen.blacklist", [{ id: "blacklist", title: "Blacklist", payload: { fact: "blacklist", proof: "extended" }, evidence: [] }])];
+    for (const scenario of [
+      { results: quietResults(), scoreFloor: floor, ownerState: undefined, chip: "Blacklist: found, high, sets the minimum score", tile: "Blacklist: found, high, sets the minimum score" },
+      { results: proven, scoreFloor: undefined, ownerState, chip: "Blacklist: owner renounced", tile: "Blacklist: owner renounced" },
+      { results: quietResults(), scoreFloor: undefined, ownerState: undefined, chip: null, tile: "Blacklist: not found" },
+    ]) {
+      const context = { scoreFloor: scenario.scoreFloor, ownerState: scenario.ownerState };
+      const board = buildBoardModel(PLUGINS, scenario.results, context);
+      const strip = renderToString(<PowersStrip address={ADDRESS} allIds={PLUGINS.map((plugin) => plugin.id)} tiles={board.ownerTiles} {...context} />);
+      const grid = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={scenario.results} {...context} />);
+      if (scenario.chip === null) expect(strip).not.toContain("power-chip-blacklist");
+      else expect(strip).toContain(scenario.chip);
+      expect(grid).toContain(scenario.tile);
+    }
+  });
   test("powers_found_chips_link_to_detail_with_not_in_score_tag", () => {
     const html = htmlFor([
       ...quietResults().filter(
@@ -287,7 +305,7 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     expect(html).toContain("Owner renounced");
     expect(html).not.toContain("Sets minimum score");
     expect(html).toContain("Blacklist: owner renounced. Can the owner block wallets? Open details.");
-    expect(html).toContain("1 owner power found but owner renounced.");
+    expect(html).toContain("2 owner powers found but owner renounced.");
   });
 
   test("renounced_owner_line_names_getter_address_and_block", () => {

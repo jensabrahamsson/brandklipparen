@@ -203,7 +203,7 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
   // calibration detail (S-131). W-9: the hero no longer repeats the
   // score line, so the dial owns "84"/"HIGH" and the gauges own the
   // percents and risk names.
-  for (const line of ["84", "HIGH", "Rug pull", "62%", "Honeypot", "91%", "Bot-pump", "34%"]) {
+  for (const line of ["84", "HIGH", "Rug pull", "62%", "Honeypot", "91%", "Bot pump", "34%"]) {
     expect(simpleScore).toContain(line);
     expect(expertScore).toContain(line);
   }

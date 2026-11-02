@@ -18,8 +18,8 @@ import type { PluginCopyEntry } from "../../lib/pluginCopy.ts";
 import type { PluginListEntry, PluginResultView } from "../PluginsPanel.tsx";
 import { pluginState } from "../../lib/pluginState.ts";
 import type { CantTellContext, PluginState } from "../../lib/pluginState.ts";
-import { floorMarkFor } from "../../lib/floorPowers.ts";
-import type { FloorContext, FloorMark } from "../../lib/floorPowers.ts";
+import { powerStatusFor } from "../../lib/floorPowers.ts";
+import type { FloorContext, PowerStatus } from "../../lib/floorPowers.ts";
 import { useCountUp } from "../../lib/motion.ts";
 
 export type BoardTile = {
@@ -27,9 +27,14 @@ export type BoardTile = {
   readonly slug: string;
   readonly copy: PluginCopyEntry;
   readonly state: PluginState;
-  // SCORE-4: "floor" when this fact sets the minimum score, "renounced"
-  // when proven renounced ownership lifted it. Absent means unmarked.
-  readonly floorMark?: FloorMark;
+  // SCORE-6: the single power status for this tile (found, floor,
+  // extended, renounced, cant-tell, not-found). Every summary — hero
+  // chips, grid tiles, detail view — renders from it, so they agree.
+  // Kept for older callers that still read the two-bit mark.
+  readonly floorMark?: "floor" | "renounced" | null;
+  // Always set by buildBoardModel; absent on hand-built fixtures, which
+  // fall back to the selector without floor context.
+  readonly powerStatus?: PowerStatus | undefined;
   readonly severity: TileSeverity;
   readonly payloads: readonly unknown[];
   readonly evidenceCount: number;
@@ -123,12 +128,16 @@ export function buildBoardModel(
     );
     const canonical = [...OWNER_POWER_SLUGS, ...TOOL_SLUGS].indexOf(copy.slug);
     const state = pluginState(result, context, copy.group);
+    // SCORE-6: one selector for the status; the two-bit mark stays
+    // derived from it so older readers cannot disagree with the tile.
+    const powerStatus = powerStatusFor(copy.slug, state, floorContext, payloads);
     tiles.push({
       pluginId: entry.id,
       slug: slugForPluginId(entry.id, entries.map((candidate) => candidate.id)),
       copy,
       state,
-      floorMark: floorMarkFor(copy.slug, state, floorContext),
+      floorMark: powerStatus === "floor" ? "floor" : powerStatus === "renounced" ? "renounced" : null,
+      powerStatus,
       severity: severityOf(entry),
       payloads,
       evidenceCount,
@@ -168,18 +177,14 @@ function summaryLamp(state: PluginState): "found" | "extended" | "canttell" | "e
 }
 
 function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.Element | null {
-  const found = tiles.filter(
-    (tile) =>
-      tile.floorMark !== "renounced" &&
-      (tile.state === "found-scored" || tile.floorMark === "floor"),
-  ).length;
-  const floor = tiles.filter((tile) => tile.floorMark === "floor" && tile.state === "extended").length;
-  const renounced = tiles.filter((tile) => tile.floorMark === "renounced").length;
-  const extended = tiles.filter((tile) => tile.state === "extended" && !tile.floorMark).length;
-  const notFound = tiles.filter((tile) => tile.state === "not-found").length;
-  const cantTell = tiles.filter((tile) => tile.state === "cant-tell").length;
-  const errors = tiles.filter((tile) => tile.state === "error").length;
-  const notRun = tiles.filter((tile) => tile.state === "not-run").length;
+  // SCORE-6: every count reads the single power status, never the raw
+  // tile state, so the summary agrees with the hero chips.
+  const found = tiles.filter((tile) => tile.powerStatus === "found" || tile.powerStatus === "floor").length;
+  const floor = tiles.filter((tile) => tile.powerStatus === "floor").length;
+  const renounced = tiles.filter((tile) => tile.powerStatus === "renounced").length;
+  const extended = tiles.filter((tile) => tile.powerStatus === "extended").length;
+  const notFound = tiles.filter((tile) => tile.powerStatus === "not-found").length;
+  const cantTell = tiles.filter((tile) => tile.powerStatus === "cant-tell").length;
   const countedFound = useCountUp(found, 600);
   const countedExtended = useCountUp(extended, 600);
   const countedNotFound = useCountUp(notFound, 600);
@@ -205,12 +210,6 @@ function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.E
   }
   if (cantTell > 0) {
     parts.push({ state: "cant-tell", text: `${cantTell} can't tell` });
-  }
-  if (errors > 0) {
-    parts.push({ state: "error", text: `${errors} errors` });
-  }
-  if (notRun > 0) {
-    parts.push({ state: "not-run", text: `${notRun} not run` });
   }
   if (notFound > 0) {
     parts.push({ state: "not-found", text: `${countedNotFound} not found` });
@@ -335,6 +334,8 @@ export function PluginBoard({
   // R2-10 compaction follows the viewport, not the board container, so
   // it stays in step with every other <480 rule on the page.
   const narrow = useMediaQuery("(max-width: 479px)");
+  // SCORE-6: proven powers (found, floor, extended, renounced) always
+  // keep the full card, even on phones; only quiet tiles compact.
   const renderTiles = (tiles: readonly BoardTile[], offset: number): JSX.Element[] =>
     tiles.map((tile, index) => (
       <PluginTile
@@ -345,16 +346,17 @@ export function PluginBoard({
         copy={tile.copy}
         state={tile.state}
         floorMark={tile.floorMark ?? null}
+        powerStatus={tile.powerStatus}
         severity={tile.severity}
         payloads={tile.payloads}
         evidenceCount={tile.evidenceCount}
         matched={(matchedTags?.get(tile.pluginId) ?? []).length > 0}
         index={offset + index}
-        compact={narrow && shouldCompactTile(tile.state)}
+        compact={narrow && tile.powerStatus !== "found" && tile.powerStatus !== "floor" && shouldCompactTile(tile.state)}
       />
     ));
-  const cantTellOwner = model.ownerTiles.filter((tile) => tile.state === "cant-tell");
-  const openOwner = model.ownerTiles.filter((tile) => tile.state !== "cant-tell");
+  const cantTellOwner = model.ownerTiles.filter((tile) => tile.powerStatus === "cant-tell");
+  const openOwner = model.ownerTiles.filter((tile) => tile.powerStatus !== "cant-tell");
   const grouped = cantTellOwner.length >= CANT_TELL_GROUP_AT;
   return (
     <section aria-label="What we checked" data-testid="plugin-board" className="plugin-board card">

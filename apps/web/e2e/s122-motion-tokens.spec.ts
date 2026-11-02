@@ -161,7 +161,7 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
   expect(motionDeclarations).toEqual([]);
 
   // Hover never changes transform on cards, console buttons or explain triggers.
-  const hoverTargets = [cards.first(), page.getByRole("button", { name: "Explain this result" }), page.locator(".explain-trigger").first()];
+  const hoverTargets = [page.locator(".gauge").first(), page.getByRole("button", { name: "Explain this result" }), page.locator(".explain-trigger").first()];
   for (const target of hoverTargets) {
     const before = await target.evaluate((element) => getComputedStyle(element).transform);
     await target.hover();
@@ -174,7 +174,7 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
   // The 50-tick dial lights once on mount to the score share (84 lights
   // 42), then holds its final value through later interaction.
   await expect(page.locator(".score-dial .tick.lit")).toHaveCount(42);
-  await cards.first().hover();
+  await page.locator(".gauge").first().hover();
   await page.waitForTimeout(400);
   await expect(page.locator(".score-dial .tick.lit")).toHaveCount(42);
 
@@ -190,8 +190,11 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
   await expect(reducedPage.locator(".score-dial .tick.lit")).toHaveCount(42);
   await expect(reducedPage.locator(".score-dial .num")).toHaveText("84");
 
-  await reducedPage.locator(".card").first().hover();
+  await reducedPage.locator(".gauge").first().hover();
   await reducedPage.locator('[data-testid="explain-score:combined"]').focus();
+  await expect(reducedPage.getByRole("tooltip")).toBeVisible();
+  await reducedPage.keyboard.press("Escape");
+  await expect(reducedPage.getByRole("tooltip")).toHaveCount(0);
   await reducedPage.locator('section[aria-label="Why this score"] article details > summary').first().click();
   await reducedPage.getByRole("button", { name: "Investigate", exact: true }).click();
   const graph = reducedPage.locator('ol[aria-label="Investigation steps"]');

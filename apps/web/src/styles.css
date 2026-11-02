@@ -1962,8 +1962,9 @@ a.chip {
   text-transform: none;
   color: var(--dim);
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 .gauge .band {
@@ -2042,6 +2043,79 @@ a.chip {
 
 .gauge.low .pct {
   text-shadow: 0 0 14px var(--glow);
+}
+
+/* SCORE-6: the Owner powers breakdown card and its secondary
+   pattern-model caption. The floor card reuses the gauge frame so all
+   cards in the row stay the same size; static under
+   prefers-reduced-motion (no motion on this card at all). */
+.gauges-caption {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.gauge .t {
+  white-space: nowrap;
+}
+
+.gauge .gauge-prior {
+  /* The uncalibrated tag sits on its own line under the title, so it
+     never collides with "Bot pump" at narrow widths. */
+  flex: none;
+}
+
+.gauge .floor-line {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.gauge .floor-sub {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--dim);
+}
+
+/* When a floor drives the score, the pattern-model band words render
+   neutral: a green LOW beside a red Owner powers card would read as
+   all-clear. Numbers and bars keep their values. */
+.gauge.floor-muted .band {
+  color: var(--dim);
+}
+
+.gauge.low.floor-muted {
+  color: var(--dim);
+}
+
+.gauge.low.floor-muted .bar20 i.lit {
+  box-shadow: var(--shadow-none);
+}
+
+.gauge.floor-muted .pct {
+  text-shadow: none;
+}
+
+.gauge.floor-card.floor-muted {
+  color: var(--dim);
+  border-style: dashed;
+}
+
+.gauge.floor-card.floor-muted .pct {
+  font-size: clamp(20px, 2.5vw, 28px);
+  letter-spacing: 0;
+}
+
+/* SCORE-6: four cards share the breakdown row on tablet and up. Below
+   the phone stack (<=760 px) the row stays stacked; the floor card keeps
+   its block layout at phone widths instead of the risk-row grid, so its
+   fact lines never collide with a bar column. */
+@media (min-width: 761px) {
+  .gauges-hero.has-floor {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 /* D-3 phone risk rows (<640 px): label, percent, bar and band share one
@@ -2143,6 +2217,38 @@ a.chip {
   .gauge .cnt {
     display: none;
   }
+
+  /* SCORE-6: the floor card keeps its block layout on phones: the
+     title, band, big word and fact lines stack, so nothing collides
+     with a bar column and nothing wraps mid-label. */
+  .card.gauge.floor-card,
+  .gauge.floor-card {
+    display: block;
+    padding: 12px 14px;
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+    background: none;
+    box-shadow: var(--elev-1);
+  }
+
+  .card.gauge.floor-card.high,
+  .gauge.floor-card.high {
+    border-color: rgb(255 90 82 / 45%);
+  }
+
+  .gauge.floor-card .gauge-top {
+    display: flex;
+  }
+
+  .gauge.floor-card .pct {
+    margin: 6px 0 0;
+    font-size: 24px;
+    text-align: left;
+  }
+
+  .gauge.floor-card .floor-line {
+    font-size: 13px;
+  }
 }
 
 /* At the narrowest phones the band word duplicates the bar colour, so
@@ -2208,6 +2314,12 @@ a.chip {
   .verdict .gauge .why,
   .verdict .gauge .cnt {
     display: none;
+  }
+
+  /* SCORE-6: the floor-card fact lines always show, even on the hero
+     diet — they are the reason for the score, not a repeated reason. */
+  .verdict .gauge .floor-line {
+    grid-column: 1 / -1;
   }
 
   /* D-4: with the copy column on its diet the 400 px dial would bind

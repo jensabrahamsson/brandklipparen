@@ -378,6 +378,90 @@ describe("why this score rows (R3 D-11)", () => {
     expect(html).not.toContain("claim-text");
   });
 
+  test("score6_floor_leads_why_this_score_before_the_pattern_line", () => {
+    const html = renderToString(
+      <ExplanationList
+        claims={[]}
+        signals={[]}
+        templateVersion="1.1.0"
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        scoreFloor={{
+          rule: "owner-can-block-holders",
+          minimum: 60,
+          label: "floor: owner can block holders (blacklist)",
+          facts: ["blacklist"],
+        }}
+      />,
+    );
+    expect(html).toContain('aria-label="Why this score"');
+    const lead = "Owner can block holders (blacklist) — that sets the minimum score of 60.";
+    expect(html).toContain(lead);
+    expect(html).toContain("No pattern raised the score.");
+    // The floor leads: the pattern-model line follows it.
+    expect(html.indexOf(lead)).toBeLessThan(html.indexOf("No pattern raised the score."));
+  });
+
+  test("score6_floor_leads_above_scored_patterns", () => {
+    const html = renderToString(
+      <ExplanationList
+        claims={[
+          {
+            text: "The owner can stop you from selling.",
+            signalLinks: ["owner-blacklist"],
+            temporality: { kind: "can-change" },
+          },
+        ]}
+        signals={SIGNALS}
+        templateVersion="1.1.0"
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        scoreFloor={{
+          rule: "owner-can-block-holders",
+          minimum: 60,
+          label: "floor: owner can block holders (blacklist)",
+          facts: ["blacklist"],
+        }}
+      />,
+    );
+    const lead = "Owner can block holders (blacklist) — that sets the minimum score of 60.";
+    expect(html).toContain(lead);
+    expect(html.indexOf(lead)).toBeLessThan(html.indexOf("1 scored pattern"));
+  });
+
+  test("score6_renounced_names_getter_address_and_block", () => {
+    const html = renderToString(
+      <ExplanationList
+        claims={[]}
+        signals={[]}
+        templateVersion="1.1.0"
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        ownerState={{
+          status: "renounced",
+          getter: "owner()",
+          address: "0x0000000000000000000000000000000000000000",
+          block: 24000000,
+          reason: "the owner getter returns the zero or dead address",
+        }}
+      />,
+    );
+    expect(html).toContain("Owner powers may exist in code, but the owner is renounced");
+    expect(html).toContain("owner()");
+    expect(html).toContain("0x0000000000000000000000000000000000000000");
+    expect(html).toContain("24000000");
+    expect(html).toContain('aria-label="Copy owner address"');
+  });
+
   test("r3_d11_high_band_keeps_filled_tags_and_expert_copies", () => {
     const html = renderToString(
       <SignalRows

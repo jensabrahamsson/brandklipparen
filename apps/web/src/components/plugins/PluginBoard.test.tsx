@@ -95,7 +95,7 @@ describe("plugin board (UI v2 §5.1)", () => {
     expect(html).toContain("What we checked");
     expect(html).toContain("Owner powers");
     expect(html).toContain("Analysis tools");
-    for (const word of ["Found · High", "Found", "Error", "Not run", "Not found"]) {
+    for (const word of ["Found · High", "Found", "Can&#x27;t tell", "Not found"]) {
       expect(html).toContain(word);
     }
     // R2-10: no "Extended analysis" pill; the status line carries
@@ -201,10 +201,8 @@ describe("plugin board (UI v2 §5.1)", () => {
     // The "Extended analysis" pill is gone; the status line carries it.
     expect(html).not.toContain("tile-extended-tag");
     expect(html).toContain("Found · Not in score");
-    // RESULTS has zero can't-tell tiles, so the summary names no
-    // can't-tell part at all (SSR count-ups read 0, so assert on the
-    // part labels, which follow the raw counts).
-    expect(html).not.toContain("can&#x27;t tell");
+    // A failed check and an unavailable input both leave a power uncertain.
+    expect(html).toContain("2 can&#x27;t tell");
   });
 
   test("u8_all_quiet_board_summarizes_without_zero_parts", () => {
@@ -230,7 +228,7 @@ describe("plugin board (UI v2 §5.1)", () => {
         : result,
     );
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={hard} />);
-    expect(html).toContain("Can&#x27;t tell (<!-- -->5<!-- -->)");
+    expect(html).toContain("Can&#x27;t tell (<!-- -->7<!-- -->)");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('aria-controls="cant-tell-tiles"');
     // Grouped tiles stay in the DOM inside the collapsed body.

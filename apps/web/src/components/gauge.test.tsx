@@ -55,6 +55,28 @@ describe("gauge segments (phosphor console)", () => {
     expect(plain).not.toContain("Prior · uncalibrated");
   });
 
+  test("score6_bot_pump_stays_on_one_line_with_muted_band", () => {
+    // SCORE-6: the label reads "Bot pump" (space) and never wraps; the
+    // uncalibrated tag sits on its own line under the title.
+    const html = renderToString(
+      <Gauge kind="bot-pump" probability={0.18} signalCount={0} reason="x" uncalibrated />,
+    ).replace(/<!-- -->/g, "");
+    expect(html).toContain("Bot pump");
+    expect(html).not.toContain("Bot-pump");
+    expect(html).toContain('aria-label="Bot pump: 18 percent"');
+    expect(html.indexOf("Bot pump")).toBeLessThan(html.indexOf("Prior · uncalibrated"));
+  });
+
+  test("score6_muted_band_reads_neutral_next_to_a_floor", () => {
+    const html = renderToString(
+      <Gauge kind="honeypot" probability={0.08} signalCount={0} reason="x" mutedBand />,
+    );
+    expect(html).toContain("floor-muted");
+    expect(html).toContain("LOW");
+    const plain = renderToString(<Gauge kind="honeypot" probability={0.08} signalCount={0} reason="x" />);
+    expect(plain).not.toContain("floor-muted");
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });

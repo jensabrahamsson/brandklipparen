@@ -22,6 +22,8 @@ import type { ExplainEvidenceEntry } from "../code/CodeView.tsx";
 import type { AiFeatureAvailability, Availability } from "../../lib/capabilities.ts";
 import type { PluginFindingView, PluginListEntry } from "../PluginsPanel.tsx";
 import { PLUGIN_STATE_WORD } from "../../lib/pluginState.ts";
+import { powerStatusFor } from "../../lib/floorPowers.ts";
+import type { PowerStatus } from "../../lib/floorPowers.ts";
 import { codeHref, type CodePaneView } from "../../lib/route.ts";
 import { ranStatusWord, temporalityLine } from "../../lib/pluginCopy.ts";
 import type { SelectorName } from "../../lib/selectorNames.ts";
@@ -44,17 +46,20 @@ export function detailProvenance(
   state: BoardTile["state"],
   weight: number | undefined,
   modelVersion: string,
-  floorMark?: BoardTile["floorMark"],
+  status?: BoardTile["powerStatus"] | BoardTile["floorMark"],
 ): string {
   // Analysis tools never move the score (R3 D-8); their provenance says
   // so plainly instead of borrowing the scored wording.
   if (state === "ran") {
     return "In score: no (analysis tool)";
   }
-  if (floorMark === "renounced") {
+  // SCORE-6: the provenance agrees with the tile and the hero chip for
+  // the same power: a floor status sets the minimum score, a renounced
+  // one is out because the owner is gone.
+  if (status === "renounced") {
     return "In score: no (owner renounced)";
   }
-  if (floorMark === "floor") {
+  if (status === "floor") {
     return "In score: yes (sets the minimum score)";
   }
   if (state === "extended") {
@@ -366,10 +371,26 @@ export function PluginDetailView({
 }): JSX.Element {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const title = tile?.copy.title ?? entry?.displayName ?? "Unknown check";
+  // SCORE-6: the detail reads the single power status; a hand-built
+  // tile without one falls back to its two-bit mark, then to the
+  // selector without floor context.
+  const powerStatus: PowerStatus =
+    tile?.powerStatus ??
+    (tile?.floorMark === "floor"
+      ? "floor"
+      : tile?.floorMark === "renounced"
+        ? "renounced"
+        : powerStatusFor(tile?.copy.slug ?? "", tile?.state ?? "not-found", undefined, tile?.payloads));
+  // SCORE-6: the detail sentence follows the single power status, so a
+  // floored or live-proven power never reads "Not found" here while the
+  // hero says it sets the minimum score.
+  const detailFound =
+    tile !== null &&
+    (powerStatus === "found" || powerStatus === "floor" || powerStatus === "extended" || tile.state === "ran");
   const sentence =
     tile === null
       ? (entry?.description ?? "No description for this check.")
-      : tile.state === "found-scored" || tile.state === "extended" || tile.state === "ran"
+      : detailFound
         ? tile.copy.foundLine(tile.payloads)
         : tileQuietBody(tile.copy, tile.state);
   const typed = useTypewriter(sentence);
@@ -428,34 +449,32 @@ export function PluginDetailView({
           <p className="detail-question">{tile.copy.question}</p>
           <p className="detail-status">
             <span className="lamp" aria-hidden="true">
-              <Pictogram name={tile.state === "ran" ? tile.copy.pictogram : tile.floorMark === "floor" || tile.state === "found-scored" ? "found" : tile.state === "extended" ? "extended" : tile.state === "error" ? "error" : tile.state === "not-run" ? "notrun" : tile.state === "cant-tell" ? "canttell" : "notfound"} size={20} />
+              <Pictogram name={tile.state === "ran" ? tile.copy.pictogram : powerStatus === "floor" || powerStatus === "found" ? "found" : powerStatus === "extended" || powerStatus === "renounced" ? "extended" : tile.state === "error" ? "error" : tile.state === "not-run" ? "notrun" : tile.state === "cant-tell" ? "canttell" : "notfound"} size={20} />
             </span>{" "}
             <span className="status-word" data-nowrap={true}>
-              {tile.floorMark === "renounced"
+              {powerStatus === "renounced"
                 ? "Owner renounced"
-                : tile.floorMark === "floor"
+                : powerStatus === "floor" || powerStatus === "found"
                   ? `Found · ${severityWord(tile.severity)}`
-                  : tile.state === "found-scored"
-                    ? `Found · ${severityWord(tile.severity)}`
-                    : tile.state === "ran"
-                      ? ranStatusWord(tile.copy, tile.payloads.length)
-                      : PLUGIN_STATE_WORD[tile.state]}
+                  : tile.state === "ran"
+                    ? ranStatusWord(tile.copy, tile.payloads.length)
+                    : PLUGIN_STATE_WORD[tile.state]}
             </span>
-            {tile.floorMark === "renounced" ? (
+            {powerStatus === "renounced" ? (
               <>
                 {" "}
                 <span className="extended-chip" data-testid="detail-owner-renounced" data-nowrap={true}>
                   Owner renounced
                 </span>
               </>
-            ) : tile.floorMark === "floor" ? (
+            ) : powerStatus === "floor" ? (
               <>
                 {" "}
                 <span className="extended-chip" data-testid="detail-sets-minimum-score" data-nowrap={true}>
                   Sets minimum score
                 </span>
               </>
-            ) : tile.state === "extended" ? (
+            ) : tile.state === "extended" && powerStatus === "extended" ? (
               <>
                 {" "}
                 <span className="extended-chip" data-testid="detail-not-in-score" data-nowrap={true}>
@@ -471,7 +490,7 @@ export function PluginDetailView({
             </span>
             <span className="sr-only">{sentence}</span>
           </p>
-          {tile.state === "found-scored" || tile.state === "extended" ? (
+          {detailFound ? (
             <DetailOwnerRow
               address={address}
               apiKey={apiKey}
@@ -487,7 +506,7 @@ export function PluginDetailView({
                 {` · v${entry?.version ?? "0.0.0"} · `}
               </>
             ) : null}
-            {detailProvenance(tile.state, entry?.weight, modelVersion, tile.floorMark)}
+            {detailProvenance(tile.state, entry?.weight, modelVersion, powerStatus)}
             {expert ? null : ` · Check v${entry?.version ?? "0.0.0"}`}
           </p>
         </section>

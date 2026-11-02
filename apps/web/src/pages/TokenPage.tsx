@@ -26,13 +26,14 @@ import { matchPriorities } from "../lib/matcher.ts";
 import { riskBand, riskWord } from "../lib/risk.ts";
 import { toAiAvailability, type AiFeatureAvailability, type Availability } from "../lib/capabilities.ts";
 import { emptyGaugeReason, plainReason, signalTitle, sortByImpact, strongestSignal } from "../lib/signals.ts";
-import { floorMarkFor } from "../lib/floorPowers.ts";
+import { powerStatusFor } from "../lib/floorPowers.ts";
 import { PowersStrip } from "../components/PowersStrip.tsx";
 import { StreamView } from "../components/StreamView.tsx";
 import { MuseConsole } from "../components/MuseConsole.tsx";
 import { CantTellPanel } from "../components/CantTellPanel.tsx";
 import { ExplanationList } from "../components/ExplanationList.tsx";
 import { Gauge } from "../components/Gauge.tsx";
+import { FloorCard } from "../components/FloorCard.tsx";
 import { ScoreRing } from "../components/ScoreRing.tsx";
 import { LoadingNotice, TokenErrorCard, type TokenLoadError } from "../components/LoadingState.tsx";
 import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
@@ -509,6 +510,11 @@ function AssessedView({
   });
   const heroIds = (plugins ?? []).map((entry) => entry.id);
   const heroHasSignals = result.signals.length > 0;
+  // SCORE-6: the breakdown leads with the Owner powers card when a
+  // deterministic floor drives the score — or when the owner is
+  // renounced — so a HIGH score never sits beside green model cards
+  // with no explanation.
+  const hasOwnerCard = result.scoreFloor !== undefined || result.ownerState?.status === "renounced";
   // R2-5 (D-17): glue the verdict "?" to the last headline word, so the
   // trigger never wraps onto its own line. The head keeps a normal
   // space so the line can still break before the final word.
@@ -626,7 +632,13 @@ function AssessedView({
               <h2 style={{ margin: "12px 0 10px", fontSize: 20 }}>
                 <span>Risk breakdown</span> <Explain explainKey="score:gauges" label="Risk breakdown" />
               </h2>
-              <div className="gauges gauges-hero">
+              {hasOwnerCard ? (
+                <p className="gauges-caption">Pattern model · history-based estimate</p>
+              ) : null}
+              <div className={`gauges gauges-hero${hasOwnerCard ? " has-floor" : ""}`}>
+                {hasOwnerCard ? (
+                  <FloorCard scoreFloor={result.scoreFloor} ownerState={result.ownerState} />
+                ) : null}
                 {RISKS.map((risk, riskIndex) => {
                   const top = strongestSignal(result.signals, risk);
                   const count = result.signals.filter((signal) => signal.risk === risk).length;
@@ -646,6 +658,7 @@ function AssessedView({
                       signalCount={count}
                       reason={reason}
                       uncalibrated={risk === "bot-pump"}
+                      mutedBand={result.scoreFloor !== undefined}
                     />
                   );
                 })}
@@ -677,7 +690,13 @@ function AssessedView({
         onQuestionChange={onQuestionChange}
         onQuestionClear={onQuestionClear}
         foundSlugs={heroBoard.ownerTiles
-          .filter((tile) => tile.state === "found-scored" || tile.state === "extended")
+          .filter(
+            (tile) =>
+              tile.powerStatus === "found" ||
+              tile.powerStatus === "floor" ||
+              tile.powerStatus === "extended" ||
+              tile.powerStatus === "renounced",
+          )
           .map((tile) => tile.copy.slug)}
       />
       <div
@@ -810,7 +829,8 @@ export function OverviewSections({
         signals={sorted}
         templateVersion={result.explanation.templateVersion}
         expert={mode === "expert"}
-        scoreFloorLabel={result.scoreFloor?.label}
+        scoreFloor={result.scoreFloor}
+        ownerState={result.ownerState}
         bandHigh={riskBand(result.score).word === "High"}
         address={address}
         codeHash={result.codeHash}
@@ -973,19 +993,17 @@ export function meaningSentence(
   ownerTiles: readonly BoardTile[] = [],
 ): string {
   const word = riskWord(result.score);
-  // SCORE-4: floor facts are found powers; renounced-lifted facts are
-  // neither found nor still-counted extended findings.
-  const markOf = (tile: BoardTile): "floor" | "renounced" | null =>
-    tile.floorMark !== undefined && tile.floorMark !== null
-      ? tile.floorMark
-      : floorMarkFor(tile.copy.slug, tile.state, { scoreFloor: result.scoreFloor, ownerState: result.ownerState });
-  const found = ownerTiles.filter(
-    (tile) => markOf(tile) !== "renounced" && (tile.state === "found-scored" || markOf(tile) === "floor"),
-  );
+  // SCORE-6: every clause reads the single power status, so the hero
+  // sentence agrees with the hero chips and the grid for the same
+  // token. A floored tile counts as controlled; a renounced-lifted
+  // tile is neither found nor still-counted extended.
+  const statusOf = (tile: BoardTile): string =>
+    powerStatusFor(tile.copy.slug, tile.state, { scoreFloor: result.scoreFloor, ownerState: result.ownerState }, tile.payloads);
+  const found = ownerTiles.filter((tile) => statusOf(tile) === "found" || statusOf(tile) === "floor");
   // SCORE-5: extended tiles still named here are exactly the ones the
   // floor did not count (a floored tile is in `found` above), so the
   // not-in-score clause can only ever name non-floor facts.
-  const extended = ownerTiles.filter((tile) => tile.state === "extended" && markOf(tile) === null);
+  const extended = ownerTiles.filter((tile) => statusOf(tile) === "extended");
   if (found.length > 0) {
     const named = found.filter((tile) => tile.copy.slug !== "ownership");
     const source = named.length > 0 ? named : found;
@@ -1008,7 +1026,7 @@ export function meaningSentence(
     const noun = extended.length === 1 ? "owner power" : "owner powers";
     return `${word} risk. Extended analysis found ${extended.length} ${noun} the score doesn't count yet: ${names}.`;
   }
-  const renounced = ownerTiles.filter((tile) => markOf(tile) === "renounced");
+  const renounced = ownerTiles.filter((tile) => statusOf(tile) === "renounced");
   if (renounced.length > 0) {
     const names = renounced.map((tile) => tile.copy.title.toLowerCase()).join(", ");
     return `${word} risk. Owner renounced, so ${names} no longer applies.`;

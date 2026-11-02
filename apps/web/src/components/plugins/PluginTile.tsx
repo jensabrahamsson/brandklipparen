@@ -9,6 +9,7 @@ import type { PluginCopyEntry } from "../../lib/pluginCopy.ts";
 import { pluginHref, ranStatusWord } from "../../lib/pluginCopy.ts";
 import type { PluginState } from "../../lib/pluginState.ts";
 import { PLUGIN_STATE_WORD } from "../../lib/pluginState.ts";
+import type { PowerStatus } from "../../lib/floorPowers.ts";
 
 export type TileSeverity = "low" | "medium" | "high";
 
@@ -24,26 +25,49 @@ const LAMP_GLYPH: Record<
   "not-found": "notfound",
 });
 
-function statusPhrase(
-  state: PluginState,
-  severity: TileSeverity,
-  floorMark?: "floor" | "renounced" | null,
-): string {
-  if (floorMark === "renounced") {
+// SCORE-6: the accessible status reads the single power status, so
+// the tile agrees with the hero chip for the same power. Quiet, error
+// and not-run states keep their own words.
+function statusPhrase(status: PowerStatus, state: PluginState, severity: TileSeverity): string {
+  if (status === "renounced") {
     return "owner renounced";
   }
-  if (floorMark === "floor") {
+  if (status === "floor") {
     const level = severity === "high" ? "high" : severity === "medium" ? "medium" : "low";
     return `found, ${level}, sets the minimum score`;
   }
-  if (state === "found-scored") {
+  if (status === "found") {
     const level = severity === "high" ? "high" : severity === "medium" ? "medium" : "low";
     return `found, ${level}`;
   }
-  if (state === "extended") {
+  if (status === "extended") {
     return "found, not in score";
   }
+  if (status === "cant-tell") {
+    return "can't tell";
+  }
   return PLUGIN_STATE_WORD[state].toLowerCase();
+}
+
+// Owner-tile status before SCORE-6 callers pass powerStatus: the same
+// mapping the board selector produces without floor or owner context.
+function legacyOwnerStatus(state: PluginState, floorMark: "floor" | "renounced" | null): PowerStatus {
+  if (floorMark === "floor") {
+    return "floor";
+  }
+  if (floorMark === "renounced") {
+    return "renounced";
+  }
+  switch (state) {
+    case "found-scored":
+      return "found";
+    case "extended":
+      return "extended";
+    case "cant-tell":
+      return "cant-tell";
+    default:
+      return "not-found";
+  }
 }
 
 export function PluginTile({
@@ -53,6 +77,7 @@ export function PluginTile({
   copy,
   state,
   floorMark = null,
+  powerStatus,
   severity,
   payloads,
   evidenceCount,
@@ -66,6 +91,10 @@ export function PluginTile({
   readonly copy: PluginCopyEntry;
   readonly state: PluginState;
   readonly floorMark?: "floor" | "renounced" | null;
+  // SCORE-6: the single power status for owner tiles; tools ignore it
+  // and keep their neutral ran rendering. Absent means derive from the
+  // tile state alone.
+  readonly powerStatus?: PowerStatus | undefined;
   readonly severity: TileSeverity;
   readonly payloads: readonly unknown[];
   readonly evidenceCount: number;
@@ -76,25 +105,46 @@ export function PluginTile({
   // the full card so no finding loses its sentence.
   readonly compact?: boolean;
 }): JSX.Element {
-  const found = state === "found-scored" || state === "extended" || state === "ran";
+  // SCORE-6: owner tiles render from the single power status (the board
+  // always passes it); tools keep their state rendering. A floor or
+  // live-proven ownership tile counts as found even when the raw state
+  // reads quiet, so the grid agrees with the hero chips.
+  const isOwner = copy.group === "owner";
+  const isRanTool = !isOwner && state === "ran";
+  const status: PowerStatus = isOwner
+    ? (powerStatus ?? legacyOwnerStatus(state, floorMark))
+    : state === "found-scored"
+      ? "found"
+      : state === "extended"
+        ? "extended"
+        : state === "cant-tell"
+          ? "cant-tell"
+          : "not-found";
+  const found = status === "found" || status === "floor" || status === "extended" || isRanTool;
   const counted = useCountUp(evidenceCount, 600);
-  const body = found ? copy.foundLine(payloads) : tileQuietBody(copy, state);
-  // SCORE-4: a floor fact reads as a found power that sets the minimum
-  // score; a renounced-lifted fact reads muted as owner renounced.
-  const displayState: PluginState =
-    floorMark === "floor" ? "found-scored" : floorMark === "renounced" ? "extended" : state;
-  const statusWord =
-    floorMark === "renounced"
+  const body = status === "renounced"
+    ? "This power may exist in code, but the owner is renounced."
+    : found ? copy.foundLine(payloads) : tileQuietBody(copy, state);
+  const displayState: PluginState = isRanTool
+    ? "ran"
+    : status === "floor" || status === "found"
+      ? "found-scored"
+      : status === "renounced" || status === "extended"
+        ? "extended"
+        : state;
+  const statusWord = isRanTool
+    ? ranStatusWord(copy, payloads.length)
+    : status === "renounced"
       ? "Owner renounced"
-      : floorMark === "floor"
+      : status === "floor"
         ? "Found · Sets minimum score"
-        : state === "found-scored"
+        : status === "found"
           ? `Found · ${severityWord(severity)}`
-          : state === "extended"
+          : status === "extended"
             ? "Found · Not in score"
-            : state === "ran"
-              ? ranStatusWord(copy, payloads.length)
-              : PLUGIN_STATE_WORD[state];
+            : status === "cant-tell" && isOwner
+              ? "Can't tell"
+            : PLUGIN_STATE_WORD[state];
   const lampGlyph =
     state === "ran" ? copy.pictogram : LAMP_GLYPH[displayState as Exclude<PluginState, "ran">];
   const lampClass =
@@ -110,7 +160,7 @@ export function PluginTile({
       <a
         className={`tile is-compact state-${displayState} sev-${severity}`}
         href={pluginHref(address, pluginId, allIds)}
-        aria-label={`${copy.title}: ${statusPhrase(state, severity, floorMark)}. ${copy.question} Open details.`}
+        aria-label={`${copy.title}: ${statusPhrase(status, state, severity)}. ${copy.question} Open details.`}
         data-testid={`plugin-tile-${copy.slug}`}
         data-tile-slug={copy.slug}
         style={{ "--i": Math.min(index, 12) } as CSSProperties}
@@ -136,7 +186,7 @@ export function PluginTile({
     <a
       className={`tile state-${displayState} sev-${severity}`}
       href={pluginHref(address, pluginId, allIds)}
-      aria-label={`${copy.title}: ${statusPhrase(state, severity, floorMark)}. ${copy.question} Open details.`}
+      aria-label={`${copy.title}: ${statusPhrase(status, state, severity)}. ${copy.question} Open details.`}
       data-testid={`plugin-tile-${copy.slug}`}
       data-tile-slug={copy.slug}
       style={{ "--i": Math.min(index, 12) } as CSSProperties}
