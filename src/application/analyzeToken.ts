@@ -22,7 +22,7 @@ import { standardCantTell } from "../domain/cantTell.ts";
 import type { CantTellItem } from "../domain/cantTell.ts";
 import { explanationToCanonical, originEntryKey, renderExplanation } from "../domain/explain.ts";
 import type { Explanation, ExplainError, ExplanationOrigin } from "../domain/explain.ts";
-import { score } from "../domain/risk.ts";
+import { isFeaturePayload, score } from "../domain/risk.ts";
 import type { PluginFeatureMapping } from "../domain/risk.ts";
 import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
@@ -570,12 +570,7 @@ function featureMappingOf(
   pluginId: string,
   featureCatalogue: Readonly<Record<string, PluginFeatureMapping>>,
 ): PluginFeatureMapping | null {
-  const payload: unknown = finding.payload;
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-    return null;
-  }
-  const feature: unknown = (payload as { readonly [field: string]: unknown })["feature"];
-  if (typeof feature !== "string" || feature.length === 0) {
+  if (!isFeaturePayload(finding.payload)) {
     return null;
   }
   return featureCatalogue[pluginId] ?? null;
@@ -662,10 +657,10 @@ function signalsFromPluginResults(
   // Owner-control features join the capability bucket: each converts with
   // the artifact mapping for its plugin id, in registry order and finding
   // order, so equal inputs give the same signals on every run. A signal
-  // carries its source plugin id only when the artifact holds a calibrated
-  // head weight for that plugin and risk head, so artifacts without head
+  // carries its source plugin id only when the artifact holds calibrated
+  // head weights for that plugin (any head), so artifacts without head
   // weights keep producing bit-identical signals while calibrated ones
-  // score with the fitted per-plugin magnitudes.
+  // score with the fitted per-plugin magnitudes on every fitted head.
   for (const entry of scored) {
     if (entry.outcome !== "ok") {
       continue;
@@ -676,7 +671,6 @@ function signalsFromPluginResults(
         continue;
       }
       const pluginId = entry.pluginId as string;
-      const headWeight = detectorHeadWeights?.[pluginId]?.[mapping.risk];
       const signal = Signal.createCapability({
         codeHash,
         risk: mapping.risk,
@@ -685,7 +679,7 @@ function signalsFromPluginResults(
         temporality,
         evidence: finding.evidence,
         discriminator: discriminatorOf(pluginId, finding, mapping.risk),
-        ...(typeof headWeight !== "number" || !Number.isFinite(headWeight) ? {} : { sourcePlugin: pluginId }),
+        ...(detectorHeadWeights?.[pluginId] === undefined ? {} : { sourcePlugin: pluginId }),
       });
       if (signal.ok) {
         capability.push(signal.value);

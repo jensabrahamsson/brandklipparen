@@ -304,6 +304,10 @@ describe("k011 risk model from signals and artifact", () => {
     // severity weight 0.25, so its contribution and probability exceed the
     // severity path.
     expect(sourcedResult.contributions[0]?.weight).toBe(2.0);
+    // C-15: the sourced signal fans out to both fitted heads; honeypot 0 contributes 0.
+    expect(
+      sourcedResult.contributions.find((entry) => entry.risk === "honeypot")?.weight,
+    ).toBe(0);
     expect(unsourcedResult.contributions[0]?.weight).toBe(0.25);
     expect(sourcedResult.probabilities["rug-pull"] as number).toBeGreaterThan(
       unsourcedResult.probabilities["rug-pull"] as number,

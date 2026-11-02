@@ -24,7 +24,7 @@ import { ONCHAIN_FEATURE_NAMES, ONCHAIN_FEATURE_VERSION, SERVABLE_FEATURE_NAMES,
 import { applyOnchainScaler, fitOnchainScaler, scalerToJSON } from "../src/domain/onchain/scaler.ts";
 import { ONCHAIN_RISK_DIRECTIONS, signConstraintOf } from "../src/domain/onchain/signs.ts";
 import type { SnapshotFile, SnapshotRow } from "../src/domain/onchain/snapshot.ts";
-import { parseModelArtifact } from "../src/domain/risk.ts";
+import { isFeaturePayload, parseModelArtifact } from "../src/domain/risk.ts";
 import type { ModelArtifact } from "../src/domain/risk.ts";
 import { score } from "../src/domain/risk.ts";
 import { Signal } from "../src/domain/signals.ts";
@@ -110,8 +110,9 @@ if (datasetPath === undefined) {
   fail("missing calibration dataset path: pass --dataset or BK_CALIBRATION_DATASET");
   throw new Error("unreachable");
 }
+const skipHoldoutEarly = process.argv.includes("--skip-holdout") || process.env["BK_SKIP_HOLDOUT"] === "1";
 const holdoutPath = flagValue("holdout") ?? process.env["BK_HOLDOUT_DATASET"];
-if (holdoutPath === undefined) {
+if (!skipHoldoutEarly && holdoutPath === undefined) {
   fail("missing holdout path: pass --holdout or BK_HOLDOUT_DATASET");
   throw new Error("unreachable");
 }
@@ -170,12 +171,12 @@ const extraSnapshotPaths = extraSnapshotsRaw
   .filter((entry) => entry.length > 0);
 
 const calibrationRows = readRows(datasetPath);
-const holdoutRows = readRows(holdoutPath);
-// Skip mode keeps the holdout file read for the overlap exclusion below
-// only (so the seed-42 train/test split stays identical): every scoring,
-// metric and band path gates on holdoutRowsForScoring, which yields no row
-// when skipping, so no holdout score, AUC, Brier or band count is ever
-// computed, printed or written in this run.
+// Skip mode (C-15 owner constraint): the holdout is never read or
+// evaluated, even when a path is present in the environment. The
+// overlap exclusion is therefore empty in skip mode, so no holdout
+// score, AUC, Brier or band count is ever computed, printed or
+// written in this run.
+const holdoutRows: CalibrationRow[] = skipHoldout ? [] : readRows(holdoutPath as string);
 
 const holdoutHashes = new Set<string>();
 for (const row of holdoutRows) {
@@ -306,7 +307,12 @@ function round6(value: number): number {
   return Math.round(value * 1000000) / 1000000;
 }
 
+let featureProgress = 0;
 function detectorFeatures(row: CalibrationRow): number[] {
+  featureProgress += 1;
+  if (featureProgress % 25 === 0) {
+    process.stderr.write(`calibrate-real: detector features ${featureProgress}\n`);
+  }
   const parsed = Bytecode.parse(effectiveBytecode(row));
   if (!parsed.ok) {
     return FEATURE_PLUGINS.map(() => 0);
@@ -319,7 +325,7 @@ function detectorFeatures(row: CalibrationRow): number[] {
   const input = Object.freeze({ bytecode, codeHash: hash.value });
   return FEATURE_PLUGINS.map(({ plugin }) => {
     try {
-      return plugin.detect(input).length > 0 ? 1 : 0;
+      return plugin.detect(input).some((finding) => isFeaturePayload(finding.payload)) ? 1 : 0;
     } catch {
       return 0;
     }
@@ -552,7 +558,12 @@ const CHANGER = (() => {
   return parsed.value;
 })();
 
+let scoreProgress = 0;
 function resultForRow(row: CalibrationRow, artifact: ModelArtifact): ReturnType<typeof score> {
+  scoreProgress += 1;
+  if (scoreProgress % 25 === 0) {
+    process.stderr.write(`calibrate-real: scored rows ${scoreProgress}\n`);
+  }
   const parsedCode = Bytecode.parse(effectiveBytecode(row));
   if (!parsedCode.ok) {
     return score([], artifact);
@@ -565,12 +576,13 @@ function resultForRow(row: CalibrationRow, artifact: ModelArtifact): ReturnType<
   const input = Object.freeze({ bytecode: code, codeHash: hash.value });
   const signals: Parameters<typeof score>[0] = [];
   for (const { name, plugin } of FEATURE_PLUGINS) {
-    let findings: readonly { evidence: readonly never[] }[] = [];
+    let findings: readonly { evidence: readonly never[]; payload: unknown }[] = [];
     try {
       findings = plugin.detect(input) as unknown as typeof findings;
     } catch {
       continue;
     }
+    findings = findings.filter((finding) => isFeaturePayload(finding.payload));
     if (findings.length === 0) {
       continue;
     }
@@ -1707,6 +1719,10 @@ const output = {
     badAuc: trainAuc.bad,
     rugAuc: trainAuc.rug,
     honeyAuc: trainAuc.honey,
+    badBrier: round6(brier(trainBadProbs, trainBadLabels)),
+    rugBrier: round6(brier(trainRugProbs, trainRugLabels)),
+    honeyBrier: round6(brier(trainHoneyProbs, trainHoneyLabels)),
+    deciles: deciles(trainBadProbs, trainBadLabels),
     ablation,
   },
   bands: {

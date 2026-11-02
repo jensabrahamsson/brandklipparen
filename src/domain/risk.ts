@@ -431,22 +431,28 @@ function readDetectorHeadWeights(raw: unknown): DetectorHeadWeights | undefined 
   return out;
 }
 
-// Signed contribution of one signal to its own risk bucket. Direction steers
-// the sign (raises adds, lowers subtracts); hard-to-analyze signals carry no
-// direction and count as raising. Clone-match magnitudes scale with the
-// reported similarity. All magnitudes come from the artifact: a capability
-// signal converted from a calibrated detector plugin uses the artifact
-// per-plugin per-head weight for its risk head, and every other signal
-// uses the severity weights.
+// A finding payload carries a fitted feature only when it is a non-null
+// object whose `feature` is a non-empty string (C-15, F-8). Fact findings
+// and every other payload shape never convert to a fitted indicator.
+export function isFeaturePayload(payload: unknown): boolean {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return false;
+  }
+  const feature: unknown = (payload as { readonly [field: string]: unknown })["feature"];
+  return typeof feature === "string" && feature.length > 0;
+}
+
+// Signed contribution of one signal to its own risk bucket on the legacy
+// (unfitted) path. Direction steers the sign (raises adds, lowers
+// subtracts); hard-to-analyze signals carry no direction and count as
+// raising. Clone-match magnitudes scale with the reported similarity.
+// All magnitudes come from the artifact severity or cause weights.
+// Fitted detector signals never reach this function for their magnitude:
+// score() fans them out to every fitted head exactly once per plugin.
 function contributionOf(signal: Signal, artifact: ModelArtifact): SignalContribution {
   switch (signal.kind) {
     case "capability": {
-      const head = signal.risk === "bot-pump" ? undefined : (signal.risk as CalibratedHead);
-      const calibrated =
-        signal.sourcePlugin === undefined || head === undefined
-          ? undefined
-          : artifact.detectorHeadWeights?.[signal.sourcePlugin]?.[head];
-      const magnitude = calibrated ?? artifact.severityWeights[signal.severity] ?? 0;
+      const magnitude = artifact.severityWeights[signal.severity] ?? 0;
       const sign = signal.direction === "raises" ? 1 : -1;
       return { signalId: signal.id, risk: signal.risk, direction: signal.direction, weight: sign * magnitude };
     }
@@ -510,10 +516,36 @@ export function score(signals: readonly Signal[], artifact: ModelArtifact): Risk
     "bot-pump": artifact.biases["bot-pump"] ?? 0,
   };
   const contributions: SignalContribution[] = [];
-  for (const signal of ordered) {
-    const entry = contributionOf(signal, artifact);
+  const add = (entry: SignalContribution): void => {
     totals[entry.risk] = (totals[entry.risk] ?? 0) + entry.weight;
     contributions.push(Object.freeze(entry));
+  };
+  // Score exactly what was fitted (C-15, F-8): a fitted plugin adds its
+  // head weights exactly once per analysis, on every fitted head. The
+  // first signal of a plugin in accumulation order is the representative;
+  // later signals of the same plugin contribute 0 for display only.
+  const HEADS: readonly CalibratedHead[] = Object.freeze(["rug-pull", "honeypot"]);
+  const seen = new Set<string>();
+  for (const signal of ordered) {
+    if (signal.kind !== "capability" || signal.sourcePlugin === undefined) {
+      add(contributionOf(signal, artifact));
+      continue;
+    }
+    const heads = artifact.detectorHeadWeights?.[signal.sourcePlugin];
+    if (heads === undefined) {
+      add(contributionOf(signal, artifact));
+      continue;
+    }
+    const plugin = signal.sourcePlugin;
+    const sign = signal.direction === "raises" ? 1 : -1;
+    if (seen.has(plugin)) {
+      add({ signalId: signal.id, risk: signal.risk, direction: signal.direction, weight: 0 });
+      continue;
+    }
+    seen.add(plugin);
+    for (const head of HEADS) {
+      add({ signalId: signal.id, risk: head, direction: signal.direction, weight: sign * (heads[head] ?? 0) });
+    }
   }
 
   const probabilities = {} as Record<RiskType, ProbabilityType>;
