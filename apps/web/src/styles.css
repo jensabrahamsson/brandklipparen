@@ -111,13 +111,28 @@
 html {
   background: var(--void);
   /* P1-11: anchor and focus jumps clear the fixed summary strip. */
-  scroll-padding-top: 160px;
+  scroll-padding-top: calc(160px + env(safe-area-inset-top, 0px));
+  /* MOBILE-1: never a horizontal scrollbar. Absolutely positioned
+     popovers, long monospace strings and 100vw-sized boxes used to
+     widen the scrollable overflow area on iOS Safari, so the whole
+     column looked shifted and clipped at the left. Clipping (not
+     hidden) keeps position:sticky working and creates no scroller. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  max-width: 100%;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-x: clip;
+  max-width: 100%;
   padding: 18px;
+  padding-top: calc(18px + env(safe-area-inset-top, 0px));
+  padding-left: calc(18px + env(safe-area-inset-left, 0px));
+  padding-right: calc(18px + env(safe-area-inset-right, 0px));
   background: radial-gradient(120% 90% at 50% 40%, #04140c 0%, var(--void) 70%);
   color: var(--text);
   font-family: var(--font-mono);
@@ -318,6 +333,8 @@ a {
    overlay only breathes in opacity (3.2 s); nothing travels. */
 .page {
   position: relative;
+  width: 100%;
+  min-width: 0;
   max-width: 1280px;
   margin: 0 auto;
   padding: 16px 40px 34px;
@@ -3246,17 +3263,23 @@ pre.code {
 
 .compact-strip {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 5;
+  /* MOBILE-1: respect the iOS safe area and stay fully opaque, so the
+     strip never ghosts under the Safari chrome as a blurred layer. */
+  top: env(safe-area-inset-top, 0px);
+  left: env(safe-area-inset-left, 0px);
+  right: env(safe-area-inset-right, 0px);
+  z-index: 50;
   display: flex;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  background: var(--sheen), var(--surface);
+  min-width: 0;
+  max-width: 100dvw;
+  background: var(--surface);
   border-bottom: 1px solid var(--edge);
   padding: 10px 16px;
+  padding-left: calc(16px + env(safe-area-inset-left, 0px));
+  padding-right: calc(16px + env(safe-area-inset-right, 0px));
   box-shadow: var(--elev-3);
 }
 
@@ -3442,13 +3465,20 @@ p {
   outline-offset: 2px;
 }
 
+/* MOBILE-1: the tooltip is portalled to <body> and fixed, so it is
+   always on top of every card (above the scanline overlay at z 60 and
+   the summary strip at z 50) and can never widen the page. Inline
+   left/top come from Explain.tsx, clamped to 16 px viewport gutters;
+   the sheet variant below is the narrow-screen placement. Left/top
+   defaults here only cover the server-rendered fallback frame. */
 .explain-tooltip {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: -8px;
-  z-index: 20;
+  position: fixed;
+  top: auto;
+  left: 16px;
+  z-index: 200;
   width: max-content;
   max-width: min(280px, calc(100vw - 32px));
+  max-width: min(280px, calc(100dvw - 32px));
   overflow-wrap: anywhere;
   background: var(--surface-2);
   border: 1px solid var(--edge);
@@ -3460,6 +3490,23 @@ p {
   text-align: left;
   box-shadow: var(--elev-3);
   animation: bk-fade var(--fade-sec) var(--ease-out) 1;
+}
+
+.explain-tooltip--sheet {
+  width: auto;
+  max-width: none;
+}
+
+/* Belt and braces for the server-rendered fallback: a section or card
+   holding an (inline) tooltip lifts above its later siblings. */
+.card:has(.explain-tooltip),
+section:has(.explain-tooltip),
+.fade-sec:has(.explain-tooltip),
+.compact-strip:has(.explain-tooltip),
+.card:has(.copy-tip),
+section:has(.copy-tip) {
+  position: relative;
+  z-index: 90;
 }
 
 .explain-tooltip strong {
@@ -3704,6 +3751,41 @@ details[open] > *:not(summary) {
   animation-fill-mode: both;
 }
 
+/* MOBILE-1: shrink-to-fit guards. Grid and flex children default to
+   min-width auto, so one long monospace string (an EIP-55 address, a
+   code hash, a token name) can force the track wider than the phone
+   and Safari then shows the column shifted with its left clipped.
+   Every long string wraps instead of pushing. */
+main,
+.page > *,
+.token-grid > *,
+.score-ring-wrap > *,
+.gauges > *,
+.plugin-grid > * {
+  min-width: 0;
+}
+
+main {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
+pre,
+code,
+.mono,
+.inline-code,
+.compact-strip-hash,
+.token-sym,
+.board-summary {
+  overflow-wrap: anywhere;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -3768,6 +3850,8 @@ a.button-ghost {
 
   .compact-strip {
     padding: 6px 12px;
+    padding-left: calc(12px + env(safe-area-inset-left, 0px));
+    padding-right: calc(12px + env(safe-area-inset-right, 0px));
     gap: 10px;
   }
 }
@@ -3778,7 +3862,7 @@ a.button-ghost {
    plus gap) so focused controls are never hidden under it. */
 @media (max-width: 480px) {
   html {
-    scroll-padding-top: 76px;
+    scroll-padding-top: calc(76px + env(safe-area-inset-top, 0px));
   }
 
   .compact-strip {
@@ -3867,6 +3951,10 @@ a.button-ghost {
 @media (max-width: 760px) {
   body {
     padding: 8px;
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(8px + env(safe-area-inset-left, 0px));
+    padding-right: calc(8px + env(safe-area-inset-right, 0px));
     font-size: 14px;
   }
 
