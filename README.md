@@ -38,18 +38,20 @@ Meta Global AI Developer Hackathon entry · Indie Developer track ·
   (`/v1`) and the MCP server over stdio return the same deterministic
   result: same bytecode, same pinned block, same answer.
 - **Honest about what it can't see.** A check that cannot finish reads
-  "Can't tell", never "safe". The baseline score is weak and labelled
+  "Can't tell", never "safe". The model score is weak and labelled
   so (see [Calibration and limits](#calibration-and-limits)). Bytecode
   says nothing about liquidity locks, insider holdings or the team.
 
 ## What it is
 
 Brandklipparen assesses the rug-pull risk of ERC-20 tokens from
-contract bytecode, paired with point-in-time on-chain context. The risk
-score and proofs are derived deterministically from bytecode; live
-on-chain context and verified source are shown beside them and never
-change the score. Every score is shown together with the evidence that
-produced it, so the result can be inspected and reproduced.
+contract bytecode, paired with point-in-time on-chain context. The
+proofs are derived deterministically from bytecode. The score is a
+calibrated model score plus an evidence floor. The scanner reads the
+owner live, and the floor can raise the score. Other on-chain context
+and verified source are shown beside them and never change the score.
+Every score is shown together with the evidence that produced it, so
+the result can be inspected and reproduced.
 
 - **Deterministic core.** Pure TypeScript with no I/O. Runtime
   bytecode is read with `eth_getCode` at a pinned block, and proxies are
@@ -60,10 +62,13 @@ produced it, so the result can be inspected and reproduced.
   and four analysis plugins (capability, decompiler, clone match, hard
   to analyze). Six on-chain plugins (age, concentration, deployer,
   liquidity, LP, owner) are shown for context and carry weight 0 in the
-  score. One assessment plugin, `meta-model-api`, provides the
+  model score. The owner state the scanner reads live also feeds the
+  evidence floor. One assessment plugin, `meta-model-api`, provides the
   "Contract assessment with Muse".
-- **Baseline score.** A frozen, checksummed model artifact (1.0.1)
-  maps findings to probabilities and a 0-100 score.
+- **Score.** A frozen, checksummed model artifact (1.0.1) maps findings
+  to a calibrated 0-100 score. A deterministic evidence floor is then
+  applied. It can raise the score and never lowers it (see
+  [Calibration and limits](#calibration-and-limits)).
 - **Muse layer (optional).** Explain, Ask, Explain this code,
   Investigate, the contract assessment and personalization all run on
   the Meta Model API. They read the frozen result only, are offered
@@ -379,7 +384,17 @@ NODE_OPTIONS=--dns-result-order=ipv4first npm run e2e:web
 
 ## Calibration and limits
 
-The default risk artifact is 1.0.1. On the held-out test set it scores bad-AUC 0.556 (95 percent interval 0.49-0.62; rug-pull 0.50, honeypot 0.68) with holdout bad-AUC 0.59, so discrimination is near chance and every test and holdout score falls in 19-30 (Low under the applied 30/60 bands). Low from 1.0.1 must not be read as safe. On-chain signals ship at weight 0 under the default artifact and never change the score. See [docs/calibration/](docs/calibration/) for the full reports.
+The score is a calibrated model score plus an evidence floor. The model (artifact 1.0.1) is weak: bad-AUC about 0.56, near chance. The floor is applied after the model and never lowers a score:
+
+- Owner not renounced, and a proven power to stop holders selling or moving tokens (blacklist, pause, sell block): at least 60 (High).
+- Owner not renounced, and a proven risky capability (owner mint, owner-settable fee or limits, owner-controlled upgradeable proxy): at least 30 (Elevated).
+- Owner renounced: no floor.
+
+The result records which rule applied (`scoreFloor`) and the owner state (`ownerState`). REST, MCP and the UI show the same number.
+
+On 30 unseen mainnet tokens, never used during development, the blacklist detector had 12 true positives, 3 false alarms and 1 miss. The pause detector had 9 true positives, 3 false alarms and 4 misses. Tokens with an active owner and a proven blocking power all scored High; tokens with a renounced owner scored Low.
+
+Low does not mean safe. See [docs/calibration/](docs/calibration/) for the full reports.
 
 ## Status
 

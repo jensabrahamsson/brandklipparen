@@ -9,9 +9,12 @@ was delegated and checked, and where the first approach failed.
 - One person, the owner, set the goals and the boundaries.
 - The owner made every product decision.
 - AI agents did the implementation and the review.
-- All implementation was done by Meta's Muse models:
-  `muse-spark-1.3` for most units, and larger Muse models
-  for hard units.
+- About 95 percent of the code was written by Meta's Muse
+  models: `muse-spark-1.3` for most units, and larger Muse
+  models for hard units.
+- When the weekly Muse quota ran out on the final evening,
+  other models finished the last units: merges, the copy pass
+  and the docs.
 - Independent models from other providers reviewed the work.
   They are not named here; the owner read their findings and
   decided what to act on.
@@ -103,7 +106,22 @@ and can reach a revert. On 87 real tokens the result moved:
 | Blacklist, after the rework | 28 | 0 | 3 |
 | Pause, same 87 tokens | 29 | 1 | 3 |
 
-Final test-set results: see README (added at submission).
+Final test-set results: see [Calibration and limits](../README.md#calibration-and-limits).
+
+## Lesson: the score must agree with the evidence
+
+The calibrated model alone could not separate the classes well.
+Before the floor, a token with a proven blacklist and pause
+scored 29, Low.
+
+The score must agree with its evidence, so the floor is applied
+after the model. A proven power to stop holders selling or moving
+tokens lifts an unrenounced owner to at least 60 (High). A proven
+risky capability lifts it to at least 30 (Elevated). The floor
+never lowers a score.
+
+On 30 unseen tokens, every token with an active owner and a proven
+blocking power scored High.
 
 ## The last days
 
