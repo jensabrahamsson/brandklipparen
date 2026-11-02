@@ -2589,6 +2589,93 @@ export function sideCanReachRevert(
   }
 }
 
+// Side outcomes of one JUMPI side (SCAN-P): whether some bounded path
+// from the side reaches an SSTORE, and whether some bounded path
+// halts (RETURN or STOP) before any SSTORE on that path. The pair
+// names an early-return gate, whose blocked side returns silently
+// while the open side still writes balances. Paths carry their
+// stored flag separately, so a store on one continuation never
+// disqualifies a halt down another.
+export type GateSideOutcomes = {
+  readonly canStore: boolean;
+  readonly haltsWithoutStore: boolean;
+};
+
+export function gateSideOutcomes(
+  bytecode: BytecodeType,
+  jumpiPc: number,
+  side: "jump" | "fall",
+): GateSideOutcomes {
+  const none: GateSideOutcomes = Object.freeze({ canStore: false, haltsWithoutStore: false });
+  try {
+    const cfg = cfgOf(bytecode);
+    const atJump = blockIndexAtPc(bytecode, jumpiPc);
+    if (atJump < 0 || atJump >= cfg.blocks.length) {
+      return none;
+    }
+    const jump = cfg.blocks[atJump];
+    if (
+      jump === undefined ||
+      !jump.instructions.some((instruction) => instruction.pc === jumpiPc && instruction.opcode === 0x57)
+    ) {
+      return none;
+    }
+    const edge = jump.successors.find((candidate) => candidate.kind === "conditional");
+    if (edge === undefined || edge.kind !== "conditional") {
+      return none;
+    }
+    const start = side === "jump" ? edge.to : edge.fallThrough;
+    let canStore = false;
+    let haltsWithoutStore = false;
+    const seen = new Set<string>([`${start}:0`]);
+    const queue: { readonly block: number; readonly stored: boolean }[] = [{ block: start, stored: false }];
+    let visited = 0;
+    while (queue.length > 0) {
+      const current = queue.shift() ?? { block: -1, stored: false };
+      visited += 1;
+      if (visited > SIDE_REACH_MAX_BLOCKS * 2) {
+        break;
+      }
+      const block = cfg.blocks[current.block];
+      if (block === undefined) {
+        continue;
+      }
+      let stored = current.stored;
+      for (const instruction of block.instructions) {
+        if (instruction.opcode === 0x55) {
+          canStore = true;
+          stored = true;
+        } else if ((instruction.opcode === 0xf3 || instruction.opcode === 0x00) && !stored) {
+          haltsWithoutStore = true;
+        }
+      }
+      let next: readonly number[] = [];
+      if (block.terminal === "jump") {
+        const target = block.successors.find((candidate) => candidate.kind === "jump");
+        next = target !== undefined ? [target.to] : dynamicReturnTargets(bytecode, current.block, true);
+      } else if (block.terminal === "jumpi") {
+        const conditional = block.successors.find((candidate) => candidate.kind === "conditional");
+        next = conditional !== undefined && conditional.kind === "conditional"
+          ? [conditional.to, conditional.fallThrough]
+          : [];
+      } else if (block.terminal === "fall") {
+        const through = block.successors.find((candidate) => candidate.kind === "fall-through");
+        next = through !== undefined ? [through.to] : [];
+      }
+      for (const candidate of next) {
+        const key = `${candidate}:${stored ? 1 : 0}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          queue.push({ block: candidate, stored });
+        }
+      }
+    }
+    return Object.freeze({ canStore, haltsWithoutStore });
+  } catch {
+    return none;
+  }
+}
+
 // Reverting gate after a compare: a member JUMPI within the legacy
 // window past `afterPc` proves its failing fall-through side, either
 // right after it or down every bounded path. Used by the v2 transfer

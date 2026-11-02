@@ -44,7 +44,13 @@ import type {
   RegionExprs,
   SlotLookup,
 } from "../../domain/ownerControl.ts";
-import { exprPackedFlagGatePc, flagWriter, gatedFlagReadPrecise, pauseDetectorPlugin } from "./pause/index.ts";
+import {
+  boolArgStorePc,
+  exprPackedFlagGatePc,
+  flagWriter,
+  gatedFlagReadPrecise,
+  pauseDetectorPlugin,
+} from "./pause/index.ts";
 import {
   blacklistDetectorPlugin,
   exprMappingGatePc,
@@ -416,6 +422,15 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
       const exprPacked = packedBoolWriteExpr(store.slot.value, writer.exprs.stores.get(store.pc));
       if (legacyPacked !== null || exprPacked !== null) {
         candidates.add(store.slot.value);
+        continue;
+      }
+      // A bool-argument setter (SCAN-P): the cleaned calldata bool
+      // proves the flag write with no constant beside the store.
+      if (
+        store.slot.value !== ownerSlot &&
+        boolArgStorePc(writer.exprs.stores, store.slot.value) !== null
+      ) {
+        candidates.add(store.slot.value);
       }
     }
   }
@@ -462,7 +477,11 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
           .map(([pc]) => pc)
           .sort((left, right) => left - right);
         const first = exprStores[0];
-        if (first === undefined) {
+        if (first === undefined && slot !== ownerSlot) {
+          // A bool-argument setter (SCAN-P) proves the write too.
+          writePc = boolArgStorePc(writer.exprs.stores, slot);
+        }
+        if (first === undefined && writePc === null) {
           consider([
             step(PACKED_WRITE_PROOF, false, `no constant or packed write to slot ${slot} by ${writerName}`),
             step(TRANSFER_GATE, false, `not evaluated: no writer store for slot ${slot}`),
@@ -471,7 +490,12 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
           ], writer.region.selector);
           continue;
         }
-        writePc = first;
+        if (first !== undefined) {
+          writePc = first;
+        }
+      }
+      if (writePc === null) {
+        continue;
       }
       const writeIndex = sstoreIndexAt(writePc);
       const legacyPacked =

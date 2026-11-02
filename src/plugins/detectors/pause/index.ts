@@ -12,7 +12,8 @@
 // ways), and `unknown` otherwise. An ungated flag, a gate with no
 // privileged writer, or an amount comparison stays silent. When the v1
 // proof finds nothing, the same proof re-runs on the v2 reachability
-// view (shared helpers included, packed-bool writes resolved) and emits
+// view (shared helpers included, packed-bool writes, bool-argument
+// writes and early-return gates resolved) and emits
 // a weight-0 `fact` finding with `proof: "extended"` that never converts
 // to a signal. Pure and synchronous: this module imports solely the
 // plugin API and domain types and pure functions (P-03).
@@ -27,6 +28,7 @@ import {
   constSlotLoadNearFlavor,
   exprConstValue,
   flavorBetween,
+  gateSideOutcomes,
   hasRevertingGateAfter,
   hasRevertingSide,
   interpretRegionExprs,
@@ -40,7 +42,7 @@ import {
   privilegedGuardKind,
   sideCanReachRevert,
 } from "../../../domain/ownerControl.ts";
-import type { Expr, RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
+import type { Expr, ExprStoreRecord, RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
 import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
 import type { Selector as SelectorType } from "../../../domain/types.ts";
@@ -216,6 +218,88 @@ function exprProvesZeroWrite(
       ) {
         return true;
       }
+    }
+  }
+  return false;
+}
+
+// Whether a stored value is a cleaned calldata bool (SCAN-P): the
+// calldata word under a boolean cleanup the compiler emits for a
+// `bool` argument (`ISZERO ISZERO` normalization, an `AND 1` mask,
+// or an equality against 0 or 1, in any nesting). A bare calldata
+// word proves no boolean, so a raw rate or amount argument never
+// counts as a flag value.
+function isBoolCalldataExpr(value: Expr): boolean {
+  let current: Expr = value;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (current.kind === "calldata") {
+      return depth > 0;
+    }
+    if (current.kind !== "op") {
+      return false;
+    }
+    const first = current.args[0];
+    if (current.name === "ISZERO" && current.args.length === 1 && first !== undefined) {
+      current = first;
+      continue;
+    }
+    if ((current.name === "AND" || current.name === "EQ") && current.args.length === 2) {
+      const opName = current.name;
+      const left = current.args[0];
+      const right = current.args[1];
+      if (left === undefined || right === undefined) {
+        return false;
+      }
+      const leftConst = exprConstValue(left);
+      const rightConst = exprConstValue(right);
+      const boolConst = (candidate: bigint | null): boolean =>
+        candidate !== null && (candidate === 1n || (opName === "EQ" && candidate === 0n));
+      if (boolConst(leftConst)) {
+        current = right;
+        continue;
+      }
+      if (boolConst(rightConst)) {
+        current = left;
+        continue;
+      }
+    }
+    return false;
+  }
+  return false;
+}
+
+// Lowest store PC whose expression record writes a cleaned calldata
+// bool to constant `slot`, or null (SCAN-P): one such writer entry
+// stores both 0 and 1, so the flag flips both ways by construction.
+// Exported for the extended-proof diagnostics beside the detectors.
+export function boolArgStorePc(
+  stores: ReadonlyMap<number, ExprStoreRecord>,
+  slot: number,
+): number | null {
+  const pcs = [...stores.entries()]
+    .filter(
+      ([, record]) =>
+        record.slot.kind === "const" &&
+        record.slot.value === BigInt(slot) &&
+        isBoolCalldataExpr(record.value),
+    )
+    .map(([pc]) => pc)
+    .sort((left, right) => left - right);
+  return pcs[0] ?? null;
+}
+
+// Whether any region writes a cleaned calldata bool to `slot`
+// through the expression view (SCAN-P): such a writer stores both
+// flag values, so a one-way classification must not stand.
+function exprProvesBoolArgWrite(
+  bytecode: DetectorInput["bytecode"],
+  regions: readonly RegionFacts[],
+  slot: number,
+): boolean {
+  for (const region of regions) {
+    const exprs = interpretRegionExprs(bytecode, region.selector);
+    if (boolArgStorePc(exprs.stores, slot) !== null) {
+      return true;
     }
   }
   return false;
@@ -631,7 +715,9 @@ function flagTruthySide(cond: Expr, slot: number): "jump" | "fall" | null {
 
 // Whether a gate jump blocks transfers: every path on a side reverts
 // (the universal proof), or the set side can reach a revert down one
-// continuation (a short-circuit gate, mirroring the blacklist proof).
+// continuation (a short-circuit gate, mirroring the blacklist proof),
+// or one side halts before any store while the other still reaches a
+// store (an early-return gate, SCAN-P).
 function gateBlocksTransfer(
   bytecode: DetectorInput["bytecode"],
   code: ReturnType<typeof disassemble>,
@@ -647,7 +733,15 @@ function gateBlocksTransfer(
     return true;
   }
   const truthySide = flagTruthySide(cond, slot);
-  return truthySide !== null && sideCanReachRevert(bytecode, pc, truthySide);
+  if (truthySide !== null && sideCanReachRevert(bytecode, pc, truthySide)) {
+    return true;
+  }
+  const jumpSide = gateSideOutcomes(bytecode, pc, "jump");
+  const fallSide = gateSideOutcomes(bytecode, pc, "fall");
+  return (
+    (jumpSide.haltsWithoutStore && fallSide.canStore) ||
+    (fallSide.haltsWithoutStore && jumpSide.canStore)
+  );
 }
 
 // First member JUMPI whose condition reads packed bit `bit` of `slot`
@@ -766,6 +860,17 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       const exprValue = candidateExprs.stores.get(store.pc)?.value;
       if (exprValue !== undefined && exprValue.kind === "const" && exprValue.value <= 1n) {
         candidates.add(store.slot.value);
+        continue;
+      }
+      // A bool-argument setter (SCAN-P): the store carries the
+      // cleaned calldata bool, never a constant, while the
+      // expression record still proves the boolean shape. The
+      // owner seat holds an address, so it never counts here.
+      if (
+        store.slot.value !== ownerSlot &&
+        boolArgStorePc(candidateExprs.stores, store.slot.value) !== null
+      ) {
+        candidates.add(store.slot.value);
       }
     }
   }
@@ -825,10 +930,18 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           .map(([pc]) => pc)
           .sort((left, right) => left - right);
         const first = exprStores[0];
-        if (first === undefined) {
-          continue;
+        if (first !== undefined) {
+          writePc = first;
+        } else {
+          // A bool-argument setter (SCAN-P): no constant sits beside
+          // the store and none travels in on the stack, while the
+          // expression record proves the cleaned calldata bool.
+          const boolArgPc = slot === ownerSlot ? null : boolArgStorePc(writerExprs.stores, slot);
+          if (boolArgPc === null) {
+            continue;
+          }
+          writePc = boolArgPc;
         }
-        writePc = first;
       }
       // A packed writer proves a bit position that the gate must read
       // back: same slot and same shift, or the pair never proves one
@@ -978,6 +1091,12 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         // into a shared helper) still proves the flag flips back.
         let mode = toggleMode(view.regions, slot);
         if (mode === "trading-toggle" && exprProvesZeroWrite(input.bytecode, view.regions, slot)) {
+          mode = "pause";
+        }
+        if (mode !== "pause" && exprProvesBoolArgWrite(input.bytecode, view.regions, slot)) {
+          // A bool-argument writer stores both flag values through
+          // one entry (SCAN-P), so the flag flips both ways even
+          // though no constant write proves either direction.
           mode = "pause";
         }
         if (mode === "unknown" && packedWrite !== null && packedWrite.shift !== null) {

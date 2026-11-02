@@ -74,8 +74,11 @@ flips both ways, a nonzero constant write with no zero write means a
 one-way enable, and a computed value means unknown. A range compare
 between the load and an ISZERO gate disqualifies the boolean reading, so
 balance checks never count, while unrelated bounds elsewhere never veto
-it. A setter that takes the flag as an argument (a computed write) is
-not proven a flag setter. A gate that blocks without a constant slot
+it. A setter that takes the flag as an argument is proven only in
+extended analysis, and only when the stored value resolves to a
+cleaned calldata bool (an `ISZERO ISZERO` normalization, an `AND 1`
+mask, or an equality against 0 or 1); a raw calldata word proves no
+boolean. A gate that blocks without a constant slot
 read stays silent. A finding never says the flag was set, only that the
 bytecode proves the privileged path.
 
@@ -114,3 +117,10 @@ zero write anywhere, such as a launch switch that only ever opens
 trading) is a launch gate, not a freeze, so it stays silent in the
 extended proof; the scored proof still names its `trading-toggle`
 mode.
+
+SCAN-P recall: the extended proof also proves a bool-argument setter
+(one guarded entry storing the cleaned calldata bool writes both 0
+and 1, so its mode is `pause`) and an early-return gate (the blocked
+side halts before any store while the open side still reaches a
+store). A raw calldata word, a fee-exempt mapping, and a one-way
+enable still prove no pause.

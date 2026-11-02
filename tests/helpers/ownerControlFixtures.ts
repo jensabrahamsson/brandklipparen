@@ -2702,3 +2702,193 @@ export function shortCircuitPackedPauseTokenHex(): string {
   asm.push1(0x00).op(0x55, 0x00);
   return asm.build();
 }
+
+// SCAN-P pause idioms from the dev set, reproduced as synthetic
+// bytecode. Each builder mirrors how the source idiom compiles: a
+// bool slot load feeding a conditional jump on the transfer path,
+// with a guarded writer that can store both flag values.
+
+// Bool-argument setter token (SCAN-P): one guarded writer stores the
+// cleaned calldata bool (`ISZERO ISZERO` normalization) into flag
+// slot 4, so the same entry writes both 0 and 1 (`setPaused(bool)`
+// shape). The transfer path reverts while the flag reads set.
+export function boolArgPauseTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x04).op(0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x04).op(0x35, 0x15, 0x15).push1(0x04).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Bool-argument trading switch (SCAN-P): one guarded writer stores
+// the masked calldata bool (`AND 1`) into flag slot 4
+// (`setTrading(bool)` shape). The transfer path proceeds while the
+// flag reads set or an exemption entry reads set, and reverts
+// otherwise (`require(tradingEnabled || exempt[from])` shape).
+export function boolArgTradingTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x04).op(0x54);
+  asm.pushLabel2("tok").op(0x57);
+  scan3MappingLoad(asm, 7);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x04).op(0x35).push1(0x01).op(0x16).push1(0x04).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Early-return pause token (SCAN-P): guarded writers flip flag slot
+// 4 both ways. While the flag reads set the transfer path jumps to
+// a bare RETURN with no balance write (a silent early return), so
+// no REVERT sits on the blocked side.
+export function earlyReturnPauseTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+    [SCAN3_CLEAR, "clearEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x04).op(0x54);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xf3);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  asm.label("clearEntry").op(0x5b);
+  scan3OwnerGuard(asm, "clearOk", "clearBlocked");
+  asm.push1(0x00).push1(0x04).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Two-flag AND gate token (SCAN-P): the transfer path reverts while
+// both the deploy flag of slot 5 and the pause flag of slot 4 read
+// set (`pausable && _paused` shape). Guarded writers flip slot 4
+// both ways; slot 5 has no writer.
+export function andGatePauseTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+    [SCAN3_CLEAR, "clearEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x05).op(0x54).push1(0x04).op(0x54, 0x16);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  asm.label("clearEntry").op(0x5b);
+  scan3OwnerGuard(asm, "clearOk", "clearBlocked");
+  asm.push1(0x00).push1(0x04).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Precondition pair-gate pause token (SCAN-P): the writers each
+// require the flag's current value before flipping it
+// (`pauseTrading`/`unpauseTrading` shape), and the transfer path
+// reverts while the flag reads set on a pair trade that no
+// whitelist entry covers. Guarded writers flip slot 4 both ways.
+export function preconditionPairPauseTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+    [SCAN3_CLEAR, "clearEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.op(0x15);
+  asm.pushLabel2("tok").op(0x57);
+  scan3MappingLoad(asm, 8);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x04).op(0x54);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setGuardOk", "setGuardBlocked");
+  asm.push1(0x04).op(0x54, 0x15);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  asm.label("clearEntry").op(0x5b);
+  scan3OwnerGuard(asm, "clearGuardOk", "clearGuardBlocked");
+  asm.push1(0x04).op(0x54);
+  asm.pushLabel2("clearOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("clearOk").op(0x5b);
+  asm.push1(0x00).push1(0x04).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Fee-exempt mapping token (SCAN-P negative): one guarded writer
+// stores a calldata bool into exemption mapping base 7. The
+// transfer path only skips a step while an entry reads set; no
+// side reverts or halts on the mapping, and no flag slot exists.
+export function feeExemptBoolArgTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  scan3MappingLoad(asm, 7);
+  asm.pushLabel2("skip").op(0x57);
+  asm.push1(0x01).op(0x50);
+  asm.label("skip").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  scan3MappingWrite(asm, 7);
+  asm.op(0x00);
+  return asm.build();
+}
+
+// Raw calldata rate token (SCAN-P negative): one guarded writer
+// stores the raw calldata word into slot 5 with no bool cleanup,
+// and the transfer path branches on slot 5 reading zero. A raw
+// word proves no boolean, so no flag writer is proven.
+export function rawCalldataRateTokenHex(): string {
+  const asm = new Asm();
+  scan3Dispatcher(asm, [
+    [TRANSFER_SELECTOR, "transferEntry"],
+    [SCAN3_SET, "setEntry"],
+  ]);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x05).op(0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  scan3OwnerGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x04).op(0x35).push1(0x05).op(0x55, 0x00);
+  return asm.build();
+}
