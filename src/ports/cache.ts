@@ -9,6 +9,7 @@
 import type { Result } from "../domain/result.ts";
 import type { CantTellItem } from "../domain/cantTell.ts";
 import type { Explanation } from "../domain/explain.ts";
+import type { AppliedScoreFloor } from "../domain/scoreFloor.ts";
 import type { RiskType, Signal } from "../domain/signals.ts";
 import type { PluginResultEntry } from "../plugins/detector.ts";
 import type {
@@ -41,6 +42,11 @@ export type CachedAssessment = {
   readonly templateVersion: TemplateVersionType;
   readonly probabilities: Readonly<Record<RiskType, ProbabilityType>>;
   readonly score: RiskScoreType;
+  // Score-floor provenance (SCORE-1): the calibrated score before the
+  // floor and the floor that applied, so an owner-proof hit can re-floor
+  // for its own address. Absent on entries written before the floor.
+  readonly calibratedScore?: RiskScoreType | undefined;
+  readonly scoreFloor?: AppliedScoreFloor | null | undefined;
   readonly signals: readonly Signal[];
   readonly pluginResults: readonly PluginResultEntry[];
   readonly explanation: Explanation;

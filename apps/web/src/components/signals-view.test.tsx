@@ -161,6 +161,44 @@ describe("merged score card (R2-6, D-5)", () => {
     expect(html).not.toContain("No signals");
   });
 
+  test("score1_floor_label_shows_in_why_this_score", () => {
+    const html = renderToString(
+      <ExplanationList
+        claims={[
+          {
+            text: "The owner can stop you from selling.",
+            signalLinks: ["owner-blacklist"],
+            temporality: { kind: "can-change" },
+          },
+        ]}
+        signals={SIGNALS}
+        templateVersion="1.1.0"
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        scoreFloorLabel="floor: owner can block holders (blacklist, pause)"
+      />,
+    );
+    expect(html).toContain('aria-label="Why this score"');
+    expect(html).toContain("floor: owner can block holders (blacklist, pause)");
+    const plain = renderToString(
+      <ExplanationList
+        claims={[]}
+        signals={[]}
+        templateVersion="1.1.0"
+        expert={false}
+        address={ADDRESS}
+        codeHash="0xabc"
+        apiKey=""
+        names={NAMES}
+        scoreFloorLabel="floor: owner can block holders (pause)"
+      />,
+    );
+    expect(plain).toContain("floor: owner can block holders (pause)");
+  });
+
   test("r26_signal_without_claim_falls_back_to_plain_reason", () => {
     const html = renderToString(
       <SignalRows

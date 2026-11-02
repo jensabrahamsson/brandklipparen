@@ -24,6 +24,8 @@ import { explanationToCanonical, originEntryKey, renderExplanation } from "../do
 import type { Explanation, ExplainError, ExplanationOrigin } from "../domain/explain.ts";
 import { isFeaturePayload, score } from "../domain/risk.ts";
 import type { PluginFeatureMapping } from "../domain/risk.ts";
+import { BLOCK_HOLDER_FACTS, RISKY_FACTS, applyScoreFloor } from "../domain/scoreFloor.ts";
+import type { AppliedScoreFloor, ScoreFloorFacts } from "../domain/scoreFloor.ts";
 import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
 import { Address, CacheKey, CallData, Slot } from "../domain/types.ts";
@@ -173,6 +175,9 @@ export type AssessmentEnvelope = {
   readonly assessedAt: TimestampType;
   readonly probabilities: Readonly<Record<RiskType, ProbabilityType>>;
   readonly score: RiskScoreType;
+  // Deterministic evidence floor behind the served score (SCORE-1):
+  // present when a floor rule applies to the proven owner powers.
+  readonly scoreFloor?: AppliedScoreFloor | undefined;
   readonly signals: readonly Signal[];
   readonly pluginResults: readonly PluginResultEntry[];
   readonly explanation: Explanation;
@@ -387,6 +392,9 @@ function envelopeFromCached(
     assessedAt,
     probabilities: cached.probabilities,
     score: cached.score,
+    ...(cached.scoreFloor === null || cached.scoreFloor === undefined
+      ? {}
+      : { scoreFloor: cached.scoreFloor }),
     signals: cached.signals,
     pluginResults: cached.pluginResults,
     explanation: cached.explanation,
@@ -408,9 +416,17 @@ async function reattachOwnerStateOnHit(
   codeHash: CodeHashType,
   analysisBytecode: BytecodeType,
   cached: CachedAssessment,
-): Promise<{ signals: readonly Signal[]; explanation: Explanation } | null> {
+): Promise<{
+  signals: readonly Signal[];
+  explanation: Explanation;
+  score: RiskScoreType;
+  scoreFloor: AppliedScoreFloor | null;
+} | null> {
   const loaded = counted.modelArtifacts.load(input.modelVersion);
   if (!loaded.ok) {
+    return null;
+  }
+  if (cached.calibratedScore === undefined) {
     return null;
   }
   const ownerState = await attachOwnerState(
@@ -438,7 +454,16 @@ async function reattachOwnerStateOnHit(
   if (!rendered.ok) {
     return null;
   }
-  return { signals: ownerState.signals, explanation: rendered.value };
+  const refloored = applyScoreFloor(
+    cached.calibratedScore as number,
+    scoreFloorFactsOf(cached.pluginResults, ownerState.renouncedProven),
+  );
+  return {
+    signals: ownerState.signals,
+    explanation: rendered.value,
+    score: refloored.score,
+    scoreFloor: refloored.floor,
+  };
 }
 
 // Proxy resolution that degrades to no proxy info on a typed port failure
@@ -859,6 +884,73 @@ function ownerSlotProof(
   return null;
 }
 
+// Score-floor facts from plugin findings (SCORE-1): a proven finding is a
+// scored `feature` finding or an extended `fact` finding with
+// `proof: "extended"` — the two strong-proof shapes the detectors already
+// produce. Block-holder facts can stop holders moving tokens; risky facts
+// are the other proven owner powers. A proxy-upgrade fact counts only
+// when its admin is an EOA; the scored guarded-upgrade feature already
+// proves a privileged caller, so it counts as written. Fee and limit
+// facts count on the detector proof itself (a privileged writer whose
+// value the transfer path uses); no separate numeric cap is read here.
+function scoreFloorFactsOf(
+  results: readonly PluginResultEntry[],
+  renouncedProven: boolean,
+): ScoreFloorFacts {
+  const block = new Set<string>();
+  const risky = new Set<string>();
+  for (const entry of results) {
+    if (entry.outcome !== "ok") {
+      continue;
+    }
+    for (const finding of entry.findings) {
+      const payload: unknown = finding.payload;
+      if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+        continue;
+      }
+      const record = payload as { readonly [field: string]: unknown };
+      const feature: unknown = record["feature"];
+      const fact: unknown = record["fact"];
+      const proof: unknown = record["proof"];
+      const name =
+        typeof feature === "string" && feature.length > 0
+          ? feature
+          : typeof fact === "string" && proof === "extended"
+            ? fact
+            : null;
+      if (name === null) {
+        continue;
+      }
+      if (BLOCK_HOLDER_FACTS.includes(name)) {
+        block.add(name);
+        continue;
+      }
+      if (!RISKY_FACTS.includes(name)) {
+        continue;
+      }
+      if (name === "proxy-upgrade" && typeof feature !== "string" && record["adminKind"] !== "eoa") {
+        continue;
+      }
+      risky.add(name);
+    }
+  }
+  return Object.freeze({
+    block: Object.freeze(BLOCK_HOLDER_FACTS.filter((fact) => block.has(fact))),
+    risky: Object.freeze(RISKY_FACTS.filter((fact) => risky.has(fact))),
+    renouncedProven,
+  });
+}
+
+function isZeroOrDeadWord(word: string): boolean {
+  if (!/^0x[0-9a-f]{64}$/.test(word)) {
+    return false;
+  }
+  if (/^0x0{64}$/.test(word)) {
+    return true;
+  }
+  return isZeroOrDead(`0x${word.slice(-40)}`) && /^0x0{24}/.test(word);
+}
+
 // Origin key read from a plugin finding payload (P-1): the capability
 // key the capability plugin reported, else the owner-control `feature`
 // the detector reported, else null. Unknown payloads stay origin-less;
@@ -979,6 +1071,7 @@ function dispatchedOwnerGetters(bytecode: BytecodeType): ReadonlySet<string> {
 type OwnerGetterRead = {
   readonly address: AddressType | null;
   readonly failed: boolean;
+  readonly word: string | null;
 };
 
 async function readOwnerGetter(
@@ -989,17 +1082,18 @@ async function readOwnerGetter(
 ): Promise<OwnerGetterRead> {
   const data = CallData.parse(selector);
   if (!data.ok) {
-    return { address: null, failed: false };
+    return { address: null, failed: false, word: null };
   }
   const called = await rpc.call(target, data.value, ctx);
   if (!called.ok) {
-    return { address: null, failed: true };
+    return { address: null, failed: true, word: null };
   }
   let hex = "0x";
   for (const byte of called.value) {
     hex += byte.toString(16).padStart(2, "0");
   }
-  return { address: addressOfStoredWord(hex.toLowerCase()), failed: false };
+  const word = hex.toLowerCase();
+  return { address: addressOfStoredWord(word), failed: false, word };
 }
 
 async function attachOwnerState(
@@ -1013,7 +1107,12 @@ async function attachOwnerState(
   pluginWeights: Readonly<Record<string, number>>,
   featureCatalogue: Readonly<Record<string, PluginFeatureMapping>>,
   analysisBytecode: BytecodeType,
-): Promise<{ signals: readonly Signal[]; enriched: boolean; readFailed: boolean }> {
+): Promise<{
+  signals: readonly Signal[];
+  enriched: boolean;
+  readFailed: boolean;
+  renouncedProven: boolean;
+}> {
   const ctx: CallContext = { requestId: input.requestId, deadline: input.deadline, block };
   const proof = ownerSlotProof(pluginResults);
   const mapping = featureCatalogue[OWNERSHIP_PLUGIN_ID] ?? null;
@@ -1031,19 +1130,22 @@ async function attachOwnerState(
   let slotValue: StorageWordType | null = null;
   let slot: SlotType | null = null;
   let slotAddress: AddressType | null = null;
+  // A zero or dead owner word is a renounced candidate only (SCORE-1):
+  // proven renounced needs a dispatched owner getter agreeing below, so
+  // the run keeps changerless temporality either way and names no one.
+  let slotRenouncedCandidate = false;
   if (ownershipScored && proof !== null) {
     const parsed = Slot.parse(`0x${proof.slot.toString(16).padStart(64, "0")}`);
     if (parsed.ok) {
       const stored = await rpc.getStorageAt(input.address, parsed.value, ctx);
       if (!stored.ok) {
         readFailed = true;
+      } else if (isZeroOrDeadWord((stored.value as string).toLowerCase())) {
+        slotRenouncedCandidate = true;
       } else {
-        if (/^0+$/.test((stored.value as string).slice(2))) {
-          return { signals, enriched: false, readFailed };
-        }
         const candidate = addressOfStoredWord(stored.value as string);
         if (candidate === null) {
-          return { signals, enriched: false, readFailed };
+          return { signals, enriched: false, readFailed, renouncedProven: false };
         }
         slotValue = stored.value;
         slot = parsed.value;
@@ -1058,6 +1160,7 @@ async function attachOwnerState(
   // cache while a non-address answer simply proves nothing (C-20).
   const dispatched = dispatchedOwnerGetters(analysisBytecode);
   const getterAddresses: AddressType[] = [];
+  const getterWords: string[] = [];
   for (const selector of [OWNER_SELECTOR, GET_OWNER_SELECTOR]) {
     if (!dispatched.has(selector)) {
       continue;
@@ -1067,9 +1170,20 @@ async function attachOwnerState(
       readFailed = true;
       continue;
     }
+    if (answer.word !== null) {
+      getterWords.push(answer.word);
+    }
     if (answer.address !== null) {
       getterAddresses.push(answer.address);
     }
+  }
+  // Proven renounced (SCORE-1): the owner slot word and every answering
+  // dispatched owner getter agree on zero or dead. Anything less (a zero
+  // slot alone, no getter, a failed or non-zero answer) proves nothing.
+  if (slotRenouncedCandidate) {
+    const renouncedProven =
+      getterWords.length > 0 && getterWords.every((word) => isZeroOrDeadWord(word));
+    return { signals, enriched: false, readFailed, renouncedProven };
   }
   const gettersRepeat = (base: AddressType): boolean =>
     getterAddresses.every((answer) => (answer as string).toLowerCase() === (base as string).toLowerCase());
@@ -1084,7 +1198,7 @@ async function attachOwnerState(
   let slotAccepted = false;
   if (slotAddress !== null && getterAddresses.length > 0) {
     if (!gettersRepeat(slotAddress)) {
-      return { signals, enriched: false, readFailed };
+      return { signals, enriched: false, readFailed, renouncedProven: false };
     }
     proven = slotAddress;
     slotAccepted = true;
@@ -1092,16 +1206,16 @@ async function attachOwnerState(
     // No getter proves the slot: the stored value may be a supply, a
     // packed word or unrelated storage that happens to fit in 20 bytes,
     // so the run keeps changerless temporality and no measured value.
-    return { signals, enriched: false, readFailed };
+    return { signals, enriched: false, readFailed, renouncedProven: false };
   } else if (getterAddresses.length > 0) {
     const first = getterAddresses[0];
     if (first === undefined || !gettersRepeat(first)) {
-      return { signals, enriched: false, readFailed };
+      return { signals, enriched: false, readFailed, renouncedProven: false };
     }
     proven = first;
     slotAccepted = false;
   } else {
-    return { signals, enriched: false, readFailed };
+    return { signals, enriched: false, readFailed, renouncedProven: false };
   }
   // Evidence keys behind owner-gated findings (P-2 item 3): only signals
   // with one of these keys may name the proven owner as their changer.
@@ -1180,7 +1294,7 @@ async function attachOwnerState(
     }
     return signal;
   });
-  return { signals: Object.freeze(out), enriched, readFailed };
+  return { signals: Object.freeze(out), enriched, readFailed, renouncedProven: false };
 }
 
 // Proven controller behind a stored owner word: the last 20 bytes parsed
@@ -1288,7 +1402,8 @@ export async function analyzeToken(
   // proxy facts are address state and never enter the cache (C-20, F-21).
   // A hit carrying an owner-slot proof re-reads the owner for the
   // requesting address and re-renders the explanation, reusing the cached
-  // score and probabilities, which never move with owner state.
+  // calibrated score and probabilities; the served score re-floors for
+  // this address's proven ownership state (SCORE-1).
   if (ports.cache !== undefined) {
     const hit = await ports.cache.get(cacheKey.value);
     if (hit.ok && hit.value !== null && proxyFactOf(proxy) === null) {
@@ -1308,6 +1423,8 @@ export async function analyzeToken(
           const envelope = envelopeFromCached(hit.value, input.address, block, proxy, ports.clock.now());
           const rebuilt: AssessmentEnvelope = Object.freeze({
             ...envelope,
+            score: reowned.score,
+            scoreFloor: reowned.scoreFloor ?? undefined,
             signals: reowned.signals,
             explanation: reowned.explanation,
           });
@@ -1447,7 +1564,11 @@ export async function analyzeToken(
   if (decompiled !== null) {
     signals = attachSnippets(signals, codeHash.value, decompiled);
   }
-  const risk = score(signals, loaded.value.artifact);
+  const risk = score(
+    signals,
+    loaded.value.artifact,
+    scoreFloorFactsOf(pluginResults, ownerState.renouncedProven),
+  );
   // Origins for the 1.1.0 templates travel as data beside the signals;
   // scoring above never sees them, so text changes stay display-only.
   const rendered = renderExplanation({
@@ -1472,6 +1593,7 @@ export async function analyzeToken(
     assessedAt: ports.clock.now(),
     probabilities: risk.probabilities,
     score: risk.score,
+    ...(risk.floor === null ? {} : { scoreFloor: risk.floor }),
     signals,
     pluginResults,
     explanation: rendered.value,
@@ -1500,6 +1622,7 @@ export async function analyzeToken(
     !transientPluginFailure &&
     !ownerState.enriched &&
     !ownerState.readFailed &&
+    !ownerState.renouncedProven &&
     !proxied
   ) {
     const stored: CachedAssessment = {
@@ -1511,6 +1634,8 @@ export async function analyzeToken(
       templateVersion: envelope.templateVersion,
       probabilities: envelope.probabilities,
       score: envelope.score,
+      calibratedScore: risk.calibratedScore,
+      scoreFloor: risk.floor,
       signals: envelope.signals,
       pluginResults: envelope.pluginResults,
       explanation: envelope.explanation,
@@ -1554,6 +1679,16 @@ export function assessmentToCanonical(envelope: AssessmentEnvelope): CanonicalVa
       "rug-pull": envelope.probabilities["rug-pull"] as number,
     },
     score: envelope.score as number,
+    ...(envelope.scoreFloor === undefined
+      ? {}
+      : {
+          scoreFloor: {
+            rule: envelope.scoreFloor.rule,
+            minimum: envelope.scoreFloor.minimum,
+            label: envelope.scoreFloor.label,
+            facts: [...envelope.scoreFloor.facts],
+          },
+        }),
     signals: envelope.signals.map(signalToCanonical),
     pluginResults: envelope.pluginResults.map(pluginResultToCanonical),
     explanation: explanationToCanonical(envelope.explanation),

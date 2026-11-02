@@ -68,16 +68,22 @@ const PLUGINS: readonly {
   readonly pRug: number;
   readonly pHoney: number;
   readonly score: number;
+  readonly calibrated: number;
 }[] = [
-  { plugin: "dev.brandklipparen.blacklist", risk: "honeypot", severity: "high", selector: "0xa9059cbb", pRug: 0.259527, pHoney: 0.132546, score: 21 },
-  { plugin: "dev.brandklipparen.mint", risk: "rug-pull", severity: "high", selector: "0x70a08231", pRug: 0.268405, pHoney: 0.082916, score: 20 },
-  { plugin: "dev.brandklipparen.ownership", risk: "rug-pull", severity: "medium", selector: "0x18160ddd", pRug: 0.347531, pHoney: 0.103419, score: 24 },
-  { plugin: "dev.brandklipparen.pause", risk: "honeypot", severity: "high", selector: "0x095ea7b3", pRug: 0.264278, pHoney: 0.082916, score: 19 },
-  { plugin: "dev.brandklipparen.sell-block", risk: "honeypot", severity: "high", selector: "0x23b872dd", pRug: 0.268867, pHoney: 0.082916, score: 20 },
-  { plugin: "dev.brandklipparen.transfer-fee", risk: "honeypot", severity: "medium", selector: "0xdd62ed3e", pRug: 0.259527, pHoney: 0.082916, score: 19 },
-  { plugin: "dev.brandklipparen.transfer-hooks", risk: "honeypot", severity: "medium", selector: "0x06fdde03", pRug: 0.27901, pHoney: 0.082916, score: 20 },
-  { plugin: "dev.brandklipparen.transfer-limits", risk: "honeypot", severity: "medium", selector: "0x95d89b41", pRug: 0.275991, pHoney: 0.082916, score: 20 },
-  { plugin: "dev.brandklipparen.proxy-upgrade", risk: "rug-pull", severity: "high", selector: "0x8da5cb5b", pRug: 0.259527, pHoney: 0.082916, score: 19 },
+  // SCORE-1: `score` is the served score after the deterministic floor
+  // (block-holder powers 60, risky owner powers 30); `calibrated` keeps
+  // the pre-floor model score the probabilities produce. The old served
+  // expectations (19-24 for proven owner powers) encoded the band
+  // contradiction the floor removes, so they move to `calibrated` only.
+  { plugin: "dev.brandklipparen.blacklist", risk: "honeypot", severity: "high", selector: "0xa9059cbb", pRug: 0.259527, pHoney: 0.132546, score: 60, calibrated: 21 },
+  { plugin: "dev.brandklipparen.mint", risk: "rug-pull", severity: "high", selector: "0x70a08231", pRug: 0.268405, pHoney: 0.082916, score: 30, calibrated: 20 },
+  { plugin: "dev.brandklipparen.ownership", risk: "rug-pull", severity: "medium", selector: "0x18160ddd", pRug: 0.347531, pHoney: 0.103419, score: 24, calibrated: 24 },
+  { plugin: "dev.brandklipparen.pause", risk: "honeypot", severity: "high", selector: "0x095ea7b3", pRug: 0.264278, pHoney: 0.082916, score: 60, calibrated: 19 },
+  { plugin: "dev.brandklipparen.sell-block", risk: "honeypot", severity: "high", selector: "0x23b872dd", pRug: 0.268867, pHoney: 0.082916, score: 60, calibrated: 20 },
+  { plugin: "dev.brandklipparen.transfer-fee", risk: "honeypot", severity: "medium", selector: "0xdd62ed3e", pRug: 0.259527, pHoney: 0.082916, score: 30, calibrated: 19 },
+  { plugin: "dev.brandklipparen.transfer-hooks", risk: "honeypot", severity: "medium", selector: "0x06fdde03", pRug: 0.27901, pHoney: 0.082916, score: 20, calibrated: 20 },
+  { plugin: "dev.brandklipparen.transfer-limits", risk: "honeypot", severity: "medium", selector: "0x95d89b41", pRug: 0.275991, pHoney: 0.082916, score: 30, calibrated: 20 },
+  { plugin: "dev.brandklipparen.proxy-upgrade", risk: "rug-pull", severity: "high", selector: "0x8da5cb5b", pRug: 0.259527, pHoney: 0.082916, score: 30, calibrated: 19 },
 ];
 
 describe("c15 fitted scoring on 1.0.1", () => {
@@ -99,6 +105,7 @@ describe("c15 fitted scoring on 1.0.1", () => {
       expect(result.probabilities["rug-pull"] as number).toBe(entry.pRug);
       expect(result.probabilities["honeypot"] as number).toBe(entry.pHoney);
       expect(result.score as number).toBe(entry.score);
+      expect(result.calibratedScore as number).toBe(entry.calibrated);
       // A head with fitted weight 0 stays at baseline; a non-zero head moves.
       const weights = artifact.detectorHeadWeights?.[entry.plugin];
       if ((weights?.["rug-pull"] ?? 0) === 0) {
@@ -145,7 +152,12 @@ describe("c15 fitted scoring on 1.0.1", () => {
     const result = score(signals, artifact101());
     expect(result.probabilities["rug-pull"] as number).toBe(0.418596);
     expect(result.probabilities["honeypot"] as number).toBe(0.163138);
-    expect(result.score as number).toBe(29);
+    // SCORE-1: all nine detectors firing still calibrate to 29, but
+    // proven blacklist + pause under an unrenounced owner floor the
+    // served score to High; the old 29 LOW expectation was the bug.
+    expect(result.calibratedScore as number).toBe(29);
+    expect(result.score as number).toBe(60);
+    expect(result.floor?.label).toBe("floor: owner can block holders (blacklist, pause, sell-block)");
   });
 
   test("c15_order_independent", () => {

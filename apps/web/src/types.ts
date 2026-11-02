@@ -79,6 +79,16 @@ export type AnalyzeSuccess = {
   readonly assessedAt: number;
   readonly probabilities: Probabilities;
   readonly score: number;
+  // Deterministic evidence floor behind the score (SCORE-1): present
+  // when a floor rule applies to the proven owner powers.
+  readonly scoreFloor?:
+    | {
+        readonly rule: string;
+        readonly minimum: number;
+        readonly label: string;
+        readonly facts: readonly string[];
+      }
+    | undefined;
   readonly signals: readonly Signal[];
   // Additive detector plugin results (S-043, P-11): present in REST
   // responses beside the calibrated signals. The generic Plugins panel

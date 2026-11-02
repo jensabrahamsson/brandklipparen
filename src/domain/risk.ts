@@ -26,6 +26,11 @@ import type {
   Severity,
   Signal,
 } from "./signals.ts";
+import { applyScoreFloor, floorFactsFromSignals } from "./scoreFloor.ts";
+import type { AppliedScoreFloor, ScoreFloorFacts } from "./scoreFloor.ts";
+
+export { applyScoreFloor, floorFactsFromSignals, scoreBandWord } from "./scoreFloor.ts";
+export type { AppliedScoreFloor, ScoreFloorFacts } from "./scoreFloor.ts";
 
 // Fixed risk order for every per-risk loop (lexicographic).
 const RISK_ORDER: readonly RiskType[] = Object.freeze(["bot-pump", "honeypot", "rug-pull"]);
@@ -115,7 +120,12 @@ export type RiskProbabilities = Readonly<Record<RiskType, ProbabilityType>>;
 
 export type RiskResult = {
   readonly probabilities: RiskProbabilities;
+  // Served score: the calibrated score after the deterministic
+  // evidence-based floor (SCORE-1). `calibratedScore` keeps the raw
+  // model score so callers can show both; probabilities never move.
   readonly score: RiskScoreType;
+  readonly calibratedScore: RiskScoreType;
+  readonly floor: AppliedScoreFloor | null;
   readonly modelVersion: ModelVersionType;
   readonly contributions: readonly SignalContribution[];
 };
@@ -495,8 +505,16 @@ function evidenceKey(evidence: Signal["evidence"]): string {
 // The risk model (A-19): calibrated probabilities per risk type, a combined
 // 0-100 score and the largest contributions in each direction. Total: any
 // signal list and any parsed artifact give a result; probabilities round to
-// six decimals and the score rounds to an integer.
-export function score(signals: readonly Signal[], artifact: ModelArtifact): RiskResult {
+// six decimals and the score rounds to an integer. The served score then
+// passes the deterministic evidence floor (SCORE-1): explicit floor facts
+// win when the caller has plugin findings and live ownership evidence,
+// otherwise the facts derive from the scored signals themselves. The
+// floor only raises the score; probabilities stay calibrated.
+export function score(
+  signals: readonly Signal[],
+  artifact: ModelArtifact,
+  floorFacts?: ScoreFloorFacts | undefined,
+): RiskResult {
   const ordered = signals.slice();
   ordered.sort((left, right) => {
     const leftKey = accumulationKey(left);
@@ -585,9 +603,16 @@ export function score(signals: readonly Signal[], artifact: ModelArtifact): Risk
     return 0;
   });
 
+  const calibratedScore = toScore(combined * SCORE_SCALE);
+  const floored = applyScoreFloor(
+    calibratedScore as number,
+    floorFacts ?? floorFactsFromSignals(signals),
+  );
   return Object.freeze({
     probabilities: Object.freeze(probabilities),
-    score: toScore(combined * SCORE_SCALE),
+    score: floored.score,
+    calibratedScore,
+    floor: floored.floor,
     modelVersion: artifact.version,
     contributions: Object.freeze(contributions),
   });

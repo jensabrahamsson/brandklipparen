@@ -22,6 +22,7 @@ export function ExplanationList({
   names,
   bandHigh,
   block,
+  scoreFloorLabel,
 }: {
   readonly claims: readonly ExplanationClaim[];
   readonly signals: readonly Signal[];
@@ -35,9 +36,27 @@ export function ExplanationList({
   // True when the token band is High: filled severity tags stay reserved
   // for High tokens (round-3 review D-11).
   readonly bandHigh?: boolean | undefined;
+  // Deterministic floor behind the score (SCORE-1), shown verbatim in
+  // the score explanation area when a floor rule applies.
+  readonly scoreFloorLabel?: string | undefined;
 }): JSX.Element {
-  if (signals.length === 0 && claims.length === 0) {
+  if (signals.length === 0 && claims.length === 0 && scoreFloorLabel === undefined) {
     return <EmptyWhyScore />;
+  }
+  if (signals.length === 0 && claims.length === 0) {
+    return (
+      <section className="card" aria-label="Why this score" style={{ marginBottom: 20 }}>
+        <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
+          <span>Why this score</span> <Explain explainKey="explanation:claim" label="Why this score" />
+        </h2>
+        <p className="muted" style={{ margin: "0 0 12px" }}>
+          No pattern raised the score.
+        </p>
+        <p className="muted score-floor" style={{ margin: 0 }}>
+          {scoreFloorLabel}
+        </p>
+      </section>
+    );
   }
   const count = signals.length;
   const noun = count === 1 ? "pattern" : "patterns";
@@ -50,6 +69,11 @@ export function ExplanationList({
       <p className="quiet numeric" style={{ margin: "0 0 12px" }}>
         {subline}
       </p>
+      {scoreFloorLabel === undefined ? null : (
+        <p className="muted score-floor" style={{ margin: "0 0 12px" }}>
+          {scoreFloorLabel}
+        </p>
+      )}
       <SignalRows
         signals={signals}
         claims={claims}

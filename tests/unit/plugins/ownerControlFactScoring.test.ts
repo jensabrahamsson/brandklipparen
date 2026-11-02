@@ -2,9 +2,12 @@
 // The packed-pause and shared-blacklist fixtures prove extended facts in
 // the default detector run, while a detector set with the two detectors
 // silenced proves the baseline. The artifact names both plugins in its
-// feature catalogue, so any conversion would move signals, score and
-// probabilities; the envelopes must agree exactly. All ports are in-memory
-// fakes; no network happens in this test.
+// feature catalogue, so any conversion would move signals and
+// probabilities; those stay identical. SCORE-1 changes one expectation:
+// an extended fact is a proven owner power, so the served score now
+// floors (the old bit-identical score asserted the band contradiction);
+// signals, probabilities and explanation bytes still agree exactly. All
+// ports are in-memory fakes; no network happens in this test.
 import { describe, expect, test } from "vitest";
 import { parseModelArtifact } from "../../../src/domain/risk.ts";
 import type { Result } from "../../../src/domain/result.ts";
@@ -115,7 +118,7 @@ async function analyze(bytecodeHex: string, detectors: DetectorSet) {
 }
 
 describe("extended fact findings never convert to signals (P-11)", () => {
-  test("packed pause fact leaves score, probabilities, signals and explanation bit-identical", async () => {
+  test("packed pause fact floors the score while probabilities, signals and explanation stay bit-identical", async () => {
     const bytecodeHex = `0x${Buffer.from(packedPauseToken()).toString("hex")}`;
     const full = await analyze(bytecodeHex, mustDefaultDetectorSet());
     const pause = full.pluginResults.find((entry) => entry.pluginId === "dev.brandklipparen.pause");
@@ -125,11 +128,13 @@ describe("extended fact findings never convert to signals (P-11)", () => {
     const silent = await analyze(bytecodeHex, silentFactDetectorSet());
     expect(silent.signals).toEqual(full.signals);
     expect(silent.probabilities).toEqual(full.probabilities);
-    expect(silent.score).toBe(full.score);
+    expect(full.score as number).toBeGreaterThanOrEqual(60);
+    expect(full.scoreFloor?.label).toBe("floor: owner can block holders (pause)");
+    expect(silent.scoreFloor).toBeUndefined();
     expect(silent.explanation).toEqual(full.explanation);
   });
 
-  test("shared blacklist fact leaves score, probabilities, signals and explanation bit-identical", async () => {
+  test("shared blacklist fact floors the score while probabilities, signals and explanation stay bit-identical", async () => {
     const bytecodeHex = sharedBlacklistTokenHex();
     const full = await analyze(bytecodeHex, mustDefaultDetectorSet());
     const blacklist = full.pluginResults.find(
@@ -141,7 +146,9 @@ describe("extended fact findings never convert to signals (P-11)", () => {
     const silent = await analyze(bytecodeHex, silentFactDetectorSet());
     expect(silent.signals).toEqual(full.signals);
     expect(silent.probabilities).toEqual(full.probabilities);
-    expect(silent.score).toBe(full.score);
+    expect(full.score as number).toBeGreaterThanOrEqual(60);
+    expect(full.scoreFloor?.label).toBe("floor: owner can block holders (blacklist)");
+    expect(silent.scoreFloor).toBeUndefined();
     expect(silent.explanation).toEqual(full.explanation);
   });
 });

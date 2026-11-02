@@ -462,6 +462,26 @@ describe("owner address truth (P-2)", () => {
     }
   });
 
+  // SCORE-1: proven renounced ownership (slot and owner() both zero)
+  // removes the floor the same proven mint would otherwise carry, while
+  // an active proven owner keeps it. Signals stay changerless either way.
+  test("score floor follows proven ownership state", async () => {
+    const zeroWord = `0x${"0".repeat(64)}`;
+    const renounced = await analyseGatedOwnerState(
+      new Map([[ZERO_SLOT, zeroWord]]),
+      new Map([[OWNER_FN, zeroWord]]),
+      "4211",
+    );
+    expect(renounced.scoreFloor).toBeUndefined();
+    const active = await analyseGatedOwnerState(
+      new Map([[ZERO_SLOT, addressWord(OWNER_A)]]),
+      new Map([[OWNER_FN, addressWord(OWNER_A)]]),
+      "4212",
+    );
+    expect(active.score as number).toBeGreaterThanOrEqual(30);
+    expect(active.scoreFloor?.label).toContain("mint");
+  });
+
   test("an address-shaped slot word without a dispatched owner getter proves no owner", async () => {
     const envelope = await analyseGatedOwnerState(
       new Map([[ZERO_SLOT, addressWord(OWNER_A)]]),

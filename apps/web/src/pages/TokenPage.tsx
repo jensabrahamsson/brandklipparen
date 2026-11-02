@@ -798,6 +798,7 @@ export function OverviewSections({
         signals={sorted}
         templateVersion={result.explanation.templateVersion}
         expert={mode === "expert"}
+        scoreFloorLabel={result.scoreFloor?.label}
         bandHigh={riskBand(result.score).word === "High"}
         address={address}
         codeHash={result.codeHash}
