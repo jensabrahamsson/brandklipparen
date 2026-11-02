@@ -13,7 +13,9 @@ export function SettingsPage({
   return (
     <div className="page">
       <section aria-label="Settings">
-        <h1 style={{ margin: "0 0 16px", fontSize: 28 }}>Settings</h1>
+        <h1 style={{ margin: "0 0 16px", fontSize: 28 }} tabIndex={-1}>
+          Settings
+        </h1>
         <div className="settings-row">
           <label className="settings-label" htmlFor="settings-api-key">
             API key

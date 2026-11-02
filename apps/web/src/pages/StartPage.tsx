@@ -227,7 +227,7 @@ export function StartPage({
     <div className="page">
       <section className="hero">
         <div className="fade-sec" style={{ "--sec-i": 0 } as CSSProperties}>
-          <h1 className="hero-title">
+          <h1 className="hero-title" tabIndex={-1}>
             Scan before
             <br />
             <em>you swap.</em>

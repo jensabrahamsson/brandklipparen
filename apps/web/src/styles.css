@@ -381,14 +381,6 @@ a {
   text-transform: uppercase;
 }
 
-.brand b {
-  color: var(--void);
-  background: var(--phosphor);
-  padding: 1px 6px;
-  font-style: normal;
-  box-shadow: 0 0 14px var(--glow);
-}
-
 .brand img {
   width: 22px;
   height: 22px;
@@ -433,10 +425,10 @@ a {
 
 /* U-11 topbar at phone widths (D-14): the 40 px side padding let the
    chain glyph overlap the wordmark at 320. Tighter padding from 480 px,
-   and at 360 px and below the off-palette horse mark hides, the wordmark
-   tightens, everything shrinks one step, and the bar may wrap: items
-   stack instead of intersecting, so the acceptance holds whatever the
-   font metrics do. */
+   and at 360 px and below the wordmark tightens, everything shrinks one
+   step, and the bar may wrap: items stack instead of intersecting, so
+   the acceptance holds whatever the font metrics do. The knight stays
+   at every width (UI-7: the knight is the only header mark). */
 @media (max-width: 480px) {
   .topbar {
     padding: 6px 16px 12px;
@@ -462,10 +454,6 @@ a {
     font-size: 12px;
     letter-spacing: 0.12em;
     gap: 8px;
-  }
-
-  .brand img {
-    display: none;
   }
 
   .topbar .net svg {
@@ -3472,6 +3460,12 @@ pre.code {
   outline: none;
 }
 
+/* UI-7: the page H1 takes focus on every page change so screen readers
+   announce the new page. It is not interactive, so no ring is drawn. */
+h1[tabindex="-1"]:focus {
+  outline: none;
+}
+
 .compact-strip {
   position: fixed;
   /* MOBILE-1: respect the iOS safe area and stay fully opaque, so the
@@ -5970,7 +5964,7 @@ a.button-ghost {
   flex: none;
   width: 44px;
   height: 44px;
-  margin: 0 0 0 -8px;
+  margin: 0 -8px;
   padding: 0;
   display: inline-grid;
   place-items: center;
@@ -5991,9 +5985,11 @@ a.button-ghost {
   box-shadow: inset 0 0 0 1px var(--edge);
 }
 
+/* Inset ring: the code list clips overflow, so an outset ring at the
+   list's left edge would be cut off (UI-7). */
 .code-lamp:focus-visible {
   outline: 2px solid var(--brand);
-  outline-offset: 2px;
+  outline-offset: -4px;
 }
 
 .code-link-note {
@@ -6058,8 +6054,8 @@ a.button-ghost {
    one-shots only (M-5 row stagger, E-6 rename fade, E-9 badge ignite)
    plus element.animate pulses (E-2); the approved X-2 header sweep is
    the only background-position animation. Reduced motion renders
-   every end state statically. No inner
-   scroll anywhere: long lines wrap with a hanging indent. */
+   every end state statically. Code lines never wrap: the code list
+   scrolls sideways inside its own box (UI-7). */
 :root {
   --code-target-glow: 0 0 0 1px var(--phosphor-hi), inset 0 0 18px var(--glow-soft);
   --code-target-rest: inset 2px 0 0 var(--phosphor-hi), inset 0 0 0 1px var(--edge);
@@ -6242,13 +6238,28 @@ a.button-ghost {
   font-family: var(--font-mono);
 }
 
+/* UI-7: the code list never wraps. It scrolls sideways inside its own
+   box, so the page never does. The 8 px left margin pulls the list
+   under the card rail, and its 8 px padding keeps the gutter lamp (which
+   overhangs by 8 px) inside the scroll box. contain: inline-size keeps
+   the long lines out of the min-content width of every grid and flex
+   ancestor, so the card and the list track cannot widen to fit a line. */
 ol.code {
   list-style: none;
-  margin: 0;
-  padding: 0;
+  margin: 0 0 0 -8px;
+  padding: 0 8px 0 8px;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
+  --ind-step: 1ch;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  contain: inline-size;
+}
+
+ol.code:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 @media (min-width: 640px) {
@@ -6260,10 +6271,11 @@ ol.code {
 .code-line {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 4px;
+  width: max-content;
+  min-width: 100%;
   padding: 0 4px 0 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
   border-radius: 6px;
   transition: background-color 120ms var(--ease-out);
 }
@@ -6276,17 +6288,49 @@ ol.code {
   user-select: none;
 }
 
+/* UI-7 gutter: the lamp's 44 px tap box overhangs its 28 px slot by 8 px
+   on each side, so the gutter is 28 px wide for lamp and empty rows
+   alike and the numbers line up at every width. */
 .code-lamp-slot {
   flex: none;
-  width: 44px;
+  width: 28px;
   align-self: stretch;
 }
 
 .code-text {
   min-width: 0;
   flex: 1 1 auto;
-  padding-left: calc((var(--ind, 0) + 2) * 1ch);
-  text-indent: -2ch;
+  padding-left: calc(var(--ind, 0) * var(--ind-step, 1ch));
+}
+
+/* UI-7 phones (below 600 px): the decompiler card gives its code the
+   whole inner width. The rail's clip pulls out to the card border, the
+   code pane drops its frame, and the code list pulls under the rail, so
+   the list measures about 86 % of a 390 px viewport. Indentation steps
+   by half a character so deep nesting stays readable. */
+@media (max-width: 599px) {
+  .detail-decompiler {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .decompiler-expand-clip {
+    margin-left: -12px;
+    margin-right: -12px;
+  }
+
+  .decompiler-body {
+    padding-left: 8px;
+  }
+
+  .code-pane {
+    border: 0;
+    padding: 0;
+  }
+
+  ol.code {
+    --ind-step: 0.5ch;
+  }
 }
 
 .code-text .tk-keyword {

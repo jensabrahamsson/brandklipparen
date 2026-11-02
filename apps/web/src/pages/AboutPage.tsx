@@ -12,7 +12,7 @@ export function AboutPage(): JSX.Element {
       <section className="about-hero" aria-labelledby="about-title">
         <img src="/logo.svg" alt="Brandklipparen horse mark" width={96} height={96} className="about-mark" />
         <div>
-          <h1 id="about-title" className="hero-title">
+          <h1 id="about-title" className="hero-title" tabIndex={-1}>
             Brandklipparen
           </h1>
           <p className="hero-sub">contract risk scanner — scan before you swap.</p>

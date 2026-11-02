@@ -53,7 +53,7 @@ export function TokenHeader({
   const checksummed = toChecksumAddress(address);
   return (
     <header style={{ display: "grid", gap: 4 }}>
-      <h1 className="token-sym">
+      <h1 className="token-sym" tabIndex={-1}>
         {identity.symbol === null
           ? shortAddress(address)
           : tokenDisplayText(identity.symbol, identity.symbolNonAscii)}

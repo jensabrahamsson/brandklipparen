@@ -1,9 +1,10 @@
 // Numbered code lines (addendum §A1.5-§A1.6). One `<ol class="code">`
-// holds one `<li>` per line: a real-text line number in a ch-wide
+// holds one `<li>` per line: a real-text line number in a narrow
 // gutter (screen readers hear "3, require(…)"), an optional gutter
-// lamp slot, and tokenised code. Long lines wrap with a hanging
-// indent (`--ind`); line numbers stay top-aligned and are never
-// copied (user-select: none). No inner scroll, ever.
+// lamp slot, and tokenised code. Code lines never wrap: the list itself
+// scrolls sideways (UI-7), so a long line keeps its shape and the page
+// never scrolls sideways. Indentation (`--ind`) is applied as padding.
+// Line numbers are never copied (user-select: none).
 //
 // C-29: each row is a memoised component fed only primitive props,
 // so hover sweeps and typing ticks re-render only the rows whose
@@ -205,7 +206,9 @@ export function CodeLines({
   readonly onLineHover: (lineNumber: number | null) => void;
 }): JSX.Element {
   return (
-    <ol className="code" aria-label={`Code lines for ${functionName}`}>
+    // The list scrolls sideways, so it takes a tab stop of its own: a
+    // keyboard user can reach the hidden end of a long line.
+    <ol className="code" tabIndex={0} aria-label={`Code lines for ${functionName}`}>
       {lines.map((line, index) => {
         const lamp = gutterLampFor(line.lineNumber);
         const note = noteAfterLine?.(line.lineNumber) ?? null;

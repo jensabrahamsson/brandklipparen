@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState, type JSX, type MouseEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX, type MouseEvent } from "react";
 import { parseHash, type Route } from "./lib/route.ts";
+import { entryFocusesHeading, focusHeadingWhenRendered, pageIdentity } from "./lib/pageEntry.ts";
 import { initialApiKey } from "./lib/initialApiKey.ts";
 import { Pictogram } from "./components/Pictogram.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
@@ -32,6 +33,29 @@ export function App(): JSX.Element {
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
+
+  // UI-7 page entry: a change to another page scrolls to the top at once
+  // (no smooth scrolling is set anywhere, so this is an instant jump) and
+  // moves focus to the page H1. The first render only records the page.
+  const pageId = pageIdentity(route);
+  const focusesHeading = entryFocusesHeading(route);
+  const seenPage = useRef<string | null>(null);
+  const stopFocus = useRef<(() => void) | null>(null);
+  useLayoutEffect(() => {
+    const previous = seenPage.current;
+    seenPage.current = pageId;
+    if (previous === null || previous === pageId) {
+      return;
+    }
+    stopFocus.current?.();
+    stopFocus.current = null;
+    window.scrollTo(0, 0);
+    const main = document.getElementById("main");
+    if (focusesHeading && main !== null) {
+      stopFocus.current = focusHeadingWhenRendered(main);
+    }
+  }, [pageId, focusesHeading]);
+  useLayoutEffect(() => () => stopFocus.current?.(), []);
 
   const storeApiKey = useCallback((key: string) => {
     setApiKey(key);
@@ -68,7 +92,6 @@ export function App(): JSX.Element {
       </a>
       <header className="topbar">
         <a className="brand" href="#/">
-          <b>BK</b>
           <img src="/logo.svg" alt="" />
           brandklipparen
         </a>

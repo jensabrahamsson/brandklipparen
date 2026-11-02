@@ -6,13 +6,13 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { assertLayout } from "./helpers/layoutContract.ts";
 
-const ADDRESS = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+const ADDRESS = "0x5ab1e0000000000000000000000000000000c005";
 const SELECTOR = "0x44337ea1";
 const ENTRY_PC = 200;
 
 const LONG_HEX = `0x${"ab".repeat(32)}`;
-// A 120-character emit line: long lines wrap with a hanging indent,
-// never a horizontal scroll.
+// A 120-character emit line: code lines never wrap, so it scrolls
+// sideways inside its code block and the page itself never does (UI-7).
 const EMIT_LINE = `  emit ${LONG_HEX}(${Array.from({ length: 30 }, (_, index) => `a${index}`).join(", ")});`.slice(0, 120);
 
 const ANALYZE_FIXTURE = {
@@ -335,4 +335,61 @@ test("code_view_layout_contract_with_a_long_emit_line", async ({ page }) => {
   await page.goto(`/#/token/${ADDRESS}/plugins/decompiler/${SELECTOR}`);
   await expect(page.locator("ol.code").first()).toBeVisible();
   await assertLayout(page, { widths: [320, 390, 768, 1440, 1920] });
+});
+
+// UI-7: each context button widens the verified-source window by ten lines
+// in its direction. The fixture file has 20 lines and the function spans
+// lines 12 to 16, so the window goes 5, 15, 19, 20 lines, and each button
+// hides where the file ends.
+test("code_view_context_buttons_grow_the_source_window_by_ten_lines", async ({ page }) => {
+  await mockRest(page, { withPcs: true, sourceStatus: "verified", withMap: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/#/token/${ADDRESS}/plugins/decompiler/${SELECTOR}`);
+  const verified = page.locator('section[aria-label="Verified source"]');
+  const rows = verified.locator("ol.code > li.code-line");
+  const above = verified.getByRole("button", { name: "Show 10 lines above" });
+  const below = verified.getByRole("button", { name: "Show 10 lines below" });
+  await expect(rows).toHaveCount(5);
+  await expect(rows.first()).toContainText("line 12 of Token.sol");
+
+  await above.click();
+  await expect(rows).toHaveCount(15);
+  await expect(rows.first()).toContainText("line 2 of Token.sol");
+
+  // The decompiled line that maps to verified line 14 keeps its match
+  // highlight while the window grows around it.
+  const mapped = verified.locator("li.code-line", { hasText: "line 14 of Token.sol" });
+  const decompiled = page.locator('section[aria-label="Decompiled from bytecode"] ol.code > li.code-line').nth(3);
+  await decompiled.hover();
+  await expect(mapped).toHaveClass(/is-match/);
+
+  await below.click();
+  await expect(rows).toHaveCount(19);
+  await expect(rows.last()).toContainText("line 20 of Token.sol");
+  await expect(below).toHaveCount(0);
+  await expect(above).toHaveCount(1);
+
+  await above.click();
+  await expect(rows).toHaveCount(20);
+  await expect(rows.first()).toContainText("line 1 of Token.sol");
+  await expect(above).toHaveCount(0);
+});
+
+// UI-7 phones: at 390 px the code block takes the card's full inner width
+// (at least 85 % of the viewport), a long line scrolls inside that block,
+// and the page itself never scrolls sideways.
+test("code_view_phone_code_block_fills_the_width_and_scrolls_inside", async ({ page }) => {
+  await mockRest(page, { withPcs: true, sourceStatus: "verified", withMap: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/#/token/${ADDRESS}/plugins/decompiler/${SELECTOR}/decompiled`);
+  const block = page.locator("ol.code").first();
+  await expect(block).toBeVisible();
+  const box = await block.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual(390 * 0.85);
+  const inner = await block.evaluate((node) => ({ scroll: node.scrollWidth, client: node.clientWidth }));
+  expect(inner.scroll).toBeGreaterThan(inner.client);
+  const pageOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(pageOverflow).toBeLessThanOrEqual(1);
 });

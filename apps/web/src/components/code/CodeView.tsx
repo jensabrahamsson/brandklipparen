@@ -11,7 +11,7 @@ import { CodeLines, type CodeLineDatum, type GutterLamp } from "./CodeLines.tsx"
 import { ProvenanceBadge, type ProvenanceKind } from "./ProvenanceBadge.tsx";
 import { SourceEmpty } from "./SourceEmpty.tsx";
 import { fetchSnippet, type ExplainCodeNote, type SnippetResult } from "../../lib/api.ts";
-import { clearSourceCache, fetchSource, findSourceFile, findSourceFunction, sourceFunctionLines, type SourceResult } from "../../lib/source.ts";
+import { clearSourceCache, fetchSource, findSourceFile, findSourceFunction, type SourceResult } from "../../lib/source.ts";
 import { motionAllowed, pulseKeyframes, runSequence } from "../../lib/explainMotion.ts";
 import { useMediaQuery } from "../../lib/useMediaQuery.ts";
 import { toChecksumAddress } from "../../lib/checksumAddress.ts";
@@ -191,6 +191,9 @@ export function CodeView({
   const [wholeCopy, setWholeCopy] = useState<string | null>(null);
   const lineEls = useRef(new Map<number, HTMLLIElement>());
   const sourceLineEls = useRef(new Map<number, HTMLLIElement>());
+  // A context button that hides at the file edge takes its focus with
+  // it; this records the tapped button and which edge to hand over to.
+  const pendingEdgeFocus = useRef<{ readonly edge: "first" | "last"; readonly button: HTMLButtonElement } | null>(null);
   const tabDecompiled = useRef<HTMLButtonElement | null>(null);
   const tabSource = useRef<HTMLButtonElement | null>(null);
   const baseId = useId();
@@ -330,27 +333,53 @@ export function CodeView({
   // C-29: memoise the splits so `shownSource` (and through it
   // `sourceLineSet` and the explain entries) keeps a stable identity
   // across unrelated renders such as typing ticks.
-  const functionBody = useMemo(
-    () => (sourceFile === null || sourceFn === null ? [] : sourceFunctionLines(sourceFile, sourceFn)),
-    [sourceFile, sourceFn],
-  );
   const wholeFileLines = useMemo(() => (sourceFile === null ? [] : sourceFile.content.split("\n")), [sourceFile]);
   const canWholeFile = wholeFileLines.length > 0 && wholeFileLines.length <= WHOLE_FILE_LINE_CAP;
 
-  const sourceFirstLine = sourceFn === null ? 1 : sourceFn.startLine - aboveCount;
-  const sourceLastLine = sourceFn === null ? 0 : sourceFn.endLine + belowCount;
-  const startLine = sourceFn?.startLine ?? 1;
-  const shownSource: CodeLineDatum[] = useMemo(
-    () =>
-      wholeFile
-        ? wholeFileLines.map((text, index) => ({ lineNumber: index + 1, text, pcs: [] as readonly number[] }))
-        : functionBody.map((text, index) => ({
-            lineNumber: startLine + index,
-            text,
-            pcs: [] as readonly number[],
-          })),
-    [wholeFile, wholeFileLines, functionBody, startLine],
-  );
+  // The visible source window (1-based, inclusive): the function's lines
+  // clamped to the file, widened by the context buttons. Each tap adds
+  // CONTEXT_LINES in its direction; a button hides at the file start or
+  // end, where the window can no longer grow.
+  const fileTotal = wholeFileLines.length;
+  const fnFirst = sourceFn === null ? 1 : Math.max(1, Math.min(sourceFn.startLine, fileTotal));
+  const fnLast = sourceFn === null ? 0 : Math.max(fnFirst, Math.min(sourceFn.endLine, fileTotal));
+  const sourceFirstLine = Math.max(1, fnFirst - aboveCount);
+  const sourceLastLine = Math.min(fileTotal, fnLast + belowCount);
+  const shownSource: CodeLineDatum[] = useMemo(() => {
+    const rows = wholeFile ? wholeFileLines : wholeFileLines.slice(sourceFirstLine - 1, sourceLastLine);
+    const firstNumber = wholeFile ? 1 : sourceFirstLine;
+    return rows.map((text, index) => ({ lineNumber: firstNumber + index, text, pcs: [] as readonly number[] }));
+  }, [wholeFile, wholeFileLines, sourceFirstLine, sourceLastLine]);
+
+  // Focus follows the window only when the tapped button has gone and
+  // nothing else holds focus. While the button is still shown it keeps
+  // whatever focus it has (Safari does not focus a tapped button at all).
+  useEffect(() => {
+    const pending = pendingEdgeFocus.current;
+    if (pending === null) {
+      return;
+    }
+    pendingEdgeFocus.current = null;
+    if (pending.button.isConnected) {
+      return;
+    }
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) {
+      return;
+    }
+    sourceLineEls.current
+      .get(pending.edge === "first" ? sourceFirstLine : sourceLastLine)
+      ?.focus({ preventScroll: true });
+  }, [sourceFirstLine, sourceLastLine]);
+
+  const expandSource = (edge: "above" | "below", button: HTMLButtonElement): void => {
+    pendingEdgeFocus.current = { edge: edge === "above" ? "first" : "last", button };
+    if (edge === "above") {
+      setAboveCount((count) => count + CONTEXT_LINES);
+    } else {
+      setBelowCount((count) => count + CONTEXT_LINES);
+    }
+  };
 
   // E-5 line correspondence through the source map: each decompiled
   // line knows its source lines via its pcs, and back.
@@ -967,7 +996,11 @@ export function CodeView({
       ) : (
         <>
           {sourceFirstLine > 1 && !wholeFile ? (
-            <button type="button" className="button-ghost snippet-more" onClick={() => setAboveCount((count) => count + CONTEXT_LINES)}>
+            <button
+              type="button"
+              className="button-ghost snippet-more"
+              onClick={(event) => expandSource("above", event.currentTarget)}
+            >
               Show 10 lines above
             </button>
           ) : null}
@@ -988,8 +1021,12 @@ export function CodeView({
             onLineFocus={handleSrcFocus}
             onLineHover={handleSrcHover}
           />
-          {!wholeFile && sourceLastLine < wholeFileLines.length ? (
-            <button type="button" className="button-ghost snippet-more" onClick={() => setBelowCount((count) => count + CONTEXT_LINES)}>
+          {!wholeFile && sourceLastLine < fileTotal ? (
+            <button
+              type="button"
+              className="button-ghost snippet-more"
+              onClick={(event) => expandSource("below", event.currentTarget)}
+            >
               Show 10 lines below
             </button>
           ) : null}
