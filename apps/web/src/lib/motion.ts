@@ -20,7 +20,26 @@ export function reducedMotionRequested(): boolean {
 }
 
 export function useReducedMotion(): boolean {
-  return reducedMotionRequested();
+  const [reduced, setReduced] = useState<boolean>(() => reducedMotionRequested());
+  useEffect(() => {
+    const update = (): void => setReduced(reducedMotionRequested());
+    update();
+    let media: MediaQueryList | null = null;
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      media = window.matchMedia("(prefers-reduced-motion: reduce)");
+      media.addEventListener?.("change", update);
+    }
+    let observer: MutationObserver | null = null;
+    if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
+      observer = new MutationObserver(update);
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-motion"] });
+    }
+    return () => {
+      media?.removeEventListener?.("change", update);
+      observer?.disconnect();
+    };
+  }, []);
+  return reduced;
 }
 
 // One-shot count-up for scores and percents (Phosphor Console): eased

@@ -2,8 +2,8 @@
 // always-visible one-line plain explanation. Short values sit
 // right-aligned on one line; addresses and the code hash use the address
 // block (label row with the copy icon, value below breaking only between
-// 4-character groups). Proxy, model and block carry no copy control;
-// contract, pair, implementation and the code hash copy the full values.
+// 4-character groups). Model and block carry no copy control; contract,
+// pair, implementation, proxy admin and the code hash copy the full values.
 // The "Load on-chain reads" action appends live Owner / LP lock / Top
 // holders rows, each tagged "Live read · not in score". Display text
 // only: nothing here touches the score.
@@ -28,7 +28,7 @@ export type FactCopyTarget = {
 
 // The exact strings the fact copy buttons write: always the full
 // unspaced EIP-55 value (or the full hash), never the grouped display.
-// Proxy, model and block are intentionally absent: they have no button.
+// Model and block are intentionally absent: they have no button.
 export function factCopyTargets(
   result: AnalyzeSuccess,
   liveEntry: LiveTokenEntry | null,
@@ -44,6 +44,10 @@ export function factCopyTargets(
       label: "Copy implementation address",
       value: toChecksumAddress(result.proxy.implementation),
     });
+  }
+  const proxyAdmin = proxyAdminInfo(result.proxy);
+  if (proxyAdmin !== null) {
+    targets.push({ label: "Copy proxy admin address", value: toChecksumAddress(proxyAdmin.address) });
   }
   targets.push({ label: "Copy code hash", value: result.codeHash });
   return targets;
@@ -267,6 +271,7 @@ export function ContractFacts({
     !proxyNone && typeof result.proxy.implementation === "string"
       ? toChecksumAddress(result.proxy.implementation)
       : null;
+  const proxyAdmin = proxyAdminInfo(result.proxy);
   const features =
     onchain !== null && onchain.status === "ready" ? asRecord(onchain.features) : null;
   const variants =
@@ -361,6 +366,19 @@ export function ContractFacts({
             value={proxyDisplay(result.proxy.kind)}
             why={proxyWhy(result.proxy)}
           />
+          {proxyAdmin === null ? null : (
+            <AddressFact
+              icon="contract"
+              label="Proxy admin"
+              value={toChecksumAddress(proxyAdmin.address)}
+              copyLabel="Copy proxy admin address"
+              copyTestId="copy-facts-proxy-admin"
+              valueTestId="fact-proxy-admin-address"
+              why="The account that can replace the code."
+            >
+              <AddressValue value={toChecksumAddress(proxyAdmin.address)} testId="fact-proxy-admin-address-value" />
+            </AddressFact>
+          )}
           {implementation === null ? null : (
             <AddressFact
               icon="contract"

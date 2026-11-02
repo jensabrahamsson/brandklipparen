@@ -720,9 +720,13 @@ a {
   border-radius: 0;
   padding: 6px 14px;
   font-size: 13px;
-  cursor: pointer;
   font-family: var(--font-mono);
   box-shadow: var(--elev-1);
+}
+
+button.chip,
+a.chip {
+  cursor: pointer;
 }
 
 .chip[aria-pressed="true"],
@@ -1951,6 +1955,13 @@ a {
   white-space: nowrap;
 }
 
+.gauge .gauge-prior {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
 .gauge .pct {
   font-size: clamp(44px, 6vw, 60px);
   font-weight: 800;
@@ -2052,10 +2063,24 @@ a {
   .gauge .lab {
     order: 1;
     flex: none;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1px;
     min-width: 0;
     max-width: none;
     overflow: visible;
     font-size: 13px;
+    line-height: 1.15;
+  }
+
+  .gauge:has(.gauge-prior) {
+    padding: 4px 0;
+  }
+
+  .gauge .gauge-prior {
+    font-size: 10px;
+    line-height: 1.15;
   }
 
   .gauge .t {
@@ -4307,8 +4332,8 @@ a.button-ghost {
 
 /* Can't-tell disclosure (R3 D-9): one row per board when 3 or more
    owner tiles can't tell. The toggle is a full-width 44 px row in the
-   dashed can't-tell language; the body opens with the approved X-1
-   180 ms grid-template-rows expand and collapses instantly. Reduced
+   dashed can't-tell language; the body opens instantly (no height
+   motion) with a 180 ms opacity pulse and collapses instantly. Reduced
    motion and Motion off render every end state statically through the
    global kill. Motion is glow only, under 3 flashes per second. */
 .canttell-group {
@@ -4366,7 +4391,7 @@ a.button-ghost {
 .canttell-expand.is-open {
   grid-template-rows: 1fr;
   visibility: visible;
-  transition: grid-template-rows 180ms var(--ease-out);
+  transition: opacity 180ms var(--ease-out);
 }
 
 .canttell-expand-clip {
@@ -5517,11 +5542,9 @@ a.button-ghost {
   color: var(--dim);
 }
 
-/* X-1 (owner-approved): a short height expand for in-card disclosure
-   bodies. The wrapper rides grid-template-rows 0fr → 1fr over 180 ms;
-   collapse is instant (no exit transition). Bodies taller than ~480 px
-   open instantly through the same class (no animation); reduced motion
-   and the Motion switch render every end state statically. */
+/* Disclosure bodies open instantly (no height motion) with a 180 ms
+   opacity pulse; collapse is instant. Reduced motion and the Motion
+   switch render every end state statically. */
 .decompiler-expand {
   display: grid;
   grid-template-rows: 0fr;
@@ -5532,7 +5555,7 @@ a.button-ghost {
 .decompiler-expand.is-open {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows 180ms var(--ease-out);
+  transition: opacity 180ms var(--ease-out);
 }
 
 .decompiler-expand-clip {
@@ -5585,11 +5608,16 @@ a.button-ghost {
   outline-offset: -2px;
 }
 
+.code-line:has(.code-lamp) {
+  min-height: 44px;
+  align-items: center;
+}
+
 .code-lamp {
   flex: none;
   width: 44px;
   height: 44px;
-  margin: -11px 0 -11px -8px;
+  margin: 0 0 0 -8px;
   padding: 0;
   display: inline-grid;
   place-items: center;
@@ -6018,9 +6046,9 @@ ol.code {
   margin-top: 8px;
 }
 
-/* Detail entry sweep (addendum E-8, owner-approved X-2): one scanline
-   sweep across the plugin detail header, once per entry. Never in code
-   panes and never repeated on in-page changes. */
+/* Detail entry pulse: one stationary opacity pulse on the plugin
+   detail header, once per entry. Never in code panes and never
+   repeated on in-page changes. */
 .detail-head {
   position: relative;
 }
@@ -6032,7 +6060,6 @@ ol.code {
   background: linear-gradient(transparent, var(--glow), transparent);
   background-size: 100% 60px;
   background-repeat: no-repeat;
-  background-position: 0 -60px;
   opacity: 0;
   animation: bk-sweep 500ms linear 1;
   pointer-events: none;
@@ -6040,13 +6067,15 @@ ol.code {
 
 @keyframes bk-sweep {
   0% {
-    background-position: 0 -60px;
+    opacity: 0;
+  }
+
+  50% {
     opacity: 1;
   }
 
   100% {
-    background-position: 0 110%;
-    opacity: 1;
+    opacity: 0;
   }
 }
 
@@ -6270,7 +6299,7 @@ button.muse-chip {
 .code-note-expand.is-open {
   display: grid;
   grid-template-rows: 1fr;
-  transition: grid-template-rows 180ms var(--ease-out);
+  transition: opacity 180ms var(--ease-out);
 }
 
 .code-note-clip {

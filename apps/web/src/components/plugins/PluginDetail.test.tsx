@@ -76,9 +76,9 @@ describe("plugin detail provenance", () => {
     expect(detail("found-scored", 3)).toContain("In score: yes (model 1.0.1)");
   });
 
-  test("a zero weight reads as extended analysis, never in score", () => {
-    expect(detailProvenance("found-scored", 0, "1.0.1")).toBe("In score: no (extended analysis)");
-    expect(detail("found-scored", 0)).toContain("In score: no (extended analysis)");
+  test("a zero weight reads as weight 0, never in score", () => {
+    expect(detailProvenance("found-scored", 0, "1.0.1")).toBe("In score: no (weight 0 in model 1.0.1)");
+    expect(detail("found-scored", 0)).toContain("In score: no (weight 0 in model 1.0.1)");
     expect(detail("found-scored", 0)).toContain("Check v1.0.0");
   });
 
@@ -164,11 +164,12 @@ describe("plugin detail header (D-7)", () => {
     expect(html).toContain("Calls other contracts");
   });
 
-  test("the breadcrumb links the token and the board, and the back link names checks", () => {
+  test("the breadcrumb links the token and the board, and the back link returns to the token", () => {
     const html = detail("found-scored", 3);
     expect(html).toContain('aria-label="Breadcrumb"');
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain("← All checks");
+    expect(html).toContain("← Back to token");
+    expect(html).toContain("What we checked");
     expect(html).not.toContain("All plugins");
   });
 

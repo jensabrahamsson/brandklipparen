@@ -120,6 +120,14 @@ describe("contract facts rendering", () => {
     expect(textOf(html)).toContain(toChecksumAddress(IMPL));
   });
 
+  test("proxy admin renders as a full address fact with its own copy button", () => {
+    const admin = "0x3132333435363738393a3b3c3d3e3f4041424344";
+    const html = htmlOf({ kind: "eip1967", implementation: IMPL, admin: { kind: "contract", address: admin } });
+    expect(html).toContain("Proxy admin");
+    expect(html).toContain('aria-label="Copy proxy admin address"');
+    expect(html.replace(/<[^>]+>/g, "")).toContain(toChecksumAddress(admin));
+  });
+
   test("eip1967 and zos proxy cards name the admin who can replace the code", () => {
     const admin = "0x3132333435363738393a3b3c3d3e3f4041424344";
     const eip = htmlOf({ kind: "eip1967", implementation: IMPL, admin: { kind: "contract", address: admin } });

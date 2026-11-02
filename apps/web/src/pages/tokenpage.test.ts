@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { ApiError } from "../lib/api.ts";
-import { errorCopy, meaningSentence, tokenPageTitle, verdictBandColor } from "./TokenPage.tsx";
+import { calibrationNote, errorCopy, meaningSentence, tokenPageTitle, verdictBandColor } from "./TokenPage.tsx";
 import type { BoardTile } from "../components/plugins/PluginBoard.tsx";
 import type { AnalyzeResult, Signal } from "../types.ts";
 
@@ -241,6 +241,13 @@ describe("verdict caret takes the risk colour (S-132)", () => {
     expect(verdictBandColor(45)).toBe("var(--elevated)");
     expect(verdictBandColor(60)).toBe("var(--high)");
     expect(verdictBandColor(84)).toBe("var(--high)");
+  });
+});
+
+describe("calibration note", () => {
+  test("model 1.0.1 warns that Low is not a safety pass", () => {
+    expect(calibrationNote("1.0.1")).toContain("Low is not a safety pass");
+    expect(calibrationNote("1.0.2")).toBeNull();
   });
 });
 

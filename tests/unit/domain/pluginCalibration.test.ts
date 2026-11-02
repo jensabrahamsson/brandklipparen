@@ -110,4 +110,17 @@ describe("calibration promotion (S-047, K-210)", () => {
     }
     expect(decompilerUnweighted.weight).toBe(0);
   });
+
+  test("plugin weight follows fitted head weights when present", () => {
+    const artifact = mustArtifact({
+      ...baseArtifactInput(),
+      pluginWeights: { [CAPABILITY_ID]: 1 },
+      detectorHeadWeights: {
+        [CAPABILITY_ID]: { "rug-pull": 0, honeypot: 0 },
+        "dev.brandklipparen.mint": { "rug-pull": 0.25, honeypot: 0 },
+      },
+    });
+    expect(pluginWeightOf(artifact, CAPABILITY_ID)).toBe(0);
+    expect(pluginWeightOf(artifact, "dev.brandklipparen.mint")).toBe(0.25);
+  });
 });

@@ -43,7 +43,10 @@ Meta Global AI Developer Hackathon entry · Indie Developer track ·
 ## What it is
 
 Brandklipparen assesses the rug-pull risk of ERC-20 tokens from
-contract bytecode. Every score is shown together with the evidence that
+contract bytecode, paired with point-in-time on-chain context. The risk
+score and proofs are derived deterministically from bytecode; live
+on-chain context and verified source are shown beside them and never
+change the score. Every score is shown together with the evidence that
 produced it, so the result can be inspected and reproduced.
 
 - **Deterministic core.** Pure TypeScript with no I/O. Runtime

@@ -16,6 +16,15 @@ export const UNCALIBRATED_PLUGIN_WEIGHT = 0;
 // non-finite, or negative stored values fall back to 0, so a malformed
 // mapping entry can only silence a plugin, never amplify one.
 export function pluginWeightOf(artifact: ModelArtifact, pluginId: string): number {
+  // When the artifact carries fitted per-head weights, score() uses those
+  // heads (risk.ts), so the exposed weight is the largest head weight: a
+  // detector fitted to 0 on both heads reports 0, never the catalogue 1.
+  const heads = artifact.detectorHeadWeights?.[pluginId];
+  if (heads !== undefined) {
+    const rug = typeof heads["rug-pull"] === "number" && Number.isFinite(heads["rug-pull"]) ? heads["rug-pull"] : 0;
+    const honeypot = typeof heads.honeypot === "number" && Number.isFinite(heads.honeypot) ? heads.honeypot : 0;
+    return Math.max(0, rug, honeypot);
+  }
   const stored: unknown = artifact.pluginWeights[pluginId];
   if (typeof stored !== "number" || !Number.isFinite(stored) || stored < 0) {
     return UNCALIBRATED_PLUGIN_WEIGHT;

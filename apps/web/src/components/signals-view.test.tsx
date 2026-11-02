@@ -272,9 +272,9 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
         names={NAMES}
       />,
     );
-    expect(html).toContain(checksummed);
     expect(html).toContain("claim-account-full");
-    expect(html).toContain(`data-testid="claim-account-full">${checksummed}<`);
+    expect(html).toContain("addr-chunk");
+    expect(html.replace(/<[^>]+>/g, "")).toContain(checksummed.replace("0x", "0x"));
     expect(html).not.toContain(`>${account}<`);
     expect(html).toContain('aria-label="Copy account address"');
     expect(html).toContain(`data-copy-value="${checksummed}"`);

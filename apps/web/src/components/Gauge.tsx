@@ -23,11 +23,13 @@ export function Gauge({
   probability,
   signalCount,
   reason,
+  uncalibrated = false,
 }: {
   readonly kind: RiskKind;
   readonly probability: number;
   readonly signalCount: number;
   readonly reason: string;
+  readonly uncalibrated?: boolean | undefined;
 }): JSX.Element {
   const percent = Math.round(probability * 100);
   const band = riskBand(percent);
@@ -55,6 +57,7 @@ export function Gauge({
       <div className="gauge-top">
         <h3 className="lab" style={{ margin: "0 0 4px" }}>
           <span className="t">{TITLES[kind]}</span>
+          {uncalibrated ? <span className="gauge-prior">Prior · uncalibrated</span> : null}
         </h3>
         <span className="band">{band.word.toUpperCase()}</span>
       </div>

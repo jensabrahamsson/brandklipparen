@@ -3,6 +3,7 @@
 // otherwise the full id, URL-encoded. Never scored, never evidence:
 // display strings only.
 import type { PictogramName } from "./pictograms.ts";
+import { toChecksumAddress } from "./checksumAddress.ts";
 import {
   decompilerSummaryLine,
   parseDecompilerFunctions,
@@ -238,7 +239,7 @@ function proxyLine(payloads: readonly unknown[]): string {
     const admin = textOf(record, "admin");
     const adminKind = textOf(record, "adminKind");
     if (admin !== null && adminKind !== null) {
-      return `Upgradeable proxy \u00b7 admin ${admin} (${adminKind}) can replace the code`;
+      return `Upgradeable proxy \u00b7 admin ${toChecksumAddress(admin)} (${adminKind}) can replace the code`;
     }
     return "Upgradeable proxy can replace the code";
   }

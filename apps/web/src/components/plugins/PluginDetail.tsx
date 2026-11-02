@@ -54,7 +54,7 @@ export function detailProvenance(
     return "In score: no (extended analysis)";
   }
   if (weight !== undefined && weight <= 0) {
-    return "In score: no (extended analysis)";
+    return `In score: no (weight 0 in model ${modelVersion})`;
   }
   return `In score: yes (model ${modelVersion})`;
 }
@@ -370,8 +370,8 @@ export function PluginDetailView({
   return (
     <div>
       <div className="detail-toolbar">
-        <a className="button-ghost detail-back" href={pluginsHref(address)}>
-          ← All checks
+        <a className="button-ghost detail-back" href={`#/token/${encodeURIComponent(address)}`}>
+          ← Back to token
         </a>
         <ExpertSwitch mode={mode} onModeChange={onModeChange} testId="detail-expert-switch" />
       </div>

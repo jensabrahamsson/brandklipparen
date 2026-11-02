@@ -40,6 +40,7 @@ import type {
   LiveTokensAnalyzeResult,
   LiveTokensService,
 } from "../application/liveTokensService.ts";
+import { pluginWeightsOf } from "../application/pluginExposure.ts";
 import { buildDetectorSet, wireAppServices } from "./root.ts";
 import type {
   AnalyzeTokenPorts,
@@ -345,7 +346,7 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
   // artifact (S-047, P-05): absent on a load failure, in which case the
   // routes expose the uncalibrated weight-0 list like the test wiring.
   const loaded = deps.ports.modelArtifacts.load(config.modelVersion);
-  const pluginWeights = loaded.ok ? loaded.value.artifact.pluginWeights : undefined;
+  const pluginWeights = loaded.ok ? pluginWeightsOf(wired.registry, loaded.value.artifact) : undefined;
   const apiKeys = config.apiKeys ?? Object.freeze([]);
   // Snippet deepening source (B-2, S-095, K-008): the route reads the
   // contract code through the bound chain port, so a composed server

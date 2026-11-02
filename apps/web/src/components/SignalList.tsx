@@ -5,6 +5,7 @@ import type { ExplanationClaim, Signal } from "../types.ts";
 import { claimSummary, extractAccount } from "../lib/claims.ts";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { CopyButton } from "./CopyButton.tsx";
+import { groupAddressChunks } from "./TokenHeader.tsx";
 import { Pictogram } from "./Pictogram.tsx";
 import { EvidenceRow } from "./plugins/EvidenceRow.tsx";
 
@@ -122,7 +123,12 @@ function AccountChip({ address }: { readonly address: string }): JSX.Element {
     <span className="mono numeric" style={{ fontSize: 13 }}>
       Account{" "}
       <span className="addr-full" data-testid="claim-account-full">
-        {checksummed}
+        {groupAddressChunks(checksummed).map((chunk, index) => (
+          <span key={index}>
+            {index === 0 ? null : <wbr />}
+            <span className="addr-chunk">{chunk}</span>
+          </span>
+        ))}
       </span>{" "}
       <CopyButton value={checksummed} label="Copy account address" />
     </span>
@@ -140,9 +146,7 @@ function Temporality({ claim }: { readonly claim: ExplanationClaim }): JSX.Eleme
           <>
             Applies now
             {" · "}
-            <span className="chip">
-              Owner <AccountChip address={account} /> can change this
-            </span>
+            <span className="chip">Owner can change this</span> <AccountChip address={account} />
           </>
         )
       ) : claim.temporality.kind === "can-change-unknown" ? (
@@ -150,9 +154,9 @@ function Temporality({ claim }: { readonly claim: ExplanationClaim }): JSX.Eleme
       ) : account === null ? (
         <span className="chip">Owner can change this</span>
       ) : (
-        <span className="chip">
-          Owner <AccountChip address={account} /> can change this
-        </span>
+        <>
+          <span className="chip">Owner can change this</span> <AccountChip address={account} />
+        </>
       )}
     </div>
   );

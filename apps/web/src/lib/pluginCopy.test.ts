@@ -4,6 +4,7 @@
 // synthetic USDT-shaped fixture (32 functions, mixed causes).
 import { describe, expect, test } from "vitest";
 import { PLUGIN_COPY, ranStatusWord } from "./pluginCopy.ts";
+import { toChecksumAddress } from "./checksumAddress.ts";
 import {
   decompilerSummaryLine,
   parseDecompilerFunctions,
@@ -76,6 +77,13 @@ describe("decompiler tile, header and list summary (R3 D-8)", () => {
     for (const line of lines) {
       expect(line).not.toBe("The code that matters here could not be fully read.");
     }
+  });
+
+  test("proxy line checksums the admin address", () => {
+    const admin = "0x3132333435363738393a3b3c3d3e3f4041424344";
+    const line = PLUGIN_COPY["proxy-upgrade"]?.foundLine([{ proxyKind: "eip1967", admin, adminKind: "contract" }]) ?? "";
+    expect(line).toContain(toChecksumAddress(admin));
+    expect(line).not.toContain(admin);
   });
 
   test("the tool status word names the decompiler function count", () => {

@@ -52,6 +52,12 @@ export function tokenPageTitle(symbol: string, score: number): string {
 // the 1px top border and the headline caret, passed as --verdict-band
 // so the stylesheet owns the edge. Same riskBand source as RiskBadge,
 // so caret, border and badge can never disagree.
+export function calibrationNote(modelVersion: string): string | null {
+  return modelVersion === "1.0.1"
+    ? "Model 1.0.1 calibration: scores cluster at 19\u201330, so Low is not a safety pass. Check the owner powers above."
+    : null;
+}
+
 export function verdictBandColor(score: number): string {
   const word = riskBand(score).word;
   return word === "Low" ? "var(--low)" : word === "Elevated" ? "var(--elevated)" : "var(--high)";
@@ -592,7 +598,11 @@ function AssessedView({
               </span>
             </p>
             <PowersStrip address={address} allIds={heroIds} tiles={heroBoard.ownerTiles} plugins={plugins} />
-            {mode === "expert" ? (
+            {calibrationNote(result.modelVersion) !== null ? (
+              <p className="quiet" style={{ margin: "4px 0 0" }}>
+                {calibrationNote(result.modelVersion)}
+              </p>
+            ) : mode === "expert" ? (
               <p className="quiet" style={{ margin: "4px 0 0" }}>
                 Calibration report: see the model card. The v1 REST response carries no calibration numbers, so none
                 are shown here.
@@ -621,6 +631,7 @@ function AssessedView({
                       probability={result.probabilities[risk]}
                       signalCount={count}
                       reason={reason}
+                      uncalibrated={risk === "bot-pump"}
                     />
                   );
                 })}

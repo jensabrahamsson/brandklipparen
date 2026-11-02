@@ -14,6 +14,7 @@ import { fetchSnippet, type ExplainCodeNote, type SnippetResult } from "../../li
 import { clearSourceCache, fetchSource, findSourceFile, findSourceFunction, sourceFunctionLines, type SourceResult } from "../../lib/source.ts";
 import { motionAllowed, pulseKeyframes, runSequence } from "../../lib/explainMotion.ts";
 import { useMediaQuery } from "../../lib/useMediaQuery.ts";
+import { toChecksumAddress } from "../../lib/checksumAddress.ts";
 import { useReducedMotion } from "../../lib/motion.ts";
 import type { CodePaneView } from "../../lib/route.ts";
 import {
@@ -993,8 +994,13 @@ export function CodeView({
           ) : null}
           {expert && !canWholeFile && wholeFileLines.length > WHOLE_FILE_LINE_CAP ? (
             <p className="muted code-link-note">
-              The file is too large to show here.{" "}
-              <a href="https://sourcify.dev" rel="noopener noreferrer">
+              Large file — open this contract on Sourcify.{" "}
+              <a
+                href={`https://sourcify.dev/#/lookup/${encodeURIComponent(toChecksumAddress(address))}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: "inline-flex", alignItems: "center", minHeight: 44 }}
+              >
                 Open on Sourcify
               </a>
             </p>

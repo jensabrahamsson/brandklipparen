@@ -46,6 +46,15 @@ describe("gauge segments (phosphor console)", () => {
     }
   });
 
+  test("gauge_uncalibrated_shows_prior_badge", () => {
+    const html = renderToString(
+      <Gauge kind="bot-pump" probability={0.18} signalCount={0} reason="x" uncalibrated />,
+    );
+    expect(html).toContain("Prior · uncalibrated");
+    const plain = renderToString(<Gauge kind="rug-pull" probability={0.18} signalCount={0} reason="x" />);
+    expect(plain).not.toContain("Prior · uncalibrated");
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });

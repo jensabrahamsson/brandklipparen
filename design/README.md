@@ -1,5 +1,31 @@
 # Brandklipparen: design
 
+## Shipped design: Phosphor Console
+
+The shipped web UI (`apps/web/`) is the Phosphor Console: a green-phosphor
+CRT terminal. This section describes the shipped system; the sketches and
+v1 notes below are archived history and do not describe the app.
+
+- **Colour**: void `#010402` background, glass `#03110A` surfaces, phosphor
+  `#8DFFB6` body text and phosphor-hi `#D6FFE6` headings (see `--phosphor`
+  and `--phosphor-hi` in `apps/web/src/styles.css`). Risk colour follows
+  the score only and never carries meaning alone: badges show number and
+  word together.
+- **Type**: monospace throughout (`ui-monospace`, SF Mono, Menlo, Consolas).
+  Tabular figures for scores and percentages.
+- **Hierarchy (3 levels)**: token page verdict hero (score ring, meaning
+  sentence, owner-powers strip, risk gauges), then the plugin board
+  ("What we checked"), then a detector detail page per check with proof,
+  evidence and code. The start page is search first, then live token feeds.
+- **Motion**: blink or pulse/glow only, under 3 flashes per second, never
+  movement (no transform, translate, slide, scale or height motion). Under
+  `prefers-reduced-motion` or the Motion switch everything is static.
+- **Accessibility**: WCAG 2.2 AA. Touch targets at least 44x44 CSS px on
+  all widths. Token addresses stay in full EIP-55 form with a copy button.
+- **Scores**: 0-29 Low, 30-59 Elevated, 60-100 High.
+
+## Archive: v1 sketches (not shipped)
+
 Design sketches for the hackathon. Nothing here is code. The images are static SVG files that open directly in a browser.
 All data in the sketches is made up: tokens, addresses, selectors and statistics.
 

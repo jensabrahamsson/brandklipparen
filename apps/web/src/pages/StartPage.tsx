@@ -15,8 +15,11 @@ import { isValidAddress, normalizeAddress, validationMessage } from "../lib/vali
 
 // Risk-score legend rows (Phosphor Console): band ranges straight from
 // the frozen risk bands, with plain-language meanings. No feature data.
+// The Low row names its position, never an absence of powers (BK-01):
+// the score can read Low while owner powers sit below the scoring
+// threshold, so the note carries the honest disclaimer instead.
 const LEGEND: readonly { readonly min: number; readonly max: number; readonly word: string; readonly meaning: string }[] = [
-  { min: LOW_BAND.min, max: LOW_BAND.max, word: "Low", meaning: "no strong owner powers seen" },
+  { min: LOW_BAND.min, max: LOW_BAND.max, word: "Low", meaning: "lowest band on this scale" },
   { min: ELEVATED_BAND.min, max: ELEVATED_BAND.max, word: "Elevated", meaning: "some risky capabilities" },
   { min: HIGH_BAND.min, max: HIGH_BAND.max, word: "High", meaning: "owner can hurt holders" },
 ];
@@ -187,7 +190,8 @@ export function StartPage({
             <em>you swap.</em>
           </h1>
           <p className="hero-sub">
-            Paste a contract address. See what its owner can do to you, in plain English.
+            Paste a contract address. Rug pull, honeypot and bot-pump risk from bytecode, paired with live
+            on-chain context. See what its owner can do to you, in plain English.
           </p>
           <form onSubmit={submit} noValidate className="prompt">
             <div className="field">
@@ -248,7 +252,7 @@ export function StartPage({
               <span className="dim">{row.meaning}</span>
             </div>
           ))}
-          <p className="note">A score is a reading of the contract, not a promise. Every page lists what we can&apos;t tell.</p>
+          <p className="note">Low does not mean safe. A score is a reading of the contract, not a promise. Every page lists what we can&apos;t tell.</p>
         </aside>
       </section>
       {recent.length > 0 ? (
