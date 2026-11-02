@@ -219,11 +219,7 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
     // reloads (W-8 keeps the K-034 key) and this loop reuses one
     // context, so the second width may start checked: only press when
     // it is off.
-    const expertSwitch = page.getByTestId("expert-switch");
-    if ((await expertSwitch.getAttribute("aria-checked")) !== "true") {
-      await expertSwitch.click();
-    }
-    await expect(expertSwitch).toHaveAttribute("aria-checked", "true");
+    await page.locator("details.tech-details > summary", { hasText: "Technical details" }).click();
     await expect(page.getByTestId("expert-detail")).toBeVisible();
     await expectFitsViewport(page);
     await expectTapTargets(page);
@@ -251,8 +247,8 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
     await expect(legend).toBeVisible();
     await expect(legend).toContainText("0–29");
     await expect(legend).toContainText("LOW");
-    await expect(legend).toContainText("lowest band on this scale");
-    await expect(legend).toContainText("not a promise");
+    await expect(legend).toContainText("no proven owner power");
+    await expect(legend).toContainText("Low ≠ safe.");
     const recentRow = page.locator(".recent-row").first();
     await expect(recentRow).toBeVisible();
     expect((await recentRow.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);

@@ -1,9 +1,8 @@
 // Token page heading: the token symbol when known (analysis
 // response first, live-list entry second), the short address otherwise.
 // The name rides the h1 as a subtitle when known. The FULL contract
-// address is an address block: row 1 is the label row carrying the copy
-// button, row 2 is the grouped value full width, and DEX plus human age
-// ride one shared meta unit below when the live entry is known. Static
+// address is an address block with the copy button immediately after
+// the grouped value; DEX and age share a meta unit below. Static
 // markup: no motion, no transforms.
 //
 // Wrapping: the name shares the h1 line and the DEX unit never breaks
@@ -67,21 +66,22 @@ export function TokenHeader({
         )}
       </h1>
       <div className="token-addr">
-        <div className="token-addr-top">
-          <span className="token-addr-label">
-            <Pictogram name="contract" size={16} />
-            <span>Contract</span>
+        <span className="token-addr-label">
+          <Pictogram name="contract" size={16} />
+          <span>Contract</span>
+        </span>
+        <div className="token-addr-row">
+          <span className="addr-full" data-testid="token-address-full">
+            {groupAddressChunks(checksummed).map((chunk, index) => (
+              <Fragment key={index}>
+                {index === 0 ? null : <wbr />}
+                <span className="addr-chunk">{chunk}</span>
+              </Fragment>
+            ))}
           </span>
+          {"\u2060"}
           <CopyButton value={checksummed} label="Copy contract address" testId="copy-contract-address" />
         </div>
-        <span className="addr-full" data-testid="token-address-full">
-          {groupAddressChunks(checksummed).map((chunk, index) => (
-            <Fragment key={index}>
-              {index === 0 ? null : <wbr />}
-              <span className="addr-chunk">{chunk}</span>
-            </Fragment>
-          ))}
-        </span>
       </div>
       {liveEntry === null ? null : (
         <p className="token-meta">

@@ -45,17 +45,32 @@ describe("start page first 30 seconds (D-14)", () => {
     expect(page).toContain("See what its owner can do to you, in plain English.");
   });
 
+  test("paste button and coloured legend render", () => {
+    const page = html();
+    expect(page).toContain(">Paste</span>");
+    expect(page).toContain("band-low");
+    expect(page).toContain("band-elevated");
+    expect(page).toContain("band-high");
+    expect(page).toContain("no proven owner power");
+    expect(page).toContain("Low ≠ safe.");
+    expect(page).not.toContain("Low does not mean safe.");
+  });
+
   test("stale_copy_and_chain_pill_are_gone", () => {
     const page = html();
     for (const stale of ["bytecode alone", "BK/1", "ERC-20 contract reader"]) {
       expect(page).not.toContain(stale);
     }
     expect(page).not.toContain("Chain");
-    expect(page).toContain("Use your own API key");
+    expect(page).toContain("Scan before you swap");
+    expect(page).toContain(">API</a>");
     expect(page).toContain('href="#/settings"');
     expect(page).not.toContain('aria-label="Animations"');
     expect(page).not.toContain("motion-switch");
-    expect(page).toContain("Scan before you swap");
+    expect(page).not.toContain(">Motion<");
+    expect(page).not.toContain("Follows your system setting until switched off.");
+    expect(page).not.toContain("Deterministic score");
+    expect(page).not.toContain("Use your own API key");
     expect(page).toContain('href="#/about"');
     expect(page).toContain('href="https://github.com/jensabrahamsson/brandklipparen"');
   });

@@ -328,14 +328,18 @@ test("u12_feed_tabs_and_rows", async ({ page }) => {
     )) {
       expect(height).toBeLessThanOrEqual(maxRow);
     }
-    // Copy buttons share one x, chevrons share one x.
-    for (const selector of ['[aria-label="Copy contract address"]', ".feed-go"] as const) {
-      const xs = await rows.locator(selector).evaluateAll((elements) =>
-        elements.map((element) => Math.round((element as HTMLElement).getBoundingClientRect().x)),
-      );
-      for (const x of xs) {
-        expect(Math.abs(x - (xs[0] as number))).toBeLessThanOrEqual(1);
-      }
+    // The copy button follows the last address group, including after wrapping.
+    const gaps = await rows.evaluateAll((elements) => elements.map((row) => {
+      const last = row.querySelector(".addr-full .addr-chunk:last-child") as HTMLElement;
+      const copy = row.querySelector('[aria-label="Copy contract address"]') as HTMLElement;
+      const addressBox = last.getBoundingClientRect();
+      const copyBox = copy.getBoundingClientRect();
+      return { gap: copyBox.left - addressBox.right, sameLine: copyBox.top < addressBox.bottom && copyBox.bottom > addressBox.top };
+    }));
+    for (const { gap, sameLine } of gaps) {
+      expect(sameLine).toBe(true);
+      expect(gap).toBeGreaterThanOrEqual(0);
+      expect(gap).toBeLessThanOrEqual(12);
     }
   }
 

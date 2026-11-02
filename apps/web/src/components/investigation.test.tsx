@@ -25,8 +25,8 @@ describe("investigation panel provider badge", () => {
         onRequest={() => undefined}
       />,
     );
-    expect(html).toContain("Meta Model API");
-    expect(html).toContain("muse-spark-1.3");
+    expect(html).toContain("Muse Spark 1.3 · Meta");
+    expect(html).not.toContain("Meta Model API");
     expect(html).toContain("The frozen evidence shows the transfer guard.");
     expect(html).not.toContain("Muse concluded at the step limit.");
   });

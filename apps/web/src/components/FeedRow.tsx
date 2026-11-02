@@ -1,12 +1,11 @@
 // Shared feed row (U-12, DX-1 §A3.2): one three-line design for both
 // the on-chain New pairs list and the DexScreener market list, at every
 // width. The row is a fixed grid: a 20 px lamp slot, the three content
-// lines, a 44 px copy slot and a 16 px chevron slot. Fixed slots keep
-// the copy and chevron x identical across rows. Line 1 carries the
+// lines, an inline 44 px copy button and a 16 px chevron slot. Line 1 carries the
 // symbol link, the name, the compact age, the owner-power chip and the
 // compact score text (no score bar: the chip replaces it, P9); line 2
 // carries DEX, liquidity and volume with no separator dots; line 3
-// carries the full EIP-55 token address alone, wrapping only between
+// carries the full EIP-55 token address and copy button, wrapping between
 // its 4-character groups. The whole row is a link stretched over the
 // row, so the row itself is the touch target; the copy button sits
 // above it (stopPropagation in CopyButton) so a copy click never
@@ -102,11 +101,12 @@ export function FeedRow({
               </Fragment>
             ))}
           </span>
+          {"\u2060"}
+          <span className="feed-actions">
+            <CopyButton value={checksummed} label={copyLabel} />
+          </span>
         </div>
       </div>
-      <span className="feed-actions">
-        <CopyButton value={checksummed} label={copyLabel} />
-      </span>
       <span className="feed-go" aria-hidden="true">
         ›
       </span>

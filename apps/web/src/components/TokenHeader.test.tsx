@@ -103,7 +103,7 @@ describe("token heading fallbacks", () => {
     expect(html).toContain('aria-label="Copy contract address"');
   });
 
-  test("the copy button sits on the label row ahead of the grouped value", () => {
+  test("the copy button sits immediately after the grouped value", () => {
     const html = renderToString(
       <TokenHeader
         address={address}
@@ -111,12 +111,12 @@ describe("token heading fallbacks", () => {
         liveEntry={null}
       />,
     );
-    expect(html).toContain("token-addr-top");
+    expect(html).toContain("token-addr-row");
     const copyAt = html.indexOf("copy-contract-address");
     const valueAt = html.indexOf("token-address-full");
     expect(copyAt).toBeGreaterThanOrEqual(0);
     expect(valueAt).toBeGreaterThanOrEqual(0);
-    expect(copyAt).toBeLessThan(valueAt);
+    expect(copyAt).toBeGreaterThan(valueAt);
   });
 
   test("live entry supplies the symbol and DEX age meta as unbreakable items", () => {

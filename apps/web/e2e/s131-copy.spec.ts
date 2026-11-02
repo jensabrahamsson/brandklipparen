@@ -143,13 +143,13 @@ test("s131_simple_mode_copy_has_no_dev_strings", async ({ page }) => {
   });
 
   await page.goto("/");
-  const startHtml = await page.locator("body").innerHTML();
+  const startHtml = await page.locator("body").innerText();
   expect(bannedIn(startHtml)).toEqual([]);
 
   // The offline feed notice is plain: no variable names, no file paths.
   const feedNotice = page.locator("section[aria-label='New tokens']");
   await expect(feedNotice).toContainText("unavailable");
-  expect(bannedIn(await feedNotice.innerHTML())).toEqual([]);
+  expect(bannedIn(await feedNotice.innerText())).toEqual([]);
 
   // Recent rows show a symbol or short title with labelled bars, and
   // the full address rides in the row meta (S-134).
@@ -168,8 +168,9 @@ test("s131_simple_mode_copy_has_no_dev_strings", async ({ page }) => {
   await mockToken(page);
   await page.goto("/#/token/" + ADDRESS);
   await expect(page.locator("details.customize")).toHaveCount(0);
-  const cantTell = page.locator("section[aria-label='What bytecode alone cannot tell you']");
+  const cantTell = page.locator("#cant-tell");
   await expect(cantTell).toBeVisible();
+  await cantTell.locator("summary").click();
   const questions = await cantTell.locator("li > div:first-child").allInnerTexts();
   expect(questions.length).toBeGreaterThan(0);
   for (const question of questions) {
@@ -187,28 +188,21 @@ test("s131_simple_mode_copy_has_no_dev_strings", async ({ page }) => {
   await expect(whyScore).not.toContainText("Template");
   await expect(whyScore).not.toContainText("deepening");
   await expect(whyScore).not.toContainText("Open in bytecode");
-  expect(bannedIn(await page.locator("body").innerHTML())).toEqual([]);
+  expect(bannedIn(await page.locator("body").innerText())).toEqual([]);
 
   // Stream view and the bot/API blocks stay Expert-only.
-  await expect(page.locator("section[aria-label='Stream view']")).toHaveCount(0);
-  await expect(page.getByText("Use this result in your bot")).toHaveCount(0);
-  await expect(page.getByText("Calibration report")).toHaveCount(0);
+  await expect(page.locator("section[aria-label='Stream view']")).toBeHidden();
+  await expect(page.getByText("Use this result in your bot")).toBeHidden();
+  await expect(page.getByText("Calibration report")).toBeHidden();
 });
 
-test("s131_expert_mode_keeps_relocated_detail", async ({ page }) => {
+test("s131_technical_details_keep_relocated_detail", async ({ page }) => {
   await mockToken(page);
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + ADDRESS);
   await expect(page.locator("details.customize")).toHaveCount(0);
-  // The Expert switch lives in the toolbar; one press reveals the
-  // relocated detail.
-  await page.getByTestId("expert-switch").click();
-
-  // The relocated detail still exists: stream, calibration, bot facts.
+  await expect(page.getByTestId("expert-switch")).toHaveCount(0);
+  await page.locator("details.tech-details > summary", { hasText: "Analysis tools" }).click();
   await expect(page.locator("section[aria-label='Stream view']")).toBeVisible();
-  await expect(page.getByText("Calibration report")).toBeVisible();
   await expect(page.getByText("Use this result in your bot")).toBeVisible();
-  // R2-6 (D-5): the prototype "contract gap" snippet copy is gone;
-  // Expert mode keeps the PC-offset evidence line in the merged card.
-  await expect(page.locator('section[aria-label="Why this score"] article')).toContainText("PC 0x64");
 });

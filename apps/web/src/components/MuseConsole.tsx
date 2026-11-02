@@ -19,6 +19,7 @@ import type {
   ProviderInfo,
   Signal,
 } from "../types.ts";
+import { modelDisplayLabel } from "../lib/providers.ts";
 import { AskMuse, exampleQuestionsForSlugs } from "./AskMuse.tsx";
 import { AssessmentPanel } from "./AssessmentPanel.tsx";
 import { ScanStatus } from "./ScanStatus.tsx";
@@ -154,10 +155,10 @@ export function MuseConsole({
     <section className="card muse-console" aria-label="Muse console" data-testid="muse-console">
       <div className="muse-head">
         <h2 className="muse-title">
-          <span aria-hidden="true">✦ </span>Muse · advisory
+          <span aria-hidden="true">✦ </span>Muse
         </h2>
         {modelId === null ? null : (
-          <span className="muse-console-model">{modelId}</span>
+          <span className="muse-console-model" title={modelId}>{modelDisplayLabel(modelId)}</span>
         )}
       </div>
       <div className="muse-actions">
@@ -273,7 +274,7 @@ function ChatOutput({
     return (
       <div>
         <p className="muse-result-label" style={{ margin: "0 0 8px" }}>
-          Ask · {chat.modelId}
+          Ask · <span title={chat.modelId}>{modelDisplayLabel(chat.modelId)}</span>
         </p>
         <ExplainSentences
           narrative={chat.answers}

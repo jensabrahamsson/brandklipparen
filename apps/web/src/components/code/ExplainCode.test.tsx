@@ -108,9 +108,9 @@ describe("explain code panel", () => {
     expect(html).toContain('role="status"');
     expect(html).toContain("Muse explanation ready: 1 summary, 3 notes.");
     expect(html).toContain("What this function does");
-    expect(html).toContain("Muse · ");
-    expect(html).toContain("muse-spark-1.3");
-    expect(html).toContain("AI explanation · does not change the score");
+    expect(html).toContain("Muse Spark 1.3 · Meta");
+    expect(html).toContain('title="muse-spark-1.3"');
+    expect(html).toContain("AI explanation · doesn&#x27;t change the score");
     expect(html).toContain("Ask again");
   });
 
@@ -139,9 +139,9 @@ describe("explain code panel", () => {
     const html = renderToString(
       <ExplainViewResults {...viewProps({ status: "invalid-output", staticEntries: [], readyMessage: null })} />,
     );
-    expect(html).toContain("cited code that isn&#x27;t there");
+    expect(html).toContain("cited code that isn&#x27;t here");
     expect(html).toContain("Try again");
-    expect(html).toContain("AI explanation · does not change the score");
+    expect(html).toContain("AI explanation · doesn&#x27;t change the score");
     expect(html).not.toContain("muse-note");
   });
 
@@ -153,7 +153,7 @@ describe("explain code panel", () => {
     const failed = renderToString(
       <ExplainViewResults {...viewProps({ status: "failed", staticEntries: [], readyMessage: null })} />,
     );
-    expect(failed).toContain("Muse didn&#x27;t answer. The code and evidence are unchanged.");
+    expect(failed).toContain("Muse didn&#x27;t answer.");
     expect(failed).toContain("Try again");
   });
 

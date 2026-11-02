@@ -5,7 +5,8 @@ export function PageFooter(): JSX.Element {
     <footer className="page-foot">
       <span>Scan before you swap</span>{" "}<span aria-hidden="true">·</span>{" "}
       <a href="#/about">About</a>{" "}<span aria-hidden="true">·</span>{" "}
-      <a href="https://github.com/jensabrahamsson/brandklipparen">GitHub</a>
+      <a href="https://github.com/jensabrahamsson/brandklipparen">GitHub</a>{" "}<span aria-hidden="true">·</span>{" "}
+      <a href="#/settings">API</a>
     </footer>
   );
 }

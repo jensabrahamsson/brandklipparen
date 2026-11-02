@@ -134,6 +134,57 @@ test("k020_valid_address_navigates_to_token_page", async ({ page }) => {
   await expect(page).toHaveURL(new RegExp(`#/token/${ADDRESS}`));
 });
 
+test("pasting a valid address starts analysis", async ({ page }) => {
+  await mockRest(page);
+  await page.goto("/");
+  await page.getByLabel("Contract address").evaluate((input, address) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", address);
+    input.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+  }, ADDRESS);
+  await expect(page).toHaveURL(new RegExp(`#/token/${ADDRESS}`));
+});
+
+test("paste button starts analysis for a valid clipboard address", async ({ page }) => {
+  await mockRest(page);
+  await page.goto("/");
+  await page.evaluate((address) => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => address } });
+  }, ADDRESS);
+  await page.getByRole("button", { name: "Paste" }).click();
+  await expect(page).toHaveURL(new RegExp(`#/token/${ADDRESS}`));
+});
+
+test("paste button reports invalid text and denied clipboard access", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => "invalid" } });
+  });
+  await page.getByRole("button", { name: "Paste" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Not a valid address.");
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { readText: async () => { throw new Error("denied"); } } });
+  });
+  await page.getByRole("button", { name: "Paste" }).click();
+  await expect(page.getByRole("alert")).toContainText("Paste not allowed");
+  expect(new URL(page.url()).hash).toBe("");
+});
+
+test("mobile paste and analyze controls remain side by side", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await page.goto("/");
+  const paste = await page.getByRole("button", { name: "Paste" }).boundingBox();
+  const analyze = await page.getByRole("button", { name: "Analyze" }).boundingBox();
+  expect(paste).not.toBeNull();
+  expect(analyze).not.toBeNull();
+  expect(paste!.width).toBeGreaterThanOrEqual(44);
+  expect(paste!.height).toBeGreaterThanOrEqual(44);
+  expect(analyze!.width).toBeGreaterThanOrEqual(44);
+  expect(analyze!.height).toBeGreaterThanOrEqual(44);
+  expect(paste!.x + paste!.width).toBeLessThanOrEqual(analyze!.x + 1);
+  expect(Math.abs(paste!.y - analyze!.y)).toBeLessThan(2);
+});
+
 test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
@@ -144,15 +195,13 @@ test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await expect(page.locator('section[aria-label="Combined score"] .score-dial .bandtag')).toHaveText("HIGH");
   await expect(page.getByText("Honeypot", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("91%", { exact: true })).toBeVisible();
-  await expect(page.getByText("What bytecode alone cannot tell you")).toBeVisible();
+  await expect(page.getByText(/What we can't tell/)).toBeVisible();
   // U-3 hero diet: gauge reasons hide at >=1100, so the claim sentence is
   // asserted inside "Why this score" where it always renders.
   const whyCard = page.locator('section[aria-label="Why this score"]');
   await expect(whyCard.getByText("The owner can stop you from selling.").first()).toBeVisible();
   await expect(whyCard).not.toContainText("v1.0.0");
-  await page.getByTestId("expert-switch").click();
-  await expect(page.getByTestId("expert-switch")).toHaveAttribute("aria-checked", "true");
-  await expect(whyCard).toContainText("v1.0.0");
+  await expect(page.getByTestId("expert-switch")).toHaveCount(0);
 });
 
 test("k305_console_shows_not_connected_when_nothing_configured", async ({ page }) => {

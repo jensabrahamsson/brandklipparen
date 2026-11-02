@@ -30,6 +30,57 @@ async function mockRest(page: Page): Promise<void> {
   });
 }
 
+test("pasting a valid address starts analysis", async ({ page }) => {
+  await mockRest(page);
+  await page.goto("/");
+  const address = "0x3141592653589793238462643383279502884197";
+  await page.getByLabel("Contract address").evaluate((input, value) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", value);
+    input.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: data }));
+  }, address);
+  await expect(page).toHaveURL(new RegExp(`#/token/${address}`));
+});
+
+test("clipboard button reports invalid or denied clipboard access", async ({ page }) => {
+  await mockRest(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: () => Promise.resolve("invalid") },
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Paste" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Not a valid address.");
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: () => Promise.reject(new Error("denied")) },
+    });
+  });
+  await page.getByRole("button", { name: "Paste" }).click();
+  await expect(page.getByRole("alert")).toContainText("Paste not allowed.");
+});
+
+test("clipboard button starts analysis for a valid address", async ({ page }) => {
+  await mockRest(page);
+  const address = "0x3141592653589793238462643383279502884197";
+  await page.addInitScript((value) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { readText: () => Promise.resolve(value) },
+    });
+  }, address);
+  await page.goto("/");
+  const paste = page.getByRole("button", { name: "Paste" });
+  const box = await paste.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await paste.click();
+  await expect(page).toHaveURL(new RegExp(`#/token/${address}`));
+});
+
 test("u11_try_chips_open_token_pages_with_no_typing", async ({ page }) => {
   await mockRest(page);
   await page.goto("/");
@@ -71,15 +122,15 @@ test("u11_stale_start_copy_and_chain_pill_are_gone", async ({ page }) => {
   // topbar. The footer links to About and carries no Animations switch.
   await expect(page.getByText("Ethereum mainnet", { exact: true })).toHaveCount(1);
   await expect(page.getByText("See what its owner can do to you, in plain English.")).toBeVisible();
-  await expect(page.locator(".page-foot")).toHaveText("Scan before you swap · About · GitHub");
+  await expect(page.locator(".page-foot")).toHaveText("Scan before you swap · About · GitHub · API");
   await expect(page.getByTestId("motion-switch")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Use your own API key" })).toHaveAttribute("href", "#/settings");
+  await expect(page.getByRole("link", { name: "API", exact: true })).toHaveAttribute("href", "#/settings");
 });
 
 test("u11_settings_hold_api_key_without_motion_switch", async ({ page }) => {
   await mockRest(page);
   await page.goto("/");
-  await page.getByRole("link", { name: "Use your own API key" }).click();
+  await page.getByRole("link", { name: "API", exact: true }).click();
   await expect(page).toHaveURL(/#\/settings$/);
   await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
   await expect(page.getByLabel("API key", { exact: true })).toBeVisible();

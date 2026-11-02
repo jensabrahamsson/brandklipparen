@@ -306,7 +306,7 @@ test("the footer stands and the deterministic header and lamps are untouched", a
   );
   await page.getByTestId(`explain-code-${ADD}`).click();
   await expect(page.getByText("Muse explanation ready: 1 summary, 3 notes.")).toHaveCount(1);
-  await expect(page.getByText("AI explanation · does not change the score").first()).toBeVisible();
+  await expect(page.getByText("AI explanation · doesn't change the score").first()).toBeVisible();
   const headAfter = await page.locator(".detail-head").innerHTML();
   expect(headAfter).toBe(headBefore);
   const lampsAfter = await page.locator(".code-lamp").evaluateAll((elements) =>
@@ -333,12 +333,12 @@ test("invalid output names the cause with no notes rendered", async ({ page }) =
   await mockRest(page, "invalid-output", counter);
   await page.goto(`/#/token/${ADDRESS}/plugins/decompiler/${ADD}/decompiled`);
   await page.getByTestId(`explain-code-${ADD}`).click();
-  await expect(page.getByText("cited code that isn't there")).toBeVisible();
+  await expect(page.getByText("cited code that isn't here")).toBeVisible();
   await expect(page.locator(".muse-note")).toHaveCount(0);
-  await expect(page.getByText("AI explanation · does not change the score").first()).toBeVisible();
+  await expect(page.getByText("AI explanation · doesn't change the score").first()).toBeVisible();
   // Trying again spends another request knowingly.
   await page.getByRole("button", { name: "Try again" }).click();
-  await expect(page.getByText("cited code that isn't there")).toBeVisible();
+  await expect(page.getByText("cited code that isn't here")).toBeVisible();
   expect(counter.posts).toBe(2);
 });
 

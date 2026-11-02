@@ -128,7 +128,7 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
   }
 
   // Submitting "hello world" turns the field border red, with the message
-  // linked through aria-describedby and a visible error icon.
+  // linked through aria-describedby.
   await page.getByPlaceholder("Paste contract address, 0x…").fill("hello world");
   await page.getByRole("button", { name: "Analyze" }).click();
   const search = page.locator("#address-search");
@@ -137,7 +137,6 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
   const describedBy = await search.getAttribute("aria-describedby");
   expect(describedBy).toBe("address-error");
   await expect(page.locator(`#${describedBy ?? ""}`)).toContainText("Invalid address");
-  await expect(page.locator(".field-error-icon")).toBeVisible();
 
   // Ghost buttons: the empty Clear control reads as off next to enabled ones.
   await page.goto(`/#/token/${ADDRESS}`);
@@ -145,9 +144,8 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
   const back = page.getByRole("button", { name: "← Search" });
   expect(await back.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
   expect(await back.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("solid");
-  // The Expert switch follows the brand tone instead of system blue.
-  const expert = page.getByTestId("expert-switch");
-  expect(await expert.evaluate((element) => getComputedStyle(element).accentColor)).not.toContain("0, 122, 255");
+  // No Expert view switch anywhere.
+  await expect(page.getByTestId("expert-switch")).toHaveCount(0);
   // R2-8: the Ask button always looks enabled, and the clear icon
   // is absent while the field is empty.
   const ask = page.getByTestId("ask-submit");

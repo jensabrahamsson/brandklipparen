@@ -180,11 +180,10 @@ function AddressFact({
         <Pictogram name={icon} size={24} />
       </span>
       <dt className="fact-label">{label}</dt>
-      <span className="fact-copy">
-        <CopyButton value={value} label={copyLabel} testId={copyTestId} />
-      </span>
-      <dd className="fact-value" data-testid={valueTestId}>
+      <dd className="fact-value fact-value-addr" data-testid={valueTestId}>
         {children}
+        {"\u2060"}
+        <CopyButton value={value} label={copyLabel} testId={copyTestId} />
       </dd>
       <dd className="fact-why">{why}</dd>
     </div>
@@ -236,6 +235,20 @@ function restOrigin(): string {
   return "";
 }
 
+export function BotTools({ target }: { readonly target: string }): JSX.Element {
+  return (
+    <details className="card bot-details">
+      <summary style={{ cursor: "pointer", fontSize: 17, fontWeight: 600 }}>Use this result in your bot</summary>
+      <div className="quiet" style={{ marginTop: 12 }}>API request</div>
+      <pre className="code">{`curl -H "x-api-key: $KEY" "${restOrigin()}/v1/analyze?address=${target}"`}</pre>
+      <div className="quiet">Analyze tool</div>
+      <pre className="code">{`analyze { address: "${target}" }`}</pre>
+      <div className="quiet">Assessment tool</div>
+      <pre className="code">{`request_assessment { address: "${target}" }`}</pre>
+    </details>
+  );
+}
+
 export function ContractFacts({
   result,
   expert,
@@ -251,9 +264,6 @@ export function ContractFacts({
   readonly apiKey: string;
   readonly availability: Availability;
 }): JSX.Element {
-  const apiExample = `curl -H "x-api-key: $KEY" "${restOrigin()}/v1/analyze?address=${result.target}"`;
-  const analyzeTool = `analyze { address: "${result.target}" }`;
-  const assessmentTool = `request_assessment { address: "${result.target}" }`;
   const [onchain, setOnchain] = useState<OnchainFeaturesState | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -499,19 +509,7 @@ export function ContractFacts({
           </div>
         ) : null}
       </section>
-      {expert ? (
-        <details className="card bot-details">
-          <summary style={{ cursor: "pointer", fontSize: 17, fontWeight: 600 }}>Use this result in your bot</summary>
-          <div className="quiet" style={{ marginTop: 12 }}>
-            API request
-          </div>
-          <pre className="code">{apiExample}</pre>
-          <div className="quiet">Analyze tool</div>
-          <pre className="code">{analyzeTool}</pre>
-          <div className="quiet">Assessment tool</div>
-          <pre className="code">{assessmentTool}</pre>
-        </details>
-      ) : null}
+      {expert ? <BotTools target={result.target} /> : null}
     </aside>
   );
 }

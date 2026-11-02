@@ -232,9 +232,9 @@ test("s122_no_motion_switch_anywhere", async ({ page }) => {
   // No switch in the token footer; the API key link remains available.
   await expect(page.getByTestId("motion-switch")).toHaveCount(0);
   await expect(page.getByRole("switch", { name: "Animations" })).toHaveCount(0);
-  await expect(page.locator(".page-foot")).toHaveText("Scan before you swap · About · GitHub");
+  await expect(page.locator(".page-foot")).toHaveText("Scan before you swap · About · GitHub · API");
   await expect(page.locator(".page-foot .foot-model")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Use your own API key" })).toHaveAttribute("href", "#/settings");
+  await expect(page.getByRole("link", { name: "API" })).toHaveAttribute("href", "#/settings");
 
   // Settings holds the API key field and no motion switch: motion
   // follows only the operating-system reduced-motion setting.

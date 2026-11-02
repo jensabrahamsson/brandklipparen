@@ -248,8 +248,8 @@ test("s134_token_page_header_sidebar_and_recent_show_full_address", async ({ pag
   // (UI v2 §3: label row with the copy icon, value below) with copy
   // controls that write the exact values.
   const facts = page.locator('aside[aria-label="Contract facts"]');
-  await expect(facts.locator('[data-testid="fact-contract-address"]')).toHaveText(C_TOKEN_A);
-  await expect(facts.locator('[data-testid="fact-pair-address"]')).toHaveText(C_PAIR_A);
+  await expect(facts.locator('[data-testid="fact-contract-address-value"]')).toHaveText(C_TOKEN_A);
+  await expect(facts.locator('[data-testid="fact-pair-address-value"]')).toHaveText(C_PAIR_A);
   await expect(facts).not.toContainText("0x5ab1…");
 
   // Keyboard copy from the header writes the exact address.
@@ -288,7 +288,7 @@ test("s134_contract_facts_wrap_and_nowrap_contract", async ({ page }) => {
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + TOKEN_A);
   const facts = page.locator('aside[aria-label="Contract facts"]');
-  await expect(facts.locator('[data-testid="fact-contract-address"]')).toHaveText(C_TOKEN_A);
+  await expect(facts.locator('[data-testid="fact-contract-address-value"]')).toHaveText(C_TOKEN_A);
 
   for (const viewport of [
     { width: 320, height: 568 },
@@ -312,7 +312,7 @@ test("s134_contract_facts_wrap_and_nowrap_contract", async ({ page }) => {
 
     // The address block reads as the exact 42 characters and wraps only
     // between groups: at most 2 lines, 3 on the narrowest phone.
-    const address = facts.locator('[data-testid="fact-contract-address"]');
+    const address = facts.locator('[data-testid="fact-contract-address-value"]');
     expect(((await address.textContent()) ?? "").length).toBe(42);
     const lines = await address.evaluate((element) => element.getClientRects().length);
     expect(lines, `address lines at ${viewport.width}px`).toBeLessThanOrEqual(viewport.width === 320 ? 3 : 2);

@@ -153,7 +153,8 @@ describe("muse console (W-3)", () => {
   test("console_labels_itself_and_stays_sentence_case", () => {
     const html = consoleHtml(EXPLAIN_HEALTH, EXPLAIN_ONLY);
     expect(html).toContain('aria-label="Muse console"');
-    expect(html).toContain("Muse · advisory");
+    expect(html).toContain(">Muse</h2>");
+    expect(html).not.toContain("Muse · advisory");
   });
 
   test("ask_form_names_the_configured_model_and_limits_length", () => {
@@ -185,7 +186,7 @@ describe("muse console (W-3)", () => {
     );
     expect(html).toContain("Ask about this token");
     expect(html).toContain("Sends your question to");
-    expect(html).toContain("muse-spark-1.3");
+    expect(html).toContain("Muse Spark 1.3 · Meta");
     expect(html).toContain("Not the address.");
     expect(html).toContain('maxLength="500"');
   });

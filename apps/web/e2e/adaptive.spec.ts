@@ -152,34 +152,23 @@ async function mockRest(page: Page, chatPosts: { count: number } | null = null):
   });
 }
 
-test("k034_expert_switch_persists_across_reload", async ({ page }) => {
+test("technical_details_open_without_a_mode_switch", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  // The Customize view is gone: no details.customize anywhere.
   await expect(page.locator("details.customize")).toHaveCount(0);
-  const expert = page.getByRole("switch", { name: "Expert view" });
-  // The toolbar owns the switch on the main view; the detail view owns
-  // its own copy under a separate test id.
-  await expect(page.getByTestId("expert-switch")).toBeVisible();
-  await expect(page.getByTestId("expert-detail-switch")).toHaveCount(0);
-  await expect(page.getByTestId("expert-detail")).toHaveCount(0);
-  await expert.click();
-  await expect(expert).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByTestId("expert-switch")).toHaveCount(0);
+  await expect(page.getByRole("switch", { name: "Expert view" })).toHaveCount(0);
+  await page.locator("details.tech-details > summary", { hasText: "Technical details" }).click();
   await expect(page.getByTestId("expert-detail")).toBeVisible();
   await page.reload();
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  await expect(page.getByRole("switch", { name: "Expert view" })).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByTestId("expert-detail")).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("brandklipparen-ui-mode"))).toBe("expert");
-  await page.getByRole("switch", { name: "Expert view" }).click();
-  await expect(page.getByTestId("expert-detail")).toHaveCount(0);
+  await expect(page.locator("details.tech-details > summary", { hasText: "Technical details" })).toBeVisible();
 });
 
 test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  await expect(page.getByTestId("expert-detail")).toHaveCount(0);
   const scoreSection = page.locator('section[aria-label="Combined score"]');
   // W-9 removed the hero's static score repeat, so the dial (1.7 s
   // count-up) and gauges (1.5 s) own these strings: wait for the
@@ -190,7 +179,7 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
   await expect(scoreSection.getByText("84", { exact: true })).toBeVisible();
   await expect(scoreSection).toContainText("91%");
   const simpleScore = await scoreSection.innerText();
-  await page.getByRole("switch", { name: "Expert view" }).click();
+  await page.locator("details.tech-details > summary", { hasText: "Technical details" }).click();
   await expect(page.getByTestId("expert-detail")).toContainText("0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF");
   await expect(page.getByTestId("expert-detail")).toContainText("0xabc");
   await expect(page.getByTestId("expert-selectors")).toContainText("0x44337ea1");
@@ -199,16 +188,15 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
   await expect(scoreSection.getByText("84", { exact: true })).toBeVisible();
   await expect(scoreSection).toContainText("91%");
   const expertScore = await scoreSection.innerText();
-  // The score numbers never move between modes; Expert only adds the
-  // calibration detail (S-131). W-9: the hero no longer repeats the
-  // score line, so the dial owns "84"/"HIGH" and the gauges own the
-  // percents and risk names.
+  // Opening technical details does not change the score or gauges (S-131).
+  // W-9: the hero no longer repeats the score line, so the dial owns
+  // "84"/"HIGH" and the gauges own the percents and risk names. The gauge
+  // reads "Bot pump" (SCORE-6), never "Bot-pump".
   for (const line of ["84", "HIGH", "Rug pull", "62%", "Honeypot", "91%", "Bot pump", "34%"]) {
     expect(simpleScore).toContain(line);
     expect(expertScore).toContain(line);
   }
-  expect(simpleScore).not.toContain("Calibration report");
-  expect(expertScore).toContain("Calibration report");
+  expect(expertScore).toBe(simpleScore);
 });
 
 test("k035_ask_field_persists_across_reload_and_clear_removes_it", async ({ page }) => {
@@ -253,6 +241,7 @@ test("k519_critical_finding_visible_with_unrelated_question", async ({ page }) =
   await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toHaveCount(0);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
   await expect(page.locator('section[aria-label="Why this score"]')).toContainText("Owner can block transfers");
+  await page.locator("details.board-tools > summary").click();
   await expect(page.getByTestId("plugin-tile-capability")).toBeVisible();
   await expect(page.getByTestId("plugin-tile-clone-match")).toBeVisible();
   // The section order never moves for a question (Option A): the overview

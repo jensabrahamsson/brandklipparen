@@ -190,16 +190,14 @@ describe("live tokens list", () => {
     expect(html).not.toContain('aria-label="Copy pair address"');
   });
 
-  test("u12_copy_and_chevron_ride_fixed_slots_never_under_the_address", () => {
+  test("copy_follows_the_full_address", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([NEW])} marketByToken={NO_MARKET} />);
-    // U-12 grid: one copy button per row in the fixed actions slot, one
-    // chevron, and the address line carries no button of its own.
     expect(html.match(/feed-actions/g)).toHaveLength(1);
     expect(html.match(/aria-label="Copy contract address"/g)).toHaveLength(1);
     expect(html.match(/feed-go/g)).toHaveLength(1);
     const line3 = (html.split("feed-line3")[1] ?? "").split("</div>")[0] ?? "";
     expect(line3).toContain(toChecksumAddress(NEW.tokenAddress).slice(0, 6));
-    expect(line3).not.toContain("<button");
+    expect(line3).toContain('aria-label="Copy contract address"');
     // The compact score text stays (the bar itself is hidden by CSS:
     // `.feed-score .segs` never paints, P9).
     expect(html).toContain('data-testid="risk-badge"');

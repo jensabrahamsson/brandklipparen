@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX 
 import { ApiError, analyzeToken, fetchAssessment, fetchHealth, fetchPlugins, requestInvestigation } from "../lib/api.ts";
 import { ExpertDetail } from "../components/ExpertDetail.tsx";
 import { PageFooter } from "../components/PageFooter.tsx";
-import { ExpertSwitch } from "../components/ExpertSwitch.tsx";
 import { PluginsPanel } from "../components/PluginsPanel.tsx";
 import type { PluginListEntry } from "../components/PluginsPanel.tsx";
 import { toPluginResultViews } from "../lib/plugins.ts";
@@ -15,8 +14,6 @@ import type { ExplainEvidenceEntry } from "../components/code/CodeView.tsx";
 import { copyForPluginId, slugForPluginId } from "../lib/pluginCopy.ts";
 import { buildSelectorNames } from "../lib/selectorNames.ts";
 import { planLayout } from "../lib/layout.ts";
-import { readStoredMode, writeStoredMode } from "../lib/uiMode.ts";
-import type { UiMode } from "../lib/uiMode.ts";
 import { fetchLiveTokens } from "../lib/liveTokens.ts";
 import type { LiveTokenEntry } from "../lib/liveTokens.ts";
 import { resolveTokenIdentity, textHasNonAscii, tokenDisplayText } from "../lib/tokenIdentity.ts";
@@ -37,7 +34,7 @@ import { FloorCard } from "../components/FloorCard.tsx";
 import { ScoreRing } from "../components/ScoreRing.tsx";
 import { LoadingNotice, TokenErrorCard, type TokenLoadError } from "../components/LoadingState.tsx";
 import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
-import { ContractFacts } from "../components/ContractFacts.tsx";
+import { BotTools, ContractFacts } from "../components/ContractFacts.tsx";
 import { Explain } from "../components/Explain.tsx";
 import type { AnalyzeResult, AssessmentState, HealthState, InvestigationState, InvestigationStep, ProviderInfo, RiskKind } from "../types.ts";
 import { RISK_SHORT } from "../lib/risk.ts";
@@ -88,7 +85,6 @@ export function TokenPage({
   const [investigation, setInvestigation] = useState<InvestigationState>({ status: "idle" });
   const [provider, setProvider] = useState<ProviderInfo>({ status: "loading" });
   const [plugins, setPlugins] = useState<readonly PluginListEntry[] | null>(null);
-  const [mode, setMode] = useState<UiMode>(() => readStoredMode());
   // The Ask field doubles as the priorities text (UI v2 §1.4, K-035): one
   // versioned `localStorage` key, read once at start-up, written on edit,
   // removed on clear. Typing only re-runs the local tile match.
@@ -348,10 +344,6 @@ export function TokenPage({
   }
 
   const detailActive = result !== null && result.kind === "assessed" && view.kind === "plugin";
-  const setStoredMode = (next: UiMode): void => {
-    setMode(next);
-    writeStoredMode(next);
-  };
   return (
     <div className="page">
       {detailActive ? null : (
@@ -359,7 +351,6 @@ export function TokenPage({
           <button type="button" className="button-ghost" onClick={onHome}>
             ← Search
           </button>
-          <ExpertSwitch mode={mode} onModeChange={setStoredMode} />
         </div>
       )}
       {result !== null && result.kind === "assessed" ? null : result === null && loadError === null ? (
@@ -387,11 +378,6 @@ export function TokenPage({
           result={result}
           plugins={plugins}
           view={view}
-          mode={mode}
-          onModeChange={(next) => {
-            setMode(next);
-            writeStoredMode(next);
-          }}
           question={question}
           onQuestionChange={(text) => {
             setQuestion(text);
@@ -413,7 +399,6 @@ export function TokenPage({
           apiKey={apiKey}
         />
       ) : null}
-      <a className="foot-settings" href="#/settings">Use your own API key</a>
       <PageFooter />
     </div>
   );
@@ -423,8 +408,6 @@ function AssessedView({
   result,
   plugins,
   view,
-  mode,
-  onModeChange,
   question,
   onQuestionChange,
   onQuestionClear,
@@ -441,8 +424,6 @@ function AssessedView({
 }: {
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
   readonly plugins: readonly PluginListEntry[] | null;
-  readonly mode: UiMode;
-  readonly onModeChange: (mode: UiMode) => void;
   readonly question: string;
   readonly onQuestionChange: (text: string) => void;
   readonly onQuestionClear: () => void;
@@ -571,8 +552,6 @@ function AssessedView({
         findings={detailResult?.findings ?? []}
         names={names}
         modelVersion={result.modelVersion}
-        mode={mode}
-        onModeChange={onModeChange}
         prev={position > 0 ? (board.allTiles[position - 1] ?? null) : null}
         next={position >= 0 ? (board.allTiles[position + 1] ?? null) : null}
         fn={view.fn}
@@ -621,11 +600,6 @@ function AssessedView({
             {calibrationNote(result.modelVersion) !== null ? (
               <p className="quiet" style={{ margin: "4px 0 0" }}>
                 {calibrationNote(result.modelVersion)}
-              </p>
-            ) : mode === "expert" ? (
-              <p className="quiet" style={{ margin: "4px 0 0" }}>
-                Calibration report: see the model card. The v1 REST response carries no calibration numbers, so none
-                are shown here.
               </p>
             ) : null}
             <div className="hero-gauges">
@@ -720,14 +694,12 @@ function AssessedView({
         result={result}
         plugins={plugins}
         address={address}
-        mode={mode}
         question={question}
         apiKey={apiKey}
         onchainAvailability={availability.onchain}
         sorted={sorted}
         liveEntry={liveEntry}
       />
-      {mode === "expert" ? <StreamView address={address} apiKey={apiKey} /> : null}
     </div>
   );
 }
@@ -752,7 +724,6 @@ export function OverviewSections({
   result,
   plugins,
   address,
-  mode,
   apiKey,
   onchainAvailability,
   question,
@@ -762,7 +733,6 @@ export function OverviewSections({
   readonly result: Extract<AnalyzeResult, { kind: "assessed" }>;
   readonly plugins: readonly PluginListEntry[] | null;
   readonly address: string;
-  readonly mode: UiMode;
   readonly apiKey: string;
   readonly onchainAvailability: Availability;
   readonly question: string;
@@ -828,7 +798,8 @@ export function OverviewSections({
         claims={result.explanation.claims}
         signals={sorted}
         templateVersion={result.explanation.templateVersion}
-        expert={mode === "expert"}
+        expert={false}
+        scoreFloorLabel={result.scoreFloor?.label}
         scoreFloor={result.scoreFloor}
         ownerState={result.ownerState}
         bandHigh={riskBand(result.score).word === "High"}
@@ -873,10 +844,11 @@ export function OverviewSections({
   // the board. Otherwise the facts stay beside the main column as a
   // static aside, so no column sits empty beside tall content.
   const hasSignals = result.signals.length > 0;
+  const mainSections = renderedSections.filter((sectionId) => sectionId !== "cant-tell");
   return (
     <div>
       <div className={`token-grid ${hasSignals ? "token-grid--side" : "token-grid--flat"}`}>
-        {renderedSections.map((sectionId, sectionIndex) => (
+        {mainSections.map((sectionId, sectionIndex) => (
           <div
             key={sectionId}
             data-section={sectionId}
@@ -885,18 +857,27 @@ export function OverviewSections({
             style={{ "--sec-i": sectionIndex + 1 } as CSSProperties}
           >
             {blocks[sectionId]}
-            {sectionId === "explanation" && mode === "expert" ? <ExpertDetail result={result} /> : null}
           </div>
         ))}
         <ContractFacts
           result={result}
-          expert={mode === "expert"}
+          expert={false}
           liveEntry={liveEntry}
           address={address}
           apiKey={apiKey}
           availability={onchainAvailability}
         />
       </div>
+      <details className="tech-details card">
+        <summary>Technical details</summary>
+        <ExpertDetail result={result} />
+      </details>
+      <details className="tech-details card">
+        <summary>Analysis tools</summary>
+        <StreamView address={address} apiKey={apiKey} />
+        <BotTools target={result.target} />
+      </details>
+      {blocks["cant-tell"]}
     </div>
   );
 }

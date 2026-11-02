@@ -37,7 +37,8 @@ describe("ask field (R2-8)", () => {
     expect(html).toContain('data-testid="ask-submit"');
     expect(html).not.toContain("aria-disabled");
     expect(html).toContain("Sends your question to");
-    expect(html).toContain("muse-spark-1.3");
+    expect(html).toContain("Muse Spark 1.3 · Meta");
+    expect(html).toContain('title="muse-spark-1.3"');
     expect(html).toContain("Not the address.");
     expect(html).not.toContain("<button disabled");
     expect(html).not.toContain('data-testid="ask-clear"');

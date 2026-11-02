@@ -14,6 +14,7 @@ import type { ExplainSource, ExplainState, RugState } from "../lib/api.ts";
 import type { ExplanationClaim, Signal } from "../types.ts";
 import { splitNarrative } from "../lib/investigation.ts";
 import { citationTarget } from "../lib/citationTarget.ts";
+import { modelDisplayLabel } from "../lib/providers.ts";
 
 export type ConsoleSentences = {
   readonly narrative: readonly string[];
@@ -98,6 +99,9 @@ function jumpToCantTell(): void {
   const target = document.getElementById("cant-tell");
   if (target === null) {
     return;
+  }
+  if (target instanceof HTMLDetailsElement) {
+    target.open = true;
   }
   target.scrollIntoView({ block: "start" });
   if (target instanceof HTMLElement) {
@@ -274,7 +278,7 @@ export function ExplainPanel({
     return (
       <div>
         <p className="muse-result-label" style={{ margin: "0 0 8px" }}>
-          Explain · {state.modelId}
+          Explain · <span title={state.modelId}>{modelDisplayLabel(state.modelId)}</span>
         </p>
         {state.narrative.length === 0 ? (
           <div>

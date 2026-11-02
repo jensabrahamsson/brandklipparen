@@ -62,8 +62,6 @@ function detail(state: BoardTile["state"], weight?: number): string {
       findings={FINDINGS}
       names={new Map()}
       modelVersion="1.0.1"
-      mode="simple"
-      onModeChange={() => undefined}
       prev={null}
       next={null}
     />,
@@ -105,8 +103,6 @@ describe("plugin detail provenance", () => {
         findings={FINDINGS}
         names={new Map()}
         modelVersion="1.0.1"
-        mode="simple"
-        onModeChange={() => undefined}
         prev={null}
         next={null}
       />,
@@ -128,8 +124,6 @@ describe("plugin detail provenance", () => {
         findings={FINDINGS}
         names={new Map()}
         modelVersion="1.0.1"
-        mode="simple"
-        onModeChange={() => undefined}
         prev={null}
         next={null}
       />,
@@ -173,8 +167,6 @@ describe("plugin detail header (D-7)", () => {
         findings={FINDINGS}
         names={new Map()}
         modelVersion="1.0.1"
-        mode="simple"
-        onModeChange={() => undefined}
         prev={null}
         next={null}
       />,
@@ -221,10 +213,13 @@ describe("plugin detail header (D-7)", () => {
     expect(html).not.toContain("All plugins");
   });
 
-  test("simple mode hides the plugin id from the provenance line", () => {
+  test("the provenance line hides the plugin id", () => {
     const html = detail("found-scored", 3);
-    expect(html).not.toContain("dev.brandklipparen.blacklist");
+    const provenance = html.slice(html.indexOf("detail-provenance"), html.indexOf("detail-provenance") + 300);
+    expect(provenance).not.toContain("dev.brandklipparen.blacklist");
     expect(html).toContain("Check v1.0.0");
+    // Raw signals stay available in a collapsed disclosure.
+    expect(html).toContain("Raw signals");
   });
 
   test("the desktop body splits evidence from an about aside", () => {
@@ -256,8 +251,6 @@ describe("plugin detail header (D-7)", () => {
         findings={[]}
         names={new Map()}
         modelVersion="1.0.1"
-        mode="simple"
-        onModeChange={() => undefined}
         prev={null}
         next={null}
       />,
@@ -284,8 +277,6 @@ describe("plugin detail header (D-7)", () => {
         findings={FINDINGS}
         names={new Map()}
         modelVersion="1.0.1"
-        mode="simple"
-        onModeChange={() => undefined}
         prev={null}
         next={null}
         availability={{ investigation: "unavailable", explain: "unavailable", chat: "unavailable", rug: "unavailable", explainCode: "unavailable", onchain: "unavailable" }}

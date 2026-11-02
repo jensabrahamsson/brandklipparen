@@ -239,9 +239,8 @@ test("plugin_detail_focuses_heading_sets_title_and_states_provenance", async ({ 
 test("plugin_detail_expert_shows_raw_payload", async ({ page }) => {
   await mockRest(page, []);
   await page.goto(`/#/token/${ADDRESS}/plugins/blacklist`);
-  await expect(page.getByTestId("detail-expert-raw")).toHaveCount(0);
-  await page.getByRole("switch", { name: "Expert view" }).click();
   const raw = page.getByTestId("detail-expert-raw");
+  await raw.locator("> summary").click();
   await expect(raw).toBeVisible();
   await expect(raw).toContainText("dev.brandklipparen.blacklist:blacklist");
   await expect(raw).toContainText("blacklist");

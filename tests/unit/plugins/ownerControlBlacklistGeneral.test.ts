@@ -10,6 +10,7 @@ import type { DetectorInput } from "../../../src/plugins/detector.ts";
 import { blacklistDetectorPlugin } from "../../../src/plugins/detectors/blacklist/index.ts";
 import type { Result } from "../../../src/domain/result.ts";
 import {
+  ADD,
   CALLDATALOAD,
   ISZERO,
   KECCAK,
@@ -140,6 +141,70 @@ describe("blacklist general transfer-path semantics", () => {
       },
     ]);
     expect(blacklistDetectorPlugin.detect(input)).toHaveLength(1);
+  });
+
+  // Computed-pointer hash layout: key and base words sit at a stack
+  // computed pointer (0x80 and 0x80+0x20), never at constant 0x00/0x20.
+  function computedPointerLoad(base = 3): number[] {
+    return [
+      CALLDATALOAD,
+      ...push1(0x80),
+      MSTORE,
+      ...push1(base),
+      ...push1(0x80),
+      ...push1(0x20),
+      ADD,
+      MSTORE,
+      ...push1(0x40),
+      ...push1(0x80),
+      KECCAK,
+      SLOAD,
+    ];
+  }
+
+  function computedPointerSetter(base = 3): number[] {
+    return [
+      ...ownerGuard(0, 200),
+      CALLDATALOAD,
+      CALLDATALOAD,
+      ...push1(0x80),
+      MSTORE,
+      ...push1(base),
+      ...push1(0x80),
+      ...push1(0x20),
+      ADD,
+      MSTORE,
+      ...push1(0x40),
+      ...push1(0x80),
+      KECCAK,
+      SSTORE,
+      STOP,
+    ];
+  }
+
+  test("computed-pointer mapping gate that reverts on a listed entry reports a finding", () => {
+    const input = inputFor([
+      { selector: SET_STATUS, body: computedPointerSetter() },
+      {
+        selector: TRANSFER,
+        body: [...computedPointerLoad(), ISZERO, ...branchOk(), ...revertRun, 0x5b, ...push1(2), SSTORE, STOP],
+      },
+    ]);
+    expect(blacklistDetectorPlugin.detect(input)).toHaveLength(1);
+  });
+
+  test("computed-pointer allowlist gate stays silent", () => {
+    // A set entry jumps straight to the transfer store; a clear entry
+    // falls through to the revert. That is an allowlist requirement,
+    // the opposite polarity of a list, so it never reports.
+    const input = inputFor([
+      { selector: SET_STATUS, body: computedPointerSetter() },
+      {
+        selector: TRANSFER,
+        body: [...computedPointerLoad(), ...branchOk(), ...revertRun, 0x5b, ...push1(2), SSTORE, STOP],
+      },
+    ]);
+    expect(blacklistDetectorPlugin.detect(input)).toEqual([]);
   });
 
   test("per-address limit that only arms a later amount check stays silent", () => {

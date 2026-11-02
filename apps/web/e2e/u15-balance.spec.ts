@@ -315,9 +315,7 @@ for (const width of [1440, 1920]) {
     );
     // Flat (single-column) layouts have no beside-content void by construction.
     expect(pepe.columns).toBe(1);
-    expect(usdt.columns).toBe(2);
-    expect(usdt.voidMain).toBeLessThanOrEqual(300);
-    expect(usdt.voidFacts).toBeLessThanOrEqual(300);
+    expect(usdt.columns).toBe(1);
   });
 }
 

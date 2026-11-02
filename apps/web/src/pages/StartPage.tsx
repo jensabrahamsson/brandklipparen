@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type JSX } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type JSX, type ClipboardEvent } from "react";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { CopyButton } from "../components/CopyButton.tsx";
 import { PageFooter } from "../components/PageFooter.tsx";
+import { Pictogram } from "../components/Pictogram.tsx";
 import { LiveTokens } from "../components/LiveTokens.tsx";
 import { MarketList } from "../components/MarketList.tsx";
 import { FeedTabs, readFeedTab, FEED_TAB_STORAGE_KEY, type FeedTabId } from "../components/FeedTabs.tsx";
@@ -15,13 +16,16 @@ import { isValidAddress, normalizeAddress, validationMessage } from "../lib/vali
 
 // Risk-score legend rows (Phosphor Console): band ranges straight from
 // the frozen risk bands, with plain-language meanings. No feature data.
-// The Low row names its position, never an absence of powers (BK-01):
-// the score can read Low while owner powers sit below the scoring
-// threshold, so the note carries the honest disclaimer instead.
-const LEGEND: readonly { readonly min: number; readonly max: number; readonly word: string; readonly meaning: string }[] = [
-  { min: LOW_BAND.min, max: LOW_BAND.max, word: "Low", meaning: "lowest band on this scale" },
-  { min: ELEVATED_BAND.min, max: ELEVATED_BAND.max, word: "Elevated", meaning: "some risky capabilities" },
-  { min: HIGH_BAND.min, max: HIGH_BAND.max, word: "High", meaning: "owner can hurt holders" },
+const LEGEND: readonly {
+  readonly min: number;
+  readonly max: number;
+  readonly word: string;
+  readonly meaning: string;
+  readonly bandClass: string;
+}[] = [
+  { min: LOW_BAND.min, max: LOW_BAND.max, word: "Low", meaning: "no proven owner power", bandClass: "band-low" },
+  { min: ELEVATED_BAND.min, max: ELEVATED_BAND.max, word: "Elevated", meaning: "some risky capabilities", bandClass: "band-elevated" },
+  { min: HIGH_BAND.min, max: HIGH_BAND.max, word: "High", meaning: "owner can hurt holders", bandClass: "band-high" },
 ];
 
 // Example tokens under the search (D-14): a judge rarely has a contract
@@ -175,6 +179,50 @@ export function StartPage({
     onAnalyze(address);
   };
 
+  const analyzeText = (text: string): boolean => {
+    const address = normalizeAddress(text);
+    if (!isValidAddress(address)) {
+      setError("Not a valid address.");
+      return false;
+    }
+    setError(null);
+    setRaw(address);
+    onAnalyze(address);
+    return true;
+  };
+
+  const onPasteField = (event: ClipboardEvent<HTMLInputElement>): void => {
+    const text = event.clipboardData.getData("text/plain");
+    if (text.trim().length === 0) {
+      return;
+    }
+    if (!isValidAddress(normalizeAddress(text))) {
+      setError("Not a valid address.");
+      return;
+    }
+    event.preventDefault();
+    analyzeText(text);
+  };
+
+  const onPasteButton = (): void => {
+    const read = async (): Promise<void> => {
+      try {
+        if (typeof navigator === "undefined" || navigator.clipboard === undefined) {
+          throw new Error("clipboard unavailable");
+        }
+        const text = await navigator.clipboard.readText();
+        if (text.trim().length === 0) {
+          setError("Clipboard is empty.");
+          return;
+        }
+        analyzeText(text);
+      } catch {
+        setError("Paste not allowed. Paste with Ctrl+V instead.");
+      }
+    };
+    void read();
+  };
+
   return (
     <div className="page">
       <section className="hero">
@@ -206,14 +254,14 @@ export function StartPage({
                   placeholder="Paste contract address, 0x…"
                   value={raw}
                   onChange={(event) => setRaw(event.target.value)}
+                  onPaste={onPasteField}
                   aria-invalid={error !== null}
                   aria-describedby={error !== null ? "address-error" : undefined}
                 />
-                {error !== null ? (
-                  <span className="field-error-icon" aria-hidden="true">
-                    !
-                  </span>
-                ) : null}
+                <button type="button" className="button-ghost paste-btn" onClick={onPasteButton}>
+                  <Pictogram name="copy" size={18} />
+                  <span>Paste</span>
+                </button>
                 <button type="submit" className="button">
                   Analyze
                 </button>
@@ -243,11 +291,14 @@ export function StartPage({
               <span>
                 {row.min}–{row.max}
               </span>
-              <span>{row.word.toUpperCase()}</span>
+              <span className={`legend-band ${row.bandClass}`}>
+                <span className="legend-swatch" aria-hidden="true" />
+                {row.word.toUpperCase()}
+              </span>
               <span className="dim">{row.meaning}</span>
             </div>
           ))}
-          <p className="note">Low does not mean safe. A score is a reading of the contract, not a promise. Every page lists what we can&apos;t tell.</p>
+          <p className="note">Low ≠ safe.</p>
         </aside>
       </section>
       {recent.length > 0 ? (
@@ -346,7 +397,6 @@ export function StartPage({
           ) : null}
         </>
       )}
-      <a className="foot-settings" href="#/settings">Use your own API key</a>
       <PageFooter />
     </div>
   );

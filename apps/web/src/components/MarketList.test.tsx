@@ -58,7 +58,7 @@ describe("market list rows", () => {
     expect(text).not.toContain("1 not in score");
     // SCORE-5: the feed carries no floor data, so the tooltip names
     // the extended count without claiming it is outside the score.
-    expect(html).toContain("1 more found by extended analysis");
+    expect(html).toContain("1 additional finding");
     expect(html).not.toContain("not in score");
     expect(html).not.toContain('data-testid="risk-badge"');
     expect(text).toContain(item().tokenAddress);

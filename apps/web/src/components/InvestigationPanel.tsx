@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import type { InvestigationState, InvestigationStep, Signal } from "../types.ts";
 import { splitNarrative } from "../lib/investigation.ts";
-import { providerDisplayName } from "../lib/providers.ts";
+import { modelDisplayLabel, providerDisplayName } from "../lib/providers.ts";
 import { Explain } from "./Explain.tsx";
 import { CoverageChip } from "./ExplainPanel.tsx";
 import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
@@ -232,7 +232,7 @@ export function InvestigationPanel({
           <p className="assessment-label">
             <span className="assessment-dot" aria-hidden="true" />
             <span>
-              Investigated with {providerDisplayName(state.provider)} · model {state.modelId}
+              {state.modelId === "muse-spark-1.3" ? null : `${providerDisplayName(state.provider)} · `}<span title={state.modelId}>{modelDisplayLabel(state.modelId)}</span>
             </span>
           </p>
           {state.forcedConclusion ? (

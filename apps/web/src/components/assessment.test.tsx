@@ -59,8 +59,8 @@ describe("assessment panel separation", () => {
         onRequest={() => undefined}
       />,
     );
-    expect(html).toContain("Meta Model API");
-    expect(html).toContain("muse-spark-1.3");
+    expect(html).toContain("Muse Spark 1.3 · Meta");
+    expect(html).not.toContain("Meta Model API");
   });
 
   test("design_review_not_configured_state_preserved", () => {

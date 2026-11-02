@@ -142,14 +142,13 @@ function assessedResult(): Extract<AnalyzeResult, { kind: "assessed" }> {
   };
 }
 
-function renderOverview(question: string, mode: "simple" | "expert" = "simple"): string {
+function renderOverview(question: string): string {
   const result = assessedResult();
   return renderToString(
     <OverviewSections
       result={result}
       plugins={PLUGINS}
       address={syntheticAddress(7)}
-      mode={mode}
       question={question}
       sorted={result.signals}
       liveEntry={null}
@@ -178,7 +177,9 @@ function expectedPlan(): readonly string[] {
   })
     .filter((sectionId) => sectionId !== "score")
     .map((sectionId) => (sectionId === "signals" ? "explanation" : sectionId))
-    .filter((sectionId, index, all) => all.indexOf(sectionId) === index);
+    .filter((sectionId, index, all) => all.indexOf(sectionId) === index)
+    // The can't-tell panel renders last, outside the grid.
+    .filter((sectionId) => sectionId !== "cant-tell");
 }
 
 describe("deterministic section order (W-8 option A)", () => {
@@ -230,8 +231,9 @@ describe("token grid areas (R2-7 D-8)", () => {
     expect(html).toContain("token-main");
     expect(html).toContain('data-section="plugin-findings"');
     expect(html).toContain("token-board");
-    expect(html).toContain('data-section="cant-tell"');
-    expect(html).toContain("token-cant");
+    // Can't-tell renders last, after the grid.
+    expect(html).toContain('id="cant-tell"');
+    expect(html.indexOf('id="cant-tell"')).toBeGreaterThan(html.indexOf('data-section="plugin-findings"'));
     // The board hosts container queries for its tiles.
     expect(html).toContain("plugin-board");
     // Facts sit beside main at desktop and below the board under 1100 px,
@@ -244,15 +246,17 @@ describe("token grid areas (R2-7 D-8)", () => {
   });
 });
 
-describe("expert mode detail (K-034)", () => {
-  test("expert_renders_the_expert_detail_section", () => {
-    const html = renderOverview("", "expert");
+describe("technical details disclosure", () => {
+  test("technical details render collapsed with the expert detail inside", () => {
+    const html = renderOverview("");
+    expect(html).toContain("Technical details");
     expect(html).toContain('data-testid="expert-detail"');
     expect(html).toContain("Raw response data as inert text.");
+    expect(html).not.toContain("Expert view");
   });
 
-  test("simple_mode_hides_the_expert_detail_section", () => {
-    expect(renderOverview("", "simple")).not.toContain('data-testid="expert-detail"');
+  test("no expert mode switch renders", () => {
+    expect(renderOverview("")).not.toContain("expert-switch");
   });
 });
 
@@ -268,7 +272,6 @@ describe("desktop grid balance (R3 D-13)", () => {
         result={noSignals}
         plugins={PLUGINS}
         address={syntheticAddress(7)}
-        mode="simple"
         question=""
         sorted={[]}
         liveEntry={null}

@@ -129,12 +129,12 @@ test.describe("mobile tap", () => {
   test("tooltips_toggle_on_tap", async ({ page }) => {
     await mockRest(page);
     await page.goto(`/#/token/${ADDRESS}`);
-    const trigger = page.getByTestId("explain-cant-tell");
+    const trigger = page.getByTestId("explain-score:combined");
     await expect(trigger).toBeVisible();
     await trigger.tap();
     const tooltip = page.locator('[role="tooltip"]');
     await expect(tooltip).toBeVisible();
-    expect(await tooltip.textContent()).toContain("What code can't tell");
+    expect(await tooltip.textContent()).toContain("Risk score");
     await trigger.tap();
     await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
   });

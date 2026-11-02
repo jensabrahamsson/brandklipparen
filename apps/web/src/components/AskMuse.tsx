@@ -7,6 +7,7 @@
 // through `aria-describedby` only then. The consent is one line, and the
 // clear icon renders only when the field is non-empty.
 import { useState, type FormEvent, type JSX } from "react";
+import { modelDisplayLabel } from "../lib/providers.ts";
 
 export function exampleQuestionsForSlugs(foundSlugs: readonly string[] | ReadonlySet<string>): readonly string[] {
   const found = new Set<string>(foundSlugs);
@@ -130,7 +131,7 @@ export function AskMuse({
         </p>
       ) : null}
       <p id="ask-consent" className="quiet muse-ask-consent" style={{ margin: "4px 0 0" }}>
-        Sends your question to {modelLabel}. Not the address.
+        Sends your question to <span title={modelLabel}>{modelDisplayLabel(modelLabel)}</span>. Not the address.
       </p>
       {examples.length === 0 ? null : (
         <div className="muse-examples" role="group" aria-label="Example questions">

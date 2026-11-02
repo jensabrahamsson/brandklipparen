@@ -48,39 +48,18 @@ test("control_hit_area_visual_boundary_and_states", async ({ page }) => {
   await page.goto("/#/token/" + ADDRESS);
   await expect(page.getByRole("img", { name: /Combined score 10 of 100/ })).toBeVisible();
 
-  // The Expert switch keeps a real 44x44 box on the toolbar.
-  const expert = page.getByTestId("expert-switch");
-  await expect(expert).toBeVisible();
-  const box = await expert.boundingBox();
-  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+  // No Expert switch; the Technical details summary keeps a 44 px box.
+  await expect(page.getByTestId("expert-switch")).toHaveCount(0);
+  const tech = page.locator("details.tech-details > summary", { hasText: "Technical details" });
+  await expect(tech).toBeVisible();
+  const box = await tech.boundingBox();
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
-
-  // The on-state wears the theme tone, never native system blue. The
-  // colour change settles over --dur-hover, so poll until it lands.
   const dim = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue("--dim").trim(),
   );
   expect(dim).toBe("#4fb27a");
-  await expect
-    .poll(() => expert.evaluate((element) => getComputedStyle(element).color))
-    .toBe("rgb(79, 178, 122)");
-  await expert.click();
-  await expect(expert).toHaveAttribute("aria-checked", "true");
-  await expect
-    .poll(() => expert.evaluate((element) => getComputedStyle(element).color))
-    .toBe("rgb(214, 255, 230)");
-  const onColor = await expert.evaluate((element) => getComputedStyle(element).color);
-  expect(onColor).not.toContain("0, 122, 255");
-
-  // Keyboard focus draws a visible halo around the whole hit area. Tab
-  // from Search lands on the switch, and Space flips it back.
-  await page.getByRole("button", { name: "← Search" }).focus();
-  await page.keyboard.press("Tab");
-  await expect.poll(() => expert.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
-  const outline = await expert.evaluate((element) => getComputedStyle(element).outlineStyle);
-  expect(outline).toBe("solid");
-  await page.keyboard.press("Space");
-  await expect(expert).toHaveAttribute("aria-checked", "false");
+  await tech.click();
+  await expect(page.getByTestId("expert-detail")).toBeVisible();
 
   // R2-8: the Ask button always looks enabled. Clicking it empty
   // focuses the field and shows the error hint; it still sends nothing.

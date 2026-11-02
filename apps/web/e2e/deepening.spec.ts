@@ -72,8 +72,7 @@ async function mockAnalyze(page: Page): Promise<void> {
 test("s100_stream_view_shows_analysis_before_deepening_status", async ({ page }) => {
   await mockAnalyze(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  // Stream view is Expert-only (S-131); the mechanics below are unchanged.
-  await page.getByTestId("expert-switch").click();
+  await page.locator("details.tech-details > summary", { hasText: "Analysis tools" }).click();
   await page.getByRole("button", { name: "Stream analysis" }).click();
   const analysis = page.getByTestId("stream-analysis");
   const deepening = page.getByTestId("stream-deepening");

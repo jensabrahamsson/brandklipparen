@@ -2206,6 +2206,132 @@ function mappingBaseAt(insns: readonly Instruction[], keccakIndex: number): numb
   return keyStore ? base : null;
 }
 
+// Computed-pointer hash layout: the key and base words sit at a stack
+// computed memory pointer (a DUP of the pointer plus 0x20), so no
+// constant 0x00/0x20 destination ever appears for the window proof. A
+// bounded forward stack simulation of the enclosing block resolves the
+// base word stored at pointer+0x20: only a constant word there, under a
+// 0x40-byte hash whose first word is not itself the same constant,
+// proves a base. Anything unresolved stays silent.
+type BlockAbs =
+  | { readonly kind: "const"; readonly value: bigint }
+  | { readonly kind: "sym"; readonly id: number; readonly add: bigint };
+
+function blockMappingBaseAt(
+  insns: readonly Instruction[],
+  keccakIndex: number,
+  isMember: (pc: number) => boolean = () => true,
+): number | null {
+  let start = 0;
+  for (let at = keccakIndex - 1, steps = 0; at >= 0 && steps < 200; at -= 1, steps += 1) {
+    const op = insns[at]?.opcode;
+    if (op === undefined) break;
+    if (op === 0x5b || op === 0x56 || op === 0x57 || op === 0xfd || op === 0xfe || op === 0x00 || op === 0xf3 || op === 0xff) {
+      start = at + 1;
+      break;
+    }
+    if (at === 0) start = 0;
+  }
+  // The base word may be pushed in the caller chunk that jumps into
+  // this block: start there and teleport across that one jump, stack
+  // intact, when a jump to this block's entry is found.
+  let teleportFrom = -1;
+  let teleportTo = -1;
+  if (start > 0 && insns[start - 1]?.opcode === 0x5b) {
+    const destPc = insns[start - 1]?.pc ?? -1;
+    for (let at = 0; at < insns.length; at += 1) {
+      if (insns[at]?.opcode !== 0x56) continue;
+      for (let back = at - 1, steps = 0; back >= 0 && steps < 4; back -= 1, steps += 1) {
+        const cand = insns[back];
+        if (cand === undefined) break;
+        if (cand.opcode >= 0x60 && cand.opcode <= 0x63 && cand.immediate !== undefined) {
+          let v = 0;
+          for (const byte of cand.immediate) v = v * 256 + byte;
+          if (v === destPc) teleportFrom = at;
+          break;
+        }
+        if (cand.opcode !== 0x80 && cand.opcode !== 0x90) break;
+      }
+      if (teleportFrom >= 0) break;
+    }
+    if (teleportFrom >= 0) {
+      teleportTo = start;
+      start = 0;
+      for (let at = teleportFrom - 1, steps = 0; at >= 0 && steps < 200; at -= 1, steps += 1) {
+        const op = insns[at]?.opcode;
+        if (op === undefined) break;
+        if (op === 0x5b || op === 0x56 || op === 0x57 || op === 0xfd || op === 0xfe || op === 0x00 || op === 0xf3 || op === 0xff) {
+          start = at + 1;
+          break;
+        }
+      }
+    }
+  }
+  let fresh = 1000;
+  const unknown = (): BlockAbs => Object.freeze({ kind: "sym", id: fresh++, add: 0n });
+  const stack: BlockAbs[] = [];
+  for (let i = 0; i < 24; i += 1) stack.push(Object.freeze({ kind: "sym", id: i, add: 0n }));
+  const mem = new Map<string, { readonly v: BlockAbs; readonly pc: number }>();
+  const keyOf = (v: BlockAbs): string => (v.kind === "const" ? `c${v.value}` : `s${v.id}+${v.add}`);
+  const plus32 = (v: BlockAbs): BlockAbs =>
+    v.kind === "const" ? Object.freeze({ kind: "const", value: v.value + 32n }) : Object.freeze({ kind: "sym", id: v.id, add: v.add + 32n });
+  const pop = (): BlockAbs => stack.pop() ?? unknown();
+  for (let at = start; at <= keccakIndex; at += 1) {
+    const insn = insns[at];
+    if (insn === undefined) return null;
+    const op = insn.opcode;
+    if (at === keccakIndex) {
+      const offset = pop();
+      const size = pop();
+      if (size.kind !== "const" || size.value !== 64n) return null;
+      const baseEntry = mem.get(keyOf(plus32(offset)));
+      const keyEntry = mem.get(keyOf(offset));
+      if (baseEntry === undefined || baseEntry.v.kind !== "const") return null;
+      if (!isMember(insns[at]?.pc ?? -1) || !isMember(baseEntry.pc)) return null;
+      if (keyEntry !== undefined && !isMember(keyEntry.pc)) return null;
+      const baseVal = baseEntry.v;
+      if (keyEntry !== undefined && keyEntry.v.kind === "const" && keyEntry.v.value === baseVal.value) return null;
+      if (baseVal.value < 0n || baseVal.value > 0xffffffffn) return null;
+      return Number(baseVal.value);
+    }
+    if (op === 0x5f) { stack.push(Object.freeze({ kind: "const", value: 0n })); continue; }
+    if (op >= 0x60 && op <= 0x7f) {
+      let v = 0n;
+      for (const byte of insn.immediate ?? []) v = v * 256n + BigInt(byte);
+      stack.push(Object.freeze({ kind: "const", value: v }));
+      continue;
+    }
+    if (op >= 0x80 && op <= 0x8f) { const n = op - 0x7f; stack.push(stack[stack.length - n] ?? unknown()); continue; }
+    if (op >= 0x90 && op <= 0x9f) {
+      const n = op - 0x8f; const top = stack.length - 1; const other = top - n;
+      if (top >= 0 && other >= 0) { const a = stack[top] as BlockAbs; stack[top] = stack[other] as BlockAbs; stack[other] = a; }
+      continue;
+    }
+    if (op === 0x01) {
+      const a = pop(); const b = pop();
+      if (a.kind === "const" && b.kind === "const") stack.push(Object.freeze({ kind: "const", value: a.value + b.value }));
+      else if (a.kind === "sym" && b.kind === "const") stack.push(Object.freeze({ kind: "sym", id: a.id, add: a.add + b.value }));
+      else if (a.kind === "const" && b.kind === "sym") stack.push(Object.freeze({ kind: "sym", id: b.id, add: b.add + a.value }));
+      else stack.push(unknown());
+      continue;
+    }
+    if (op === 0x52) { const offset = pop(); const value = pop(); mem.set(keyOf(offset), { v: value, pc: insn.pc }); continue; }
+    if (op === 0x51) { const offset = pop(); stack.push(mem.get(keyOf(offset))?.v ?? unknown()); continue; }
+    if (op === 0x56 && at === teleportFrom && teleportTo >= 0) {
+      pop();
+      at = teleportTo - 1;
+      teleportFrom = -1;
+      continue;
+    }
+    if (op === 0x56 || op === 0x57) return null;
+    const effect = v2EffectOf(op);
+    if (effect === null) return null;
+    for (let i = 0; i < effect.pops; i += 1) pop();
+    for (let i = 0; i < effect.pushes; i += 1) stack.push(unknown());
+  }
+  return null;
+}
+
 // Base slot of the mapping access at `accessPc` (an SLOAD or SSTORE whose
 // KECCAK256 sits within the slot window behind it), or null when the
 // base cannot be determined. Every pattern instruction must belong to the
@@ -2242,11 +2368,29 @@ export function mappingBaseNearAccess(
     if (candidate.opcode !== 0x20 || !isMember(candidate.pc)) {
       continue;
     }
-    const base = mappingBaseAt(insns, back);
+    // The block simulation runs only on extended-path calls (those
+    // carrying an interpreter slot lookup), so the scored v1 proof
+    // keeps its exact previous reach.
+    const simulated = slotOf === undefined ? null : blockMappingBaseAt(insns, back, isMember);
+    const base = mappingBaseAt(insns, back) ?? simulated;
     if (base === null) {
       return null;
     }
     return base;
+  }
+  // Wide fallback: post-hash masking or loop plumbing can push the
+  // slot hash further behind the access than the usual window. The
+  // first hash in the wider window still names the access slot.
+  for (let back = accessIndex - 1, steps = 0; back >= 0 && steps < 96; back -= 1, steps += 1) {
+    const candidate = insns[back];
+    if (candidate === undefined) {
+      break;
+    }
+    if (candidate.opcode !== 0x20 || !isMember(candidate.pc)) {
+      continue;
+    }
+    const simulatedWide = slotOf === undefined ? null : blockMappingBaseAt(insns, back, isMember);
+    return mappingBaseAt(insns, back) ?? simulatedWide;
   }
   return null;
 }

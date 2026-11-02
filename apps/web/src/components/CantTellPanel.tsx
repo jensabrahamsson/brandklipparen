@@ -1,20 +1,17 @@
 import type { JSX } from "react";
 import type { CantTellEntry } from "../types.ts";
 import { cantTellNeedsText, cantTellQuestionText } from "../lib/cantTellCopy.ts";
-import { Explain } from "./Explain.tsx";
+import { Pictogram } from "./Pictogram.tsx";
 
-// Can't-tell panel (K-021): dashed border, hatched fill, labelled outside
-// the score. It never feeds the score and says so. Entries render as
-// plain questions (S-131); the envelope keeps the stable slugs.
+// Can't-tell panel: last section on the token page, collapsed by
+// default. It never feeds the score.
 export function CantTellPanel({ entries }: { readonly entries: readonly CantTellEntry[] }): JSX.Element {
   return (
-    <section className="cant-tell" id="cant-tell" tabIndex={-1} aria-label="What bytecode alone cannot tell you">
-      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>
-        <span>What bytecode alone cannot tell you</span> <Explain explainKey="cant-tell" label="Can't-tell list" />
-      </h2>
-      <p className="muted" style={{ margin: "0 0 12px" }}>
-        These answers live outside the score and never change it.
-      </p>
+    <details className="cant-tell" id="cant-tell" tabIndex={-1}>
+      <summary className="cant-tell-summary">
+        <Pictogram name="canttell" size={20} />
+        <span>What we can&apos;t tell ({entries.length})</span>
+      </summary>
       {entries.length === 0 ? (
         <p className="muted" style={{ margin: 0 }}>
           Nothing is currently marked as unknowable for this token.
@@ -23,12 +20,14 @@ export function CantTellPanel({ entries }: { readonly entries: readonly CantTell
         <ul className="cant">
           {entries.map((entry) => (
             <li key={entry.question} style={{ marginBottom: 8 }}>
-              <div>{cantTellQuestionText(entry.question)}</div>
+              <div>
+                <Pictogram name="canttell" size={16} /> {cantTellQuestionText(entry.question)}
+              </div>
               <div className="quiet">Needs {cantTellNeedsText(entry.dataSource)}</div>
             </li>
           ))}
         </ul>
       )}
-    </section>
+    </details>
   );
 }

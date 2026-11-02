@@ -7,7 +7,6 @@
 // weight, prev/next and Expert raw. No HTML sink anywhere: every
 // contract string renders as React text only.
 import { useEffect, useRef, useState, type JSX } from "react";
-import { ExpertSwitch } from "../ExpertSwitch.tsx";
 import { Pictogram } from "../Pictogram.tsx";
 import { SchemaValue } from "../SchemaValue.tsx";
 import { DecompilerList } from "./DecompilerList.tsx";
@@ -29,7 +28,6 @@ import { ranStatusWord, temporalityLine } from "../../lib/pluginCopy.ts";
 import type { SelectorName } from "../../lib/selectorNames.ts";
 import { selectorDisplayName, selectorShortName } from "../../lib/selectorNames.ts";
 import { useTypewriter } from "../../lib/typewriter.ts";
-import type { UiMode } from "../../lib/uiMode.ts";
 
 function pluginsHref(address: string): string {
   return `#/token/${encodeURIComponent(address)}/plugins`;
@@ -326,8 +324,6 @@ export function PluginDetailView({
   findings,
   names,
   modelVersion,
-  mode,
-  onModeChange,
   prev,
   next,
   fn,
@@ -350,8 +346,6 @@ export function PluginDetailView({
   readonly findings: readonly PluginFindingView[];
   readonly names: ReadonlyMap<string, SelectorName>;
   readonly modelVersion: string;
-  readonly mode: UiMode;
-  readonly onModeChange: (mode: UiMode) => void;
   readonly prev: BoardTile | null;
   readonly next: BoardTile | null;
   // Route `<selector>` (UI v2 §1.3): the decompiler row to auto-expand.
@@ -394,7 +388,7 @@ export function PluginDetailView({
         ? tile.copy.foundLine(tile.payloads)
         : tileQuietBody(tile.copy, tile.state);
   const typed = useTypewriter(sentence);
-  const expert = mode === "expert";
+  const expert = false;
   // A deep-linked function row keeps focus: scrolling to top and
   // focusing the heading would pull the visitor away from the row the
   // route asked for. The document title still updates.
@@ -412,7 +406,6 @@ export function PluginDetailView({
         <a className="button-ghost detail-back" href={`#/token/${encodeURIComponent(address)}`}>
           ← Back to token
         </a>
-        <ExpertSwitch mode={mode} onModeChange={onModeChange} testId="detail-expert-switch" />
       </div>
       <nav className="detail-crumb" aria-label="Breadcrumb">
         <a href={`#/token/${encodeURIComponent(address)}`}>{symbol}</a>
@@ -546,9 +539,9 @@ export function PluginDetailView({
                 <h2>What this check can&apos;t tell you</h2>
                 <p className="detail-limits-text">{tile.copy.limits}</p>
               </section>
-              {!expert ? null : (
-                <section className="card detail-raw" aria-label="Expert raw" data-testid="detail-expert-raw">
-                  <h2>Expert raw</h2>
+              {(
+                <details className="card detail-raw" aria-label="Raw signals" data-testid="detail-expert-raw">
+                  <summary>Raw signals</summary>
                   {findings.length === 0 ? (
                     <p className="muted">No findings: no payload to show.</p>
                   ) : (
@@ -562,7 +555,7 @@ export function PluginDetailView({
                       </article>
                     ))
                   )}
-                </section>
+                </details>
               )}
             </div>
           </div>

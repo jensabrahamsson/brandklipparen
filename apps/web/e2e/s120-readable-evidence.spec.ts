@@ -293,14 +293,18 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   await expect(board.locator("a[data-tile-slug]")).toHaveCount(13);
   await expect(board.getByText("Found · High", { exact: true })).toHaveCount(0);
   await expect(board.getByText("Found · Medium", { exact: true })).toHaveCount(0);
+  const tools = board.locator("details.board-tools");
+  await expect(tools).not.toHaveAttribute("open", "");
+  await tools.locator("summary").click();
+  await expect(tools).toHaveAttribute("open", "");
   // Analysis tools read neutrally (R3 D-8): ran, with no severity.
   await expect(board.getByText("Ran", { exact: true })).toHaveCount(2);
   await expect(board.getByText("Ran · 1 function")).toHaveCount(1);
   await expect(board.getByText("Not found", { exact: true })).toHaveCount(10);
 
-  // Expert mode still shows every structured offset.
+  // Technical details show every structured offset.
   await expect(page.locator("details.customize")).toHaveCount(0);
-  await page.getByTestId("expert-switch").click();
+  await page.locator("details.tech-details > summary", { hasText: "Technical details" }).click();
   const selectors = page.getByTestId("expert-selectors");
   await expect(selectors.locator("li")).toHaveCount(15);
   await expect(selectors).toContainText("0x64");

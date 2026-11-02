@@ -699,6 +699,49 @@ a {
   line-height: 1.5;
 }
 
+.legend-band {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.legend-swatch {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.legend-band.band-low {
+  color: var(--low);
+}
+
+.legend-band.band-elevated {
+  color: var(--elevated);
+}
+
+.legend-band.band-high {
+  color: var(--high);
+}
+
+.paste-btn {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.chip {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
 /* Feed: terminal table */
 .feedhead {
   display: flex;
@@ -1005,20 +1048,18 @@ a.chip {
   min-width: 44px;
 }
 
-/* Feed row grid (U-12): lamp slot, content lines, copy slot, chevron
-   slot. Fixed slots keep the copy button and chevron x identical
-   across rows at every width. Tight padding and gaps keep rows within
-   130 px at 390 and 92 px at 1440. */
+/* Feed row grid: lamp, content and chevron. The copy button follows
+   the address inside the content column. */
 .feed-row {
   position: relative;
   background: var(--surface);
   border: 1px solid var(--edge);
   border-radius: var(--radius-row);
-  padding: 4px 12px;
+  padding: 2px 12px;
   min-width: 0;
   box-shadow: var(--elev-1);
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) 44px 16px;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
   column-gap: 12px;
   align-items: start;
   transition:
@@ -1045,10 +1086,8 @@ a.chip {
   animation: bk-settle var(--settle) var(--ease-out) 1;
 }
 
-/* U-12 grid slots: the lamp hangs in a fixed 20 px slot, the copy
-   button in a fixed 44 px slot and the chevron in a fixed 16 px slot.
-   All three lines share the content column's left edge by construction,
-   so no inset or absolute gutter hack is needed. */
+/* The lamp and chevron have fixed slots; all three text lines share
+   the content column's left edge. */
 .feed-lamp-slot {
   display: flex;
   justify-content: center;
@@ -1058,7 +1097,7 @@ a.chip {
 
 .feed-main {
   display: grid;
-  gap: 2px;
+  gap: 0;
   min-width: 0;
 }
 
@@ -1092,9 +1131,8 @@ a.chip {
 }
 
 .feed-actions {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
+  display: inline-flex;
+  vertical-align: middle;
 }
 
 .feed-name {
@@ -1211,7 +1249,7 @@ a.chip {
    are unchanged. No motion. */
 @media (max-width: 640px) {
   .feed-row {
-    padding: 4px 8px;
+    padding: 2px 8px;
     column-gap: 8px;
   }
 
@@ -1245,10 +1283,7 @@ a.chip {
 }
 
 .feed-line3 {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
+  display: block;
   font-size: 12px;
   line-height: 1.35;
   color: var(--dim);
@@ -1641,6 +1676,21 @@ a.chip {
   min-height: 44px;
 }
 
+/* Copy sits immediately after the address, same line. */
+.token-addr-row {
+  display: block;
+  min-width: 0;
+  padding-left: 2px;
+}
+
+.token-addr-row .addr-full {
+  min-width: 0;
+}
+
+.fact-value-addr {
+  display: block;
+}
+
 .token-addr-label {
   display: inline-flex;
   align-items: center;
@@ -1696,7 +1746,7 @@ a.chip {
      (phone technique) so each block takes its own grid area; the dial
      stays top-aligned, so no void survives beside it. */
   .score-ring-wrap {
-    grid-template-columns: minmax(0, 1fr) clamp(150px, 22vw, 220px);
+    grid-template-columns: minmax(0, 1fr) 150px;
     grid-template-areas:
       "verdict verdict"
       "powers dial"
@@ -1724,11 +1774,11 @@ a.chip {
     grid-area: dial;
     align-self: start;
     justify-self: end;
-    width: min(240px, 100%);
+    width: 150px;
   }
 
   .score-ring-wrap > .score-dial .num {
-    font-size: clamp(56px, 14vw, 84px);
+    font-size: 56px;
   }
 
   .score-ring-wrap .powers {
@@ -2837,7 +2887,7 @@ a.chip {
 }
 
 .fact-long {
-  grid-template-areas: "icon label side" "icon value value" "icon why why";
+  grid-template-areas: "icon label label" "icon value value" "icon why why";
 }
 
 .fact-icon {
@@ -3017,13 +3067,8 @@ a:focus-visible {
   outline-offset: 2px;
 }
 
-/* R2-7 (D-8): the facts card is a side column only at >=1100 px.
-   The plugin board and the can't-tell panel span the full page width
-   below the facts, so no column sits empty for thousands of pixels.
-   The DOM stays content-first (main, board, cant, facts): below
-   1100 px the visual order matches the DOM with the facts below the
-   board. Every area keeps min-width 0 so long addresses never push
-   the page wide. */
+/* Keep the overview in reading order and avoid empty side columns.
+   Every area can shrink so long addresses never push the page wide. */
 .token-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -3054,19 +3099,17 @@ a:focus-visible {
 
 @media (min-width: 1100px) {
   .token-grid {
-    grid-template-columns: minmax(0, 1fr) 340px;
-    grid-template-areas: "main facts" "board board" "cant cant";
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "main" "board" "cant" "facts";
   }
 
-  /* R3 D-13: with signals the facts ride beside the main column, so
-     the side column never reads as an 800 px void. Without signals
-     there is no side column: the facts span the full width with the
-     768 two-column fact rows. The facts stay static: a stuck aside
-     taller than the viewport covers the full-width board tiles sliding
-     under it at the row boundary, leaving dead controls (the spec
-     already says "not sticky"). */
   .token-grid--side > .token-facts {
-    align-self: start;
+    align-self: auto;
+  }
+
+  .contract-facts-list {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 24px;
   }
 
   .token-grid--flat {
@@ -3091,9 +3134,21 @@ a:focus-visible {
 .cant-tell {
   border: 1px dashed var(--cant-tell);
   border-radius: var(--radius-card);
-  padding: 20px;
+  padding: 16px 20px;
   background: var(--surface);
-  box-shadow: var(--elev-2);
+  margin-top: 20px;
+}
+
+.cant-tell-summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--dim);
+  list-style-position: outside;
 }
 
 .cant-tell ul {
@@ -3101,10 +3156,35 @@ a:focus-visible {
   padding: 0;
 }
 
-.cant-tell li::before {
-  content: "?? ";
-  color: var(--amber);
-  font-weight: 700;
+.tech-details {
+  margin-top: 20px;
+  padding: 16px 20px;
+}
+
+.tech-details > summary,
+.board-tools > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.board-tools {
+  margin-top: 16px;
+}
+
+.foot-links {
+  display: inline-flex;
+  gap: 16px;
+}
+
+.foot-links a {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .assessment-label {
@@ -4067,15 +4147,14 @@ a.button-ghost {
   }
 
   .search-row {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
   }
 
   .prompt .btn,
   .prompt .button {
-    grid-column: 1 / -1;
-    width: 100%;
-    margin: 8px 0 0;
-    padding: 12px;
+    width: auto;
+    margin: 0;
+    padding: 12px 8px;
   }
 }
 

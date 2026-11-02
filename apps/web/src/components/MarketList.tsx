@@ -90,7 +90,7 @@ function chipFor(item: MarketItem, recentByToken: ReadonlyMap<string, RecentAnal
           className="feed-chip"
           title={
             chip.extended > 0
-              ? `${chip.found} owner powers, ${chip.extended} more found by extended analysis`
+              ? `${chip.found} owner powers, ${chip.extended} additional finding${chip.extended === 1 ? "" : "s"}`
               : `${chip.found} owner powers`
           }
         >
@@ -99,7 +99,7 @@ function chipFor(item: MarketItem, recentByToken: ReadonlyMap<string, RecentAnal
         </span>
       );
     }
-    return <span className="feed-chip">◌ {chip.extended} by extended analysis</span>;
+    return <span className="feed-chip">◌ {chip.extended} finding{chip.extended === 1 ? "" : "s"}</span>;
   }
   if (chip.kind === "none") {
     return <span className="feed-chip feed-chip-dim">○ No owner power found</span>;

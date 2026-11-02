@@ -377,10 +377,10 @@ export function PluginBoard({
         />
       ) : null}
       {model.toolTiles.length === 0 ? null : (
-        <>
-          <h3 className="board-group">Analysis tools</h3>
+        <details className="board-tools">
+          <summary>Analysis tools</summary>
           <div className="plugin-grid">{renderTiles(model.toolTiles, model.ownerTiles.length)}</div>
-        </>
+        </details>
       )}
     </section>
   );

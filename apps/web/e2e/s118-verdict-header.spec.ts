@@ -129,8 +129,7 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     // field lives in the Muse console under the hero.
     await expect(page.locator("details.customize")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "← Search" })).toBeVisible();
-    await expect(page.getByRole("switch", { name: "Expert view" })).toBeVisible();
-    await expect(page.getByTestId("expert-switch")).toHaveAttribute("aria-checked", "false");
+    await expect(page.getByTestId("expert-switch")).toHaveCount(0);
     await expect(page.getByLabel("Ask about this token")).toBeVisible();
 
     // S-132: verdict copy sits near the top under the token meta with
@@ -161,15 +160,8 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     }
     expect(reached).toBe(true);
 
-    // The Expert switch persists in local storage and restores on reload
-    // (K-034, covered in full by adaptive.spec.ts).
-    await page.getByRole("switch", { name: "Expert view" }).click();
-    await expect(page.getByTestId("expert-detail")).toBeVisible();
-    await expect
-      .poll(() => page.evaluate(() => localStorage.getItem("brandklipparen-ui-mode")))
-      .toBe("expert");
-    await page.reload();
-    await expect(page.getByTestId("expert-switch")).toHaveAttribute("aria-checked", "true");
+    // Technical details open with one click, no mode switch.
+    await page.locator("details.tech-details > summary", { hasText: "Technical details" }).click();
     await expect(page.getByTestId("expert-detail")).toBeVisible();
   }
 });
