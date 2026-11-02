@@ -84,6 +84,31 @@ const TYPES = {
 const HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer",
   "transfer-encoding", "upgrade", "host", "content-length"]);
 
+// Public access assets: same-origin files served before the access
+// cookie so the access page renders under the strict CSP
+// (style-src 'self', no inline style or script).
+const ACCESS_CSS_PATH = "/__access/access.css";
+const ACCESS_LOGO_PATH = "/__access/logo.svg";
+const ACCESS_CSS = `:root{color-scheme:dark;--void:#010402;--glass:#03110a;--glass-2:#062016;--phosphor:#8dffb6;--phosphor-hi:#d6ffe6;--dim:#4fb27a;--edge:#2e7a4f;--amber:#ffc14d}` + "\n" +
+  `*{box-sizing:border-box}` + "\n" +
+  `html{background:var(--void)}` + "\n" +
+  `body{margin:0;min-height:100vh;padding:24px 16px;background:var(--void);color:var(--phosphor);font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:16px;line-height:1.5}` + "\n" +
+  `main{max-width:34rem;margin:10vh auto 0;padding:24px;background:var(--glass);border:1px solid var(--edge);border-radius:14px}` + "\n" +
+  `.brandrow{display:flex;align-items:center;gap:12px}` + "\n" +
+  `.brandrow img{width:40px;height:40px;border-radius:8px}` + "\n" +
+  `h1{margin:0;color:var(--phosphor-hi);font-size:1.5rem;line-height:1.2;letter-spacing:0.02em}` + "\n" +
+  `.sub{margin:4px 0 0;color:var(--dim);font-size:0.95rem}` + "\n" +
+  `p{color:var(--phosphor)}` + "\n" +
+  `label{display:block;margin-top:16px;color:var(--phosphor-hi)}` + "\n" +
+  `input,button{font:inherit}` + "\n" +
+  `input{display:block;width:100%;min-height:48px;margin-top:8px;padding:12px;background:var(--void);color:var(--phosphor-hi);border:1px solid var(--dim);border-radius:6px}` + "\n" +
+  `button{display:inline-block;min-width:48px;min-height:48px;margin-top:16px;padding:12px 24px;background:var(--glass-2);color:var(--phosphor-hi);border:1px solid var(--dim);border-radius:6px;cursor:pointer}` + "\n" +
+  `button:hover{background:var(--glass)}` + "\n" +
+  `input:focus-visible,button:focus-visible{outline:3px solid var(--phosphor-hi);outline-offset:2px}` + "\n" +
+  `p[role="alert"]{color:var(--amber);border:1px solid var(--amber);border-radius:6px;padding:8px 12px}` + "\n" +
+  `@media (max-width:400px){body{padding:16px 12px}main{margin-top:6vh;padding:20px 16px}}` + "\n";
+const ACCESS_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="40" height="40"><title>Brandklipparen mark</title><rect width="120" height="120" rx="26" fill="#03110a"/><g transform="translate(10 10)"><path d="M40 30 L48 8 L56 25 L64 27 L58 66 L66 96 L24 96 Q26 56 40 30 Z" fill="#4fb27a"/><path d="M56 25 L64 27 L90 55 L92 65 L84 71 L70 65 L58 66 L52 44 Z" fill="#8dffb6"/><path d="M62 37 L68 40 L62 43 Z" fill="#010402"/></g></svg>` + "\n";
+
 // ---------- access gate ----------
 function digest(value) {
   return createHash("sha256").update(String(value), "utf8").digest();
@@ -139,23 +164,12 @@ function accessPage(message) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Brandklipparen — judge preview</title>
-<style>
-:root{color-scheme:dark;--void:#010402;--glass:#03110a;--phosphor:#8dffb6;--phosphor-hi:#d6ffe6;--dim:#4fb27a;--edge:#2e7a4f}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;padding:24px;background:var(--void);color:var(--phosphor);font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
-main{max-width:34rem;margin:12vh auto 0;padding:24px;background:var(--glass);border:1px solid var(--edge);border-radius:14px}
-h1{color:var(--phosphor-hi);font-size:1.5rem;line-height:1.2}
-label{display:block;margin-top:16px;color:var(--phosphor-hi)}
-input,button{min-height:44px;min-width:44px;font:inherit}
-input{width:100%;margin-top:8px;padding:10px;background:var(--void);color:var(--phosphor-hi);border:1px solid var(--dim);border-radius:6px}
-button{margin-top:16px;padding:10px 20px;background:var(--glass);color:var(--phosphor-hi);border:1px solid var(--dim);border-radius:6px;cursor:pointer}
-input:focus-visible,button:focus-visible{outline:2px solid var(--phosphor);outline-offset:2px}
-</style>
+<title>Brandklipparen</title>
+<link rel="stylesheet" href="${ACCESS_CSS_PATH}">
 </head>
 <body>
 <main>
-<h1>Brandklipparen — judge preview</h1>
+<div class="brandrow"><img src="${ACCESS_LOGO_PATH}" alt="" width="40" height="40"><div><h1>Brandklipparen</h1><p class="sub">contract risk scanner · judge preview</p></div></div>
 <p>Enter the access code from the submission notes.</p>
 ${note}
 <form method="post" action="/access">
@@ -167,6 +181,23 @@ ${note}
 </body>
 </html>
 `;
+}
+function serveAccessAsset(req, res) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.writeHead(405, { allow: "GET, HEAD" });
+    res.end();
+    return 405;
+  }
+  const isCss = (req.url ?? "").split("?")[0] === ACCESS_CSS_PATH;
+  const body = isCss ? ACCESS_CSS : ACCESS_LOGO_SVG;
+  res.writeHead(200, {
+    ...STATIC_HEADERS,
+    "content-type": isCss ? "text/css; charset=utf-8" : "image/svg+xml",
+    "cache-control": "public, max-age=31536000, immutable",
+  });
+  if (req.method === "HEAD") res.end();
+  else res.end(body);
+  return 200;
 }
 function serveAccessPage(res, status, message, retryAfterSec) {
   const headers = {
@@ -620,6 +651,10 @@ function route(req, res) {
       }
     }
     proxy(req, res, anonymous, (status) => finish(status, anonymous));
+    return;
+  }
+  if (path === ACCESS_CSS_PATH || path === ACCESS_LOGO_PATH) {
+    finish(serveAccessAsset(req, res), undefined);
     return;
   }
   if (req.method === "GET" || req.method === "HEAD") {

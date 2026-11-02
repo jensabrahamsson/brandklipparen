@@ -114,8 +114,9 @@ test("access page is shown for the UI and keyless /v1 without a cookie", async (
   const ui = await get("/", { ip: "203.0.113.10" });
   assert.equal(ui.status, 401);
   const uiBody = await ui.text();
-  assert.match(uiBody, /<title>Brandklipparen — judge preview<\/title>/);
-  assert.match(uiBody, /<h1>Brandklipparen — judge preview<\/h1>/);
+  assert.match(uiBody, /<title>Brandklipparen<\/title>/);
+  assert.match(uiBody, /<h1>Brandklipparen<\/h1>/);
+  assert.match(uiBody, /contract risk scanner · judge preview/);
   assert.match(uiBody, /Enter the access code from the submission notes\./);
   assert.match(uiBody, /<label for="code">Access code<\/label>/);
   assert.match(uiBody, /action="\/access"/);
@@ -273,6 +274,39 @@ test("BK_JUDGE_API_KEY (singular) is accepted like a personal key", async () => 
     child.kill("SIGTERM");
     await new Promise((done) => singleUpstream.close(done));
   }
+});
+
+test("access page uses an external stylesheet with no inline style or script", async () => {
+  const page = await get("/", { ip: "203.0.113.80" });
+  assert.equal(page.status, 401);
+  const body = await page.text();
+  assert.match(body, /<link rel="stylesheet" href="\/__access\/access\.css">/);
+  assert.doesNotMatch(body, /<style/i);
+  assert.doesNotMatch(body, /<script/i);
+  assert.doesNotMatch(body, /style=/i);
+  assert.match(body, /<img src="\/__access\/logo\.svg"/);
+  const csp = page.headers.get("content-security-policy") ?? "";
+  assert.ok(csp.includes("style-src 'self'"), "CSP keeps style-src 'self'");
+  assert.ok(!csp.includes("unsafe-inline"), "CSP has no unsafe-inline");
+});
+
+test("access stylesheet and logo are served with cache headers before the cookie", async () => {
+  for (const path of ["/__access/access.css", "/__access/logo.svg"]) {
+    const res = await get(path, { ip: "203.0.113.81" });
+    assert.equal(res.status, 200);
+    const cache = res.headers.get("cache-control") ?? "";
+    assert.match(cache, /public/);
+    assert.match(cache, /max-age=/);
+  }
+  const css = await get("/__access/access.css", { ip: "203.0.113.81" });
+  assert.match(css.headers.get("content-type") ?? "", /text\/css/);
+  const cssBody = await css.text();
+  assert.match(cssBody, /--phosphor:#8dffb6/);
+  assert.match(cssBody, /--void:#010402/);
+  assert.doesNotMatch(cssBody, /transform|transition|animation/i);
+  const logo = await get("/__access/logo.svg", { ip: "203.0.113.81" });
+  assert.match(logo.headers.get("content-type") ?? "", /image\/svg\+xml/);
+  assert.match(await logo.text(), /<svg/);
 });
 
 test("edge refuses to start without BK_ACCESS_CODE", async () => {
