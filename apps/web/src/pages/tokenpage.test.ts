@@ -247,7 +247,7 @@ describe("verdict caret takes the risk colour (S-132)", () => {
 describe("error copy (design review P1-14)", () => {
   test("design_review_maps_401_429_5xx_to_useful_text", () => {
     expect(errorCopy(new ApiError("auth", 401, "Unauthorized")).title).toContain("API key");
-    expect(errorCopy(new ApiError("rate", 429, "Too many")).title).toContain("Rate limited");
+    expect(errorCopy(new ApiError("rate", 429, "Too many")).title).toContain("Too many requests.");
     expect(errorCopy(new ApiError("boom", 503, "Down")).title).toContain("down");
     expect(errorCopy(new ApiError("validation-error", 400, "Invalid address: nope."))).toMatchObject({
       title: "Analysis failed.",
@@ -263,5 +263,32 @@ describe("error copy (design review P1-14)", () => {
       expect(detail).not.toContain("REST");
       expect(detail).not.toContain("contract gap");
     }
+  });
+
+  test("u13_error_copy_has_no_codes_and_no_raw_message", () => {
+    const cases = [
+      new ApiError("auth", 401, "Unauthorized"),
+      new ApiError("rate", 429, "Too many requests (429): slow down."),
+      new ApiError("boom", 503, "Down"),
+      new ApiError("validation-error", 400, "Invalid address: nope."),
+      new Error("Something unexpected happened."),
+    ];
+    for (const reason of cases) {
+      const copy = errorCopy(reason);
+      expect(copy.title).not.toMatch(/\d{3}/);
+      expect(copy.detail).not.toMatch(/\d{3}/);
+      expect(copy.detail).not.toContain("Too many requests (429)");
+      expect(copy.detail).not.toContain("Invalid address: nope.");
+      expect(copy.detail).not.toContain("Something unexpected happened.");
+      expect(copy.detail).not.toContain("Unauthorized");
+    }
+  });
+
+  test("u13_only_the_key_error_skips_auto_retry", () => {
+    expect(errorCopy(new ApiError("auth", 401, "Unauthorized")).retryable).toBe(false);
+    expect(errorCopy(new ApiError("rate", 429, "Too many")).retryable).toBe(true);
+    expect(errorCopy(new ApiError("boom", 503, "Down")).retryable).toBe(true);
+    expect(errorCopy(new ApiError("validation-error", 400, "Bad")).retryable).toBe(true);
+    expect(errorCopy(new Error("nope")).retryable).toBe(true);
   });
 });

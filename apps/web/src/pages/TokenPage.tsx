@@ -33,6 +33,7 @@ import { CantTellPanel } from "../components/CantTellPanel.tsx";
 import { ExplanationList } from "../components/ExplanationList.tsx";
 import { Gauge } from "../components/Gauge.tsx";
 import { ScoreRing } from "../components/ScoreRing.tsx";
+import { LoadingNotice, TokenErrorCard, type TokenLoadError } from "../components/LoadingState.tsx";
 import { truncateHash, useRingOutOfView } from "../lib/summaryStrip.ts";
 import { ContractFacts } from "../components/ContractFacts.tsx";
 import { Explain } from "../components/Explain.tsx";
@@ -68,7 +69,7 @@ export function TokenPage({
   readonly onHome: () => void;
 }): JSX.Element {
   const [result, setResult] = useState<AnalyzeResult | null>(null);
-  const [loadError, setLoadError] = useState<{ title: string; detail: string } | null>(null);
+  const [loadError, setLoadError] = useState<TokenLoadError | null>(null);
   const [assessment, setAssessment] = useState<AssessmentState>({ status: "idle" });
   const [investigation, setInvestigation] = useState<InvestigationState>({ status: "idle" });
   const [provider, setProvider] = useState<ProviderInfo>({ status: "loading" });
@@ -260,6 +261,12 @@ export function TokenPage({
     }
   }, [view]);
 
+  // Stable retry for the error card countdown: a new identity every
+  // render would restart the auto-retry timer before it ever fires.
+  const retryAnalysis = useCallback(() => {
+    setAttempt((value) => value + 1);
+  }, []);
+
   const requestAssessment = useCallback(() => {
     setAssessment({ status: "loading" });
     const key = apiKey.length === 0 ? null : apiKey;
@@ -341,27 +348,16 @@ export function TokenPage({
           <ExpertSwitch mode={mode} onModeChange={setStoredMode} />
         </div>
       )}
-      {result !== null && result.kind === "assessed" ? null : (
-        <p role="status" className="muted numeric" style={{ margin: "0 0 12px" }}>
-          {result === null && loadError === null
-            ? "Analyzing bytecode…"
-            : loadError !== null
-              ? "Analysis failed."
-              : `Analysis complete${elapsed === null ? "" : ` in ${elapsed.toFixed(1)} s`}.`}
+      {result !== null && result.kind === "assessed" ? null : result === null && loadError === null ? (
+        <LoadingNotice />
+      ) : loadError !== null ? null : (
+        <p className="muted numeric" style={{ margin: "0 0 12px" }}>
+          {`Analysis complete${elapsed === null ? "" : ` in ${elapsed.toFixed(1)} s`}.`}
         </p>
       )}
       {loadError !== null ? (
-        <div className="card" role="alert">
-          <p style={{ marginTop: 0 }}>
-            <strong>{loadError.title}</strong>
-          </p>
-          <p className="muted">{loadError.detail}</p>
-          <button type="button" className="button" onClick={() => setAttempt((value) => value + 1)}>
-            Retry
-          </button>
-        </div>
+        <TokenErrorCard key={attempt} error={loadError} onRetry={retryAnalysis} />
       ) : null}
-      {result === null && loadError === null ? <LoadingNotice /> : null}
       {result !== null && result.kind === "no-contract" ? (
         <div className="card" role="status">
           <p style={{ marginTop: 0 }}>
@@ -846,45 +842,43 @@ export function OverviewSections({
   );
 }
 
-function LoadingNotice(): JSX.Element {
-  return (
-    <div className="card" role="status" style={{ marginBottom: 20 }}>
-      <p className="muted" style={{ margin: 0 }}>
-        Analyzing… the deterministic result appears here when ready.
-      </p>
-      <div aria-hidden="true">
-        <span className="skel" />
-        <span className="skel" />
-        <span className="skel" />
-      </div>
-    </div>
-  );
-}
-
-// Design review P1-14: HTTP failures map to useful copy with a retry path.
-export function errorCopy(reason: unknown): { title: string; detail: string } {
+// Design review P1-14, R3 D-16: HTTP failures map to one plain sentence
+// of cause with a retry path. Never a status code and never the raw
+// message: the card shows copy only, and the detail stays generic.
+export function errorCopy(reason: unknown): TokenLoadError {
   if (reason instanceof ApiError) {
     if (reason.status === 401) {
       return {
         title: "Analysis needs an API key.",
-        detail: "The request was rejected (401): check the API key and try again.",
+        detail: "Add the API key and try again.",
+        retryable: false,
       };
     }
     if (reason.status === 429) {
       return {
-        title: "Rate limited.",
-        detail: "Too many requests (429): wait a moment, then retry.",
+        title: "Too many requests.",
+        detail: "The service is busy. Retrying automatically.",
+        retryable: true,
       };
     }
     if (reason.status >= 500) {
       return {
         title: "The analysis service is down.",
-        detail: `Server error (${reason.status}): please retry in a bit.`,
+        detail: "Please wait a moment. Retrying automatically.",
+        retryable: true,
       };
     }
-    return { title: "Analysis failed.", detail: reason.message };
+    return {
+      title: "Analysis failed.",
+      detail: "Something went wrong. Retrying automatically.",
+      retryable: true,
+    };
   }
-  return { title: "Analysis failed.", detail: reason instanceof Error ? reason.message : "Analysis failed." };
+  return {
+    title: "Analysis failed.",
+    detail: "Something went wrong. Retrying automatically.",
+    retryable: true,
+  };
 }
 
 function recordRecent(value: Extract<AnalyzeResult, { kind: "assessed" }>): void {

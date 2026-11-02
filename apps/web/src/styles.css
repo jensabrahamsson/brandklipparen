@@ -4856,6 +4856,99 @@ a {
   width: 48%;
 }
 
+/* U-13 loading and error (R3 D-16): the loading state is the hero frame
+   at its final min-height with an unlit dial, so the swap to the result
+   barely shifts layout. The error card is a flat red 1 px card with no
+   glow. Only the existing skeleton breathe runs here; the elapsed
+   counter is text only. Every shadow stays token-based. */
+.loading-frame {
+  min-height: 530px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 639px) {
+  .loading-frame {
+    min-height: 720px;
+  }
+}
+
+.loading-frame .skel-title {
+  width: 38%;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.loading-frame .skel-addr {
+  width: 100%;
+  height: 56px;
+  border-radius: 10px;
+}
+
+.loading-frame .skel-meta {
+  width: 82%;
+}
+
+.loading-frame .skel-meaning-a {
+  width: 92%;
+  height: 26px;
+}
+
+.loading-frame .skel-meaning-b {
+  width: 64%;
+  height: 26px;
+}
+
+.loading-frame .skel-chips {
+  width: 100%;
+  height: 92px;
+  border-radius: 12px;
+}
+
+.loading-frame .skel-gauges {
+  width: 100%;
+  height: 112px;
+  border-radius: 12px;
+}
+
+.loading-dial {
+  border: 1px dashed var(--edge);
+  border-radius: 50%;
+  display: grid;
+  place-content: center;
+  color: var(--dim);
+  font-size: 28px;
+  box-shadow: var(--shadow-none);
+}
+
+/* Below-fold loading placeholders (console and board size): faint,
+   glow-free cards that push the footer below the fold exactly as the
+   result page does, so the footer never contributes layout shift. */
+.loading-below {
+  margin-top: 12px;
+  border-color: var(--rule);
+  box-shadow: var(--shadow-none);
+}
+
+.loading-console {
+  min-height: 300px;
+}
+
+.loading-board {
+  min-height: 560px;
+}
+
+.error-card {
+  border: 1px solid var(--red);
+  box-shadow: var(--shadow-none);
+}
+
+.error-card .error-title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--red-ink);
+}
+
 .snippet-lines {
   list-style: none;
   margin: 0;
