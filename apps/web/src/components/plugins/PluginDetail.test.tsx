@@ -91,6 +91,54 @@ describe("plugin detail provenance", () => {
     expect(block).toMatch(/white-space:\s*nowrap/);
   });
 
+  test("score4_floor_detail_shows_sets_minimum_score_not_not_in_score", () => {
+    expect(detailProvenance("extended", 0, "1.0.1", "floor")).toBe("In score: yes (sets the minimum score)");
+    expect(detailProvenance("extended", 0, "1.0.1", "renounced")).toBe("In score: no (owner renounced)");
+    const html = renderToString(
+      <PluginDetailView
+        address={ADDRESS}
+        apiKey=""
+        symbol="TST"
+        slug="blacklist"
+        tile={{ ...tile("extended"), floorMark: "floor" }}
+        entry={entry(0)}
+        findings={FINDINGS}
+        names={new Map()}
+        modelVersion="1.0.1"
+        mode="simple"
+        onModeChange={() => undefined}
+        prev={null}
+        next={null}
+      />,
+    );
+    expect(html).toContain("Sets minimum score");
+    expect(html).toContain("detail-sets-minimum-score");
+    expect(html).not.toContain("detail-not-in-score");
+  });
+
+  test("score4_renounced_detail_shows_owner_renounced", () => {
+    const html = renderToString(
+      <PluginDetailView
+        address={ADDRESS}
+        apiKey=""
+        symbol="TST"
+        slug="blacklist"
+        tile={{ ...tile("extended"), floorMark: "renounced" }}
+        entry={entry(0)}
+        findings={FINDINGS}
+        names={new Map()}
+        modelVersion="1.0.1"
+        mode="simple"
+        onModeChange={() => undefined}
+        prev={null}
+        next={null}
+      />,
+    );
+    expect(html).toContain("Owner renounced");
+    expect(html).toContain("detail-owner-renounced");
+    expect(html).not.toContain("detail-not-in-score");
+  });
+
   test("the limits section states what the check cannot tell", () => {
     const html = detail("found-scored", 3);
     expect(html).toContain("What this check can");

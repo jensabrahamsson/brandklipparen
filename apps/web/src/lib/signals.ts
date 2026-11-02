@@ -52,13 +52,24 @@ export type PowersSummaryCounts = {
   readonly found: number;
   readonly extended: number;
   readonly cantTell: number;
+  // SCORE-4: floor facts count inside `found`; `floor` names how many
+  // of them set the minimum score. Renounced-lifted facts count in
+  // neither `found` nor `extended`.
+  readonly floor?: number;
+  readonly renounced?: number;
 };
 
-export function powersSummaryCopy({ found, extended, cantTell }: PowersSummaryCounts): string {
+export function powersSummaryCopy({ found, extended, cantTell, floor = 0, renounced = 0 }: PowersSummaryCounts): string {
   if (found > 0) {
     const parts = [`${found} found`];
+    if (floor > 0) {
+      parts.push(`${floor} ${floor === 1 ? "sets" : "set"} the minimum score`);
+    }
     if (extended > 0) {
       parts.push(`${extended} more the score doesn't count yet`);
+    }
+    if (renounced > 0) {
+      parts.push(`${renounced} owner renounced`);
     }
     if (cantTell > 0) {
       parts.push(`${cantTell} can't tell`);
@@ -69,7 +80,14 @@ export function powersSummaryCopy({ found, extended, cantTell }: PowersSummaryCo
     const noun = extended === 1 ? "owner power" : "owner powers";
     const checks = cantTell === 1 ? "1 check" : `${cantTell} checks`;
     const cant = cantTell > 0 ? ` ${checks} could not be fully read.` : "";
-    return `No scored pattern. ${extended} ${noun} the score doesn't count yet.${cant}`;
+    const ren = renounced > 0 ? ` ${renounced} owner renounced.` : "";
+    return `No scored pattern. ${extended} ${noun} the score doesn't count yet.${ren}${cant}`;
+  }
+  if (renounced > 0) {
+    const noun = renounced === 1 ? "owner power" : "owner powers";
+    const checks = cantTell === 1 ? "1 check" : `${cantTell} checks`;
+    const cant = cantTell > 0 ? ` ${checks} could not be fully read.` : "";
+    return `No scored pattern. ${renounced} ${noun} found but owner renounced.${cant}`;
   }
   if (cantTell > 0) {
     const checks = cantTell === 1 ? "1 check" : `${cantTell} checks`;

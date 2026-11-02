@@ -63,4 +63,55 @@ describe("plugin tile compact row (R2-10)", () => {
     expect(html).not.toContain("is-compact");
     expect(html).toContain("Found · Not in score");
   });
+
+  test("score4_floor_tile_reads_found_sets_minimum_score", () => {
+    const copy = PLUGIN_COPY["mint"];
+    if (copy === undefined) {
+      throw new Error("mint copy is missing");
+    }
+    const html = renderToString(
+      <PluginTile
+        address={ADDRESS}
+        pluginId="dev.brandklipparen.mint"
+        allIds={ALL_IDS}
+        copy={copy}
+        state="extended"
+        floorMark="floor"
+        severity="high"
+        payloads={[{ fact: "mint", proof: "extended", capped: true }]}
+        evidenceCount={1}
+        matched={false}
+        index={0}
+      />,
+    );
+    expect(html).toContain("state-found-scored");
+    expect(html).toContain("Found · Sets minimum score");
+    expect(html).not.toContain("Not in score");
+    expect(html).toContain("found, high, sets the minimum score");
+  });
+
+  test("score4_renounced_tile_reads_owner_renounced", () => {
+    const copy = PLUGIN_COPY["mint"];
+    if (copy === undefined) {
+      throw new Error("mint copy is missing");
+    }
+    const html = renderToString(
+      <PluginTile
+        address={ADDRESS}
+        pluginId="dev.brandklipparen.mint"
+        allIds={ALL_IDS}
+        copy={copy}
+        state="extended"
+        floorMark="renounced"
+        severity="high"
+        payloads={[{ fact: "mint", proof: "extended", capped: true }]}
+        evidenceCount={1}
+        matched={false}
+        index={0}
+      />,
+    );
+    expect(html).toContain("Owner renounced");
+    expect(html).not.toContain("Sets minimum score");
+    expect(html).toContain("owner renounced");
+  });
 });

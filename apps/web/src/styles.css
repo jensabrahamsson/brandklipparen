@@ -2251,8 +2251,18 @@ a.chip {
 }
 
 .power-chip.state-extended,
-.power-chip.state-cant-tell {
+.power-chip.state-cant-tell,
+.power-chip.state-renounced {
   border-style: dashed;
+}
+
+.power-chip.state-renounced {
+  background: none;
+}
+
+.power-chip.state-renounced .power-name {
+  color: var(--dim);
+  font-weight: 400;
 }
 
 .power-chip .power-lamp {

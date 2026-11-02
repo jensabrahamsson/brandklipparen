@@ -164,7 +164,7 @@ export const EXPLANATIONS = Object.freeze({
   },
   "powers:extended": {
     "title": "Extended analysis",
-    "body": "Extended analysis is newer and not yet calibrated, so it never moves the score. The finding is still real: open it to see the proof."
+    "body": "Extended analysis is newer and not yet calibrated. Most findings do not move the score, but a proven power that can block holders sets a minimum score. The finding is still real: open it to see the proof."
   },
   "explanation:claim": {
     "title": "About these claims",
@@ -324,7 +324,7 @@ export const EXPLANATION_PAYLOAD = {
     },
     "powers:extended": {
       "title": "Extended analysis",
-      "body": "Extended analysis is newer and not yet calibrated, so it never moves the score. The finding is still real: open it to see the proof."
+      "body": "Extended analysis is newer and not yet calibrated. Most findings do not move the score, but a proven power that can block holders sets a minimum score. The finding is still real: open it to see the proof."
     },
     "explanation:claim": {
       "title": "About these claims",

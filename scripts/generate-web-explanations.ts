@@ -237,11 +237,11 @@ export function generateExplanationsModule(repoRoot: string): string {
     title: "Result summary",
     body: "Pinned summary of the score and the strongest single risk, shown once the score ring scrolls out of view and always on the assessment tab.",
   };
-  // Owner-powers strip help (R3 D-10): what the extended finding is and
-  // why it never moves the score. Two sentences, plain words.
+  // Owner-powers strip help (R3 D-10, SCORE-4): what the extended
+  // finding is and when it sets the minimum score. Plain words.
   entries["powers:extended"] = {
     title: "Extended analysis",
-    body: "Extended analysis is newer and not yet calibrated, so it never moves the score. The finding is still real: open it to see the proof.",
+    body: "Extended analysis is newer and not yet calibrated. Most findings do not move the score, but a proven power that can block holders sets a minimum score. The finding is still real: open it to see the proof.",
   };
   // User-facing claim copy (S-128, S-132): plain wording only. The
   // template version stays in the code (ExplanationList heading, API

@@ -231,6 +231,45 @@ describe("honest verdict sentence (R2-3, D-4)", () => {
   });
 });
 
+describe("score-floor verdict agreement (SCORE-4)", () => {
+  test("score4_floor_fact_names_owner_controls_not_extended", () => {
+    const result = assessed({
+      score: 60,
+      signals: [],
+      scoreFloor: {
+        rule: "owner-can-block-holders",
+        minimum: 60,
+        label: "floor: owner can block holders (blacklist)",
+        facts: ["blacklist"],
+      },
+    });
+    if (result.kind !== "assessed") {
+      throw new Error("fixture must assess");
+    }
+    const tiles = [ownerTile("blacklist", "Blacklist", "extended", [{ fact: "blacklist", proof: "extended" }])];
+    expect(meaningSentence(result, tiles)).toBe("High risk. The owner controls blacklist.");
+  });
+
+  test("score4_renounced_lifted_fact_names_owner_renounced", () => {
+    const result = assessed({
+      score: 19,
+      signals: [],
+      ownerState: {
+        status: "renounced",
+        getter: "owner()",
+        address: "0x0000000000000000000000000000000000000000",
+        block: 24000000,
+        reason: "the owner getter returns the zero or dead address",
+      },
+    });
+    if (result.kind !== "assessed") {
+      throw new Error("fixture must assess");
+    }
+    const tiles = [ownerTile("blacklist", "Blacklist", "extended", [{ fact: "blacklist", proof: "extended" }])];
+    expect(meaningSentence(result, tiles)).toBe("Low risk. Owner renounced, so blacklist no longer applies.");
+  });
+});
+
 describe("verdict caret takes the risk colour (S-132)", () => {
   test("s132_verdict_band_token_matches_badge_band", () => {
     // Same riskBand source as RiskBadge: low scores read phosphor,

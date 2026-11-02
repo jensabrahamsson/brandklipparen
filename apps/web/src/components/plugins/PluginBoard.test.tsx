@@ -140,6 +140,21 @@ describe("plugin board (UI v2 §5.1)", () => {
     expect(html.toLowerCase()).not.toContain("extended analysis");
   });
 
+  test("score4_floor_mint_tile_and_summary_agree_with_score", () => {
+    const html = renderToString(
+      <PluginBoard
+        address={ADDRESS}
+        plugins={PLUGINS}
+        results={RESULTS}
+        scoreFloor={{ rule: "owner-risky-capability", minimum: 30, label: "floor: owner has risky capability (mint)", facts: ["mint"] }}
+      />,
+    );
+    const mint = html.indexOf('data-testid="plugin-tile-mint"');
+    expect(mint).toBeGreaterThan(-1);
+    expect(html.slice(mint, html.indexOf("</a>", mint))).toContain("Sets minimum score");
+    expect(html).toContain("sets the minimum score");
+  });
+
   test("tiles link to the plugin detail route", () => {
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={RESULTS} />);
     expect(html).toContain(`/plugins/blacklist`);

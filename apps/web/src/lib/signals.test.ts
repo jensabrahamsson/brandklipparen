@@ -110,6 +110,18 @@ describe("signal descriptions (K-021)", () => {
     );
   });
 
+  test("score4_powers_summary_counts_floor_as_found_and_renounced_as_neither", () => {
+    expect(powersSummaryCopy({ found: 1, extended: 0, cantTell: 0, floor: 1 })).toBe(
+      "1 found. 1 sets the minimum score.",
+    );
+    expect(powersSummaryCopy({ found: 0, extended: 0, cantTell: 0, renounced: 1 })).toBe(
+      "No scored pattern. 1 owner power found but owner renounced.",
+    );
+    expect(powersSummaryCopy({ found: 2, extended: 1, cantTell: 0, floor: 1, renounced: 1 })).toBe(
+      "2 found. 1 sets the minimum score. 1 more the score doesn't count yet. 1 owner renounced.",
+    );
+  });
+
   test("design_review_combined_line_relates_score_to_max_probability", () => {
     expect(combinedScoreLine(84, { "rug-pull": 0.62, honeypot: 0.91, "bot-pump": 0.34 })).toBe(
       "Combined 84 follows the strongest single risk: Honeypot at 91%.",

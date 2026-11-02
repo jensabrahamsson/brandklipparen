@@ -72,6 +72,29 @@ describe("plugin parsing for the schema-driven panel", () => {
     expect(views[1]?.findings).toEqual([]);
   });
 
+  test("duplicate plugin results merge findings so a floored finding is not dropped", () => {
+    const views = toPluginResultViews([
+      { pluginId: "dev.brandklipparen.blacklist", pluginVersion: "1.0.0", outcome: "ok", findings: [] },
+      {
+        pluginId: "dev.brandklipparen.blacklist",
+        pluginVersion: "1.0.0",
+        outcome: "ok",
+        findings: [
+          {
+            id: "dev.brandklipparen.blacklist:blacklist-extended",
+            title: "Blocked wallets, extended",
+            payload: { fact: "blacklist", proof: "extended" },
+            evidence: [{ selector: "0x44337ea1", offset: 200 }],
+          },
+        ],
+      },
+    ]);
+    expect(views).toHaveLength(1);
+    expect(views[0]?.findings.map((finding) => finding.id)).toEqual([
+      "dev.brandklipparen.blacklist:blacklist-extended",
+    ]);
+  });
+
   test("decompiler findings keep ranges, annotations and unresolved counts for the Expert view", () => {
     const views = toPluginResultViews([
       {

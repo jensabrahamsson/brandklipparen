@@ -312,7 +312,61 @@ test("s118_pepe_like_quiet_signals_with_extended_strip", async ({ page }) => {
   const bodyText = await page.evaluate(() => document.body.innerText);
   expect(bodyText.match(/extended analysis/gi)?.length ?? 0).toBeLessThanOrEqual(2);
 
-  // The strip "?" explains why the finding never moves the score.
+  // The strip "?" explains when an extended finding sets the floor.
   await page.getByTestId("explain-powers:extended").focus();
-  await expect(page.getByRole("tooltip")).toContainText("never moves the score");
+  await expect(page.getByRole("tooltip")).toContainText("sets a minimum score");
+});
+
+test("score4_floor_blacklist_chip_agrees_with_high_score", async ({ page }) => {
+  const floored = {
+    ...PEPE_ANALYZE,
+    score: 60,
+    probabilities: { "rug-pull": 0.26, honeypot: 0.2, "bot-pump": 0.12 },
+    scoreFloor: {
+      rule: "owner-can-block-holders",
+      minimum: 60,
+      label: "floor: owner can block holders (blacklist)",
+      facts: ["blacklist"],
+    },
+    pluginResults: PEPE_ANALYZE.pluginResults.map((entry) =>
+      entry.pluginId === "dev.brandklipparen.mint"
+        ? {
+            pluginId: "dev.brandklipparen.blacklist",
+            pluginVersion: "1.0.0",
+            outcome: "ok",
+            findings: [
+              {
+                id: "dev.brandklipparen.blacklist:blacklist-extended",
+                title: "Blocked wallets, extended",
+                payload: { fact: "blacklist", proof: "extended" },
+                evidence: [{ selector: "0x44337ea1", offset: 200 }],
+              },
+            ],
+          }
+        : entry,
+    ),
+  };
+  await page.route("**/health", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(HEALTH_DISABLED) });
+  });
+  await page.route("**/v1/analyze*", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(floored) });
+  });
+  await page.route("**/v1/plugins", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(PEPE_PLUGINS) });
+  });
+  await page.route("**/v1/live-tokens*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ source: "none", status: "live", updatedAt: 0, items: [] }),
+    });
+  });
+  await page.goto("/");
+  await page.goto(`/#/token/${ADDRESS}`);
+  const strip = page.getByTestId("powers-strip");
+  await expect(strip).toContainText("Sets minimum score");
+  await expect(strip).not.toContainText("Not in score");
+  await expect(strip).toContainText("1 found. 1 sets the minimum score.");
+  await expect(page.getByTestId("power-chip-blacklist")).toBeVisible();
 });

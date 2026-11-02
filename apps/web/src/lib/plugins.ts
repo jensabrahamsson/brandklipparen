@@ -113,6 +113,7 @@ export function toPluginResultViews(raw: unknown): PluginResultView[] {
     return [];
   }
   const out: PluginResultView[] = [];
+  const byPluginId = new Map<string, { view: PluginResultView; findingIds: Set<string> }>();
   for (const entry of raw) {
     if (!isRecord(entry)) {
       continue;
@@ -140,12 +141,35 @@ export function toPluginResultViews(raw: unknown): PluginResultView[] {
         findings.push(payload === undefined ? { id, title, evidence } : { id, title, payload, evidence });
       }
     }
-    out.push({
-      pluginId,
-      pluginVersion: shortString(entry["pluginVersion"]) ?? "0.0.0",
-      outcome: shortString(entry["outcome"]) ?? "unknown",
-      findings,
-    });
+    // The envelope is untrusted and may repeat a pluginId: later entries
+    // merge into the first instead of being shadowed by it, so a finding
+    // (for example one the score floor counted) is never silently dropped
+    // by the board, strip or detail lookups that read one entry per id.
+    const existing = byPluginId.get(pluginId);
+    if (existing === undefined) {
+      const view: PluginResultView = {
+        pluginId,
+        pluginVersion: shortString(entry["pluginVersion"]) ?? "0.0.0",
+        outcome: shortString(entry["outcome"]) ?? "unknown",
+        findings,
+      };
+      byPluginId.set(pluginId, { view, findingIds: new Set(findings.map((finding) => finding.id)) });
+      out.push(view);
+    } else {
+      const merged = [...existing.view.findings];
+      for (const finding of findings) {
+        if (!existing.findingIds.has(finding.id)) {
+          existing.findingIds.add(finding.id);
+          merged.push(finding);
+        }
+      }
+      const index = out.indexOf(existing.view);
+      const view: PluginResultView = { ...existing.view, findings: merged };
+      byPluginId.set(pluginId, { view, findingIds: existing.findingIds });
+      if (index >= 0) {
+        out[index] = view;
+      }
+    }
   }
   return out;
 }

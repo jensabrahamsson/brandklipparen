@@ -26,6 +26,7 @@ import { matchPriorities } from "../lib/matcher.ts";
 import { riskBand, riskWord } from "../lib/risk.ts";
 import { toAiAvailability, type AiFeatureAvailability, type Availability } from "../lib/capabilities.ts";
 import { emptyGaugeReason, plainReason, signalTitle, sortByImpact, strongestSignal } from "../lib/signals.ts";
+import { floorMarkFor } from "../lib/floorPowers.ts";
 import { PowersStrip } from "../components/PowersStrip.tsx";
 import { StreamView } from "../components/StreamView.tsx";
 import { MuseConsole } from "../components/MuseConsole.tsx";
@@ -504,7 +505,10 @@ function AssessedView({
   // Owner-powers strip (UI v2 §1.1, W-9): the same board model as the
   // plugin board below, so the hero chips and the tiles never disagree.
   const heroPluginViews = result.pluginResults === undefined ? [] : toPluginResultViews(result.pluginResults);
-  const heroBoard = buildBoardModel(plugins, heroPluginViews);
+  const heroBoard = buildBoardModel(plugins, heroPluginViews, {
+    scoreFloor: result.scoreFloor,
+    ownerState: result.ownerState,
+  });
   const heroIds = (plugins ?? []).map((entry) => entry.id);
   const heroHasSignals = result.signals.length > 0;
   // R2-5 (D-17): glue the verdict "?" to the last headline word, so the
@@ -519,7 +523,10 @@ function AssessedView({
   // level changes, so entering never refetches.
   if (view.kind === "plugin") {
     const detailViews = result.pluginResults === undefined ? [] : toPluginResultViews(result.pluginResults);
-    const board = buildBoardModel(plugins, detailViews);
+    const board = buildBoardModel(plugins, detailViews, {
+      scoreFloor: result.scoreFloor,
+      ownerState: result.ownerState,
+    });
     const tile = board.bySlug.get(view.slug) ?? null;
     const allIds = (plugins ?? []).map((entry) => entry.id);
     const entry = plugins?.find((candidate) => slugForPluginId(candidate.id, allIds) === view.slug);
@@ -605,6 +612,7 @@ function AssessedView({
               tiles={heroBoard.ownerTiles}
               plugins={plugins}
               ownerState={result.ownerState}
+              scoreFloor={result.scoreFloor}
             />
             {calibrationNote(result.modelVersion) !== null ? (
               <p className="quiet" style={{ margin: "4px 0 0" }}>
@@ -820,6 +828,8 @@ export function OverviewSections({
           plugins={plugins}
           results={pluginViews}
           matchedTags={match.matchedTags}
+          scoreFloor={result.scoreFloor}
+          ownerState={result.ownerState}
         />
         {thirdPartyPlugins === null || thirdPartyPlugins.length === 0 ? null : (
           <section className="card" aria-label="Plugins section" style={{ marginTop: 20 }}>
@@ -965,7 +975,15 @@ export function meaningSentence(
   ownerTiles: readonly BoardTile[] = [],
 ): string {
   const word = riskWord(result.score);
-  const found = ownerTiles.filter((tile) => tile.state === "found-scored");
+  // SCORE-4: floor facts are found powers; renounced-lifted facts are
+  // neither found nor still-counted extended findings.
+  const markOf = (tile: BoardTile): "floor" | "renounced" | null =>
+    tile.floorMark !== undefined && tile.floorMark !== null
+      ? tile.floorMark
+      : floorMarkFor(tile.copy.slug, tile.state, { scoreFloor: result.scoreFloor, ownerState: result.ownerState });
+  const found = ownerTiles.filter(
+    (tile) => markOf(tile) !== "renounced" && (tile.state === "found-scored" || markOf(tile) === "floor"),
+  );
   if (found.length > 0) {
     const named = found.filter((tile) => tile.copy.slug !== "ownership");
     const source = named.length > 0 ? named : found;
@@ -978,11 +996,16 @@ export function meaningSentence(
     }
     return `${word} risk. The owner controls ${including}.`;
   }
-  const extended = ownerTiles.filter((tile) => tile.state === "extended");
+  const extended = ownerTiles.filter((tile) => tile.state === "extended" && markOf(tile) === null);
   if (extended.length > 0) {
     const names = extended.map((tile) => tile.copy.title.toLowerCase()).join(", ");
     const noun = extended.length === 1 ? "owner power" : "owner powers";
     return `${word} risk. Extended analysis found ${extended.length} ${noun} the score doesn't count yet: ${names}.`;
+  }
+  const renounced = ownerTiles.filter((tile) => markOf(tile) === "renounced");
+  if (renounced.length > 0) {
+    const names = renounced.map((tile) => tile.copy.title.toLowerCase()).join(", ");
+    return `${word} risk. Owner renounced, so ${names} no longer applies.`;
   }
   return `${word} risk. No owner power found in the code we could read. That is not the same as safe.`;
 }

@@ -44,11 +44,18 @@ export function detailProvenance(
   state: BoardTile["state"],
   weight: number | undefined,
   modelVersion: string,
+  floorMark?: BoardTile["floorMark"],
 ): string {
   // Analysis tools never move the score (R3 D-8); their provenance says
   // so plainly instead of borrowing the scored wording.
   if (state === "ran") {
     return "In score: no (analysis tool)";
+  }
+  if (floorMark === "renounced") {
+    return "In score: no (owner renounced)";
+  }
+  if (floorMark === "floor") {
+    return "In score: yes (sets the minimum score)";
   }
   if (state === "extended") {
     return "In score: no (extended analysis)";
@@ -421,16 +428,34 @@ export function PluginDetailView({
           <p className="detail-question">{tile.copy.question}</p>
           <p className="detail-status">
             <span className="lamp" aria-hidden="true">
-              <Pictogram name={tile.state === "ran" ? tile.copy.pictogram : tile.state === "found-scored" ? "found" : tile.state === "extended" ? "extended" : tile.state === "error" ? "error" : tile.state === "not-run" ? "notrun" : tile.state === "cant-tell" ? "canttell" : "notfound"} size={20} />
+              <Pictogram name={tile.state === "ran" ? tile.copy.pictogram : tile.floorMark === "floor" || tile.state === "found-scored" ? "found" : tile.state === "extended" ? "extended" : tile.state === "error" ? "error" : tile.state === "not-run" ? "notrun" : tile.state === "cant-tell" ? "canttell" : "notfound"} size={20} />
             </span>{" "}
             <span className="status-word" data-nowrap={true}>
-              {tile.state === "found-scored"
-                ? `Found · ${severityWord(tile.severity)}`
-                : tile.state === "ran"
-                  ? ranStatusWord(tile.copy, tile.payloads.length)
-                  : PLUGIN_STATE_WORD[tile.state]}
+              {tile.floorMark === "renounced"
+                ? "Owner renounced"
+                : tile.floorMark === "floor"
+                  ? `Found · ${severityWord(tile.severity)}`
+                  : tile.state === "found-scored"
+                    ? `Found · ${severityWord(tile.severity)}`
+                    : tile.state === "ran"
+                      ? ranStatusWord(tile.copy, tile.payloads.length)
+                      : PLUGIN_STATE_WORD[tile.state]}
             </span>
-            {tile.state === "extended" ? (
+            {tile.floorMark === "renounced" ? (
+              <>
+                {" "}
+                <span className="extended-chip" data-testid="detail-owner-renounced" data-nowrap={true}>
+                  Owner renounced
+                </span>
+              </>
+            ) : tile.floorMark === "floor" ? (
+              <>
+                {" "}
+                <span className="extended-chip" data-testid="detail-sets-minimum-score" data-nowrap={true}>
+                  Sets minimum score
+                </span>
+              </>
+            ) : tile.state === "extended" ? (
               <>
                 {" "}
                 <span className="extended-chip" data-testid="detail-not-in-score" data-nowrap={true}>
@@ -462,7 +487,7 @@ export function PluginDetailView({
                 {` · v${entry?.version ?? "0.0.0"} · `}
               </>
             ) : null}
-            {detailProvenance(tile.state, entry?.weight, modelVersion)}
+            {detailProvenance(tile.state, entry?.weight, modelVersion, tile.floorMark)}
             {expert ? null : ` · Check v${entry?.version ?? "0.0.0"}`}
           </p>
         </section>

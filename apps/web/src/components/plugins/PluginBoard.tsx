@@ -18,6 +18,8 @@ import type { PluginCopyEntry } from "../../lib/pluginCopy.ts";
 import type { PluginListEntry, PluginResultView } from "../PluginsPanel.tsx";
 import { pluginState } from "../../lib/pluginState.ts";
 import type { CantTellContext, PluginState } from "../../lib/pluginState.ts";
+import { floorMarkFor } from "../../lib/floorPowers.ts";
+import type { FloorContext, FloorMark } from "../../lib/floorPowers.ts";
 import { useCountUp } from "../../lib/motion.ts";
 
 export type BoardTile = {
@@ -25,6 +27,9 @@ export type BoardTile = {
   readonly slug: string;
   readonly copy: PluginCopyEntry;
   readonly state: PluginState;
+  // SCORE-4: "floor" when this fact sets the minimum score, "renounced"
+  // when proven renounced ownership lifted it. Absent means unmarked.
+  readonly floorMark?: FloorMark;
   readonly severity: TileSeverity;
   readonly payloads: readonly unknown[];
   readonly evidenceCount: number;
@@ -100,6 +105,7 @@ export type BoardModel = {
 export function buildBoardModel(
   plugins: readonly PluginListEntry[] | null,
   results: readonly PluginResultView[],
+  floorContext?: FloorContext,
 ): BoardModel {
   const entries = plugins ?? [];
   const context = cantTellContext(results);
@@ -116,11 +122,13 @@ export function buildBoardModel(
       0,
     );
     const canonical = [...OWNER_POWER_SLUGS, ...TOOL_SLUGS].indexOf(copy.slug);
+    const state = pluginState(result, context, copy.group);
     tiles.push({
       pluginId: entry.id,
       slug: slugForPluginId(entry.id, entries.map((candidate) => candidate.id)),
       copy,
-      state: pluginState(result, context, copy.group),
+      state,
+      floorMark: floorMarkFor(copy.slug, state, floorContext),
       severity: severityOf(entry),
       payloads,
       evidenceCount,
@@ -160,8 +168,14 @@ function summaryLamp(state: PluginState): "found" | "extended" | "canttell" | "e
 }
 
 function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.Element | null {
-  const found = tiles.filter((tile) => tile.state === "found-scored").length;
-  const extended = tiles.filter((tile) => tile.state === "extended").length;
+  const found = tiles.filter(
+    (tile) =>
+      tile.floorMark !== "renounced" &&
+      (tile.state === "found-scored" || tile.floorMark === "floor"),
+  ).length;
+  const floor = tiles.filter((tile) => tile.floorMark === "floor" && tile.state === "extended").length;
+  const renounced = tiles.filter((tile) => tile.floorMark === "renounced").length;
+  const extended = tiles.filter((tile) => tile.state === "extended" && !tile.floorMark).length;
   const notFound = tiles.filter((tile) => tile.state === "not-found").length;
   const cantTell = tiles.filter((tile) => tile.state === "cant-tell").length;
   const errors = tiles.filter((tile) => tile.state === "error").length;
@@ -180,8 +194,14 @@ function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.E
   if (found > 0) {
     parts.push({ state: "found-scored", text: `${countedFound} found` });
   }
+  if (floor > 0) {
+    parts.push({ state: "found-scored", text: `${floor} sets the minimum score` });
+  }
   if (extended > 0) {
     parts.push({ state: "extended", text: `${countedExtended} not in score` });
+  }
+  if (renounced > 0) {
+    parts.push({ state: "extended", text: `${renounced} owner renounced` });
   }
   if (cantTell > 0) {
     parts.push({ state: "cant-tell", text: `${cantTell} can't tell` });
@@ -199,7 +219,7 @@ function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.E
     <p className="board-summary numeric" data-testid="plugin-board-summary">
       {tiles.length} owner powers checked:{" "}
       {parts.map((part, index) => (
-        <Fragment key={part.state}>
+        <Fragment key={`${part.state}-${part.text}`}>
           {index > 0 ? (
             <span className="board-sep" aria-hidden="true">
               {" "}
@@ -297,13 +317,17 @@ export function PluginBoard({
   plugins,
   results,
   matchedTags,
+  scoreFloor,
+  ownerState,
 }: {
   readonly address: string;
   readonly plugins: readonly PluginListEntry[] | null;
   readonly results: readonly PluginResultView[];
   readonly matchedTags?: ReadonlyMap<string, readonly string[]> | undefined;
+  readonly scoreFloor?: FloorContext["scoreFloor"];
+  readonly ownerState?: FloorContext["ownerState"];
 }): JSX.Element | null {
-  const model = buildBoardModel(plugins, results);
+  const model = buildBoardModel(plugins, results, { scoreFloor, ownerState });
   if (model.allTiles.length === 0) {
     return null;
   }
@@ -320,6 +344,7 @@ export function PluginBoard({
         allIds={allIds}
         copy={tile.copy}
         state={tile.state}
+        floorMark={tile.floorMark ?? null}
         severity={tile.severity}
         payloads={tile.payloads}
         evidenceCount={tile.evidenceCount}

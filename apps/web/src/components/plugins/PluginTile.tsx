@@ -24,7 +24,18 @@ const LAMP_GLYPH: Record<
   "not-found": "notfound",
 });
 
-function statusPhrase(state: PluginState, severity: TileSeverity): string {
+function statusPhrase(
+  state: PluginState,
+  severity: TileSeverity,
+  floorMark?: "floor" | "renounced" | null,
+): string {
+  if (floorMark === "renounced") {
+    return "owner renounced";
+  }
+  if (floorMark === "floor") {
+    const level = severity === "high" ? "high" : severity === "medium" ? "medium" : "low";
+    return `found, ${level}, sets the minimum score`;
+  }
   if (state === "found-scored") {
     const level = severity === "high" ? "high" : severity === "medium" ? "medium" : "low";
     return `found, ${level}`;
@@ -41,6 +52,7 @@ export function PluginTile({
   allIds,
   copy,
   state,
+  floorMark = null,
   severity,
   payloads,
   evidenceCount,
@@ -53,6 +65,7 @@ export function PluginTile({
   readonly allIds: readonly string[];
   readonly copy: PluginCopyEntry;
   readonly state: PluginState;
+  readonly floorMark?: "floor" | "renounced" | null;
   readonly severity: TileSeverity;
   readonly payloads: readonly unknown[];
   readonly evidenceCount: number;
@@ -66,21 +79,28 @@ export function PluginTile({
   const found = state === "found-scored" || state === "extended" || state === "ran";
   const counted = useCountUp(evidenceCount, 600);
   const body = found ? copy.foundLine(payloads) : tileQuietBody(copy, state);
-  // R2-10: the extended tile names "Not in score" in its status line,
-  // so the dropped "Extended analysis" pill loses no meaning.
+  // SCORE-4: a floor fact reads as a found power that sets the minimum
+  // score; a renounced-lifted fact reads muted as owner renounced.
+  const displayState: PluginState =
+    floorMark === "floor" ? "found-scored" : floorMark === "renounced" ? "extended" : state;
   const statusWord =
-    state === "found-scored"
-      ? `Found · ${severityWord(severity)}`
-      : state === "extended"
-        ? "Found · Not in score"
-        : state === "ran"
-          ? ranStatusWord(copy, payloads.length)
-          : PLUGIN_STATE_WORD[state];
-  const lampGlyph = state === "ran" ? copy.pictogram : LAMP_GLYPH[state];
+    floorMark === "renounced"
+      ? "Owner renounced"
+      : floorMark === "floor"
+        ? "Found · Sets minimum score"
+        : state === "found-scored"
+          ? `Found · ${severityWord(severity)}`
+          : state === "extended"
+            ? "Found · Not in score"
+            : state === "ran"
+              ? ranStatusWord(copy, payloads.length)
+              : PLUGIN_STATE_WORD[state];
+  const lampGlyph =
+    state === "ran" ? copy.pictogram : LAMP_GLYPH[displayState as Exclude<PluginState, "ran">];
   const lampClass =
-    state === "found-scored"
+    displayState === "found-scored"
       ? "lamp is-found"
-      : state === "extended"
+      : displayState === "extended"
         ? "lamp is-extended"
         : state === "ran"
           ? "lamp is-ran"
@@ -88,9 +108,9 @@ export function PluginTile({
   if (compact) {
     return (
       <a
-        className={`tile is-compact state-${state} sev-${severity}`}
+        className={`tile is-compact state-${displayState} sev-${severity}`}
         href={pluginHref(address, pluginId, allIds)}
-        aria-label={`${copy.title}: ${statusPhrase(state, severity)}. ${copy.question} Open details.`}
+        aria-label={`${copy.title}: ${statusPhrase(state, severity, floorMark)}. ${copy.question} Open details.`}
         data-testid={`plugin-tile-${copy.slug}`}
         data-tile-slug={copy.slug}
         style={{ "--i": Math.min(index, 12) } as CSSProperties}
@@ -114,9 +134,9 @@ export function PluginTile({
   }
   return (
     <a
-      className={`tile state-${state} sev-${severity}`}
+      className={`tile state-${displayState} sev-${severity}`}
       href={pluginHref(address, pluginId, allIds)}
-      aria-label={`${copy.title}: ${statusPhrase(state, severity)}. ${copy.question} Open details.`}
+      aria-label={`${copy.title}: ${statusPhrase(state, severity, floorMark)}. ${copy.question} Open details.`}
       data-testid={`plugin-tile-${copy.slug}`}
       data-tile-slug={copy.slug}
       style={{ "--i": Math.min(index, 12) } as CSSProperties}

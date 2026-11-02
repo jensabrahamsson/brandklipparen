@@ -223,9 +223,71 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
   test("strip_help_trigger_explains_extended_analysis", () => {
     const html = htmlFor(quietResults());
     expect(html).toContain('data-testid="explain-powers:extended"');
-    expect(explanationFor("powers:extended").body).toContain("never moves the score");
+    expect(explanationFor("powers:extended").body).toContain("sets a minimum score");
     const open = renderToString(<Explain explainKey="powers:extended" label="Extended analysis" defaultOpen />);
-    expect(open).toContain("never moves the score");
+    expect(open).toContain("sets a minimum score");
+  });
+
+  test("score4_floor_fact_renders_found_with_sets_minimum_score", () => {
+    const results: PluginResultView[] = [
+      ...quietResults().filter((result) => result.pluginId !== "dev.brandklipparen.blacklist"),
+      ok("dev.brandklipparen.blacklist", [
+        {
+          id: "dev.brandklipparen.blacklist:blacklist-extended",
+          title: "Blocked wallets, extended",
+          payload: { fact: "blacklist", proof: "extended" },
+          evidence: [{ selector: "0x44337ea1", offset: 200 }],
+        },
+      ]),
+    ];
+    const board = buildBoardModel(PLUGINS, results, {
+      scoreFloor: { rule: "owner-can-block-holders", minimum: 60, label: "floor: owner can block holders (blacklist)", facts: ["blacklist"] },
+    });
+    const ids = PLUGINS.map((plugin) => plugin.id);
+    const html = renderToString(
+      <PowersStrip
+        address={ADDRESS}
+        allIds={ids}
+        tiles={board.ownerTiles}
+        scoreFloor={{ rule: "owner-can-block-holders", minimum: 60, label: "floor: owner can block holders (blacklist)", facts: ["blacklist"] }}
+      />,
+    );
+    expect(html).toContain("power-chip state-found-scored sev-high");
+    expect(html).toContain("Sets minimum score");
+    expect(html).not.toContain("Not in score");
+    expect(html).toContain("Blacklist: found, high, sets the minimum score. Can the owner block wallets? Open details.");
+    expect(html).toContain("1 found. 1 sets the minimum score.");
+  });
+
+  test("score4_renounced_lifted_fact_renders_owner_renounced_not_found", () => {
+    const results: PluginResultView[] = [
+      ...quietResults().filter((result) => result.pluginId !== "dev.brandklipparen.blacklist"),
+      ok("dev.brandklipparen.blacklist", [
+        {
+          id: "dev.brandklipparen.blacklist:blacklist-extended",
+          title: "Blocked wallets, extended",
+          payload: { fact: "blacklist", proof: "extended" },
+          evidence: [{ selector: "0x44337ea1", offset: 200 }],
+        },
+      ]),
+    ];
+    const ownerState = {
+      status: "renounced" as const,
+      getter: "owner()" as const,
+      address: "0x0000000000000000000000000000000000000000",
+      block: 24000000,
+      reason: "the owner getter returns the zero or dead address",
+    };
+    const board = buildBoardModel(PLUGINS, results, { ownerState });
+    const ids = PLUGINS.map((plugin) => plugin.id);
+    const html = renderToString(
+      <PowersStrip address={ADDRESS} allIds={ids} tiles={board.ownerTiles} ownerState={ownerState} />,
+    );
+    expect(html).toContain("state-renounced");
+    expect(html).toContain("Owner renounced");
+    expect(html).not.toContain("Sets minimum score");
+    expect(html).toContain("Blacklist: owner renounced. Can the owner block wallets? Open details.");
+    expect(html).toContain("1 owner power found but owner renounced.");
   });
 
   test("renounced_owner_line_names_getter_address_and_block", () => {
