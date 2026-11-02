@@ -407,6 +407,126 @@ function exprIsPow2Const(expr: Expr | undefined): boolean {
   return expr.value >= 2n && (expr.value & (expr.value - 1n)) === 0n;
 }
 
+// Direct-operand fee arithmetic (SCAN-4): the beside-window proof
+// vetoes any power-of-two constant in its scan, which also vetoes a
+// packed fee field extracted by a shift (`(slot >> 16) & 0xff`)
+// before the multiply. The direct proof only vetoes a power of two
+// pushed as the multiply or divide's own adjacent operand (a true
+// unpack of the rate word), and still requires a calldata operand
+// (the transferred amount) in the member stream before the use.
+function feeArithDirect(
+  code: ReturnType<typeof disassemble>,
+  isMember: (pc: number) => boolean,
+  arithPc: number,
+): boolean {
+  let arithIndex = -1;
+  for (let at = 0; at < code.length; at += 1) {
+    if (code[at]?.pc === arithPc) {
+      arithIndex = at;
+      break;
+    }
+  }
+  if (arithIndex < 0) {
+    return false;
+  }
+  const previous = code[arithIndex - 1];
+  if (
+    previous !== undefined &&
+    previous.opcode >= 0x60 &&
+    previous.opcode <= 0x7f &&
+    isMember(previous.pc)
+  ) {
+    let value = 0n;
+    for (const byte of previous.immediate) {
+      value = value * 256n + BigInt(byte);
+    }
+    if (value >= 2n && (value & (value - 1n)) === 0n) {
+      return false;
+    }
+  }
+  for (let back = arithIndex - 1; back >= 0; back -= 1) {
+    const candidate = code[back];
+    if (candidate === undefined || !isMember(candidate.pc)) {
+      continue;
+    }
+    if (arithPc - candidate.pc > EXTENDED_STRAIGHT_LINE_WINDOW_PC) {
+      break;
+    }
+    if (candidate.opcode === 0x35) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Array slot of a derived access (SCAN-4): a dynamic-array element
+// lives at `keccak(arraySlot) + index`, compiled as one memory store
+// of the constant array slot at destination 0 and a 32-byte hash.
+// The mapping pattern stores a second word at destination 0x20, so
+// its presence vetoes the array reading. Returns the array slot, or
+// null when the pattern is absent.
+function arrayBaseNearAccess(
+  code: ReturnType<typeof disassemble>,
+  isMember: (pc: number) => boolean,
+  accessPc: number,
+): number | null {
+  const pushConst = (insn: { opcode: number; immediate?: Uint8Array } | undefined): number | null => {
+    if (insn === undefined) {
+      return null;
+    }
+    if (insn.opcode === 0x5f) {
+      return 0;
+    }
+    if (insn.opcode < 0x60 || insn.opcode > 0x7f || insn.immediate === undefined) {
+      return null;
+    }
+    let value = 0;
+    for (const byte of insn.immediate) {
+      value = value * 256 + byte;
+    }
+    return value;
+  };
+  let accessIndex = -1;
+  for (let at = 0; at < code.length; at += 1) {
+    if (code[at]?.pc === accessPc) {
+      accessIndex = at;
+      break;
+    }
+  }
+  if (accessIndex < 0) {
+    return null;
+  }
+  let keccakIndex = -1;
+  for (let back = accessIndex - 1, steps = 0; back >= 0 && steps < 48; back -= 1, steps += 1) {
+    const candidate = code[back];
+    if (candidate !== undefined && candidate.opcode === 0x20 && isMember(candidate.pc)) {
+      keccakIndex = back;
+      break;
+    }
+  }
+  if (keccakIndex < 0) {
+    return null;
+  }
+  let base: number | null = null;
+  for (let at = keccakIndex - 1, steps = 0; at >= 0 && steps < 48; at -= 1, steps += 1) {
+    const candidate = code[at];
+    if (candidate === undefined || candidate.opcode !== 0x52 || !isMember(candidate.pc)) {
+      continue;
+    }
+    const dest = pushConst(code[at - 1]);
+    if (dest === 0x20) {
+      return null;
+    }
+    if (dest === 0 && base === null) {
+      const value = pushConst(code[at - 2]);
+      if (value !== null && value <= 2147483647) {
+        base = value;
+      }
+    }
+  }
+  return base;
+}
+
 function holderFor(
   attribution: FunctionAttribution,
   region: RegionFacts,
@@ -558,7 +678,8 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             arithPcs.some(
               (pc) =>
                 pc > rateLoad.pc &&
-                feeArithProven(code, gateMember, pc, EXTENDED_STRAIGHT_LINE_WINDOW_PC),
+                (feeArithProven(code, gateMember, pc, EXTENDED_STRAIGHT_LINE_WINDOW_PC) ||
+                  feeArithDirect(code, gateMember, pc)),
             )
           ) {
             usePc = rateLoad.pc;
@@ -597,6 +718,90 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
               "The owner can change the fee taken on each transfer. Found by extended analysis; not counted in the score.",
             evidence: nonEmpty,
             payload: Object.freeze({ fact: "transfer-fee", slot, capSlot, proof: "extended" }),
+          }),
+        ]);
+      }
+    }
+  }
+  // Array-share fee (SCAN-4): a guarded writer stores a caller-chosen
+  // share into a dynamic-array element, and the transfer path loads
+  // an element of the same array and prices the amount with it. The
+  // array base (the hashed array slot) pairs writer and reader, so a
+  // share array the transfer path never prices stays silent.
+  for (const region of view.regions) {
+    if (isStandardTokenWriter(region.selector)) {
+      continue;
+    }
+    const writerMember = memberOf(region.selector);
+    const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
+    const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
+    const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
+    if (!writerGuarded(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode)) {
+      continue;
+    }
+    for (const store of region.stores) {
+      const writePc = store.pc;
+      const base = arrayBaseNearAccess(code, writerMember, writePc);
+      if (base === null) {
+        continue;
+      }
+      const writtenValue = writerExprs.stores.get(writePc)?.value;
+      if (writtenValue !== undefined && writtenValue.kind === "const") {
+        continue;
+      }
+      const transferSelectors = [TRANSFER_SELECTOR, TRANSFER_FROM_SELECTOR]
+        .filter((selector) => selector !== region.selector)
+        .sort();
+      for (const transferSelector of transferSelectors) {
+        const transfer = view.regions.find((candidate) => candidate.selector === transferSelector);
+        if (transfer === undefined || !transfer.hasSub) {
+          continue;
+        }
+        const gateMember = memberOf(transferSelector);
+        let usePc: number | null = null;
+        for (const load of transfer.loads) {
+          if (arrayBaseNearAccess(code, gateMember, load.pc) !== base) {
+            continue;
+          }
+          const arithPcs = [...transfer.opPcs.mul, ...transfer.opPcs.div].sort(
+            (left, right) => left - right,
+          );
+          if (
+            arithPcs.some(
+              (pc) =>
+                pc > load.pc &&
+                (feeArithProven(code, gateMember, pc, EXTENDED_STRAIGHT_LINE_WINDOW_PC) ||
+                  feeArithDirect(code, gateMember, pc)),
+            )
+          ) {
+            usePc = load.pc;
+            break;
+          }
+        }
+        if (usePc === null) {
+          continue;
+        }
+        const evidence: EvidenceType[] = [];
+        const written = evidenceFor(input.bytecode, holderFor(attribution, region, writePc), writePc);
+        if (written !== null) {
+          evidence.push(written);
+        }
+        const seen = evidenceFor(input.bytecode, holderFor(attribution, transfer, usePc), usePc);
+        if (seen !== null) {
+          evidence.push(seen);
+        }
+        const nonEmpty = toNonEmpty(evidence);
+        if (nonEmpty === null) {
+          continue;
+        }
+        return Object.freeze([
+          Object.freeze({
+            id: `${PLUGIN_ID}:transfer-fee-extended`,
+            pluginId: MANIFEST.id,
+            title:
+              "The owner can change the fee taken on each transfer. Found by extended analysis; not counted in the score.",
+            evidence: nonEmpty,
+            payload: Object.freeze({ fact: "transfer-fee", slot: base, capSlot: null, proof: "extended" }),
           }),
         ]);
       }

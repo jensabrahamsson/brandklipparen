@@ -37,6 +37,8 @@ export function tokenDisplayText(text: string, nonAscii: boolean): string {
     const point = char.codePointAt(0) ?? 0;
     if (char === "\\") {
       out += "\\\\";
+    } else if (point < 0x20 || (point >= 0x7f && point <= 0x9f)) {
+      out += `\\u${point.toString(16).padStart(4, "0")}`;
     } else if (point > 0x7e) {
       out +=
         point <= 0xffff

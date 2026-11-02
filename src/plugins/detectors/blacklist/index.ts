@@ -33,6 +33,7 @@ import {
   isStandardTokenWriter,
   mappingBaseNearAccess,
   mappingLoadNearFlavor,
+  nearestFlavorPc,
   ownerCheckVia,
   packedMappingGateExpr,
   packedMappingGateShift,
@@ -215,6 +216,23 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
       const writeBase = mappingBaseNearAccess(code, writeMember, write.pc);
       const gateBase = mappingBaseNearAccess(code, gateMember, gatePc);
       if (writeBase === null || gateBase === null || writeBase !== gateBase) {
+        continue;
+      }
+      // The gate jump itself must test the gated entry (SCAN-4): a
+      // mapping read that only branches around a later check on another
+      // value (a fee exemption skipping a trading-flag or limit check)
+      // sits beside the same ISZERO shape, but no jump that reverts on
+      // the entry ever tests it, so the pair proves no list.
+      const precise = gatedMappingReadPrecise(transfer);
+      if (precise === null) {
+        continue;
+      }
+      const transferExprs = interpretRegionExprs(input.bytecode, transferSelector);
+      if (
+        revertingMappingGatePc(input.bytecode, code, gateMember, transferExprs.jumpis, precise.cmpPc, writeBase) ===
+          null &&
+        exprMappingGatePc(input.bytecode, code, gateMember, transferExprs.jumpis, writeBase) === null
+      ) {
         continue;
       }
       const holder = attribution.holderOf(write.pc);
@@ -691,6 +709,48 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             transferExprs.jumpis,
             writeBase,
           );
+        }
+        if (gateEvidencePc === null) {
+          // Getter-helper gate (SCAN-4): the entry load sits in an
+          // internal getter that returns it on the stack, so no compare
+          // sits beside the load and the gate jump in the caller tests
+          // the returned word instead of a load the interpreter can
+          // name. The load proves the gate when it hashes the written
+          // base, no equality or ISZERO sits beside it (a beside compare
+          // is the exemption shape the proofs above already weighed),
+          // and some member jump on the transfer path reverts on one
+          // side.
+          const v1Transfer = analyzeOwnerControl(input.bytecode).regions.find(
+            (candidate) => candidate.selector === transferSelector,
+          );
+          const helperLoads = [
+            ...transfer.loads,
+            ...((v1Transfer?.loads ?? []).filter(
+              (load) => !transfer.loads.some((seen) => seen.pc === load.pc),
+            ) as typeof transfer.loads),
+          ];
+          for (const load of helperLoads) {
+            if (load.slot.kind !== "mapping") {
+              continue;
+            }
+            if (mappingBaseNearAccess(code, gateMember, load.pc, gateSlotOf) !== writeBase) {
+              continue;
+            }
+            if (nearestFlavorPc(transfer, ["eq", "iszero"], load.pc) !== null) {
+              continue;
+            }
+            const reverting = code.some(
+              (insn) =>
+                insn.opcode === 0x57 &&
+                gateMember(insn.pc) &&
+                (hasRevertingSide(input.bytecode, code, gateMember, insn.pc, "fall") ||
+                  hasRevertingSide(input.bytecode, code, gateMember, insn.pc, "jump")),
+            );
+            if (reverting) {
+              gateEvidencePc = load.pc;
+              break;
+            }
+          }
         }
         if (gateEvidencePc === null) {
           continue;

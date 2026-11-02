@@ -393,7 +393,9 @@ describe("pause enforce-style gates (SCAN-2)", () => {
     const findings = pauseDetectorPlugin.detect(hexInput(byteMaskPauseTokenHex()));
     expect(findings).toHaveLength(1);
     expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
-    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "unknown", proof: "extended" });
+    // The AND-NOT clear store now proves the bit flips back (SCAN-4),
+    // so the mode is a proven pause rather than unknown.
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });
   });
 
   test("short-circuit packed gate that reverts down one continuation reports an extended pause fact", () => {

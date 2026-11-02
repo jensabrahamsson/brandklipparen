@@ -25,6 +25,7 @@ import {
   analyzeOwnerControl,
   compoundPrivilegedGate,
   constSlotLoadNearFlavor,
+  exprConstValue,
   flavorBetween,
   hasRevertingGateAfter,
   hasRevertingSide,
@@ -382,6 +383,32 @@ export function gatedFlagReadPrecise(
     return null;
   }
   return Object.freeze({ loadPc: zeroProof.loadPc, cmpPc: zeroProof.gatePc });
+}
+
+// Whether a packed store clears `bit` of its word (SCAN-4): an AND
+// over the loaded word whose mask constant leaves the bit at zero,
+// written directly or as a NOT over the bit constant. A set store
+// (an OR that raises the bit) never matches, so a proven clear is
+// what flips a packed flag back.
+function packedClearStore(record: { readonly value: Expr } | undefined, bit: number): boolean {
+  const value = record?.value;
+  if (value === undefined || value.kind !== "op" || value.name !== "AND") {
+    return false;
+  }
+  for (const arg of value.args) {
+    if (arg.kind === "op" && arg.name === "NOT") {
+      const inner = exprConstValue(arg.args[0]);
+      if (inner !== null && ((inner >> BigInt(bit)) & 1n) === 1n) {
+        return true;
+      }
+      continue;
+    }
+    const constant = exprConstValue(arg);
+    if (constant !== null && constant !== 0n && ((constant >> BigInt(bit)) & 1n) === 0n) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // Extended analysis (P-11, weight-0 fact): the flag proof over the v2
@@ -874,6 +901,42 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             gateEvidencePc = exprFlagGatePc(input.bytecode, code, gateMember, transferExprs.jumpis, slot);
           }
           if (gateEvidencePc === null) {
+            // Getter-helper gate (SCAN-4): the flag load sits in an
+            // internal getter that returns it on the stack, so no
+            // compare sits beside the load and the gate jump in the
+            // caller tests the returned word instead of a load the
+            // interpreter can name. The load proves the gate when it
+            // reads the written slot, no equality or ISZERO sits beside
+            // it (a beside compare is the shape the proofs above
+            // already weighed), and some member jump on the transfer
+            // path reverts on one side.
+            const v1Transfer = analyzeOwnerControl(input.bytecode).regions.find(
+              (candidate) => candidate.selector === transferSelector,
+            );
+            const helperLoads = [
+              ...transfer.loads,
+              ...((v1Transfer?.loads ?? []).filter(
+                (load) => !transfer.loads.some((seen) => seen.pc === load.pc),
+              ) as typeof transfer.loads),
+            ];
+            for (const load of helperLoads) {
+              if (load.slot.kind !== "const" || load.slot.value !== slot) {
+                continue;
+              }
+              const reverting = code.some(
+                (insn) =>
+                  insn.opcode === 0x57 &&
+                  gateMember(insn.pc) &&
+                  (hasRevertingSide(input.bytecode, code, gateMember, insn.pc, "fall") ||
+                    hasRevertingSide(input.bytecode, code, gateMember, insn.pc, "jump")),
+              );
+              if (reverting) {
+                gateEvidencePc = load.pc;
+                break;
+              }
+            }
+          }
+          if (gateEvidencePc === null) {
             continue;
           }
         }
@@ -916,6 +979,35 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         let mode = toggleMode(view.regions, slot);
         if (mode === "trading-toggle" && exprProvesZeroWrite(input.bytecode, view.regions, slot)) {
           mode = "pause";
+        }
+        if (mode === "unknown" && packedWrite !== null && packedWrite.shift !== null) {
+          // A packed clear among the guarded writers (SCAN-4): the
+          // legacy toggle scan sees no constant beside a packed
+          // store, but an AND-mask store that drops the writer bit
+          // proves the flag flips back, so the mode is a pause.
+          for (const candidate of view.regions) {
+            if (isStandardTokenWriter(candidate.selector)) {
+              continue;
+            }
+            const candidateMember = memberOf(candidate.selector);
+            const candidateSlots = interpretRegionSlots(input.bytecode, candidate.selector);
+            const candidateSlotOf: SlotLookup = (pc) => candidateSlots.get(pc);
+            const candidateExprs = interpretRegionExprs(input.bytecode, candidate.selector);
+            if (
+              !writerGuarded(code, candidateMember, ownerSlot, candidateSlotOf, candidateExprs.jumpis, input.bytecode)
+            ) {
+              continue;
+            }
+            const cleared = [...candidateExprs.stores.values()].some(
+              (record) =>
+                exprConstValue(record.slot) === BigInt(slot) &&
+                packedClearStore(record, packedWrite.shift as number),
+            );
+            if (cleared) {
+              mode = "pause";
+              break;
+            }
+          }
         }
         if (mode === "trading-toggle") {
           continue;

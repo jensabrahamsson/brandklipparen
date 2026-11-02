@@ -96,7 +96,16 @@ export function decodeTokenTextDisplay(bytes: Uint8Array): TokenTextDisplay | nu
   try {
     decoded = new TextDecoder("utf-8", { fatal: true }).decode(raw);
   } catch {
-    return null;
+    // Lossy fallback (SCAN-4): bytes that carry non-ASCII content but
+    // fail strict UTF-8 (a homoglyph name in a legacy encoding, a
+    // truncated multi-byte sequence) still name the token. Decode with
+    // replacement characters and flag the result, so the caller shows
+    // it escaped instead of empty. Pure-ASCII or control-carrying
+    // payloads stay absent.
+    if (!raw.some((byte) => byte > 0x7e)) {
+      return null;
+    }
+    decoded = new TextDecoder("utf-8", { fatal: false }).decode(raw);
   }
   const text = decoded.trim();
   const chars = [...text];

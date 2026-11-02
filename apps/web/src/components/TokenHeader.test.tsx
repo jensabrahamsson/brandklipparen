@@ -59,6 +59,11 @@ describe("token identity resolution", () => {
     expect(tokenDisplayText("USD\u0422", false)).toBe("USD\u0422");
   });
 
+  test("flagged lossy text escapes replacement and control code points", () => {
+    expect(tokenDisplayText("\uFFFD" + "A", true)).toBe("\\ufffdA");
+    expect(tokenDisplayText("A\u0001B", true)).toBe("A\\u0001B");
+  });
+
   test("unflagged live homoglyph filling an empty analysis identity is flagged from its text", () => {
     expect(resolveTokenIdentity({}, { symbol: "USD\u0422", name: "Tether USD" })).toEqual({
       symbol: "USD\u0422",
@@ -185,6 +190,19 @@ describe("token heading fallbacks", () => {
     expect(html).toContain("USD\\u0422");
     expect(html).toContain("(non-ASCII)");
     expect(html).not.toContain("USD\u0422");
+  });
+
+  test("lossy flagged symbol heads escaped and labelled instead of empty", () => {
+    const html = renderToString(
+      <TokenHeader
+        address={address}
+        identity={{ symbol: "\uFFFD" + "A", name: null, symbolNonAscii: true, nameNonAscii: false }}
+        liveEntry={null}
+      />,
+    );
+    expect(html).toContain("\\ufffdA");
+    expect(html).toContain("(non-ASCII)");
+    expect(html).not.toContain("\uFFFD" + "A");
   });
 
   test("live homoglyph behind an empty analysis identity heads escaped and labelled", () => {

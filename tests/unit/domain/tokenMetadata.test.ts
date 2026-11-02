@@ -83,10 +83,13 @@ describe("strict token text decoding", () => {
     expect(decodeTokenText(Uint8Array.from(out))).toBeNull();
   });
 
-  test("display decoding stays absent for controls and broken UTF-8", () => {
+  test("display decoding stays absent for controls", () => {
     const hostile = abiString("AB");
     hostile[64] = 0x01;
     expect(decodeTokenTextDisplay(hostile)).toBeNull();
+  });
+
+  test("display decoding shows broken UTF-8 lossily and flagged instead of empty", () => {
     const broken: number[] = [
       ...new Array(31).fill(0),
       32,
@@ -98,7 +101,11 @@ describe("strict token text decoding", () => {
     while (broken.length % 32 !== 0) {
       broken.push(0);
     }
-    expect(decodeTokenTextDisplay(Uint8Array.from(broken))).toBeNull();
+    expect(decodeTokenTextDisplay(Uint8Array.from(broken))).toEqual({
+      text: "\uFFFD" + "A",
+      nonAscii: true,
+    });
+    expect(decodeTokenText(Uint8Array.from(broken))).toBeNull();
   });
 
   test("malformed payloads are absent", () => {
