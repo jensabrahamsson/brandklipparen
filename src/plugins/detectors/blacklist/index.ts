@@ -36,7 +36,7 @@ import {
   packedMappingGateExpr,
   packedMappingGateShift,
 } from "../../../domain/ownerControl.ts";
-import type { RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
+import type { Expr, RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
 import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
 import type { Selector as SelectorType } from "../../../domain/types.ts";
@@ -270,6 +270,61 @@ export function gatedMappingReadPrecise(region: RegionFacts): { readonly loadPc:
   return Object.freeze({ loadPc: zeroProof.loadPc, cmpPc: zeroProof.gatePc });
 }
 
+// Whether a jump condition reads a mapping entry on the given base:
+// the condition subtree holds an SLOAD whose slot hashes that base. A
+// fee-exempt read branches around another check (a limit or a trading
+// flag), so the reverting jump there tests that other value, never the
+// exempt entry: only a reverting jump whose own condition reads the
+// written entry proves the entry blocks the transfer.
+function condReferencesMappingBase(cond: Expr | undefined, base: number): boolean {
+  if (cond === undefined || cond.kind === "unknown") {
+    return false;
+  }
+  if (cond.kind === "sload") {
+    return exprMappingBase(cond.slot) === base || condReferencesMappingBase(cond.slot, base);
+  }
+  if (cond.kind === "keccak") {
+    return cond.words.some((word) => condReferencesMappingBase(word, base));
+  }
+  if (cond.kind === "calldata") {
+    return condReferencesMappingBase(cond.offset, base);
+  }
+  if (cond.kind === "op") {
+    return cond.args.some((arg) => condReferencesMappingBase(arg, base));
+  }
+  return false;
+}
+
+// First member JUMPI past `afterPc` whose fall side reverts and whose
+// own condition reads a mapping entry on `base`, or null. Mirrors the
+// legacy gate scan, tightened so a nearby revert on another value (a
+// limit compare or a trading flag past an exemption branch) never
+// proves a blacklist gate.
+function revertingMappingGatePc(
+  bytecode: DetectorInput["bytecode"],
+  code: ReturnType<typeof disassemble>,
+  gateMember: (pc: number) => boolean,
+  jumpis: ReadonlyMap<number, Expr>,
+  afterPc: number,
+  base: number,
+): number | null {
+  for (const candidate of code) {
+    if (!gateMember(candidate.pc) || candidate.opcode !== 0x57) {
+      continue;
+    }
+    if (candidate.pc <= afterPc || candidate.pc > afterPc + 64) {
+      continue;
+    }
+    if (!hasRevertingSide(bytecode, code, gateMember, candidate.pc, "fall")) {
+      continue;
+    }
+    if (condReferencesMappingBase(jumpis.get(candidate.pc), base)) {
+      return candidate.pc;
+    }
+  }
+  return null;
+}
+
 // Extended analysis (P-11, weight-0 fact): the mapping-gate proof over
 // the v2 reachability view, where a shared `_beforeTokenTransfer` helper
 // joins every entry that reaches it, tightened so plain token mechanics
@@ -338,8 +393,13 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         const gateMember = memberOf(transferSelector);
         const gateSlots = interpretRegionSlots(input.bytecode, transferSelector);
         const gateSlotOf: SlotLookup = (pc) => gateSlots.get(pc);
+        const transferExprs = interpretRegionExprs(input.bytecode, transferSelector);
         // The beside-window gate first, so every pair the scored-adjacent
         // proof already proves keeps its load and compare PCs bit for bit.
+        // The reverting jump must test the gated entry itself: a mapping
+        // read that only exempts the holder from a later check (fees,
+        // limits, a trading flag) branches around a revert on another
+        // value, which never proves the entry blocks a transfer.
         let gateEvidencePc: number | null = null;
         const gate = gatedMappingReadPrecise(transfer);
         if (gate !== null) {
@@ -347,7 +407,14 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           if (
             gateBase !== null &&
             gateBase === writeBase &&
-            hasRevertingGateAfter(input.bytecode, code, gateMember, gate.cmpPc)
+            revertingMappingGatePc(
+              input.bytecode,
+              code,
+              gateMember,
+              transferExprs.jumpis,
+              gate.cmpPc,
+              writeBase,
+            ) !== null
           ) {
             gateEvidencePc = gate.loadPc;
           }
@@ -359,7 +426,6 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           // window cannot see still proves when it reads the written
           // entry (same base) through a shift-and-mask read whose blocked
           // side reverts.
-          const transferExprs = interpretRegionExprs(input.bytecode, transferSelector);
           const exprGate = packedMappingGateExpr(transferExprs.jumpis, gateMember);
           if (
             exprGate !== null &&

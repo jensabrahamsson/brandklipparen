@@ -88,3 +88,9 @@ Version 1.0.0. Initial release.
 Specificity update: the writer must store a caller-chosen rate and the
 rate arithmetic must sit beside the loaded slot, with a subtraction for
 the deduction.
+
+SCAN-1 recall: the extended proof also accepts straight-line rate
+arithmetic — a rate load (including one field of a multi-slot fee
+struct summed with its siblings) followed later in the transfer region
+by a MUL or DIV the fee proof accepts, with the subtraction already
+required. No scoring, weight or payload shape changes.

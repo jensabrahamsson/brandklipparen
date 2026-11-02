@@ -14,6 +14,7 @@ import type { Result } from "../../../src/domain/result.ts";
 import { transferFeeDetectorPlugin } from "../../../src/plugins/detectors/transfer-fee/index.ts";
 import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
 import {
+  ADD,
   AND,
   CALLDATALOAD,
   DIV,
@@ -286,5 +287,66 @@ describe("transfer-fee unpack silence (F-10d)", () => {
     // feeds the division, so neither the window proof nor the condition
     // proof counts it as fee arithmetic.
     expect(transferFeeDetectorPlugin.detect(unpackInput())).toEqual([]);
+  });
+});
+
+describe("transfer-fee multi-slot setter (SCAN-1)", () => {
+  const FEE_SET = "0x0a9c6c1e";
+  const DUP1 = 0x80;
+  const POP = 0x50;
+
+  function push2(value: number): number[] {
+    return [0x61, (value >> 8) & 0xff, value & 0xff];
+  }
+
+  test("struct-shaped fee setter summed in the transfer path reports a fee fact", () => {
+    // The guarded setter writes three consecutive fee slots (a Fees
+    // struct shape); the transfer path sums all three, multiplies the
+    // amount by the total and divides, then subtracts. Branch and
+    // bookkeeping code between the loads and the multiply spans more
+    // than the beside window (stack-neutral pads stand in for it).
+    const pads: number[] = [];
+    for (let i = 0; i < 30; i += 1) {
+      pads.push(...push1(0), POP);
+    }
+    const bytecode = tokenBytecode([
+      {
+        selector: FEE_SET,
+        body: [
+          ...ownerGuard(0, 200),
+          ...sstoreConstSlot(10, [CALLDATALOAD]),
+          ...sstoreConstSlot(11, [CALLDATALOAD]),
+          ...sstoreConstSlot(12, [CALLDATALOAD]),
+          STOP,
+        ],
+      },
+      {
+        selector: TRANSFER,
+        body: [
+          CALLDATALOAD,
+          DUP1,
+          ...push1(10),
+          SLOAD,
+          ...push1(11),
+          SLOAD,
+          ADD,
+          ...push1(12),
+          SLOAD,
+          ADD,
+          ...pads,
+          MUL,
+          ...push2(1000),
+          DIV,
+          SUB,
+          ...sstoreConstSlot(2, [CALLDATALOAD]),
+          STOP,
+        ],
+      },
+    ]);
+    const input: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
+    const findings = transferFeeDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    const slot = (findings[0]?.payload as { slot?: number } | undefined)?.slot;
+    expect([10, 11, 12]).toContain(slot);
   });
 });

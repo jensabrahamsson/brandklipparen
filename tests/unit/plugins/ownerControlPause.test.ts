@@ -35,6 +35,7 @@ import {
   maskedPauseSetBody,
   packedPauseToken,
   push1,
+  sharedPauseTokenHex,
   sstoreConstSlot,
   tokenBytecode,
   branchOk,
@@ -318,5 +319,29 @@ describe("pause owner-seat silence (F-10e)", () => {
     ]);
     const input: DetectorInput = Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) });
     expect(pauseDetectorPlugin.detect(input)).toEqual([]);
+  });
+});
+
+describe("pause one-way switch precision (SCAN-1)", () => {
+  function hexInput(hex: string): DetectorInput {
+    const parsed = Bytecode.parse(hex);
+    if (!parsed.ok) {
+      throw new Error("fixture bytecode must parse");
+    }
+    return Object.freeze({ bytecode: parsed.value, codeHash: mustOk(CodeHash.of(parsed.value)) });
+  }
+
+  test("one-way enable in a shared gate reports no pause fact", () => {
+    // The guarded setter only ever writes one to the flag the shared
+    // transfer helper gates on: trading can open but never freeze
+    // again, so no pause fact is proven.
+    expect(pauseDetectorPlugin.detect(hexInput(sharedPauseTokenHex(false)))).toEqual([]);
+  });
+
+  test("reversible flag in a shared gate reports an extended pause fact", () => {
+    const findings = pauseDetectorPlugin.detect(hexInput(sharedPauseTokenHex(true)));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });
   });
 });

@@ -15,6 +15,7 @@ import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
 import {
   ADD_LIST_SET,
   CALLDATALOAD,
+  DUAL_BLACKLIST_SET,
   ISZERO,
   KECCAK,
   MSTORE,
@@ -25,6 +26,8 @@ import {
   SSTORE,
   STOP,
   TRANSFER_FROM_SELECTOR,
+  dualBlacklistGateTokenHex,
+  feeExemptGateTokenHex,
   ownerGuard,
   packedMappingBlacklistToken,
   push1,
@@ -363,5 +366,34 @@ describe("blacklist scored precision (C-7)", () => {
     const findings = blacklistDetectorPlugin.detect(scoredInput(3, 3));
     expect(findings).toHaveLength(1);
     expect(findings[0]?.payload).toEqual({ feature: "blacklist" });
+  });
+});
+
+describe("blacklist fee-exempt and dual-gate precision (SCAN-1)", () => {
+  function hexInput(hex: string): DetectorInput {
+    const parsed = Bytecode.parse(hex);
+    if (!parsed.ok) {
+      throw new Error("fixture bytecode must parse");
+    }
+    return Object.freeze({ bytecode: parsed.value, codeHash: mustOk(CodeHash.of(parsed.value)) });
+  }
+
+  test("fee-exempt mapping that only skips a limit check stays silent", () => {
+    // The guarded setter writes the mapping the shared transfer helper
+    // reads, but a set entry only skips the limit compare: it never
+    // gates a revert itself, so no blacklist is proven.
+    expect(blacklistDetectorPlugin.detect(hexInput(feeExemptGateTokenHex()))).toEqual([]);
+  });
+
+  test("dual-entry gate on the same base reports an extended fact", () => {
+    // Sender- and recipient-shaped entries of one mapping both revert
+    // the shared transfer path while set, and the guarded setter writes
+    // that base: a blacklist pair is proven.
+    const findings = blacklistDetectorPlugin.detect(hexInput(dualBlacklistGateTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.blacklist:blacklist-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
+    const selectors = (findings[0]?.evidence ?? []).map((entry) => entry.selector as string).sort();
+    expect(selectors).toEqual([DUAL_BLACKLIST_SET, TRANSFER_FROM_SELECTOR].sort());
   });
 });

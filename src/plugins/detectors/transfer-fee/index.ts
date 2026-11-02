@@ -305,6 +305,11 @@ function detectV1(input: DetectorInput): readonly PluginFinding[] {
 // separates the rate load from its use further than the scored window.
 const EXTENDED_FEE_WINDOW_PC = 64;
 
+// Backward scan window for the straight-line rate fallback: branch and
+// bookkeeping code between the rate load and its multiply can span
+// hundreds of PCs in real compiler output.
+const EXTENDED_STRAIGHT_LINE_WINDOW_PC = 512;
+
 // Whether an expression subtree loads the given constant slot.
 function exprLoadsSlot(expr: Expr | undefined, slot: number): boolean {
   if (expr === undefined) {
@@ -509,6 +514,30 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
               usePc = pc;
               break;
             }
+          }
+        }
+        if (usePc === null) {
+          // Straight-line rate arithmetic: the rate load (often one
+          // field of a multi-slot fee struct, summed with its siblings)
+          // can sit far before the multiply, past both the beside
+          // window and every jump condition. A load followed by a
+          // MUL/DIV the fee proof accepts, with the region subtraction
+          // already required above, still proves the rate application.
+          const rateLoad = transfer.loads.find(
+            (load) => load.slot.kind === "const" && load.slot.value === slot,
+          );
+          const arithPcs = [...transfer.opPcs.mul, ...transfer.opPcs.div].sort(
+            (left, right) => left - right,
+          );
+          if (
+            rateLoad !== undefined &&
+            arithPcs.some(
+              (pc) =>
+                pc > rateLoad.pc &&
+                feeArithProven(code, gateMember, pc, EXTENDED_STRAIGHT_LINE_WINDOW_PC),
+            )
+          ) {
+            usePc = rateLoad.pc;
           }
         }
         if (usePc === null) {

@@ -570,6 +570,15 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         if (nonEmpty === null) {
           continue;
         }
+        // A proven one-way enable (only a nonzero write, never a zero
+        // write) is a launch gate, not a freeze: trading can open but
+        // can never be frozen again, so no pause fact is proven for
+        // it. A computed packed write proves neither direction, so its
+        // mode stays unknown and the fact still stands.
+        const mode = toggleMode(view.regions, slot);
+        if (mode === "trading-toggle") {
+          continue;
+        }
         return Object.freeze([
           Object.freeze({
             id: `${PLUGIN_ID}:pause-extended`,
@@ -579,7 +588,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             payload: Object.freeze({
               fact: "pause",
               slot,
-              mode: toggleMode(view.regions, slot),
+              mode,
               proof: "extended",
             }),
           }),

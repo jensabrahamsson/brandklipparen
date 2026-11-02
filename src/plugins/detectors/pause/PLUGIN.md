@@ -107,3 +107,10 @@ Follow-up: masked read-modify-write stores prove the written bit too,
 so a packed write with no constant beside the store still names its
 candidate slot; a lone NOT-masked OR with no AND, or a write with no
 shift idiom, still proves nothing.
+
+SCAN-1 precision: the extended fact now reports only a flag that flips
+both ways (`mode: pause`). A one-way enable (a nonzero write with no
+zero write anywhere, such as a launch switch that only ever opens
+trading) is a launch gate, not a freeze, so it stays silent in the
+extended proof; the scored proof still names its `trading-toggle`
+mode.

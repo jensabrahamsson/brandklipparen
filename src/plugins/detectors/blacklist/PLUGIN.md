@@ -101,3 +101,10 @@ Follow-up: a packed shift-and-mask gate read that spans more than the
 beside window proves as a fallback when it reads the written base and
 its blocked side reverts; the beside-window proof keeps its load and
 compare PCs wherever it already proves.
+
+SCAN-1 precision: the beside-window extended gate now also needs the
+reverting jump's own condition to read the written mapping entry. A
+per-address mapping that only exempts its holder from fees, limits or
+a trading flag branches around a revert on another value; that nearby
+revert no longer proves a blacklist, while a gate that reverts on the
+entry itself (one or both transfer parties) still proves.

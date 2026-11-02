@@ -25,6 +25,7 @@ import {
   SUB,
   ownerGuard,
   push1,
+  sharedLimitGateTokenHex,
   sstoreConstSlot,
   tokenBytecode,
   branchOk,
@@ -249,5 +250,27 @@ describe("transfer-limits extended precision (P-11)", () => {
     expect(findings.filter((finding) => finding.pluginId === "dev.brandklipparen.transfer-limits")).toEqual(
       [],
     );
+  });
+});
+
+describe("transfer-limits shared wallet gate (SCAN-1)", () => {
+  test("balance-plus-amount limit in a shared helper reports an extended fact", () => {
+    const parsed = Bytecode.parse(sharedLimitGateTokenHex());
+    if (!parsed.ok) {
+      throw new Error("fixture bytecode must parse");
+    }
+    const input: DetectorInput = Object.freeze({
+      bytecode: parsed.value,
+      codeHash: mustOk(CodeHash.of(parsed.value)),
+    });
+    const findings = transferLimitsDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.transfer-limits:transfer-limits-extended");
+    expect(findings[0]?.payload).toEqual({
+      fact: "transfer-limits",
+      slot: 6,
+      limitKind: "max-wallet",
+      proof: "extended",
+    });
   });
 });

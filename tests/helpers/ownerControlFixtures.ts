@@ -792,6 +792,208 @@ export function oz4RevertHelperTokenHex(writeBase = 4, gateBase = 4, guarded = t
   return asm.build();
 }
 
+// Fee-exempt gate token (SCAN-1): a guarded setter writes mapping base
+// 7, and both transfer entries route through a shared helper that reads
+// the same entry only to skip a limit check on constant slot 6 (the
+// exempt path returns at once; the non-exempt path runs the reverting
+// limit compare). The mapping value never itself gates a revert, so no
+// blacklist pair is proven. The gate lives in the shared helper, so the
+// scored proof stays silent and only the extended proof can misfire.
+// Synthetic selectors and hand-assembled bytecode only.
+export const FEE_EXEMPT_SET = "0x0a9c6c1e";
+
+export function feeExemptGateTokenHex(writeBase = 7, gateBase = 7): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(TRANSFER_FROM_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferFromEntry").op(0x57);
+  asm.op(0x80).push4(FEE_EXEMPT_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("ret1");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("transferFromEntry").op(0x5b);
+  asm.pushLabel2("ret2");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(writeBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  // Shared helper: exempt entries return at once; the rest run a
+  // reverting limit compare on constant slot 6.
+  asm.label("shared").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(gateBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("check").op(0x57);
+  asm.op(0x56);
+  asm.label("check").op(0x5b);
+  asm.op(0x35).push1(0x06).op(0x54, 0x10, 0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  asm.label("ret1").op(0x5b, 0x00);
+  asm.label("ret2").op(0x5b, 0x00);
+  return asm.build();
+}
+
+// Dual-entry blacklist gate token (SCAN-1): both transfer entries route
+// through a shared helper that reverts while either of two entries of
+// mapping base 7 reads set (sender and recipient shaped), and a guarded
+// setter writes the same base. Synthetic selectors and bytecode only.
+export const DUAL_BLACKLIST_SET = "0x0a9c6c1e";
+
+export function dualBlacklistGateTokenHex(writeBase = 7, gateBase = 7): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(TRANSFER_FROM_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferFromEntry").op(0x57);
+  asm.op(0x80).push4(DUAL_BLACKLIST_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("ret1");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("transferFromEntry").op(0x5b);
+  asm.pushLabel2("ret2");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(writeBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  asm.label("shared").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(gateBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("second").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("second").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(gateBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  asm.label("ret1").op(0x5b, 0x00);
+  asm.label("ret2").op(0x5b, 0x00);
+  return asm.build();
+}
+
+// Shared-flag pause token (SCAN-1): both transfer entries route through
+// a shared helper that reverts while flag slot 4 reads set. The setter
+// always writes one; with `reversible` a second guarded setter also
+// writes zero, so the flag flips both ways. Synthetic only.
+export const SHARED_PAUSE_SET = "0x0a9c6c1e";
+export const SHARED_PAUSE_CLEAR = "0x0b9c6c1e";
+
+export function sharedPauseTokenHex(reversible: boolean): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(TRANSFER_FROM_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferFromEntry").op(0x57);
+  asm.op(0x80).push4(SHARED_PAUSE_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  if (reversible) {
+    asm.op(0x80).push4(SHARED_PAUSE_CLEAR.slice(2)).op(0x14);
+    asm.pushLabel2("clearEntry").op(0x57);
+  }
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("ret1");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("transferFromEntry").op(0x5b);
+  asm.pushLabel2("ret2");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  if (reversible) {
+    asm.label("clearEntry").op(0x5b);
+    asm.op(0x33).push1(0x00).op(0x54, 0x14);
+    asm.pushLabel2("clearOk").op(0x57);
+    asm.push1(0x00).op(0x80, 0xfd);
+    asm.label("clearOk").op(0x5b);
+    asm.push1(0x00).push1(0x04).op(0x55, 0x00);
+  }
+  asm.label("shared").op(0x5b);
+  asm.push1(0x04).op(0x54, 0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  asm.label("ret1").op(0x5b, 0x00);
+  asm.label("ret2").op(0x5b, 0x00);
+  return asm.build();
+}
+
+// Shared wallet-limit gate token (SCAN-1): both transfer entries route
+// through a shared helper that reverts while balance(recipient) plus
+// the amount exceeds limit slot 6, and a guarded setter writes slot 6
+// with a computed (multiplied) caller value. Synthetic only.
+export const SHARED_LIMIT_SET = "0x0a9c6c1e";
+
+export function sharedLimitGateTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(TRANSFER_FROM_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferFromEntry").op(0x57);
+  asm.op(0x80).push4(SHARED_LIMIT_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("ret1");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("transferFromEntry").op(0x5b);
+  asm.pushLabel2("ret2");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.op(0x35).push2(1000).op(0x02).push1(0x06).op(0x55, 0x00);
+  asm.label("shared").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(0x02).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54);
+  asm.op(0x35, 0x01).push1(0x06).op(0x54, 0x11, 0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  asm.label("ret1").op(0x5b, 0x00);
+  asm.label("ret2").op(0x5b, 0x00);
+  return asm.build();
+}
+
 export function oldSolcPauseBitMismatchToken(): BytecodeType {
   return tokenBytecode([
     { selector: OLD_SOLC_PAUSE_SET, body: oldSolcPauseBody() },
