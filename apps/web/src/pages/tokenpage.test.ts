@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { ApiError } from "../lib/api.ts";
-import { errorCopy, meaningSentence, verdictBandColor } from "./TokenPage.tsx";
+import { errorCopy, meaningSentence, tokenPageTitle, verdictBandColor } from "./TokenPage.tsx";
 import type { BoardTile } from "../components/plugins/PluginBoard.tsx";
 import type { AnalyzeResult, Signal } from "../types.ts";
 
@@ -290,5 +290,13 @@ describe("error copy (design review P1-14)", () => {
     expect(errorCopy(new ApiError("boom", 503, "Down")).retryable).toBe(true);
     expect(errorCopy(new ApiError("validation-error", 400, "Bad")).retryable).toBe(true);
     expect(errorCopy(new Error("nope")).retryable).toBe(true);
+  });
+});
+
+describe("main-view document title (round-3 D-23)", () => {
+  test("title carries the symbol, score and band", () => {
+    expect(tokenPageTitle("USDT", 29)).toBe("USDT · 29 Low · Brandklipparen");
+    expect(tokenPageTitle("USDT", 84)).toBe("USDT · 84 High · Brandklipparen");
+    expect(tokenPageTitle("Token", 45)).toBe("Token · 45 Elevated · Brandklipparen");
   });
 });

@@ -1,9 +1,9 @@
-// Expert view switch (UI v2 §1.4, K-034): one `role="switch"` in the
-// toolbar and on plugin detail pages. Same `brandklipparen-ui-mode` key
-// as before; Expert only shows already-fetched detail (selectors, raw
-// payloads), never refetches. The box is 44 px on every width.
+// Expert view switch (UI v2 §1.4, K-034; round-3 D-19): the same shared
+// `.switch` as Motion: a label, a 32x18 track with a knob, and the state
+// word. Same `brandklipparen-ui-mode` key as before; Expert only shows
+// already-fetched detail (selectors, raw payloads), never refetches.
+// The box is 44 px on every width.
 import type { JSX } from "react";
-import { Pictogram } from "./Pictogram.tsx";
 import type { UiMode } from "../lib/uiMode.ts";
 
 export function ExpertSwitch({
@@ -23,13 +23,14 @@ export function ExpertSwitch({
       aria-checked={expert}
       aria-label="Expert view"
       data-testid={testId}
-      className="expert-switch"
+      className="switch"
       onClick={() => onModeChange(expert ? "simple" : "expert")}
     >
-      <span aria-hidden="true" className="expert-switch-icon">
-        <Pictogram name="expert" size={20} />
+      <span className="switch-label">Expert view</span>
+      <span className="switch-track" aria-hidden="true">
+        <span className="switch-knob" />
       </span>
-      Expert view
+      <span className="switch-state">{expert ? "On" : "Off"}</span>
     </button>
   );
 }

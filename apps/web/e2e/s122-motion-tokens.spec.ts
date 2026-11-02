@@ -221,14 +221,15 @@ test("s122_motion_switch_footer_toggles_data_motion", async ({ page }) => {
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.locator(".card").first()).toBeVisible();
 
-  // The token footer carries the Motion switch and the model line, with
+  // The token footer carries the trust line and the Motion switch, with
   // a real 44 px box on every width.
   const motion = page.getByTestId("motion-switch");
   await expect(motion).toBeVisible();
   const box = await motion.boundingBox();
   expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
   expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
-  await expect(page.locator(".page-foot .foot-model")).toContainText("Model 0.1.0");
+  await expect(page.locator(".page-foot")).toContainText("Deterministic score · Muse is advisory");
+  await expect(page.locator(".page-foot .foot-model")).toHaveCount(0);
 
   // Off pins data-motion and kills running loops; on removes it again.
   await motion.click();

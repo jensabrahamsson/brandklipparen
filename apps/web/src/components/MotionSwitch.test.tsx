@@ -39,4 +39,20 @@ describe("motion switch", () => {
     const html = renderToString(createElement(MotionSwitch));
     expect(html).toContain('aria-checked="false"');
   });
+
+  test("shows a track plus the state word", () => {
+    const dataset: Record<string, string | undefined> = {};
+    const store = new Map<string, string>([["brandklipparen-motion", "on"]]);
+    vi.stubGlobal("document", { documentElement: { dataset } });
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    } as Storage);
+    const html = renderToString(createElement(MotionSwitch));
+    expect(html).toContain("switch-track");
+    expect(html).toContain("switch-knob");
+    expect(html).toContain(">On<");
+  });
 });

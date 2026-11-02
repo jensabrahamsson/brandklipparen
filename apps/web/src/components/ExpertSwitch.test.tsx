@@ -26,4 +26,14 @@ describe("expert switch (W-8)", () => {
     );
     expect(html).toContain('data-testid="detail-expert-switch"');
   });
+
+  test("shows a track plus a state word in both states", () => {
+    const simple = renderToString(<ExpertSwitch mode="simple" onModeChange={() => undefined} />);
+    expect(simple).toContain("switch-track");
+    expect(simple).toContain("switch-knob");
+    expect(simple).toContain(">Off<");
+    const expert = renderToString(<ExpertSwitch mode="expert" onModeChange={() => undefined} />);
+    expect(expert).toContain("switch-track");
+    expect(expert).toContain(">On<");
+  });
 });

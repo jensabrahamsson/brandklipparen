@@ -1,9 +1,8 @@
-// Motion on/off switch (UI v2 §5.6, W-10, WCAG 2.2.2). One
-// `role="switch"` in the page footer: on follows the operating-system
-// setting, off pins `data-motion="off"` on <html> so every auto-starting
-// loop (the tube shimmer, the dial halo, pending cursors) stops. Same
-// `brandklipparen-motion` key as the footer on both pages. The box is
-// 44 px on every width.
+// Motion on/off switch (UI v2 §5.6, W-10, WCAG 2.2.2; round-3 D-19): one
+// shared `.switch`: a label, a 32x18 track with a knob, and the state
+// word. The knob side swaps without a position transition (instant
+// justify-content change; colour-only transitions), so there is no
+// movement. The box is 44 px on every width.
 import { useEffect, useState, type JSX } from "react";
 import { applyMotionPref, readStoredMotion, writeStoredMotion, type MotionPref } from "../lib/motionPref.ts";
 
@@ -20,17 +19,18 @@ export function MotionSwitch({ testId = "motion-switch" }: { readonly testId?: s
       aria-checked={on}
       aria-label="Motion"
       data-testid={testId}
-      className="motion-switch"
+      className="switch"
       onClick={() => {
         const next: MotionPref = on ? "off" : "on";
         setMotion(next);
         writeStoredMotion(next);
       }}
     >
-      <span className="motion-switch-state" aria-hidden="true">
-        {on ? "On" : "Off"}
+      <span className="switch-label">Motion</span>
+      <span className="switch-track" aria-hidden="true">
+        <span className="switch-knob" />
       </span>
-      Motion
+      <span className="switch-state">{on ? "On" : "Off"}</span>
     </button>
   );
 }

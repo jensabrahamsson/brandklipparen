@@ -662,7 +662,7 @@ a {
 .legend h3 {
   margin: 0 0 10px;
   font-size: 11px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.06em;
   color: var(--dim);
   font-weight: 600;
 }
@@ -739,7 +739,7 @@ a {
   align-items: center;
   padding: 0 12px 6px;
   font-size: 11px;
-  letter-spacing: 0.18em;
+  letter-spacing: normal;
   color: var(--dim);
   border-bottom: 1px dashed var(--edge);
 }
@@ -1328,7 +1328,7 @@ a {
   padding: 10px 26px;
   font-size: 14px;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: normal;
   cursor: pointer;
   font-family: var(--font-mono);
   box-shadow: 0 0 22px var(--glow), var(--bevel-button);
@@ -1402,7 +1402,7 @@ a {
   color: var(--void);
   border: none;
   font: 700 14px var(--font-mono);
-  letter-spacing: 0.16em;
+  letter-spacing: normal;
   padding: 0 26px;
   cursor: pointer;
   box-shadow: 0 0 22px var(--glow);
@@ -1826,7 +1826,7 @@ a {
 .score-dial .of {
   position: relative;
   font-size: 12px;
-  letter-spacing: 0.3em;
+  letter-spacing: normal;
   color: var(--dim);
   margin-top: 8px;
 }
@@ -1837,7 +1837,7 @@ a {
   margin-top: 12px;
   padding: 4px 14px;
   font-weight: 800;
-  letter-spacing: 0.24em;
+  letter-spacing: 0.06em;
   font-size: 14px;
 }
 
@@ -1866,7 +1866,7 @@ a {
 .sec h2 {
   margin: 0 0 16px;
   font-size: 13px;
-  letter-spacing: 0.26em;
+  letter-spacing: normal;
   color: var(--phosphor-hi);
   font-weight: 700;
   text-transform: none;
@@ -1923,7 +1923,8 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 
 .gauge-top .explain {
@@ -2630,7 +2631,8 @@ a {
 
 .contract-facts h2 {
   margin: 0 0 12px;
-  font-size: 17px;
+  font-size: 20px;
+  font-weight: 600;
 }
 
 .contract-facts-list {
@@ -3685,11 +3687,11 @@ details[open] > *:not(summary) {
   min-width: 0;
 }
 
-/* UI v2 layout contract (W-1 follow-up): every tappable control meets
-   44x44 on every width (WCAG 2.5.8), not just on phones. Box controls
-   take a real floor; links keep flowing inline but with a 44 px line box
-   so the measured box passes without pushing lines apart. */
-a,
+/* UI v2 layout contract (W-1 follow-up, round-3 D-20): every tappable
+   control meets 44x44 on every width (WCAG 2.5.8), not just on phones.
+   Box controls take a real floor. Anchors are scoped: block-level links
+   keep the 44 px box, while links inside running sentences render at
+   their line height under the WCAG 2.5.8 inline exception. */
 button,
 input,
 select,
@@ -3700,9 +3702,26 @@ summary,
   min-width: 44px;
 }
 
-a {
+/* Block-level links: the 44 px box lives on these classes, never on a
+   bare `a`, so prose links stay at line height. Tiles, chips and ghost
+   buttons carry their own box; this covers the brand, skip link and
+   ghost-button anchors. */
+a.brand,
+a.skip-link,
+a.button-ghost {
   display: inline-flex;
   align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Inline prose links (round-3 D-20): sentence links such as the Sourcify
+   fallback exempt under WCAG 2.5.8. No flex, no 44 px floor, so the
+   line keeps its own height. */
+.code-link-note a {
+  display: inline;
+  min-height: 0;
+  min-width: 0;
 }
 
 /* P1-11: the fixed summary strip collapses to a single row on phones
@@ -4379,7 +4398,9 @@ a {
 .detail-crumb a {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: 44px;
+  min-width: 44px;
   color: var(--phosphor);
   text-decoration: none;
 }
@@ -4582,53 +4603,15 @@ a {
   min-height: 44px;
 }
 
-.expert-switch {
+/* Shared switch (UI v2 §1.4/§5.6, round-3 D-19): one component for the
+   Expert and Motion switches. A text label, a 32x18 track with a knob,
+   and the state word, so the on/off difference never rests on glow
+   alone. The knob side swaps instantly via justify-content (no position
+   or movement transition); only colour and glow transition. */
+.switch {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  min-width: 44px;
-  padding: 8px 14px;
-  background: transparent;
-  color: var(--dim);
-  border: 1px solid var(--edge);
-  border-radius: 999px;
-  font-size: 13px;
-  font-family: var(--font-mono);
-  cursor: pointer;
-  transition:
-    background-color var(--dur-hover) var(--ease-out),
-    border-color var(--dur-hover) var(--ease-out),
-    color var(--dur-hover) var(--ease-out),
-    box-shadow var(--dur-hover) var(--ease-out);
-}
-
-.expert-switch:hover {
-  color: var(--phosphor-hi);
-  border-color: var(--phosphor);
-}
-
-.expert-switch:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
-
-.expert-switch[aria-checked="true"] {
-  color: var(--phosphor-hi);
-  border-color: var(--phosphor);
-  box-shadow: 0 0 10px var(--glow-soft);
-}
-
-.expert-switch-icon {
-  display: inline-flex;
-}
-
-/* Motion switch (UI v2 §5.6, W-10, WCAG 2.2.2): the same 44 px pill as
-   the Expert switch. The state word reads before the label. */
-.motion-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-height: 44px;
   min-width: 44px;
   max-width: 100%;
@@ -4647,25 +4630,67 @@ a {
     box-shadow var(--dur-hover) var(--ease-out);
 }
 
-.motion-switch:hover {
+.switch:hover {
   color: var(--phosphor-hi);
   border-color: var(--phosphor);
 }
 
-.motion-switch:focus-visible {
+.switch:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
 
-.motion-switch[aria-checked="true"] {
+.switch[aria-checked="true"] {
   color: var(--phosphor-hi);
   border-color: var(--phosphor);
   box-shadow: 0 0 10px var(--glow-soft);
 }
 
-.motion-switch-state {
+.switch-state {
   font-weight: 700;
   color: var(--phosphor-hi);
+}
+
+/* The track reads as a track with or without colour: bordered at rest,
+   filled when on. Justify swaps the knob side with no transition, so
+   the state change is instant and never movement. */
+.switch-track {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  box-sizing: border-box;
+  padding: 0 2px;
+  border: 1px solid var(--dim);
+  border-radius: 999px;
+  background: transparent;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    border-color var(--dur-hover) var(--ease-out);
+}
+
+.switch[aria-checked="true"] .switch-track {
+  justify-content: flex-end;
+  border-color: var(--phosphor);
+  background-color: var(--glass-2);
+}
+
+.switch-knob {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 50%;
+  background-color: var(--dim);
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-out);
+}
+
+.switch[aria-checked="true"] .switch-knob {
+  background-color: var(--phosphor-hi);
+  box-shadow: var(--glow-seg);
 }
 
 /* Page footer (UI v2 §1.1): one row with the Motion switch and the

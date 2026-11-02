@@ -155,9 +155,9 @@ describe("contract facts rendering", () => {
 
   test("code hash truncates in simple mode and shows in full for experts", () => {
     const simple = htmlOf({ kind: "none" }, false);
-    expect(simple).toContain(" … ");
+    expect(simple).toContain("·…·");
     const expert = htmlOf({ kind: "none" }, true);
-    expect(expert).not.toContain(" … ");
+    expect(expert).not.toContain("·…·");
     expect(textOf(expert)).toContain(
       "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
     );

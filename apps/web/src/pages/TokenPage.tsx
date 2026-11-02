@@ -42,6 +42,12 @@ import { RISK_SHORT } from "../lib/risk.ts";
 
 const RISKS: readonly RiskKind[] = ["rug-pull", "honeypot", "bot-pump"];
 
+// Main-view document title (round-3 D-23): the symbol plus the score
+// and band, so the judge's tab bar shows the result.
+export function tokenPageTitle(symbol: string, score: number): string {
+  return `${symbol} · ${score} ${riskWord(score)} · Brandklipparen`;
+}
+
 // Verdict header band colour (S-121, S-132): the risk band colour for
 // the 1px top border and the headline caret, passed as --verdict-band
 // so the stylesheet owns the edge. Same riskBand source as RiskBadge,
@@ -217,7 +223,7 @@ export function TokenPage({
     previousViewKind.current = view.kind;
     if (view.kind === "plugins" && result?.kind === "assessed") {
       const identity = resolveTokenIdentity(result, liveEntry);
-      document.title = `${identity.symbol ?? "Token"} · Brandklipparen`;
+      document.title = tokenPageTitle(identity.symbol ?? "Token", result.score);
       if (previous !== "plugins") {
         window.setTimeout(() => {
           const heading = document.getElementById("plugin-board");
@@ -229,7 +235,7 @@ export function TokenPage({
     }
     if (view.kind === "main" && result?.kind === "assessed") {
       const identity = resolveTokenIdentity(result, liveEntry);
-      document.title = `${identity.symbol ?? "Token"} · Brandklipparen`;
+      document.title = tokenPageTitle(identity.symbol ?? "Token", result.score);
     }
     if (view.kind !== "plugin" && previous === "plugin") {
       let slug: string | null = null;
@@ -400,10 +406,8 @@ export function TokenPage({
         />
       ) : null}
       <footer className="page-foot">
+        <span className="foot-trust">Deterministic score · Muse is advisory</span>
         <MotionSwitch />
-        {result !== null && result.kind === "assessed" ? (
-          <span className="foot-model">Model {result.modelVersion}</span>
-        ) : null}
       </footer>
     </div>
   );

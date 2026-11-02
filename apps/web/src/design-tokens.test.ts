@@ -353,11 +353,11 @@ test("r1_r3_r4_touch_targets_wrap_and_separator", () => {
   // switch stay inside the row on narrow screens.
   const toolbar = code.match(/\.detail-toolbar\s*\{[^}]*\}/)?.[0] ?? "";
   expect(toolbar).toContain("flex-wrap: wrap");
-  expect(code).toMatch(/\.expert-switch\s*\{[^}]*min-height:\s*44px/);
+  expect(code).toMatch(/\.switch\s*\{[^}]*min-height:\s*44px/);
   // R-3: tabs, copy buttons and ghost buttons carry a real 44 px desktop
   // floor; the "?" trigger is a real 44 px box with a 20 px visual, so
   // the touch rule never enlarges the glyph.
-  for (const selector of ["\\.tab", "\\.copy-btn", "\\.button-ghost", "\\.explain-trigger", "\\.motion-switch"]) {
+  for (const selector of ["\\.tab", "\\.copy-btn", "\\.button-ghost", "\\.explain-trigger", "\\.switch"]) {
     const rule = code.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`))?.[0] ?? "";
     expect(rule, `${selector} keeps the 44 px floor`).toMatch(/min-height:\s*44px/);
   }
@@ -374,4 +374,43 @@ test("r1_r3_r4_touch_targets_wrap_and_separator", () => {
   expect(separator).not.toMatch(/transform/);
   const tokenSeparator = code.match(/\.token-meta\s*>\s*\.meta-item\s*\+\s*\.meta-item::before\s*\{[^}]*\}/)?.[0] ?? "";
   expect(tokenSeparator).toMatch(/font-size:\s*1\.2em/);
+});
+
+test("u16_shared_switch_track_with_state_word_and_no_position_transition", () => {
+  // Round-3 D-19: one `.switch` with a 32x18 track, a knob and the state
+  // word. The knob side swaps without a position transition (instant
+  // justify-content change); only colour and glow transition.
+  const track = code.match(/\.switch-track\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(track).toMatch(/width:\s*32px/);
+  expect(track).toMatch(/height:\s*18px/);
+  expect(track).not.toMatch(/transition[^;]*justify-content/);
+  expect(track).not.toMatch(/transform/);
+  const knob = code.match(/\.switch-knob\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(knob).toMatch(/width:\s*12px/);
+  expect(knob).toMatch(/height:\s*12px/);
+  expect(knob).not.toMatch(/transform/);
+  const trackOn = code.match(/\.switch\[aria-checked="true"\]\s*\.switch-track\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(trackOn).toMatch(/justify-content:\s*flex-end/);
+});
+
+test("u16_link_rule_scoped_to_block_links_with_prose_at_line_height", () => {
+  // Round-3 D-20: no bare `a` rule forces inline-flex or a 44 px floor;
+  // block-level link classes carry their own box, and sentence links
+  // render at their line height under the WCAG 2.5.8 inline exception.
+  for (const match of code.matchAll(/^a\s*\{[^}]*\}/gm)) {
+    expect(match[0]).not.toMatch(/display\s*:/);
+    expect(match[0]).not.toMatch(/min-height\s*:/);
+    expect(match[0]).not.toMatch(/min-width\s*:/);
+  }
+  expect(code).not.toMatch(/^a,\s*$/m);
+  const prose = code.match(/\.code-link-note\s+a\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(prose).toMatch(/display:\s*inline/);
+  expect(prose).toMatch(/min-height:\s*0/);
+  const blockLinks = code.match(/a\.brand,\s*a\.skip-link,\s*a\.button-ghost\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(blockLinks).toMatch(/min-height:\s*44px/);
+  // Breadcrumb links are navigation, not prose: a short symbol keeps a
+  // real 44 px box so the layout contract holds at every width.
+  const crumb = code.match(/\.detail-crumb\s+a\s*\{[^}]*\}/)?.[0] ?? "";
+  expect(crumb).toMatch(/min-height:\s*44px/);
+  expect(crumb).toMatch(/min-width:\s*44px/);
 });
