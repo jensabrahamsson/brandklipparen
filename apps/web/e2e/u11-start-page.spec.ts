@@ -68,12 +68,10 @@ test("u11_stale_start_copy_and_chain_pill_are_gone", async ({ page }) => {
     expect(content).not.toContain(stale);
   }
   // No static Chain pill: "Ethereum mainnet" reads exactly once, in the
-  // topbar. The footer links to Settings for the API key and carries
-  // no Animations switch.
+  // topbar. The footer links to About and carries no Animations switch.
   await expect(page.getByText("Ethereum mainnet", { exact: true })).toHaveCount(1);
   await expect(page.getByText("See what its owner can do to you, in plain English.")).toBeVisible();
-  await expect(page.locator(".page-foot")).toContainText("Deterministic score");
-  await expect(page.locator(".page-foot")).toContainText("Muse is advisory");
+  await expect(page.locator(".page-foot")).toHaveText("Scan before you swap · About · GitHub");
   await expect(page.getByTestId("motion-switch")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Use your own API key" })).toHaveAttribute("href", "#/settings");
 });

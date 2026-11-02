@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type JSX } from "react";
 import { ApiError, analyzeToken, fetchAssessment, fetchHealth, fetchPlugins, requestInvestigation } from "../lib/api.ts";
 import { ExpertDetail } from "../components/ExpertDetail.tsx";
+import { PageFooter } from "../components/PageFooter.tsx";
 import { ExpertSwitch } from "../components/ExpertSwitch.tsx";
 import { PluginsPanel } from "../components/PluginsPanel.tsx";
 import type { PluginListEntry } from "../components/PluginsPanel.tsx";
@@ -411,12 +412,8 @@ export function TokenPage({
           apiKey={apiKey}
         />
       ) : null}
-      <footer className="page-foot">
-        <span className="foot-trust">Deterministic score · Muse is advisory</span>
-        <a className="foot-settings" href="#/settings">
-          Use your own API key
-        </a>
-      </footer>
+      <a className="foot-settings" href="#/settings">Use your own API key</a>
+      <PageFooter />
     </div>
   );
 }

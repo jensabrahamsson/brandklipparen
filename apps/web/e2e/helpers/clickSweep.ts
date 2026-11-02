@@ -806,7 +806,7 @@ export function collectErrors(page: Page): ErrorBucket {
 }
 
 // Developer strings that must never reach visible text.
-const BANNED = /failed the evidence check|Template:|undefined|NaN|\[object|\(4\d\d\)|\(5\d\d\)|stack trace/i;
+const BANNED = /failed the evidence check|Template:|\bundefined\b|\bNaN\b|\[object|\(4\d\d\)|\(5\d\d\)|stack trace/i;
 
 export async function checkQuiet(page: Page, bucket: ErrorBucket, where: string): Promise<void> {
   expect(unmockedRequests(page), `unmocked requests ${where}`).toEqual([]);

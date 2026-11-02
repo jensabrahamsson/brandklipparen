@@ -6,6 +6,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { StartPage } from "./pages/StartPage.tsx";
 import { TokenPage } from "./pages/TokenPage.tsx";
+import { AboutPage } from "./pages/AboutPage.tsx";
 
 function loadApiKey(): string {
   let stored: string | null = null;
@@ -79,7 +80,9 @@ export function App(): JSX.Element {
         </span>
       </header>
       <main id="main" tabIndex={-1}>
-        {route.name === "settings" ? (
+        {route.name === "about" ? (
+          <AboutPage />
+        ) : route.name === "settings" ? (
           <SettingsPage apiKey={apiKey} onApiKeyChange={storeApiKey} />
         ) : route.name === "start" ? (
           <StartPage apiKey={apiKey} onApiKeyChange={storeApiKey} onAnalyze={goToken} />

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type JSX } from "react";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { CopyButton } from "../components/CopyButton.tsx";
+import { PageFooter } from "../components/PageFooter.tsx";
 import { LiveTokens } from "../components/LiveTokens.tsx";
 import { MarketList } from "../components/MarketList.tsx";
 import { FeedTabs, readFeedTab, FEED_TAB_STORAGE_KEY, type FeedTabId } from "../components/FeedTabs.tsx";
@@ -345,14 +346,8 @@ export function StartPage({
           ) : null}
         </>
       )}
-      <footer className="page-foot">
-        <span className="foot-trust">
-          Deterministic score · Muse is advisory · Works on unverified contracts · Evidence for every signal
-        </span>
-        <a className="foot-settings" href="#/settings">
-          Use your own API key
-        </a>
-      </footer>
+      <a className="foot-settings" href="#/settings">Use your own API key</a>
+      <PageFooter />
     </div>
   );
 }

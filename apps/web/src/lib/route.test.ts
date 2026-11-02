@@ -11,6 +11,7 @@ describe("hash routing (design review P1-13)", () => {
     expect(parseHash("#/")).toEqual({ name: "start" });
     expect(parseHash("")).toEqual({ name: "start" });
     expect(parseHash("#/settings")).toEqual({ name: "settings" });
+    expect(parseHash("#/about")).toEqual({ name: "about" });
   });
 
   test("design_review_malformed_encoding_falls_back_without_throwing", () => {

@@ -1,6 +1,6 @@
 // Start page first 30 seconds (U-11, D-14): two example links under
 // the search, fresh sub-copy, no kicker, no Chain pill, and a footer
-// link to Settings for the API key. Behavior based: rendered text,
+// links to About and GitHub. Behavior based: rendered text,
 // links and hrefs only; fetch stays mocked so no test reaches the
 // network.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -55,6 +55,8 @@ describe("start page first 30 seconds (D-14)", () => {
     expect(page).toContain('href="#/settings"');
     expect(page).not.toContain('aria-label="Animations"');
     expect(page).not.toContain("motion-switch");
-    expect(page).toContain("Deterministic score");
+    expect(page).toContain("Scan before you swap");
+    expect(page).toContain('href="#/about"');
+    expect(page).toContain('href="https://github.com/jensabrahamsson/brandklipparen"');
   });
 });

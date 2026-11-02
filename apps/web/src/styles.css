@@ -4842,7 +4842,7 @@ a.button-ghost {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 20px;
+  gap: 0 8px;
   margin-top: 32px;
   padding-top: 16px;
   border-top: 1px dashed var(--rule);
@@ -4852,8 +4852,36 @@ a.button-ghost {
   max-width: 100%;
 }
 
+.page-foot a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+
+.about { display: grid; gap: 16px; }
+.about-hero { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-width: 0; }
+.about-mark { width: 96px; height: 96px; border-radius: 18px; flex: none; }
+.about-card { min-width: 0; }
+.about-card h2 { margin: 0 0 8px; font-size: 20px; color: var(--phosphor-hi); }
+.about-card p { margin: 0 0 8px; max-width: 70ch; overflow-wrap: anywhere; }
+.about-card p:last-child { margin-bottom: 0; }
+.about-repo { overflow-wrap: anywhere; }
+
 .page-foot > * {
   min-width: 0;
+  max-width: 100%;
+}
+
+.page-foot > a {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.about-repo {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
   max-width: 100%;
 }
 

@@ -117,6 +117,9 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
 
   const cards = page.locator(".card");
   await expect(cards.first()).toBeVisible();
+  // Wait for the assessed result before interacting with its cards; the
+  // loading placeholders also use .card and are replaced after the request.
+  await expect(page.locator(".score-dial .tick.lit")).toHaveCount(42);
 
   // Default mode: no transition runs longer than 300 ms.
   const violations = await page.evaluate(() => {
@@ -164,6 +167,8 @@ test("s122_motion_tokens_short_static_under_reduce", async ({ page, browser }) =
     await target.hover();
     expect(await target.evaluate((element) => getComputedStyle(element).transform)).toBe(before);
     expect(before).toBe("none");
+    // Close hover tooltips before the next target is scrolled into view.
+    await page.mouse.move(0, 0);
   }
 
   // The 50-tick dial lights once on mount to the score share (84 lights
@@ -221,10 +226,10 @@ test("s122_no_motion_switch_anywhere", async ({ page }) => {
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.locator(".card").first()).toBeVisible();
 
-  // No switch in any footer; the token footer links to Settings instead.
+  // No switch in the token footer; the API key link remains available.
   await expect(page.getByTestId("motion-switch")).toHaveCount(0);
   await expect(page.getByRole("switch", { name: "Animations" })).toHaveCount(0);
-  await expect(page.locator(".page-foot")).toContainText("Deterministic score · Muse is advisory");
+  await expect(page.locator(".page-foot")).toHaveText("Scan before you swap · About · GitHub");
   await expect(page.locator(".page-foot .foot-model")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Use your own API key" })).toHaveAttribute("href", "#/settings");
 
