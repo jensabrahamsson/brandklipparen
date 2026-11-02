@@ -34,8 +34,11 @@ import {
   packedMappingBlacklistToken,
   packedPauseToken,
   push1,
+  byteMaskPauseTokenHex,
   sharedBaseGateTokenHex,
   sharedBlacklistTokenHex,
+  shortCircuitPackedPauseTokenHex,
+  shuffledStoreBlacklistTokenHex,
   sstoreConstSlot,
   tokenBytecode,
 } from "../../helpers/ownerControlFixtures.ts";
@@ -116,6 +119,31 @@ describe("extended-proof diagnostics (P-11 follow-up)", () => {
       expect(entry.ok).toBe(true);
     }
     expect(blacklist.steps[3]?.detail).toContain("plain mapping store");
+  });
+
+  test("shuffled key store gate reports every blacklist step ok", () => {
+    const [, blacklist] = explainOf(shuffledStoreBlacklistTokenHex());
+    if (blacklist === undefined) {
+      throw new Error("expected one report per extended detector");
+    }
+    for (const entry of blacklist.steps) {
+      expect(entry.ok).toBe(true);
+    }
+    expect(blacklist.steps[4]?.detail).toContain("base 7");
+  });
+
+  test("byte-mask and short-circuit packed gates report every pause step ok", () => {
+    const [byteMaskPause] = explainOf(byteMaskPauseTokenHex());
+    const [shortPause] = explainOf(shortCircuitPackedPauseTokenHex());
+    if (byteMaskPause === undefined || shortPause === undefined) {
+      throw new Error("expected one report per extended detector");
+    }
+    for (const entry of byteMaskPause.steps) {
+      expect(entry.ok).toBe(true);
+    }
+    for (const entry of shortPause.steps) {
+      expect(entry.ok).toBe(true);
+    }
   });
 
   test("packed pause fixture reports every pause step ok", () => {

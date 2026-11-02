@@ -25,6 +25,7 @@ import {
   interpretRegionExprs,
   interpretRegionSlots,
   isStandardTokenWriter,
+  compoundPrivilegedGate,
   mappingBaseNearAccess,
   ownerCheckVia,
   packedBoolWriteAt,
@@ -43,8 +44,13 @@ import type {
   RegionExprs,
   SlotLookup,
 } from "../../domain/ownerControl.ts";
-import { flagWriter, gatedFlagReadPrecise, pauseDetectorPlugin } from "./pause/index.ts";
-import { blacklistDetectorPlugin, gatedMappingReadPrecise } from "./blacklist/index.ts";
+import { exprPackedFlagGatePc, flagWriter, gatedFlagReadPrecise, pauseDetectorPlugin } from "./pause/index.ts";
+import {
+  blacklistDetectorPlugin,
+  exprMappingGatePc,
+  gatedMappingReadPrecise,
+  scratchPairBase,
+} from "./blacklist/index.ts";
 import { condUsesSlotArithmetically, transferFeeDetectorPlugin } from "./transfer-fee/index.ts";
 import {
   limitTransferGate,
@@ -265,7 +271,14 @@ function openExtended(bytecode: BytecodeType): ExtendedOpening {
     const slotOf: SlotLookup = (pc) => slots.get(pc);
     const exprs = interpretRegionExprs(bytecode, region.selector);
     const member = (pc: number): boolean => attribution.holdersOf(pc).includes(region.selector);
-    const via = ownerCheckVia(code, member, ownerSlot, slotOf, exprs.jumpis, bytecode);
+    let via = ownerCheckVia(code, member, ownerSlot, slotOf, exprs.jumpis, bytecode);
+    if (
+      via === null &&
+      (privilegedGuardKind(code, member, ownerSlot, slotOf, exprs.jumpis, bytecode) !== null ||
+        compoundPrivilegedGate(code, member, ownerSlot, exprs.jumpis, bytecode))
+    ) {
+      via = "expr";
+    }
     if (via === null) {
       continue;
     }
@@ -494,12 +507,18 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
         if (packedWrite !== null && packedWrite.shift !== null) {
           const exprGate = packedGateReadExpr(gateExprs.jumpis, gateMember, slot);
           const windowGate = packedGateShift(code, gateMember, slot, gateSlotOf);
+          const bitGatePc =
+            exprGate !== null && exprGate.shift === packedWrite.shift
+              ? null
+              : exprPackedFlagGatePc(bytecode, code, gateMember, gateExprs.jumpis, slot, packedWrite.shift);
           const gate =
             exprGate !== null && exprGate.shift === packedWrite.shift
               ? { loadPc: exprGate.jumpiPc, cmpPc: exprGate.jumpiPc - 1, shift: exprGate.shift, via: "expr" as const }
               : windowGate !== null
                 ? { ...windowGate, via: "window" as const }
-                : null;
+                : bitGatePc !== null
+                  ? { loadPc: bitGatePc, cmpPc: bitGatePc - 1, shift: packedWrite.shift, via: "expr" as const }
+                  : null;
           if (gate === null) {
             consider([
               writeStep,
@@ -527,10 +546,14 @@ function explainPause(bytecode: BytecodeType): ExtendedProof {
           );
           // The expr gate names its JUMPI directly; the window gate
           // names its compare, so the legacy search finds the JUMPI.
+          // A short-circuit packed gate reverts only down one
+          // continuation of its set side, which the bit-matched
+          // expression proof in the detector also accepts.
           const revertOk =
             pairOk &&
             (gate.via === "expr"
-              ? hasRevertingSide(bytecode, code, gateMember, gate.loadPc, "fall")
+              ? hasRevertingSide(bytecode, code, gateMember, gate.loadPc, "fall") ||
+                exprPackedFlagGatePc(bytecode, code, gateMember, gateExprs.jumpis, slot, packedWrite.shift) !== null
               : hasRevertingGateAfter(bytecode, code, gateMember, gate.cmpPc));
           consider([
             writeStep,
@@ -703,7 +726,10 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
       const gateExprs = interpretRegionExprs(bytecode, transferSelector);
       const precise = gatedMappingReadPrecise(transfer);
       const preciseBase =
-        precise === null ? null : mappingBaseNearAccess(code, gateMember, precise.loadPc, gateSlotOf);
+        precise === null
+          ? null
+          : (mappingBaseNearAccess(code, gateMember, precise.loadPc, gateSlotOf) ??
+            scratchPairBase(code, gateMember, precise.loadPc));
       const preciseRevert =
         precise !== null && hasRevertingGateAfter(bytecode, code, gateMember, precise.cmpPc);
       const preciseProves =
@@ -716,6 +742,10 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
       const packedRevert =
         packed !== null && hasRevertingGateAfter(bytecode, code, gateMember, packed.cmpPc);
       const packedProves = packed !== null && packed.base === write.base && packedRevert;
+      const boolGatePc =
+        preciseProves || exprProves || packedProves
+          ? null
+          : exprMappingGatePc(bytecode, code, gateMember, gateExprs.jumpis, write.base);
       if (preciseProves && precise !== null && preciseBase !== null) {
         const preciseLoc: StepLocation = { selector: transferSelector, pc: precise.loadPc };
         consider([
@@ -736,6 +766,19 @@ function explainBlacklist(bytecode: BytecodeType): ExtendedProof {
           ),
           step(SAME_BASE, true, `gate base ${exprGate.base} matches writer base ${write.base} via expr`, exprLoc),
           step(REVERTING_JUMPI, true, "blocked side reverts after the compare via expr", exprLoc),
+        ], write.selector);
+      } else if (boolGatePc !== null) {
+        const boolLoc: StepLocation = { selector: transferSelector, pc: boolGatePc };
+        consider([
+          writeStep,
+          step(
+            TRANSFER_GATE,
+            true,
+            `expression mapping gate on transfer ${transferName} reads base ${write.base} via expr`,
+            boolLoc,
+          ),
+          step(SAME_BASE, true, `gate base ${write.base} matches writer base ${write.base} via expr`, boolLoc),
+          step(REVERTING_JUMPI, true, "blocked side reverts after the compare via expr", boolLoc),
         ], write.selector);
       } else if (packedProves && packed !== null) {
         const packedLoc: StepLocation = { selector: transferSelector, pc: packed.loadPc };

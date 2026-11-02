@@ -30,6 +30,7 @@ import {
   branchOk,
   ownerGuard,
   push1,
+  compoundGuardFeeTokenHex,
   sstoreConstSlot,
   tokenBytecode,
 } from "../../helpers/ownerControlFixtures.ts";
@@ -348,5 +349,27 @@ describe("transfer-fee multi-slot setter (SCAN-1)", () => {
     expect(findings).toHaveLength(1);
     const slot = (findings[0]?.payload as { slot?: number } | undefined)?.slot;
     expect([10, 11, 12]).toContain(slot);
+  });
+});
+
+describe("transfer-fee compound guard (SCAN-2)", () => {
+  test("compound owner-or-role guard proves the rate writer", () => {
+    const parsed = Bytecode.parse(compoundGuardFeeTokenHex());
+    if (!parsed.ok) {
+      throw new Error("fixture bytecode must parse");
+    }
+    const input: DetectorInput = Object.freeze({
+      bytecode: parsed.value,
+      codeHash: mustOk(CodeHash.of(parsed.value)),
+    });
+    const findings = transferFeeDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.transfer-fee:transfer-fee-extended");
+    expect(findings[0]?.payload).toEqual({
+      fact: "transfer-fee",
+      slot: 5,
+      capSlot: null,
+      proof: "extended",
+    });
   });
 });

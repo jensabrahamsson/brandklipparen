@@ -39,6 +39,12 @@ import {
   sstoreConstSlot,
   tokenBytecode,
   branchOk,
+  byteMaskPauseTokenHex,
+  compoundGuardPauseTokenHex,
+  jumpSidePauseTokenHex,
+  maskGatePauseTokenHex,
+  roleOnlyPauseTokenHex,
+  shortCircuitPackedPauseTokenHex,
 } from "../../helpers/ownerControlFixtures.ts";
 import { ownershipDetectorPlugin } from "../../../src/plugins/detectors/ownership/index.ts";
 
@@ -340,6 +346,65 @@ describe("pause one-way switch precision (SCAN-1)", () => {
 
   test("reversible flag in a shared gate reports an extended pause fact", () => {
     const findings = pauseDetectorPlugin.detect(hexInput(sharedPauseTokenHex(true)));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });
+  });
+});
+
+describe("pause enforce-style gates (SCAN-2)", () => {
+  function hexInput(hex: string): DetectorInput {
+    const parsed = Bytecode.parse(hex);
+    if (!parsed.ok) {
+      throw new Error("fixture bytecode must parse");
+    }
+    return Object.freeze({ bytecode: parsed.value, codeHash: mustOk(CodeHash.of(parsed.value)) });
+  }
+
+  test("jump-side revert gate with reversible writers reports an extended pause fact", () => {
+    const findings = pauseDetectorPlugin.detect(hexInput(jumpSidePauseTokenHex(true)));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });
+  });
+
+  test("jump-side revert gate with a one-way writer stays silent", () => {
+    expect(pauseDetectorPlugin.detect(hexInput(jumpSidePauseTokenHex(false)))).toEqual([]);
+  });
+
+  test("role-only guard without an owner slot proves the flag writers", () => {
+    const findings = pauseDetectorPlugin.detect(hexInput(roleOnlyPauseTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });
+  });
+
+  test("single-bit mask gate on the writer bit reports an extended pause fact", () => {
+    const bytecode = maskGatePauseTokenHex();
+    const findings = pauseDetectorPlugin.detect(
+      Object.freeze({ bytecode, codeHash: mustOk(CodeHash.of(bytecode)) }),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "unknown", proof: "extended" });
+  });
+
+  test("byte-mask gate with no shift on the writer bit reports an extended pause fact", () => {
+    const findings = pauseDetectorPlugin.detect(hexInput(byteMaskPauseTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "unknown", proof: "extended" });
+  });
+
+  test("short-circuit packed gate that reverts down one continuation reports an extended pause fact", () => {
+    const findings = pauseDetectorPlugin.detect(hexInput(shortCircuitPackedPauseTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 0, mode: "pause", proof: "extended" });
+  });
+
+  test("compound owner-or-role guard proves the flag writers", () => {
+    const findings = pauseDetectorPlugin.detect(hexInput(compoundGuardPauseTokenHex()));
     expect(findings).toHaveLength(1);
     expect(findings[0]?.id).toBe("dev.brandklipparen.pause:pause-extended");
     expect(findings[0]?.payload).toEqual({ fact: "pause", slot: 4, mode: "pause", proof: "extended" });

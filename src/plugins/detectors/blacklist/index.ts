@@ -23,6 +23,7 @@ import {
   TRANSFER_FROM_SELECTOR,
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
+  compoundPrivilegedGate,
   exprMappingBase,
   flavorBetween,
   hasRevertingGateAfter,
@@ -35,6 +36,8 @@ import {
   ownerCheckVia,
   packedMappingGateExpr,
   packedMappingGateShift,
+  privilegedGuardKind,
+  sideCanReachRevert,
 } from "../../../domain/ownerControl.ts";
 import type { Expr, RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
@@ -325,6 +328,218 @@ function revertingMappingGatePc(
   return null;
 }
 
+// Writer guard for extended analysis (SCAN-2): the proven owner check,
+// a role-slot or auth-mapping guard, or a compound owner-or-role gate.
+// Writers behind a shared check helper never reduce to one beside-window
+// caller compare, so all three proofs get their chance.
+function writerGuarded(
+  code: ReturnType<typeof disassemble>,
+  member: (pc: number) => boolean,
+  ownerSlot: number | null,
+  slotOf: SlotLookup,
+  jumpis: ReadonlyMap<number, Expr>,
+  bytecode: DetectorInput["bytecode"],
+): boolean {
+  if (ownerSlot !== null && ownerCheckVia(code, member, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+    return true;
+  }
+  if (privilegedGuardKind(code, member, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+    return true;
+  }
+  return compoundPrivilegedGate(code, member, ownerSlot, jumpis, bytecode);
+}
+
+// Whether a jump condition bool-gates on a mapping entry of `base`: a
+// load of that base read as a boolean (under ISZERO, AND, OR, NOT or an
+// equality), never priced through an amount compare or arithmetic. A
+// balance or fee value flowing through LT, GT, MUL, ADD or SUB is a
+// comparison over amounts, not a list gate.
+function condBoolGatesOnBase(cond: Expr | undefined, base: number): boolean {
+  if (cond === undefined || cond.kind === "unknown") {
+    return false;
+  }
+  const priced = (expr: Expr): boolean => {
+    if (expr.kind === "op" && ["LT", "GT", "SLT", "SGT", "MUL", "ADD", "SUB", "MOD"].includes(expr.name)) {
+      return expr.args.some((arg) => condReferencesMappingBase(arg, base) || priced(arg));
+    }
+    if (expr.kind === "calldata") {
+      return priced(expr.offset);
+    }
+    if (expr.kind === "sload") {
+      return priced(expr.slot);
+    }
+    if (expr.kind === "keccak") {
+      return expr.words.some((word) => priced(word));
+    }
+    if (expr.kind === "op") {
+      return expr.args.some((arg) => priced(arg));
+    }
+    return false;
+  };
+  if (priced(cond)) {
+    return false;
+  }
+  return condReferencesMappingBase(cond, base);
+}
+
+// The side of a gate jump taken while the gated entry reads set: the
+// ISZERO parity on the path to the entry load names it (an odd count
+// jumps while the entry reads clear, so the set side falls through).
+function mappingTruthySide(cond: Expr, base: number): "jump" | "fall" | null {
+  const search = (expr: Expr, parity: number): number | null => {
+    if (expr.kind === "sload") {
+      return exprMappingBase(expr.slot) === base ? parity : null;
+    }
+    const childParity = expr.kind === "op" && expr.name === "ISZERO" ? parity + 1 : parity;
+    if (expr.kind === "calldata") {
+      return search(expr.offset, childParity);
+    }
+    if (expr.kind === "keccak") {
+      for (const word of expr.words) {
+        const found = search(word, childParity);
+        if (found !== null) {
+          return found;
+        }
+      }
+      return null;
+    }
+    if (expr.kind === "op") {
+      for (const arg of expr.args) {
+        const found = search(arg, childParity);
+        if (found !== null) {
+          return found;
+        }
+      }
+    }
+    return null;
+  };
+  const parity = search(cond, 0);
+  if (parity === null) {
+    return null;
+  }
+  return parity % 2 === 1 ? "fall" : "jump";
+}
+
+// Mapping base from an adjacent scratch word pair beside a gate hash
+// (SCAN-2, extended only): the hash may sit on any constant scratch
+// pair, not only the usual 0x00/0x20 layout. The second word of the
+// pair must be a constant push, and every pattern instruction must
+// belong to the gate region. Exported for the extended-proof
+// diagnostics, which mirror this proof.
+export function scratchPairBase(
+  code: ReturnType<typeof disassemble>,
+  isMember: (pc: number) => boolean,
+  loadPc: number,
+): number | null {
+  const pushConst = (insn: { opcode: number; immediate?: Uint8Array }): number | null => {
+    if (insn.opcode === 0x5f) {
+      return 0;
+    }
+    if (insn.opcode < 0x60 || insn.opcode > 0x7f || insn.immediate === undefined) {
+      return null;
+    }
+    let value = 0;
+    for (const byte of insn.immediate) {
+      value = value * 256 + byte;
+    }
+    return value;
+  };
+  let loadIndex = -1;
+  for (let at = 0; at < code.length; at += 1) {
+    if (code[at]?.pc === loadPc) {
+      loadIndex = at;
+      break;
+    }
+  }
+  if (loadIndex < 0) {
+    return null;
+  }
+  let keccakIndex = -1;
+  for (let back = loadIndex - 1, steps = 0; back >= 0 && steps < 40; back -= 1, steps += 1) {
+    const candidate = code[back];
+    if (candidate !== undefined && candidate.opcode === 0x20 && isMember(candidate.pc)) {
+      keccakIndex = back;
+      break;
+    }
+  }
+  if (keccakIndex < 0) {
+    return null;
+  }
+  const stores = new Map<number, number | null>();
+  for (let at = keccakIndex - 1, steps = 0; at >= 0 && steps < 40; at -= 1, steps += 1) {
+    const candidate = code[at];
+    if (candidate === undefined || candidate.opcode !== 0x52 || !isMember(candidate.pc)) {
+      continue;
+    }
+    // The destination and value pushes may be separated from the
+    // MSTORE by stack shuffles (PUSH 0x00, SWAP1, DUP2, MSTORE stores
+    // the key at scratch 0): collect constant pushes backward over
+    // DUP and SWAP only, nearest push first. The nearest collected
+    // push is the store destination, the next one its value.
+    const collected: number[] = [];
+    for (let back = at - 1, inner = 0; back >= 0 && inner < 6; back -= 1, inner += 1) {
+      const item = code[back];
+      if (item === undefined) {
+        break;
+      }
+      if (item.opcode >= 0x80 && item.opcode <= 0x9f) {
+        continue;
+      }
+      const constant = pushConst(item);
+      if (constant === null) {
+        break;
+      }
+      collected.push(constant);
+      if (collected.length >= 2) {
+        break;
+      }
+    }
+    const dest = collected[0];
+    if (dest !== undefined && !stores.has(dest)) {
+      stores.set(dest, collected[1] ?? null);
+    }
+  }
+  for (const dest of stores.keys()) {
+    const second = stores.get(dest + 0x20);
+    if (second !== undefined && second !== null) {
+      return second;
+    }
+  }
+  return null;
+}
+
+// First member JUMPI whose condition bool-gates on `base` with a
+// reverting side, or null (SCAN-2): the enforce-style gate jumps
+// straight to its revert block while the entry reads set, with no
+// ISZERO beside the load for the beside-window proof to pair with.
+// A short-circuit gate reverts only down one continuation of the set
+// side, so that side may instead prove by reaching a revert.
+export function exprMappingGatePc(
+  bytecode: DetectorInput["bytecode"],
+  code: ReturnType<typeof disassemble>,
+  gateMember: (pc: number) => boolean,
+  jumpis: ReadonlyMap<number, Expr>,
+  base: number,
+): number | null {
+  const ordered = [...jumpis.entries()].sort((left, right) => left[0] - right[0]);
+  for (const [pc, cond] of ordered) {
+    if (!gateMember(pc) || !condBoolGatesOnBase(cond, base)) {
+      continue;
+    }
+    if (
+      hasRevertingSide(bytecode, code, gateMember, pc, "fall") ||
+      hasRevertingSide(bytecode, code, gateMember, pc, "jump")
+    ) {
+      return pc;
+    }
+    const truthySide = mappingTruthySide(cond, base);
+    if (truthySide !== null && sideCanReachRevert(bytecode, pc, truthySide)) {
+      return pc;
+    }
+  }
+  return null;
+}
+
 // Extended analysis (P-11, weight-0 fact): the mapping-gate proof over
 // the v2 reachability view, where a shared `_beforeTokenTransfer` helper
 // joins every entry that reaches it, tightened so plain token mechanics
@@ -347,9 +562,6 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
   }
   const attribution = attributeFunctions(input.bytecode, { mode: "v2" });
   const view = analyzeOwnerControl(input.bytecode, { reach: "v2" });
-  if (view.ownerSlot === null) {
-    return Object.freeze([]);
-  }
   const ownerSlot = view.ownerSlot;
   const code = disassemble(input.bytecode);
   const memberOf = (selector: SelectorType): ((pc: number) => boolean) => {
@@ -366,10 +578,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
     const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
     const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
-    if (
-      ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode) ===
-      null
-    ) {
+    if (!writerGuarded(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode)) {
       continue;
     }
     for (const write of region.stores) {
@@ -419,6 +628,31 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             gateEvidencePc = gate.loadPc;
           }
         }
+        if (gateEvidencePc === null && gate !== null) {
+          // Window base pairing (SCAN-2): the beside gate bool-tests a
+          // mapping entry whose hash the window pattern names on the
+          // written base, even when the interpreter leaves the gate
+          // slot unresolved (a scratch-offset hash, a merged walk).
+          // The gate's own jump must still revert on its blocked side.
+          const gateBase =
+            mappingBaseNearAccess(code, gateMember, gate.loadPc, gateSlotOf) ??
+            scratchPairBase(code, gateMember, gate.loadPc);
+          const gateJumpi = code.find(
+            (insn) =>
+              insn.opcode === 0x57 &&
+              gateMember(insn.pc) &&
+              insn.pc > gate.cmpPc &&
+              insn.pc <= gate.cmpPc + 64,
+          );
+          if (
+            gateBase !== null &&
+            gateBase === writeBase &&
+            gateJumpi !== undefined &&
+            hasRevertingSide(input.bytecode, code, gateMember, gateJumpi.pc, "fall")
+          ) {
+            gateEvidencePc = gate.loadPc;
+          }
+        }
         if (gateEvidencePc === null) {
           // Packed bool-in-mapping gate fallback: the expression matcher
           // runs first with the window matcher as the fallback. Real
@@ -445,6 +679,18 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           ) {
             gateEvidencePc = packedGate.loadPc;
           }
+        }
+        if (gateEvidencePc === null) {
+          // Enforce-style expression gate (SCAN-2): a transfer jump whose
+          // own condition bool-gates on the written base, reverting on
+          // whichever side the blocked entry takes it to.
+          gateEvidencePc = exprMappingGatePc(
+            input.bytecode,
+            code,
+            gateMember,
+            transferExprs.jumpis,
+            writeBase,
+          );
         }
         if (gateEvidencePc === null) {
           continue;

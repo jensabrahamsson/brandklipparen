@@ -2516,6 +2516,79 @@ export function hasRevertingSide(
   }
 }
 
+// Existential revert reachability from one JUMPI side (SCAN-2): some
+// bounded path from the side reaches REVERT or INVALID. Unlike the
+// universal proof above, sibling branches may complete normally: a
+// short-circuit guard (`listed && !exempt`) reverts on only one of its
+// continuations. Bounded by the same block cap; dynamic return jumps
+// expand to their caller-pushed continuations.
+export const SIDE_REACH_MAX_BLOCKS = 24;
+
+export function sideCanReachRevert(
+  bytecode: BytecodeType,
+  jumpiPc: number,
+  side: "jump" | "fall",
+): boolean {
+  try {
+    const cfg = cfgOf(bytecode);
+    const atJump = blockIndexAtPc(bytecode, jumpiPc);
+    if (atJump < 0 || atJump >= cfg.blocks.length) {
+      return false;
+    }
+    const jump = cfg.blocks[atJump];
+    if (
+      jump === undefined ||
+      !jump.instructions.some((instruction) => instruction.pc === jumpiPc && instruction.opcode === 0x57)
+    ) {
+      return false;
+    }
+    const edge = jump.successors.find((candidate) => candidate.kind === "conditional");
+    if (edge === undefined || edge.kind !== "conditional") {
+      return false;
+    }
+    const start = side === "jump" ? edge.to : edge.fallThrough;
+    const seen = new Set<number>([start]);
+    const queue: number[] = [start];
+    let visited = 0;
+    while (queue.length > 0) {
+      const current = queue.shift() ?? -1;
+      visited += 1;
+      if (visited > SIDE_REACH_MAX_BLOCKS) {
+        return false;
+      }
+      const block = cfg.blocks[current];
+      if (block === undefined) {
+        continue;
+      }
+      if (block.instructions.some((instruction) => instruction.opcode === 0xfd || instruction.opcode === 0xfe)) {
+        return true;
+      }
+      let next: readonly number[] = [];
+      if (block.terminal === "jump") {
+        const target = block.successors.find((candidate) => candidate.kind === "jump");
+        next = target !== undefined ? [target.to] : dynamicReturnTargets(bytecode, current, true);
+      } else if (block.terminal === "jumpi") {
+        const conditional = block.successors.find((candidate) => candidate.kind === "conditional");
+        next = conditional !== undefined && conditional.kind === "conditional"
+          ? [conditional.to, conditional.fallThrough]
+          : [];
+      } else if (block.terminal === "fall") {
+        const through = block.successors.find((candidate) => candidate.kind === "fall-through");
+        next = through !== undefined ? [through.to] : [];
+      }
+      for (const candidate of next) {
+        if (!seen.has(candidate)) {
+          seen.add(candidate);
+          queue.push(candidate);
+        }
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // Reverting gate after a compare: a member JUMPI within the legacy
 // window past `afterPc` proves its failing fall-through side, either
 // right after it or down every bounded path. Used by the v2 transfer
@@ -2845,18 +2918,15 @@ function exprIsOwnerLoadSide(expr: Expr, ownerSlot: number): boolean {
   if (expr.kind === "sload" && exprConstValue(expr.slot) === wanted) {
     return true;
   }
-  if (expr.kind === "op" && expr.name === "AND" && expr.args.length === 2) {
-    const left = expr.args[0] ?? EXPR_UNKNOWN;
-    const right = expr.args[1] ?? EXPR_UNKNOWN;
-    const maskOf = (candidate: Expr): boolean => exprIsMask160(candidate);
-    const loadOf = (candidate: Expr): boolean =>
-      candidate.kind === "sload" && exprConstValue(candidate.slot) === wanted;
-    if (loadOf(left) && maskOf(right)) {
-      return true;
-    }
-    if (loadOf(right) && maskOf(left)) {
-      return true;
-    }
+  // Packed unpack chains (SCAN-2): the owner word may sit under a
+  // shift-and-mask in either order (divide then mask, mask then shift),
+  // so any AND, DIV, SHR or MOD layer over the load still reads the
+  // same owner value.
+  if (
+    expr.kind === "op" &&
+    (expr.name === "AND" || expr.name === "DIV" || expr.name === "SHR" || expr.name === "MOD")
+  ) {
+    return expr.args.some((arg) => exprIsOwnerLoadSide(arg, ownerSlot));
   }
   return false;
 }
@@ -2985,6 +3055,70 @@ export function privilegedGuardKind(
   return null;
 }
 
+// Whether an expression subtree holds an owner or role equality: an EQ
+// node pairing the caller with a stored owner-slot or constant-slot
+// load, wherever it sits under AND/OR/ISZERO combinators.
+function exprContainsPrivilegedEq(expr: Expr, ownerSlot: number | null): boolean {
+  if (expr.kind === "op" && expr.name === "EQ") {
+    if (ownerSlot !== null && exprIsOwnerEq(expr, ownerSlot)) {
+      return true;
+    }
+    if (exprIsRoleSlotEq(expr)) {
+      return true;
+    }
+  }
+  if (expr.kind === "calldata") {
+    return exprContainsPrivilegedEq(expr.offset, ownerSlot);
+  }
+  if (expr.kind === "sload") {
+    return exprContainsPrivilegedEq(expr.slot, ownerSlot);
+  }
+  if (expr.kind === "keccak") {
+    return expr.words.some((word) => exprContainsPrivilegedEq(word, ownerSlot));
+  }
+  if (expr.kind === "op") {
+    return expr.args.some((arg) => exprContainsPrivilegedEq(arg, ownerSlot));
+  }
+  return false;
+}
+
+// Compound privileged gate (SCAN-2): a member JUMPI whose condition
+// combines a privileged caller check with another condition (an owner
+// equality under AND/OR, or a caller-keyed role entry), with a revert
+// on either side. Guards of the shape "owner or pause-role may call"
+// never reduce to one top-level equality, so the single-check proofs
+// stay silent while the combined condition still gates the writer.
+export function compoundPrivilegedGate(
+  code: readonly Instruction[],
+  isMember: (pc: number) => boolean,
+  ownerSlot: number | null,
+  jumpis?: ReadonlyMap<number, Expr>,
+  bytecode?: BytecodeType,
+): boolean {
+  if (jumpis === undefined) {
+    return false;
+  }
+  for (const [pc, cond] of jumpis) {
+    if (!isMember(pc) || cond.kind === "unknown") {
+      continue;
+    }
+    const { inner } = exprStripIszero(cond);
+    if (!exprContainsPrivilegedEq(inner, ownerSlot) && !exprContainsCallerKeyedMappingLoad(inner)) {
+      continue;
+    }
+    if (bytecode !== undefined) {
+      if (hasRevertingSide(bytecode, code, isMember, pc, "fall") || hasRevertingSide(bytecode, code, isMember, pc, "jump")) {
+        return true;
+      }
+      continue;
+    }
+    if (hasRevertingJumpiAfter(code, isMember, pc - 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Any constant slot on one side of an EQ with a caller side on the
 // other (each masked or not), mirroring `exprIsOwnerEq` without pinning
 // the slot.
@@ -2998,9 +3132,21 @@ function exprIsRoleSlotEq(expr: Expr): boolean {
     if (candidate.kind === "sload" && exprConstValue(candidate.slot) !== null) {
       return true;
     }
-    if (candidate.kind === "op" && candidate.name === "AND" && candidate.args.length === 2) {
+    // Packed unpack chains (SCAN-2): divide-then-mask and mask-then-
+    // shift over the load still read the same stored value.
+    if (
+      candidate.kind === "op" &&
+      (candidate.name === "AND" ||
+        candidate.name === "DIV" ||
+        candidate.name === "SHR" ||
+        candidate.name === "MOD") &&
+      candidate.args.length === 2
+    ) {
       const first = candidate.args[0] ?? EXPR_UNKNOWN;
       const second = candidate.args[1] ?? EXPR_UNKNOWN;
+      if (storedSide(first) || storedSide(second)) {
+        return true;
+      }
       const maskedLoad =
         (first.kind === "sload" &&
           exprConstValue(first.slot) !== null &&
@@ -3936,6 +4082,11 @@ function gateMaskedShift(expr: Expr): GateHit | null {
       if (div !== null) {
         return { shift: div.shift };
       }
+      // Byte-masked read with no shift: the low byte itself is the
+      // packed field, so its position is bit 0.
+      if (maybeDiv.kind === "sload") {
+        return { shift: 0 };
+      }
     }
   }
   return null;
@@ -3945,6 +4096,14 @@ function findGateShift(expr: Expr): GateHit | null {
   const direct = gateMaskedShift(expr);
   if (direct !== null) {
     return direct;
+  }
+  // Shifted read with no byte mask: an equality on the shifted word
+  // still names the field position.
+  if (expr.kind === "op") {
+    const shifted = gateDivShift(expr);
+    if (shifted !== null) {
+      return { shift: shifted.shift };
+    }
   }
   if (expr.kind === "sload") {
     return findGateShift(expr.slot);
@@ -4014,6 +4173,12 @@ export function packedGateExpr(cond: Expr, slot: number): { readonly shift: numb
     const masked = gateMaskedShift(expr);
     if (masked !== null) {
       return masked;
+    }
+    if (expr.kind === "op") {
+      const shifted = gateDivShift(expr);
+      if (shifted !== null) {
+        return { shift: shifted.shift };
+      }
     }
     if (expr.kind === "sload") {
       return visit(expr.slot);

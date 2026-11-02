@@ -29,6 +29,7 @@ import {
   sstoreConstSlot,
   tokenBytecode,
   branchOk,
+  compoundGuardLimitTokenHex,
 } from "../../helpers/ownerControlFixtures.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
@@ -270,6 +271,28 @@ describe("transfer-limits shared wallet gate (SCAN-1)", () => {
       fact: "transfer-limits",
       slot: 6,
       limitKind: "max-wallet",
+      proof: "extended",
+    });
+  });
+});
+
+describe("transfer-limits compound guard (SCAN-2)", () => {
+  test("compound owner-or-role guard proves the limit writer", () => {
+    const parsed = Bytecode.parse(compoundGuardLimitTokenHex());
+    if (!parsed.ok) {
+      throw new Error("fixture bytecode must parse");
+    }
+    const input: DetectorInput = Object.freeze({
+      bytecode: parsed.value,
+      codeHash: mustOk(CodeHash.of(parsed.value)),
+    });
+    const findings = transferLimitsDetectorPlugin.detect(input);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.transfer-limits:transfer-limits-extended");
+    expect(findings[0]?.payload).toEqual({
+      fact: "transfer-limits",
+      slot: 6,
+      limitKind: "max-tx",
       proof: "extended",
     });
   });

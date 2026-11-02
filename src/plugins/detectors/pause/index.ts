@@ -23,6 +23,7 @@ import {
   TRANSFER_FROM_SELECTOR,
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
+  compoundPrivilegedGate,
   constSlotLoadNearFlavor,
   flavorBetween,
   hasRevertingGateAfter,
@@ -35,8 +36,10 @@ import {
   packedBoolWriteExpr,
   packedGateReadExpr,
   packedGateShift,
+  privilegedGuardKind,
+  sideCanReachRevert,
 } from "../../../domain/ownerControl.ts";
-import type { RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
+import type { Expr, RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
 import { disassemble, extractSelectors } from "../../../domain/selectors.ts";
 import type { Selector as SelectorType } from "../../../domain/types.ts";
@@ -369,6 +372,276 @@ export function gatedFlagReadPrecise(
 // pause (see `ORIGIN_SENTENCE` in src/domain/explain.ts) with the
 // not-in-score marker; it names no account, so no changer is claimed
 // without the P-2 ownership proof.
+// Writer guard for extended analysis (SCAN-2): the proven owner check,
+// a role-slot or auth-mapping guard, or a compound owner-or-role gate.
+function writerGuarded(
+  code: ReturnType<typeof disassemble>,
+  member: (pc: number) => boolean,
+  ownerSlot: number | null,
+  slotOf: SlotLookup,
+  jumpis: ReadonlyMap<number, Expr>,
+  bytecode: DetectorInput["bytecode"],
+): boolean {
+  if (ownerSlot !== null && ownerCheckVia(code, member, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+    return true;
+  }
+  if (privilegedGuardKind(code, member, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+    return true;
+  }
+  return compoundPrivilegedGate(code, member, ownerSlot, jumpis, bytecode);
+}
+
+// Whether a jump condition bool-gates on flag slot `slot`: the slot load
+// read as a boolean (under ISZERO, AND, OR, NOT, an equality or a packed
+// shift-and-mask), never priced through an amount compare or arithmetic
+// and never as one side of a caller equality (an access check).
+function condBoolGatesOnSlot(cond: Expr | undefined, slot: number): boolean {
+  if (cond === undefined || cond.kind === "unknown") {
+    return false;
+  }
+  let found = false;
+  let veto = false;
+  const walk = (expr: Expr, priced: boolean): void => {
+    if (expr.kind === "sload" && expr.slot.kind === "const" && expr.slot.value === BigInt(slot)) {
+      if (!priced) {
+        found = true;
+      }
+      return;
+    }
+    if (expr.kind === "op" && expr.name === "EQ" && expr.args.length === 2) {
+      const left = expr.args[0];
+      const right = expr.args[1];
+      const isCaller = (candidate: Expr | undefined): boolean => candidate?.kind === "caller";
+      const isSlotLoad = (candidate: Expr | undefined): boolean =>
+        candidate?.kind === "sload" &&
+        candidate.slot.kind === "const" &&
+        candidate.slot.value === BigInt(slot);
+      if ((isCaller(left) && isSlotLoad(right)) || (isCaller(right) && isSlotLoad(left))) {
+        veto = true;
+        return;
+      }
+    }
+    const childPriced =
+      priced ||
+      (expr.kind === "op" && ["LT", "GT", "SLT", "SGT", "MUL", "ADD", "SUB", "MOD"].includes(expr.name));
+    if (expr.kind === "calldata") {
+      walk(expr.offset, childPriced);
+      return;
+    }
+    if (expr.kind === "sload") {
+      walk(expr.slot, childPriced);
+      return;
+    }
+    if (expr.kind === "keccak") {
+      for (const word of expr.words) {
+        walk(word, childPriced);
+      }
+      return;
+    }
+    if (expr.kind === "op") {
+      for (const arg of expr.args) {
+        walk(arg, childPriced);
+      }
+    }
+  };
+  walk(cond, false);
+  return found && !veto;
+}
+
+// Bit position a jump condition reads from packed slot `slot`, or null
+// when the read is not a single bool bit (SCAN-2): the load may sit
+// under a shift, a divide, a single-bit or byte mask, in either order.
+function packedGateBit(cond: Expr, slot: number): number | null {
+  const constOf = (expr: Expr | undefined): bigint | null =>
+    expr !== undefined && expr.kind === "const" ? expr.value : null;
+  const findPath = (expr: Expr, trail: Expr[]): Expr[] | null => {
+    if (expr.kind === "sload" && expr.slot.kind === "const" && expr.slot.value === BigInt(slot)) {
+      return trail;
+    }
+    const next = [...trail, expr];
+    if (expr.kind === "calldata") {
+      return findPath(expr.offset, next);
+    }
+    if (expr.kind === "sload") {
+      return findPath(expr.slot, next);
+    }
+    if (expr.kind === "keccak") {
+      for (const word of expr.words) {
+        const found = findPath(word, next);
+        if (found !== null) {
+          return found;
+        }
+      }
+      return null;
+    }
+    if (expr.kind === "op") {
+      for (const arg of expr.args) {
+        const found = findPath(arg, next);
+        if (found !== null) {
+          return found;
+        }
+      }
+    }
+    return null;
+  };
+  const trail = findPath(cond, []);
+  if (trail === null) {
+    return null;
+  }
+  let bit = 0;
+  for (let index = trail.length - 1; index >= 0; index -= 1) {
+    const node = trail[index];
+    if (node === undefined || node.kind !== "op") {
+      continue;
+    }
+    if (node.name === "SHR" || node.name === "DIV") {
+      const shift = node.args.map(constOf).find((value) => value !== null && value > 0n);
+      if (shift === undefined || shift === null) {
+        return null;
+      }
+      const amount =
+        node.name === "SHR" ? Number(shift) : shift.toString(2).length - 1;
+      if (node.name === "DIV" && (1n << BigInt(amount)) !== shift) {
+        return null;
+      }
+      bit += amount;
+      continue;
+    }
+    if (node.name === "AND") {
+      const mask = node.args.map(constOf).find((value) => value !== null);
+      if (mask === undefined || mask === null) {
+        continue;
+      }
+      if (mask === 1n || mask === 255n) {
+        continue;
+      }
+      if ((mask & (mask - 1n)) === 0n) {
+        return bit + (mask.toString(2).length - 1);
+      }
+      if ((mask & 255n) === 0n && (mask >> 8n) === 255n) {
+        return bit + 8;
+      }
+      const lowByte = mask & ((1n << BigInt(bit + 8)) - 1n);
+      if (lowByte === (255n << BigInt(bit))) {
+        return bit;
+      }
+      return null;
+    }
+    if (["ISZERO", "EQ", "OR", "NOT"].includes(node.name)) {
+      continue;
+    }
+    if (["LT", "GT", "SLT", "SGT", "MUL", "ADD", "SUB", "MOD", "SHL"].includes(node.name)) {
+      return null;
+    }
+  }
+  return bit;
+}
+
+// The side of a gate jump taken while the flag reads set: the ISZERO
+// parity on the path to the flag load names it (an odd count jumps
+// while the flag reads clear, so the set side falls through).
+function flagTruthySide(cond: Expr, slot: number): "jump" | "fall" | null {
+  const search = (expr: Expr, parity: number): number | null => {
+    if (expr.kind === "sload") {
+      return expr.slot.kind === "const" && expr.slot.value === BigInt(slot) ? parity : null;
+    }
+    const childParity = expr.kind === "op" && expr.name === "ISZERO" ? parity + 1 : parity;
+    if (expr.kind === "calldata") {
+      return search(expr.offset, childParity);
+    }
+    if (expr.kind === "keccak") {
+      for (const word of expr.words) {
+        const found = search(word, childParity);
+        if (found !== null) {
+          return found;
+        }
+      }
+      return null;
+    }
+    if (expr.kind === "op") {
+      for (const arg of expr.args) {
+        const found = search(arg, childParity);
+        if (found !== null) {
+          return found;
+        }
+      }
+    }
+    return null;
+  };
+  const parity = search(cond, 0);
+  if (parity === null) {
+    return null;
+  }
+  return parity % 2 === 1 ? "fall" : "jump";
+}
+
+// Whether a gate jump blocks transfers: every path on a side reverts
+// (the universal proof), or the set side can reach a revert down one
+// continuation (a short-circuit gate, mirroring the blacklist proof).
+function gateBlocksTransfer(
+  bytecode: DetectorInput["bytecode"],
+  code: ReturnType<typeof disassemble>,
+  gateMember: (pc: number) => boolean,
+  pc: number,
+  cond: Expr,
+  slot: number,
+): boolean {
+  if (
+    hasRevertingSide(bytecode, code, gateMember, pc, "fall") ||
+    hasRevertingSide(bytecode, code, gateMember, pc, "jump")
+  ) {
+    return true;
+  }
+  const truthySide = flagTruthySide(cond, slot);
+  return truthySide !== null && sideCanReachRevert(bytecode, pc, truthySide);
+}
+
+// First member JUMPI whose condition reads packed bit `bit` of `slot`
+// with a reverting side, or null (SCAN-2): the packed gate fallback
+// when the shift matchers stay silent but the condition itself names
+// the same bit the writer sets.
+export function exprPackedFlagGatePc(
+  bytecode: DetectorInput["bytecode"],
+  code: ReturnType<typeof disassemble>,
+  gateMember: (pc: number) => boolean,
+  jumpis: ReadonlyMap<number, Expr>,
+  slot: number,
+  bit: number,
+): number | null {
+  const ordered = [...jumpis.entries()].sort((left, right) => left[0] - right[0]);
+  for (const [pc, cond] of ordered) {
+    if (!gateMember(pc) || packedGateBit(cond, slot) !== bit) {
+      continue;
+    }
+    if (gateBlocksTransfer(bytecode, code, gateMember, pc, cond, slot)) {
+      return pc;
+    }
+  }
+  return null;
+}
+
+// First member JUMPI whose condition bool-gates on `slot` with a
+// reverting side, or null (SCAN-2): the enforce-style gate jumps
+// straight to its revert block while the flag reads set.
+function exprFlagGatePc(
+  bytecode: DetectorInput["bytecode"],
+  code: ReturnType<typeof disassemble>,
+  gateMember: (pc: number) => boolean,
+  jumpis: ReadonlyMap<number, Expr>,
+  slot: number,
+): number | null {
+  const ordered = [...jumpis.entries()].sort((left, right) => left[0] - right[0]);
+  for (const [pc, cond] of ordered) {
+    if (!gateMember(pc) || !condBoolGatesOnSlot(cond, slot)) {
+      continue;
+    }
+    if (gateBlocksTransfer(bytecode, code, gateMember, pc, cond, slot)) {
+      return pc;
+    }
+  }
+  return null;
+}
+
 function detectExtended(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -376,9 +649,6 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
   }
   const attribution = attributeFunctions(input.bytecode, { mode: "v2" });
   const view = analyzeOwnerControl(input.bytecode, { reach: "v2" });
-  if (view.ownerSlot === null) {
-    return Object.freeze([]);
-  }
   const ownerSlot = view.ownerSlot;
   const code = disassemble(input.bytecode);
   const memberOf = (selector: SelectorType): ((pc: number) => boolean) => {
@@ -396,14 +666,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     const candidateSlotOf: SlotLookup = (pc) => candidateSlots.get(pc);
     const candidateExprs = interpretRegionExprs(input.bytecode, region.selector);
     if (
-      ownerCheckVia(
-        code,
-        memberOf(region.selector),
-        ownerSlot,
-        candidateSlotOf,
-        candidateExprs.jumpis,
-        input.bytecode,
-      ) === null
+      !writerGuarded(code, memberOf(region.selector), ownerSlot, candidateSlotOf, candidateExprs.jumpis, input.bytecode)
     ) {
       continue;
     }
@@ -453,10 +716,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
       const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
       const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
-      if (
-        ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode) ===
-        null
-      ) {
+      if (!writerGuarded(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode)) {
         continue;
       }
       // F-10e: a plain write to the owner seat never proves a flag
@@ -515,31 +775,52 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           const transferExprs = interpretRegionExprs(input.bytecode, transferSelector);
           const exprGate = packedGateReadExpr(transferExprs.jumpis, gateMember, slot);
           if (exprGate !== null && exprGate.shift === packedWrite.shift) {
-            if (!hasRevertingSide(input.bytecode, code, gateMember, exprGate.jumpiPc, "fall")) {
-              continue;
+            if (hasRevertingSide(input.bytecode, code, gateMember, exprGate.jumpiPc, "fall")) {
+              gateEvidencePc = exprGate.jumpiPc;
             }
-            gateEvidencePc = exprGate.jumpiPc;
           } else {
             const transferSlots = interpretRegionSlots(input.bytecode, transferSelector);
             const transferSlotOf: SlotLookup = (pc) => transferSlots.get(pc);
             const gate = packedGateShift(code, gateMember, slot, transferSlotOf);
-            if (gate === null || gate.shift !== packedWrite.shift) {
-              continue;
+            if (
+              gate !== null &&
+              gate.shift === packedWrite.shift &&
+              hasRevertingGateAfter(input.bytecode, code, gateMember, gate.cmpPc)
+            ) {
+              gateEvidencePc = gate.loadPc;
             }
-            if (!hasRevertingGateAfter(input.bytecode, code, gateMember, gate.cmpPc)) {
-              continue;
-            }
-            gateEvidencePc = gate.loadPc;
+          }
+          if (gateEvidencePc === null) {
+            // Bit-matched expression fallback (SCAN-2): the condition
+            // itself names the writer bit when the shift matchers stay
+            // silent, with a revert on either side.
+            gateEvidencePc = exprPackedFlagGatePc(
+              input.bytecode,
+              code,
+              gateMember,
+              transferExprs.jumpis,
+              slot,
+              packedWrite.shift,
+            );
+          }
+          if (gateEvidencePc === null) {
+            continue;
           }
         } else {
           const gate = gatedFlagReadPrecise(transfer, slot);
-          if (gate === null) {
+          if (gate !== null && hasRevertingGateAfter(input.bytecode, code, gateMember, gate.cmpPc)) {
+            gateEvidencePc = gate.loadPc;
+          }
+          if (gateEvidencePc === null) {
+            // Enforce-style expression gate (SCAN-2): a transfer jump
+            // whose own condition bool-gates on the flag, reverting on
+            // whichever side the set flag takes it to.
+            const transferExprs = interpretRegionExprs(input.bytecode, transferSelector);
+            gateEvidencePc = exprFlagGatePc(input.bytecode, code, gateMember, transferExprs.jumpis, slot);
+          }
+          if (gateEvidencePc === null) {
             continue;
           }
-          if (!hasRevertingGateAfter(input.bytecode, code, gateMember, gate.cmpPc)) {
-            continue;
-          }
-          gateEvidencePc = gate.loadPc;
         }
         // Shared code belongs to every entry that reaches it, so the
         // single holder stays null there: fall back to the sorted holders

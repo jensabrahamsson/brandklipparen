@@ -1597,6 +1597,15 @@ a {
   overflow-wrap: anywhere;
 }
 
+.token-nonascii {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: normal;
+  color: var(--phosphor);
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
 .token-addr {
   margin-top: 8px;
   min-width: 0;

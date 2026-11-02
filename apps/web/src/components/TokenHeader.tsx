@@ -18,6 +18,7 @@ import type { JSX } from "react";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import { formatAge, shortAddress } from "../lib/liveTokens.ts";
 import type { LiveTokenEntry } from "../lib/liveTokens.ts";
+import { tokenDisplayText } from "../lib/tokenIdentity.ts";
 import type { TokenIdentity } from "../lib/tokenIdentity.ts";
 import { CopyButton } from "./CopyButton.tsx";
 import { Pictogram } from "./Pictogram.tsx";
@@ -54,8 +55,16 @@ export function TokenHeader({
   return (
     <header style={{ display: "grid", gap: 4 }}>
       <h1 className="token-sym">
-        {identity.symbol ?? shortAddress(address)}
-        {identity.name === null ? null : <span className="token-sub">{identity.name}</span>}
+        {identity.symbol === null
+          ? shortAddress(address)
+          : tokenDisplayText(identity.symbol, identity.symbolNonAscii)}
+        {identity.symbolNonAscii ? <span className="token-nonascii">(non-ASCII)</span> : null}
+        {identity.name === null ? null : (
+          <span className="token-sub">
+            {tokenDisplayText(identity.name, identity.nameNonAscii)}
+            {identity.nameNonAscii ? <span className="token-nonascii">(non-ASCII)</span> : null}
+          </span>
+        )}
       </h1>
       <div className="token-addr">
         <div className="token-addr-top">

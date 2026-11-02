@@ -8,7 +8,7 @@ import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
 import { TokenHeader, groupAddressChunks } from "./TokenHeader.tsx";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
-import { resolveTokenIdentity } from "../lib/tokenIdentity.ts";
+import { resolveTokenIdentity, tokenDisplayText } from "../lib/tokenIdentity.ts";
 
 describe("token identity resolution", () => {
   test("analysis symbol and name win over the live entry", () => {
@@ -17,13 +17,15 @@ describe("token identity resolution", () => {
         { tokenSymbol: "NEW", tokenName: "New Token" },
         { symbol: "OLD", name: "Old Token" },
       ),
-    ).toEqual({ symbol: "NEW", name: "New Token" });
+    ).toEqual({ symbol: "NEW", name: "New Token", symbolNonAscii: false, nameNonAscii: false });
   });
 
   test("live entry fills gaps the analysis leaves", () => {
     expect(resolveTokenIdentity({}, { symbol: "LIVE", name: null })).toEqual({
       symbol: "LIVE",
       name: null,
+      symbolNonAscii: false,
+      nameNonAscii: false,
     });
   });
 
@@ -31,7 +33,30 @@ describe("token identity resolution", () => {
     expect(resolveTokenIdentity({ tokenSymbol: "  ", tokenName: "" }, null)).toEqual({
       symbol: null,
       name: null,
+      symbolNonAscii: false,
+      nameNonAscii: false,
     });
+  });
+
+  test("non-ASCII flags ride the analysis identity only", () => {
+    expect(
+      resolveTokenIdentity(
+        { tokenSymbol: "USD\u0422", tokenName: "Tether USD", tokenSymbolNonAscii: true },
+        { symbol: "LIVE", name: null },
+      ),
+    ).toEqual({
+      symbol: "USD\u0422",
+      name: "Tether USD",
+      symbolNonAscii: true,
+      nameNonAscii: false,
+    });
+    expect(resolveTokenIdentity({}, { symbol: "LIVE", name: null }).symbolNonAscii).toBe(false);
+  });
+
+  test("flagged text escapes every non-ASCII code point", () => {
+    expect(tokenDisplayText("USD\u0422", true)).toBe("USD\\u0422");
+    expect(tokenDisplayText("USDT", true)).toBe("USDT");
+    expect(tokenDisplayText("USD\u0422", false)).toBe("USD\u0422");
   });
 });
 
@@ -41,7 +66,11 @@ describe("token heading fallbacks", () => {
 
   test("symbol heads with name and full address beneath", () => {
     const html = renderToString(
-      <TokenHeader address={address} identity={{ symbol: "NEW", name: "New Token" }} liveEntry={null} />,
+      <TokenHeader
+        address={address}
+        identity={{ symbol: "NEW", name: "New Token", symbolNonAscii: false, nameNonAscii: false }}
+        liveEntry={null}
+      />,
     );
     expect(toChecksumAddress(address)).toBe(checksummed);
     expect(html).toContain("<h1");
@@ -56,7 +85,11 @@ describe("token heading fallbacks", () => {
 
   test("the copy button sits on the label row ahead of the grouped value", () => {
     const html = renderToString(
-      <TokenHeader address={address} identity={{ symbol: "NEW", name: "New Token" }} liveEntry={null} />,
+      <TokenHeader
+        address={address}
+        identity={{ symbol: "NEW", name: "New Token", symbolNonAscii: false, nameNonAscii: false }}
+        liveEntry={null}
+      />,
     );
     expect(html).toContain("token-addr-top");
     const copyAt = html.indexOf("copy-contract-address");
@@ -70,7 +103,7 @@ describe("token heading fallbacks", () => {
     const html = renderToString(
       <TokenHeader
         address={address}
-        identity={{ symbol: "LIVE", name: null }}
+        identity={{ symbol: "LIVE", name: null, symbolNonAscii: false, nameNonAscii: false }}
         liveEntry={{
           tokenAddress: address,
           symbol: "LIVE",
@@ -101,7 +134,7 @@ describe("token heading fallbacks", () => {
     const html = renderToString(
       <TokenHeader
         address={address}
-        identity={{ symbol: "LIVE", name: null }}
+        identity={{ symbol: "LIVE", name: null, symbolNonAscii: false, nameNonAscii: false }}
         liveEntry={{
           tokenAddress: address,
           symbol: "LIVE",
@@ -126,9 +159,26 @@ describe("token heading fallbacks", () => {
     expect(html).not.toContain("meta-sep");
   });
 
+  test("flagged non-ASCII symbol heads escaped and labelled", () => {
+    const html = renderToString(
+      <TokenHeader
+        address={address}
+        identity={{ symbol: "USD\u0422", name: null, symbolNonAscii: true, nameNonAscii: false }}
+        liveEntry={null}
+      />,
+    );
+    expect(html).toContain("USD\\u0422");
+    expect(html).toContain("(non-ASCII)");
+    expect(html).not.toContain("USD\u0422");
+  });
+
   test("short address heads when nothing names the token, full address in meta", () => {
     const html = renderToString(
-      <TokenHeader address={address} identity={{ symbol: null, name: null }} liveEntry={null} />,
+      <TokenHeader
+        address={address}
+        identity={{ symbol: null, name: null, symbolNonAscii: false, nameNonAscii: false }}
+        liveEntry={null}
+      />,
     );
     expect(html).toContain(">0x5ab1…a001</h1>");
     expect(html.replace(/<[^>]*>/g, "")).toContain(checksummed);
@@ -167,7 +217,11 @@ describe("grouped address keeps the exact value (N-15)", () => {
 
   test("accessible text and copy control keep the unchanged full address", () => {
     const html = renderToString(
-      <TokenHeader address={address} identity={{ symbol: null, name: null }} liveEntry={null} />,
+      <TokenHeader
+        address={address}
+        identity={{ symbol: null, name: null, symbolNonAscii: false, nameNonAscii: false }}
+        liveEntry={null}
+      />,
     );
     expect(html).toContain("addr-chunk");
     expect(html).toContain('aria-label="Copy contract address"');

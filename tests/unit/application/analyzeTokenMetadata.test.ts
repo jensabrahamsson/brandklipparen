@@ -115,6 +115,28 @@ describe("analysis response token symbol and name", () => {
     expect(analysed.value.envelope.tokenName).toBe("NM");
   });
 
+  test("homoglyph symbol rides the response flagged as non-ASCII", async () => {
+    const target = syntheticAddress(48);
+    const block = mustOk(BlockNumber.of(24000000));
+    const utf8 = new TextEncoder().encode("USD\u0442");
+    const out: number[] = [...new Array(31).fill(0), 32, ...new Array(31).fill(0), utf8.length, ...utf8];
+    while (out.length % 32 !== 0) {
+      out.push(0);
+    }
+    const hex = `0x${out.map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+    const rpc = new FakeRpcAdapter(codeMap(target, BYTECODE), block, new Map(), {
+      calls: new Map([[SYMBOL_CALL, hex]]),
+    });
+    const analysed = await servicesWith(rpc).analyzeToken(analyzeInput(target));
+    expect(analysed.ok).toBe(true);
+    if (!analysed.ok || analysed.value.kind !== "assessed") {
+      throw new Error("expected an assessed envelope");
+    }
+    expect(analysed.value.envelope.tokenSymbol).toBe("USD\u0442");
+    expect(analysed.value.envelope.tokenSymbolNonAscii).toBe(true);
+    expect("tokenName" in analysed.value.envelope).toBe(false);
+  });
+
   test("symbol and name stay absent when the chain does not answer", async () => {
     const target = syntheticAddress(43);
     const block = mustOk(BlockNumber.of(24000000));

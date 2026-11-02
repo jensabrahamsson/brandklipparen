@@ -28,7 +28,8 @@ import { canonicalSerialize } from "../domain/serialize.ts";
 import type { CanonicalValue } from "../domain/serialize.ts";
 import { Address, CacheKey, CallData, Slot } from "../domain/types.ts";
 import { isZeroOrDead } from "../domain/onchain/topics.ts";
-import { decodeTokenText } from "../domain/tokenMetadata.ts";
+import { decodeTokenTextDisplay } from "../domain/tokenMetadata.ts";
+import type { TokenTextDisplay } from "../domain/tokenMetadata.ts";
 import type {
   Address as AddressType,
   ArtifactChecksum as ArtifactChecksumType,
@@ -160,6 +161,11 @@ export type AssessmentEnvelope = {
   // printable text, absent otherwise.
   readonly tokenSymbol?: string | undefined;
   readonly tokenName?: string | undefined;
+  // Non-ASCII flags (SCAN-2): present and true beside a symbol or name
+  // whose decoded text carries non-ASCII characters, so the UI shows it
+  // escaped and labelled instead of dropping it to empty.
+  readonly tokenSymbolNonAscii?: boolean | undefined;
+  readonly tokenNameNonAscii?: boolean | undefined;
   readonly modelVersion: ModelVersionType;
   readonly artifactChecksum: ArtifactChecksumType;
   readonly indexVersion: IndexVersionType;
@@ -464,7 +470,7 @@ async function readTokenText(
   target: AddressType,
   ctx: CallContext,
   selector: string,
-): Promise<string | undefined> {
+): Promise<TokenTextDisplay | undefined> {
   const data = CallData.parse(selector);
   if (!data.ok) {
     return undefined;
@@ -473,19 +479,29 @@ async function readTokenText(
   if (!called.ok) {
     return undefined;
   }
-  return decodeTokenText(called.value) ?? undefined;
+  return decodeTokenTextDisplay(called.value) ?? undefined;
 }
 
 async function readTokenMetadata(
   rpc: RpcPort,
   target: AddressType,
   ctx: CallContext,
-): Promise<{ readonly symbol: string | undefined; readonly name: string | undefined }> {
+): Promise<{
+  readonly symbol: string | undefined;
+  readonly symbolNonAscii: boolean;
+  readonly name: string | undefined;
+  readonly nameNonAscii: boolean;
+}> {
   const [symbol, name] = await Promise.all([
     readTokenText(rpc, target, ctx, TOKEN_SYMBOL_SELECTOR),
     readTokenText(rpc, target, ctx, TOKEN_NAME_SELECTOR),
   ]);
-  return { symbol, name };
+  return {
+    symbol: symbol?.text,
+    symbolNonAscii: symbol?.nonAscii ?? false,
+    name: name?.text,
+    nameNonAscii: name?.nonAscii ?? false,
+  };
 }
 
 // Attaches display-only symbol/name to an assessed envelope when the
@@ -493,11 +509,18 @@ async function readTokenMetadata(
 // undefined), so cached and older responses keep their exact shape.
 function withTokenMetadata(
   envelope: AssessmentEnvelope,
-  metadata: { readonly symbol: string | undefined; readonly name: string | undefined },
+  metadata: {
+    readonly symbol: string | undefined;
+    readonly symbolNonAscii: boolean;
+    readonly name: string | undefined;
+    readonly nameNonAscii: boolean;
+  },
 ): AssessmentEnvelope {
   return Object.freeze({
     ...envelope,
     ...(metadata.symbol === undefined ? {} : { tokenSymbol: metadata.symbol }),
+    ...(metadata.symbol !== undefined && metadata.symbolNonAscii ? { tokenSymbolNonAscii: true } : {}),
+    ...(metadata.name !== undefined && metadata.nameNonAscii ? { tokenNameNonAscii: true } : {}),
     ...(metadata.name === undefined ? {} : { tokenName: metadata.name }),
   });
 }
@@ -1516,6 +1539,10 @@ export function assessmentToCanonical(envelope: AssessmentEnvelope): CanonicalVa
     codeHash: envelope.codeHash as string,
     ...(envelope.tokenSymbol === undefined ? {} : { tokenSymbol: envelope.tokenSymbol }),
     ...(envelope.tokenName === undefined ? {} : { tokenName: envelope.tokenName }),
+    ...(envelope.tokenSymbolNonAscii === undefined
+      ? {}
+      : { tokenSymbolNonAscii: envelope.tokenSymbolNonAscii }),
+    ...(envelope.tokenNameNonAscii === undefined ? {} : { tokenNameNonAscii: envelope.tokenNameNonAscii }),
     modelVersion: envelope.modelVersion as string,
     artifactChecksum: envelope.artifactChecksum as string,
     indexVersion: envelope.indexVersion as string,

@@ -14,7 +14,9 @@ import { blacklistDetectorPlugin } from "../../../src/plugins/detectors/blacklis
 import { runDetectorPluginContract } from "../../contract/detector.contract.ts";
 import {
   ADD_LIST_SET,
+  BALANCE_GATE_SET,
   CALLDATALOAD,
+  COMPOUND_SET,
   DUAL_BLACKLIST_SET,
   ISZERO,
   KECCAK,
@@ -26,8 +28,16 @@ import {
   SSTORE,
   STOP,
   TRANSFER_FROM_SELECTOR,
+  balanceGateTokenHex,
+  compoundGuardBlacklistTokenHex,
   dualBlacklistGateTokenHex,
   feeExemptGateTokenHex,
+  jumpSideBlacklistTokenHex,
+  roleOnlyBlacklistTokenHex,
+  scratchOffsetBlacklistTokenHex,
+  shuffledStoreBlacklistTokenHex,
+  shiftedOwnerBlacklistTokenHex,
+  shortCircuitBlacklistTokenHex,
   ownerGuard,
   packedMappingBlacklistToken,
   push1,
@@ -395,5 +405,75 @@ describe("blacklist fee-exempt and dual-gate precision (SCAN-1)", () => {
     expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
     const selectors = (findings[0]?.evidence ?? []).map((entry) => entry.selector as string).sort();
     expect(selectors).toEqual([DUAL_BLACKLIST_SET, TRANSFER_FROM_SELECTOR].sort());
+  });
+});
+
+describe("blacklist enforce-style gates (SCAN-2)", () => {
+  function hexInput(hex: string): DetectorInput {
+    const parsed = Bytecode.parse(hex);
+    if (!parsed.ok) {
+      throw new Error("fixture bytecode must parse");
+    }
+    return Object.freeze({ bytecode: parsed.value, codeHash: mustOk(CodeHash.of(parsed.value)) });
+  }
+
+  test("jump-side revert gate on the written base reports an extended fact", () => {
+    const findings = blacklistDetectorPlugin.detect(hexInput(jumpSideBlacklistTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.blacklist:blacklist-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
+  });
+
+  test("jump-side gate on another base stays silent", () => {
+    expect(blacklistDetectorPlugin.detect(hexInput(jumpSideBlacklistTokenHex(7, 8)))).toEqual([]);
+  });
+
+  test("scratch-offset mapping hash gate reports an extended fact", () => {
+    const findings = blacklistDetectorPlugin.detect(hexInput(scratchOffsetBlacklistTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.blacklist:blacklist-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
+  });
+
+  test("shuffled key store gate on the written base reports an extended fact", () => {
+    const findings = blacklistDetectorPlugin.detect(hexInput(shuffledStoreBlacklistTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.blacklist:blacklist-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
+  });
+
+  test("role-only guard without an owner slot proves the mapping writer", () => {
+    const findings = blacklistDetectorPlugin.detect(hexInput(roleOnlyBlacklistTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.blacklist:blacklist-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
+  });
+
+  test("shifted packed owner guard proves the mapping writer", () => {
+    const findings = blacklistDetectorPlugin.detect(hexInput(shiftedOwnerBlacklistTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.blacklist:blacklist-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
+  });
+
+  test("short-circuit listed-and-not-exempt gate reports an extended fact", () => {
+    const findings = blacklistDetectorPlugin.detect(hexInput(shortCircuitBlacklistTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.blacklist:blacklist-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
+  });
+
+  test("compound owner-or-role guard proves the mapping writer", () => {
+    const findings = blacklistDetectorPlugin.detect(hexInput(compoundGuardBlacklistTokenHex()));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.id).toBe("dev.brandklipparen.blacklist:blacklist-extended");
+    expect(findings[0]?.payload).toEqual({ fact: "blacklist", proof: "extended" });
+    const selectors = (findings[0]?.evidence ?? []).map((entry) => entry.selector as string).sort();
+    expect(selectors).toEqual([COMPOUND_SET, TRANSFER].sort());
+  });
+
+  test("balance compare on the credited mapping stays silent", () => {
+    expect(blacklistDetectorPlugin.detect(hexInput(balanceGateTokenHex()))).toEqual([]);
+    expect(BALANCE_GATE_SET).toBe("0x0a9c6c1e");
   });
 });

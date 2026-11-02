@@ -994,6 +994,478 @@ export function sharedLimitGateTokenHex(): string {
   return asm.build();
 }
 
+// Jump-side blacklist gate token (SCAN-2): both transfer entries route
+// through a shared helper that jumps straight to its revert block while
+// a mapping entry reads set (`if (listed[from]) revert` shape), and a
+// guarded setter writes the same base. No ISZERO sits beside the gate
+// load, so beside-window proofs stay silent. Synthetic only.
+export const JUMP_GATE_SET = "0x0a9c6c1e";
+
+export function jumpSideBlacklistTokenHex(writeBase = 7, gateBase = 7): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(TRANSFER_FROM_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferFromEntry").op(0x57);
+  asm.op(0x80).push4(JUMP_GATE_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("ret1");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("transferFromEntry").op(0x5b);
+  asm.pushLabel2("ret2");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(writeBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  asm.label("shared").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(gateBase).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x56);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("ret1").op(0x5b, 0x00);
+  asm.label("ret2").op(0x5b, 0x00);
+  return asm.build();
+}
+
+// Short-circuit blacklist gate token (SCAN-2): the shared helper
+// reverts only when the listed entry reads set and the exempt entry
+// reads clear, tested by two jumps in sequence, and a guarded setter
+// writes the listed base. No single jump both tests the listed entry
+// and reverts. Synthetic only.
+export const SHORT_CIRCUIT_SET = "0x0a9c6c1e";
+
+export function shortCircuitBlacklistTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(TRANSFER_FROM_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferFromEntry").op(0x57);
+  asm.op(0x80).push4(SHORT_CIRCUIT_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.pushLabel2("ret1");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("transferFromEntry").op(0x5b);
+  asm.pushLabel2("ret2");
+  asm.pushLabel2("shared");
+  asm.op(0x56);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  asm.label("shared").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("sharedOk").op(0x57);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(0x08).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x56);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("sharedOk").op(0x5b);
+  asm.op(0x56, 0xfe);
+  asm.label("ret1").op(0x5b, 0x00);
+  asm.label("ret2").op(0x5b, 0x00);
+  return asm.build();
+}
+
+// Shifted-owner blacklist token (SCAN-2): the owner word sits packed
+// above a flag byte, so the writer guard shifts the loaded slot word
+// before comparing it with the caller. The gate is the jump-side
+// shared helper on base 7. Synthetic only.
+export const SHIFTED_OWNER_SET = "0x0a9c6c1e";
+
+export function shiftedOwnerBlacklistTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(SHIFTED_OWNER_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x00);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setEntry").op(0x5b);
+  asm.push1(0x00).op(0x54);
+  asm.push1(0x08).op(0x1c, 0x33, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  return asm.build();
+}
+
+// Role-only blacklist token (SCAN-2): no constant owner slot exists.
+// The setter is guarded only by a caller-keyed role entry on base 9,
+// while the transfer path gates on mapping base 7. Synthetic only.
+export const ROLE_ONLY_SET = "0x0a9c6c1e";
+
+function roleOnlyGuard(asm: Asm, okLabel: string, blockedLabel: string): void {
+  asm.op(0x33).push1(0x00).op(0x52);
+  asm.push1(0x09).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2(blockedLabel).op(0x57);
+  asm.pushLabel2(okLabel).op(0x56);
+  asm.label(blockedLabel).op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label(okLabel).op(0x5b);
+}
+
+export function roleOnlyBlacklistTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(ROLE_ONLY_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b, 0x00);
+  asm.label("setEntry").op(0x5b);
+  roleOnlyGuard(asm, "setOk", "setBlocked");
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  return asm.build();
+}
+
+// Role-only pause token (SCAN-2): no constant owner slot exists. Both
+// flag writers are guarded only by a caller-keyed role entry on base 9,
+// while the transfer path gates on flag slot 4. Synthetic only.
+export const ROLE_ONLY_PAUSE_SET = "0x0a9c6c1e";
+export const ROLE_ONLY_PAUSE_CLEAR = "0x0b9c6c1e";
+
+export function roleOnlyPauseTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(ROLE_ONLY_PAUSE_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.op(0x80).push4(ROLE_ONLY_PAUSE_CLEAR.slice(2)).op(0x14);
+  asm.pushLabel2("clearEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x04).op(0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b, 0x00);
+  asm.label("setEntry").op(0x5b);
+  roleOnlyGuard(asm, "setOk", "setBlocked");
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  asm.label("clearEntry").op(0x5b);
+  roleOnlyGuard(asm, "clearOk", "clearBlocked");
+  asm.push1(0x00).push1(0x04).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Scratch-offset blacklist gate token (SCAN-2): the transfer gate
+// hashes its mapping entry from scratch memory at 0x40/0x60 instead of
+// the usual 0x00/0x20 pair, so neither the interpreter memory model nor
+// the legacy base pattern names the base. The guarded setter writes
+// base 7 through the usual layout. Synthetic only.
+export const SCRATCH_GATE_SET = "0x0a9c6c1e";
+
+export function scratchOffsetBlacklistTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(SCRATCH_GATE_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x40).op(0x52);
+  asm.push1(0x07).push1(0x60).op(0x52);
+  asm.push1(0x80).push1(0x40).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  return asm.build();
+}
+
+// Balance-gate precision token (SCAN-2): a guarded writer credits
+// mapping base 2, and the transfer path only checks the loaded balance
+// against the calldata amount with LT before reverting. The mapping
+// value prices a comparison, never a boolean gate. Synthetic only.
+export const BALANCE_GATE_SET = "0x0a9c6c1e";
+
+export function balanceGateTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(BALANCE_GATE_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(0x02).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54);
+  asm.op(0x35, 0x10, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(0x02).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  return asm.build();
+}
+
+// Compound-guard writer token (SCAN-2): the writer reaches its store
+// only through a shared check helper that accepts the caller when it
+// equals the stored owner or holds a caller-keyed role entry, and
+// reverts otherwise. The gate or use site is supplied by the caller:
+// `kind` picks a shared mapping gate, a flag gate, a fee use or a limit
+// compare over the written slot or base. Synthetic only.
+export const COMPOUND_SET = "0x0a9c6c1e";
+export const COMPOUND_CLEAR = "0x0b9c6c1e";
+
+function compoundCheckHelper(asm: Asm): void {
+  asm.label("funcCheck").op(0x5b);
+  asm.push1(0x00).op(0x54, 0x33, 0x14);
+  asm.pushLabel2("checkOk").op(0x57);
+  // Stack-neutral padding: the role path sits far past the beside
+  // windows, so only the expression guard proof can follow it.
+  for (let pad = 0; pad < 40; pad += 1) {
+    asm.push1(0x00).op(0x50);
+  }
+  asm.op(0x33).push1(0x00).op(0x52);
+  asm.push1(0x09).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54);
+  asm.pushLabel2("checkOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("checkOk").op(0x5b, 0x56);
+}
+
+export function compoundGuardBlacklistTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(COMPOUND_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.pushLabel2("retCheck").pushLabel2("funcCheck").op(0x56);
+  asm.label("retCheck").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  compoundCheckHelper(asm);
+  return asm.build();
+}
+
+export function compoundGuardPauseTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(COMPOUND_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.op(0x80).push4(COMPOUND_CLEAR.slice(2)).op(0x14);
+  asm.pushLabel2("clearEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x04).op(0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.pushLabel2("retSet").pushLabel2("funcCheck").op(0x56);
+  asm.label("retSet").op(0x5b);
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  asm.label("clearEntry").op(0x5b);
+  asm.pushLabel2("retClear").pushLabel2("funcCheck").op(0x56);
+  asm.label("retClear").op(0x5b);
+  asm.push1(0x00).push1(0x04).op(0x55, 0x00);
+  compoundCheckHelper(asm);
+  return asm.build();
+}
+
+// Jump-side pause gate token (SCAN-2): the transfer path jumps straight
+// to its revert block while flag slot 4 reads set, with no ISZERO beside
+// the load. `reversible` adds the guarded zero writer. Synthetic only.
+export const JUMP_PAUSE_SET = "0x0a9c6c1e";
+export const JUMP_PAUSE_CLEAR = "0x0b9c6c1e";
+
+export function jumpSidePauseTokenHex(reversible: boolean): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(JUMP_PAUSE_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  if (reversible) {
+    asm.op(0x80).push4(JUMP_PAUSE_CLEAR.slice(2)).op(0x14);
+    asm.pushLabel2("clearEntry").op(0x57);
+  }
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x04).op(0x54);
+  asm.pushLabel2("blocked").op(0x57);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("blocked").op(0x5b);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.push1(0x01).push1(0x04).op(0x55, 0x00);
+  if (reversible) {
+    asm.label("clearEntry").op(0x5b);
+    asm.op(0x33).push1(0x00).op(0x54, 0x14);
+    asm.pushLabel2("clearOk").op(0x57);
+    asm.push1(0x00).op(0x80, 0xfd);
+    asm.label("clearOk").op(0x5b);
+    asm.push1(0x00).push1(0x04).op(0x55, 0x00);
+  }
+  return asm.build();
+}
+
+// Mask-gate packed pause token (SCAN-2): flag bit 8 of slot 4 is set
+// and cleared by guarded packed writers, and the transfer path tests
+// the bit with a single-bit AND mask and no shift anywhere, so the
+// shift matchers stay silent. Synthetic only.
+export const MASK_PAUSE_SET = "0x0a9c6c1e";
+export const MASK_PAUSE_CLEAR = "0x0b9c6c1e";
+
+export function maskGatePauseTokenHex(): BytecodeType {
+  const writeSeq = (value: number): number[] => [
+    0x60, value, 0x60, 0x04, 0x60, 0x01, 0x61, 0x01, 0x00, EXP,
+    DUP2, SLOAD, DUP2, 0x60, 0xff, MUL, NOT, AND, SWAP1, DUP4,
+    ISZERO, ISZERO, MUL, OR, SWAP1, SSTORE,
+  ];
+  return tokenBytecode([
+    {
+      selector: MASK_PAUSE_SET,
+      body: [...ownerGuard(0, 200), ...writeSeq(1), STOP],
+    },
+    {
+      selector: MASK_PAUSE_CLEAR,
+      body: [...ownerGuard(0, 200), ...writeSeq(0), STOP],
+    },
+    {
+      selector: TRANSFER_SELECTOR,
+      body: [
+        ...push1(4),
+        SLOAD,
+        0x61,
+        0x01,
+        0x00,
+        AND,
+        ISZERO,
+        ...branchOk(),
+        ...push1(0),
+        0x80,
+        REVERT,
+        0x5b,
+        ...sstoreConstSlot(2, [CALLDATALOAD]),
+        STOP,
+      ],
+    },
+  ]);
+}
+
+// Compound-guard fee token (SCAN-2): the rate writer is guarded by the
+// shared compound check helper; the transfer path multiplies the loaded
+// rate with the calldata amount and subtracts it. Synthetic only.
+export function compoundGuardFeeTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(COMPOUND_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x05).op(0x54, 0x02, 0x03);
+  asm.push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.pushLabel2("retCheck").pushLabel2("funcCheck").op(0x56);
+  asm.label("retCheck").op(0x5b);
+  asm.op(0x35).push1(0x05).op(0x55, 0x00);
+  compoundCheckHelper(asm);
+  return asm.build();
+}
+
+// Compound-guard limit token (SCAN-2): the limit writer is guarded by
+// the shared compound check helper; the transfer path compares the
+// calldata amount against the loaded limit and reverts past it.
+// Synthetic only.
+export function compoundGuardLimitTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(COMPOUND_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x06).op(0x54, 0x11, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.pushLabel2("retCheck").pushLabel2("funcCheck").op(0x56);
+  asm.label("retCheck").op(0x5b);
+  asm.op(0x35).push1(0x06).op(0x55, 0x00);
+  compoundCheckHelper(asm);
+  return asm.build();
+}
+
 export function oldSolcPauseBitMismatchToken(): BytecodeType {
   return tokenBytecode([
     { selector: OLD_SOLC_PAUSE_SET, body: oldSolcPauseBody() },
@@ -1017,4 +1489,125 @@ export function oldSolcPauseBitMismatchToken(): BytecodeType {
       ],
     },
   ]);
+}
+
+// Shuffled-store blacklist gate token (SCAN-2): the transfer gate
+// stores its mapping key at scratch 0 through PUSH 0x00, SWAP1, DUP2,
+// MSTORE, so the key destination push never sits beside the MSTORE.
+// The guarded setter writes base 7 through the usual layout and the
+// gate reverts while the entry reads set. Synthetic only.
+export const SHUFFLED_GATE_SET = "0x0a9c6c1e";
+
+export function shuffledStoreBlacklistTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(SHUFFLED_GATE_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.op(0x35).push1(0x00).op(0x90, 0x81, 0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x54, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.op(0x35, 0x35).push1(0x00).op(0x52);
+  asm.push1(0x07).push1(0x20).op(0x52);
+  asm.push1(0x40).push1(0x00).op(0x20, 0x55);
+  asm.op(0x00);
+  return asm.build();
+}
+
+// Byte-mask pause token (SCAN-2): packed bit 0 of slot 4 is set and
+// cleared by guarded packed writers, and the transfer path tests the
+// low byte of the slot word with AND 0xff and no shift anywhere, so
+// the shift matchers stay silent. Synthetic only.
+export const BYTE_MASK_PAUSE_SET = "0x0a9c6c1e";
+export const BYTE_MASK_PAUSE_CLEAR = "0x0b9c6c1e";
+
+export function byteMaskPauseTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(BYTE_MASK_PAUSE_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.op(0x80).push4(BYTE_MASK_PAUSE_CLEAR.slice(2)).op(0x14);
+  asm.pushLabel2("clearEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x04).op(0x54);
+  asm.push1(0xff).op(0x16, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.push1(0x04).op(0x54);
+  asm.push1(0x01).op(0x17);
+  asm.push1(0x04).op(0x55, 0x00);
+  asm.label("clearEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("clearOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("clearOk").op(0x5b);
+  asm.push1(0x04).op(0x54);
+  asm.push1(0x01).op(0x19, 0x16);
+  asm.push1(0x04).op(0x55, 0x00);
+  return asm.build();
+}
+
+// Short-circuit packed pause token (SCAN-2): packed bit 8 of slot 0 is
+// set and cleared by guarded packed writers. While the bit reads set
+// the transfer path reverts only when the calldata word also reads
+// nonzero, tested by a second jump, so no single jump both tests the
+// flag and reverts on every path. Synthetic only.
+export const SHORT_PAUSE_SET = "0x0a9c6c1e";
+export const SHORT_PAUSE_CLEAR = "0x0b9c6c1e";
+
+export function shortCircuitPackedPauseTokenHex(): string {
+  const asm = new Asm();
+  asm.op(0x80).push4(TRANSFER_SELECTOR.slice(2)).op(0x14);
+  asm.pushLabel2("transferEntry").op(0x57);
+  asm.op(0x80).push4(SHORT_PAUSE_SET.slice(2)).op(0x14);
+  asm.pushLabel2("setEntry").op(0x57);
+  asm.op(0x80).push4(SHORT_PAUSE_CLEAR.slice(2)).op(0x14);
+  asm.pushLabel2("clearEntry").op(0x57);
+  asm.label("fallback").op(0x5b).push1(0x00).op(0x80, 0xfd);
+  asm.label("transferEntry").op(0x5b);
+  asm.push1(0x00).op(0x54);
+  asm.push1(0x08).op(0x1c);
+  asm.push1(0xff).op(0x16, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.op(0x35, 0x15);
+  asm.pushLabel2("tok").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("tok").op(0x5b);
+  asm.op(0x35).push1(0x02).op(0x55, 0x00);
+  asm.label("setEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("setOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("setOk").op(0x5b);
+  asm.push1(0x00).op(0x54);
+  asm.push1(0x01).push1(0x08).op(0x1b, 0x17);
+  asm.push1(0x00).op(0x55, 0x00);
+  asm.label("clearEntry").op(0x5b);
+  asm.op(0x33).push1(0x00).op(0x54, 0x14);
+  asm.pushLabel2("clearOk").op(0x57);
+  asm.push1(0x00).op(0x80, 0xfd);
+  asm.label("clearOk").op(0x5b);
+  asm.push1(0x00).op(0x54);
+  asm.push1(0x01).push1(0x08).op(0x1b, 0x19, 0x16);
+  asm.push1(0x00).op(0x55, 0x00);
+  return asm.build();
 }

@@ -70,6 +70,8 @@ export type AnalyzeSuccess = {
   // short address.
   readonly tokenSymbol?: string | undefined;
   readonly tokenName?: string | undefined;
+  readonly tokenSymbolNonAscii?: boolean | undefined;
+  readonly tokenNameNonAscii?: boolean | undefined;
   readonly modelVersion: string;
   readonly artifactChecksum: string;
   readonly indexVersion: string;

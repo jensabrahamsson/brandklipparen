@@ -20,12 +20,14 @@ import {
   TRANSFER_FROM_SELECTOR,
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
+  compoundPrivilegedGate,
   constSlotLoadNearFlavor,
   feeArithProven,
   interpretRegionExprs,
   interpretRegionSlots,
   isStandardTokenWriter,
   ownerCheckVia,
+  privilegedGuardKind,
 } from "../../../domain/ownerControl.ts";
 import type { Expr, RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
@@ -433,6 +435,25 @@ function holderFor(
 // (never `feature`) with `proof: "extended"`, so the finding never
 // converts to a signal and stays at weight 0. Fee arithmetic with no
 // privileged writer, or a hardcoded constant rate, stays silent.
+// Writer guard for extended analysis (SCAN-2): the proven owner check,
+// a role-slot or auth-mapping guard, or a compound owner-or-role gate.
+function writerGuarded(
+  code: ReturnType<typeof disassemble>,
+  member: (pc: number) => boolean,
+  ownerSlot: number | null,
+  slotOf: SlotLookup,
+  jumpis: ReadonlyMap<number, Expr>,
+  bytecode: DetectorInput["bytecode"],
+): boolean {
+  if (ownerSlot !== null && ownerCheckVia(code, member, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+    return true;
+  }
+  if (privilegedGuardKind(code, member, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+    return true;
+  }
+  return compoundPrivilegedGate(code, member, ownerSlot, jumpis, bytecode);
+}
+
 function detectExtended(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -440,9 +461,6 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
   }
   const attribution = attributeFunctions(input.bytecode, { mode: "v2" });
   const view = analyzeOwnerControl(input.bytecode, { reach: "v2" });
-  if (view.ownerSlot === null) {
-    return Object.freeze([]);
-  }
   const ownerSlot = view.ownerSlot;
   const code = disassemble(input.bytecode);
   const memberOf = (selector: SelectorType): ((pc: number) => boolean) => {
@@ -456,15 +474,12 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     const slots = interpretRegionSlots(input.bytecode, region.selector);
     const slotOf: SlotLookup = (pc) => slots.get(pc);
     const exprs = interpretRegionExprs(input.bytecode, region.selector);
-    if (
-      ownerCheckVia(code, memberOf(region.selector), ownerSlot, slotOf, exprs.jumpis, input.bytecode) ===
-      null
-    ) {
+    if (!writerGuarded(code, memberOf(region.selector), ownerSlot, slotOf, exprs.jumpis, input.bytecode)) {
       continue;
     }
     for (const store of region.stores) {
       // The owner seat holds an address, never a fee rate.
-      if (store.slot.kind === "const" && store.slot.value === ownerSlot) {
+      if (ownerSlot !== null && store.slot.kind === "const" && store.slot.value === ownerSlot) {
         continue;
       }
       if (store.slot.kind === "const" && !store.valueIsZero && store.valueConst === null) {
@@ -482,10 +497,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
       const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
       const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
-      if (
-        ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode) ===
-        null
-      ) {
+      if (!writerGuarded(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode)) {
         continue;
       }
       const writePc = feeWriter(region, slot);
@@ -513,6 +525,18 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
             if (gateMember(pc) && condUsesSlotArithmetically(cond, slot)) {
               usePc = pc;
               break;
+            }
+          }
+          if (usePc === null) {
+            // Stored-value rate use (SCAN-2): the fee deduction feeds a
+            // balance store directly, with no jump condition carrying
+            // the multiply. The stored value must still price the slot
+            // against a calldata amount.
+            for (const [pc, record] of gateExprs.stores) {
+              if (gateMember(pc) && condUsesSlotArithmetically(record.value, slot)) {
+                usePc = pc;
+                break;
+              }
             }
           }
         }

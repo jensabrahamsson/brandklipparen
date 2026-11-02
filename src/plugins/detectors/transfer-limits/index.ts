@@ -21,6 +21,7 @@ import {
   TRANSFER_FROM_SELECTOR,
   TRANSFER_SELECTOR,
   analyzeOwnerControl,
+  compoundPrivilegedGate,
   constSlotLoadNearFlavor,
   hasRevertingSide,
   interpretRegionExprs,
@@ -29,6 +30,7 @@ import {
   ownerCheckVia,
   packedBoolWriteAt,
   packedBoolWriteExpr,
+  privilegedGuardKind,
 } from "../../../domain/ownerControl.ts";
 import type { Expr, RegionFacts, SlotLookup } from "../../../domain/ownerControl.ts";
 import { attributeFunctions } from "../../../domain/evmFlow.ts";
@@ -524,6 +526,25 @@ export function limitTransferGate(
   return null;
 }
 
+// Writer guard for extended analysis (SCAN-2): the proven owner check,
+// a role-slot or auth-mapping guard, or a compound owner-or-role gate.
+function writerGuarded(
+  code: ReturnType<typeof disassemble>,
+  member: (pc: number) => boolean,
+  ownerSlot: number | null,
+  slotOf: SlotLookup,
+  jumpis: ReadonlyMap<number, Expr>,
+  bytecode: DetectorInput["bytecode"],
+): boolean {
+  if (ownerSlot !== null && ownerCheckVia(code, member, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+    return true;
+  }
+  if (privilegedGuardKind(code, member, ownerSlot, slotOf, jumpis, bytecode) !== null) {
+    return true;
+  }
+  return compoundPrivilegedGate(code, member, ownerSlot, jumpis, bytecode);
+}
+
 function detectExtended(input: DetectorInput): readonly PluginFinding[] {
   const entries = extractSelectors(input.bytecode);
   if (entries.length === 0) {
@@ -531,9 +552,6 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
   }
   const attribution = attributeFunctions(input.bytecode, { mode: "v2" });
   const view = analyzeOwnerControl(input.bytecode, { reach: "v2" });
-  if (view.ownerSlot === null) {
-    return Object.freeze([]);
-  }
   const ownerSlot = view.ownerSlot;
   const code = disassemble(input.bytecode);
   const memberOf = (selector: SelectorType): ((pc: number) => boolean) => {
@@ -563,7 +581,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
     const slots = interpretRegionSlots(input.bytecode, region.selector);
     const slotOf: SlotLookup = (pc) => slots.get(pc);
     const exprs = interpretRegionExprs(input.bytecode, region.selector);
-    if (ownerCheckVia(code, memberOf(region.selector), ownerSlot, slotOf, exprs.jumpis, input.bytecode) === null) {
+    if (!writerGuarded(code, memberOf(region.selector), ownerSlot, slotOf, exprs.jumpis, input.bytecode)) {
       continue;
     }
     for (const store of region.stores) {
@@ -588,7 +606,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
       const writerSlots = interpretRegionSlots(input.bytecode, region.selector);
       const writerSlotOf: SlotLookup = (pc) => writerSlots.get(pc);
       const writerExprs = interpretRegionExprs(input.bytecode, region.selector);
-      if (ownerCheckVia(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode) === null) {
+      if (!writerGuarded(code, writerMember, ownerSlot, writerSlotOf, writerExprs.jumpis, input.bytecode)) {
         continue;
       }
       const writePc = limitWriter(region, slot);
@@ -608,7 +626,7 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
         }
         const gateMember = memberOf(transferSelector);
         const gateExprs = interpretRegionExprs(input.bytecode, transferSelector);
-        const proof = limitTransferGate(
+        let proof = limitTransferGate(
           input.bytecode,
           code,
           gateMember,
@@ -616,6 +634,31 @@ function detectExtended(input: DetectorInput): readonly PluginFinding[] {
           transfer,
           slot,
         );
+        if (proof === null) {
+          // Enforce-style expression gate (SCAN-2): a transfer jump whose
+          // own condition compares the amount or a balance against the
+          // limit slot, reverting on either side.
+          const ordered = [...gateExprs.jumpis.entries()].sort((left, right) => left[0] - right[0]);
+          for (const [pc, cond] of ordered) {
+            if (!gateMember(pc) || cond === undefined || cond.kind === "unknown") {
+              continue;
+            }
+            const { inner } = stripIszero(cond);
+            if (inner.kind !== "op" || (inner.name !== "LT" && inner.name !== "GT")) {
+              continue;
+            }
+            if (!gateProvesLimit(cond, slot)) {
+              continue;
+            }
+            if (
+              hasRevertingSide(input.bytecode, code, gateMember, pc, "fall") ||
+              hasRevertingSide(input.bytecode, code, gateMember, pc, "jump")
+            ) {
+              proof = { loadPc: pc };
+              break;
+            }
+          }
+        }
         if (proof === null) {
           continue;
         }
