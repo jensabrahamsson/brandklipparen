@@ -183,8 +183,11 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
   const scoreSection = page.locator('section[aria-label="Combined score"]');
   // W-9 removed the hero's static score repeat, so the dial (1.7 s
   // count-up) and gauges (1.5 s) own these strings: wait for the
-  // animation to settle before the one-shot read.
-  await expect(scoreSection).toContainText("84");
+  // animation to settle before the one-shot read. The dial is the
+  // slowest, so wait for its exact final number: a bare "84" substring
+  // also matches the honeypot gauge passing through "84%" mid-count,
+  // and "91%" lands while the dial is still below its final 84.
+  await expect(scoreSection.getByText("84", { exact: true })).toBeVisible();
   await expect(scoreSection).toContainText("91%");
   const simpleScore = await scoreSection.innerText();
   await page.getByRole("switch", { name: "Expert view" }).click();
@@ -193,6 +196,7 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
   await expect(page.getByTestId("expert-selectors")).toContainText("0x44337ea1");
   await expect(page.getByTestId("expert-selectors")).toContainText("PC 0xa3f");
   await expect(page.getByTestId("raw-plugin-payloads")).toContainText('"capability":"call"');
+  await expect(scoreSection.getByText("84", { exact: true })).toBeVisible();
   await expect(scoreSection).toContainText("91%");
   const expertScore = await scoreSection.innerText();
   // The score numbers never move between modes; Expert only adds the

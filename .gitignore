@@ -31,3 +31,6 @@ KONTEXT.md
 kontext/
 prompter/
 design/bilder/
+
+__pycache__/
+*.pyc
