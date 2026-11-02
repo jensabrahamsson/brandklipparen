@@ -9,7 +9,7 @@
 // Access gate: until a visitor enters the access code (BK_ACCESS_CODE,
 // only from the Modal secret) the edge serves only an access page for
 // the UI and for keyless /v1 requests. A correct code sets a signed,
-// HttpOnly cookie for 7 days. REST and MCP clients carrying their own
+// HttpOnly cookie for 30 days. REST and MCP clients carrying their own
 // x-api-key bypass the page; the upstream API validates that key.
 // Browser visitors then carry no API key: when a /v1 request has no
 // x-api-key header, the edge adds the server-held web key (never sent
@@ -37,7 +37,7 @@ const CONFIG = Object.freeze({
   staticDir: resolve(env.BK_EDGE_STATIC_DIR ?? "apps/web/dist"),
   webKey: env.BK_EDGE_WEB_API_KEY ?? "",
   accessCode: env.BK_ACCESS_CODE ?? "",
-  judgeKeys: (env.BK_JUDGE_API_KEYS ?? "").split(",").map((k) => k.trim()).filter(Boolean),
+  judgeKeys: [env.BK_JUDGE_API_KEY ?? "", ...(env.BK_JUDGE_API_KEYS ?? "").split(",")].map((k) => k.trim()).filter(Boolean),
   publicOrigin: env.BK_EDGE_PUBLIC_ORIGIN ?? "",
   stateFile: env.BK_EDGE_STATE_FILE ?? "",
   maxBodyBytes: int("BK_EDGE_MAX_BODY_BYTES", 65536),
@@ -56,7 +56,7 @@ const CONFIG = Object.freeze({
 const SALT = env.BK_EDGE_SALT || randomBytes(16).toString("hex");
 const COOKIE_SECRET = env.BK_EDGE_COOKIE_SECRET || env.BK_EDGE_SALT || randomBytes(32).toString("hex");
 const ACCESS_COOKIE = "bk_access";
-const ACCESS_TTL_SECONDS = 7 * 24 * 60 * 60;
+const ACCESS_TTL_SECONDS = 30 * 24 * 60 * 60;
 const ACCESS_MAX_FAILURES = 10;
 const ACCESS_WINDOW_MS = 15 * 60 * 1000;
 
@@ -88,8 +88,11 @@ const HOP = new Set(["connection", "keep-alive", "proxy-authenticate", "proxy-au
 function digest(value) {
   return createHash("sha256").update(String(value), "utf8").digest();
 }
+function normalizeCode(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
 function sameSecret(candidate, expected) {
-  return timingSafeEqual(digest(candidate), digest(expected));
+  return timingSafeEqual(digest(normalizeCode(candidate)), digest(normalizeCode(expected)));
 }
 function isKnownKey(key) {
   if (!key) return false;
@@ -136,7 +139,7 @@ function accessPage(message) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Brandklipparen access</title>
+<title>Brandklipparen — judge preview</title>
 <style>
 :root{color-scheme:dark;--void:#010402;--glass:#03110a;--phosphor:#8dffb6;--phosphor-hi:#d6ffe6;--dim:#4fb27a;--edge:#2e7a4f}
 *{box-sizing:border-box}
@@ -152,12 +155,12 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--phosphor);outli
 </head>
 <body>
 <main>
-<h1>Brandklipparen</h1>
-<p>This demo is access-restricted. Enter the access code to continue.</p>
+<h1>Brandklipparen — judge preview</h1>
+<p>Enter the access code from the submission notes.</p>
 ${note}
 <form method="post" action="/access">
 <label for="code">Access code</label>
-<input id="code" name="code" type="password" autocomplete="current-password" required>
+<input id="code" name="code" type="password" autocomplete="off" autofocus required>
 <button type="submit">Enter</button>
 </form>
 </main>
@@ -202,14 +205,40 @@ async function handleAccess(req, res, client) {
     return serveAccessPage(res, 401, "Access code not accepted.");
   }
   accessFailures.delete(client);
+  return grantAccess(res, "/");
+}
+function grantAccess(res, location) {
   const expires = Math.floor(Date.now() / 1000) + ACCESS_TTL_SECONDS;
   res.writeHead(303, {
-    location: "/",
+    location,
     "cache-control": "no-store",
     "set-cookie": `${ACCESS_COOKIE}=${expires}.${signAccess(String(expires))}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${ACCESS_TTL_SECONDS}`,
   });
   res.end();
   return 303;
+}
+function handleOneClick(req, res, client, rawUrl) {
+  let accessValue = null;
+  let pathname = "/";
+  try {
+    const parsed = new URL(rawUrl ?? "/", "http://edge");
+    accessValue = parsed.searchParams.get("access");
+    pathname = parsed.pathname || "/";
+    parsed.searchParams.delete("access");
+    const rest = parsed.searchParams.toString();
+    pathname = rest ? `${pathname}?${rest}` : pathname;
+  } catch {
+    return null;
+  }
+  if (accessValue === null) return null;
+  const retry = accessRetryAfter(client);
+  if (retry > 0) return serveAccessPage(res, 429, "Too many attempts. Try again later.", retry);
+  if (!sameSecret(accessValue, CONFIG.accessCode)) {
+    recordAccessFailure(client);
+    return serveAccessPage(res, 401, "Access code not accepted.");
+  }
+  accessFailures.delete(client);
+  return grantAccess(res, pathname);
 }
 
 // ---------- limits ----------
@@ -409,7 +438,7 @@ function startMcp() {
   const [command, ...args] = CONFIG.mcpCommand;
   const childEnv = { ...process.env, ...JSON.parse(env.BK_EDGE_MCP_ENV_JSON ?? "{}") };
   for (const name of Object.keys(childEnv)) {
-    if (name.startsWith("BK_EDGE_") || name === "BK_ACCESS_CODE") delete childEnv[name];
+    if (name.startsWith("BK_EDGE_") || name === "BK_ACCESS_CODE" || name === "BK_JUDGE_API_KEY" || name === "BK_JUDGE_API_KEYS") delete childEnv[name];
   }
   mcp = spawn(command, args, { cwd: CONFIG.mcpCwd, env: childEnv, stdio: ["pipe", "pipe", "inherit"] });
   mcp.on("error", (error) => log({ event: "mcp-spawn-failed", error: String(error) }));
@@ -592,6 +621,13 @@ function route(req, res) {
     }
     proxy(req, res, anonymous, (status) => finish(status, anonymous));
     return;
+  }
+  if (req.method === "GET" || req.method === "HEAD") {
+    const oneClick = handleOneClick(req, res, client, req.url);
+    if (oneClick !== null) {
+      finish(oneClick, undefined);
+      return;
+    }
   }
   if (!hasAccess(req)) {
     finish(serveAccessPage(res, 401, ""), undefined);

@@ -11,11 +11,13 @@ The public cannot enter directly. The edge (`edge.mjs`) serves an
 access page for every UI and keyless `/v1` request until the visitor
 enters the access code from the Modal secret (`BK_ACCESS_CODE`; the
 edge and `app.py` refuse to start without it). A correct code sets a
-signed `HttpOnly; Secure; SameSite=Lax` cookie for 7 days. Wrong
-codes are compared in constant time and rate-limited per visitor
-(10 per 15 minutes). `/health` and `/ready` stay open. REST and MCP
-clients with their own valid `x-api-key` bypass the page; MCP also
-needs a personal key (`BK_EDGE_MCP_ANON=0`).
+signed `HttpOnly; Secure; SameSite=Lax` cookie for 30 days. Codes
+are trimmed and case-insensitive, compared in constant time on the
+normalised value, and rate-limited per visitor (10 per 15 minutes,
+form and one-click link share the limit). `/health` and `/ready`
+stay open. REST and MCP clients with their own valid `x-api-key`
+bypass the page; MCP also needs a personal key
+(`BK_EDGE_MCP_ANON=0`).
 
 Anonymous model use is capped at the edge: 500 model calls per day
 globally and 25 per visitor, persisted on the Modal volume.
@@ -35,9 +37,31 @@ only; never put values in this repo, in shell history, or in logs:
   `BRANDKLIPPAREN_API_KEY_PEPPER`,
   `BRANDKLIPPAREN_ASSESSMENT_META_API_KEY`,
   `BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL`
-- Optional: `BK_JUDGE_API_KEYS`, `BK_EDGE_COOKIE_SECRET`,
+- Optional: `BK_JUDGE_API_KEY`, `BK_JUDGE_API_KEYS`, `BK_EDGE_COOKIE_SECRET`,
   `ETHERSCAN_API_KEY`, `BRANDKLIPPAREN_RPC_URLS`,
   `BRANDKLIPPAREN_FEED_RPC_URL`
+
+A judge key (`BK_JUDGE_API_KEY`, or a comma-separated
+`BK_JUDGE_API_KEYS` list) is accepted like a personal key: it
+bypasses the access page, uses the keyed rate limits, and is counted
+in the same daily per-key model budget upstream (with the lower MCP
+child caps).
+
+## For judges (what goes in the submission notes)
+
+Give judges these three items with placeholder values only (never
+real values here):
+
+- One-click link: `https://<workspace>--<label>.modal.run/?access=<access-code>`
+  opens any UI path with `?access=<access-code>`; a correct code sets
+  the cookie and 303-redirects to the same path without the code in
+  the address bar. A wrong code shows the access page with a short
+  error.
+- Access code: `<access-code>` (typed entry also works; surrounding
+  whitespace and letter case do not matter).
+- Judge key for REST/MCP: `<judge-key>` as the `x-api-key` header
+  (REST, for example `x-api-key: <judge-key>`) or the `x-api-key`
+  header / `Authorization: Bearer <judge-key>` (MCP).
 
 ## Deploy
 

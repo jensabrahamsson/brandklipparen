@@ -213,7 +213,10 @@ def build_runtime_env(container_env: dict[str, str]) -> dict[str, str]:
         raise RuntimeError("BK_EDGE_WEB_API_KEY is missing or shorter than 32 characters")
     if len(env.get("BRANDKLIPPAREN_API_KEY_PEPPER", "")) < 32:
         raise RuntimeError("BRANDKLIPPAREN_API_KEY_PEPPER is missing or shorter than 32 characters")
-    judges = [k.strip() for k in env.get("BK_JUDGE_API_KEYS", "").split(",") if k.strip()]
+    judges = [env.get("BK_JUDGE_API_KEY", "").strip()] + [
+        k.strip() for k in env.get("BK_JUDGE_API_KEYS", "").split(",") if k.strip()
+    ]
+    judges = [k for k in judges if k]
     env["BRANDKLIPPAREN_API_KEYS"] = ",".join([web_key, *judges])
     # One Meta key, model id and base URL serve every model feature, as in
     # scripts/demo.ts; an explicit per-feature value always wins. The MCP
@@ -286,7 +289,7 @@ def start_services(container_env: dict[str, str]) -> None:
     Path("/data/cache").mkdir(parents=True, exist_ok=True)
     rest_env = {
         k: v for k, v in env.items()
-        if not k.startswith("BK_EDGE_") and k not in ("BK_JUDGE_API_KEYS", "BK_ACCESS_CODE")
+        if not k.startswith("BK_EDGE_") and k not in ("BK_JUDGE_API_KEY", "BK_JUDGE_API_KEYS", "BK_ACCESS_CODE")
     }
     rest = subprocess.Popen(["node", "--experimental-strip-types", "src/main.ts", "rest"], cwd=APP_DIR, env=rest_env)
     _wait_http(f"http://127.0.0.1:{REST_PORT}/health", 120, rest)
