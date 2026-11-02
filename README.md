@@ -142,7 +142,50 @@ Rate limiting is per key and global; one key may use at most
 exhaust the global budget for the other keys, while the per-key
 minute and daily limits still apply.
 
-## MCP server
+## API
+
+Every versioned route takes the API key solely in the `x-api-key`
+header, never in the URL or body. `GET /health` is public and keyless.
+`GET` routes read parameters from the query string; `POST` routes take
+the same fields as a JSON body. Model-assisted overlays (`assessment`,
+`explain`, `explain-code`, `chat`, `rug`) run solely on request and
+never change the score or the evidence.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /health` | Liveness plus per-feature availability and cost units. |
+| `GET /ready` | Deploy readiness: artifact checksum and feed wiring. |
+| `GET,POST /v1/analyze` | Deterministic risk assessment with evidence. |
+| `GET /v1/analyze/stream` | Same assessment as one server-sent event body. |
+| `GET,POST /v1/assessment` | Opt-in Muse contract assessment beside the score. |
+| `GET,POST /v1/investigate` | Opt-in investigation loop with a cited narrative. |
+| `GET /v1/investigate/events` | Step events for one investigation. |
+| `GET,POST /v1/explain` | Sentence-level explanation with citations. |
+| `POST /v1/explain-code` | Per-function code explanation (decompiled or source). |
+| `GET,POST /v1/chat` | Follow-up questions over the frozen analysis. |
+| `GET,POST /v1/rug` | Top-risk capability summary. |
+| `POST /v1/naming` | Suggested display names for selectors. |
+| `GET /v1/personalize/status`, `POST /v1/personalize` | Experimental layout mapping for visitor priorities. |
+| `GET,POST /v1/snippet` | Decompiled source block for one selector. |
+| `GET /v1/proof` | Per-detector proof steps with code locations. |
+| `GET /v1/source` | Verified contract sources and located functions. |
+| `GET /v1/onchain-features` | Point-in-time on-chain features, display only. |
+| `GET /v1/plugins`, `GET /v1/plugins/:id[/docs,/audit]` | Detector registry, docs and stored audit reports. |
+| `GET /v1/calibration` | Frozen calibration snapshot. |
+| `GET /v1/live-tokens` | Newest on-chain pairs first. |
+| `GET /v1/market-new?chain=ethereum` | Market listing promotions. |
+
+Analyze example (see above for `KEY`); explain-code example:
+
+```sh
+curl -X POST -H "x-api-key: $KEY" -H "content-type: application/json" \
+  -d '{"address":"0x0102030405060708090a0b0c0d0e0f1011121314","selector":"0xa9059cbb","view":"decompiled"}' \
+  "http://127.0.0.1:8080/v1/explain-code"
+```
+
+Replace the synthetic address with any ERC-20 contract address on Ethereum mainnet.
+
+## MCP
 
 ```sh
 npm run start:mcp
@@ -151,7 +194,8 @@ npm run start:mcp
 The MCP server speaks minimal JSON-RPC 2.0 over stdio
 (newline-delimited frames on stdin, one response frame per line on
 stdout). Point an MCP client at the command above as a stdio server; no
-port is opened.
+port is opened. List tools first (`tools/list`), then call one per
+frame (`tools/call` with `name` and `arguments`).
 
 Tool calls carry the API key in the JSON-RPC `auth` field of each
 frame. MCP hosts may log JSON-RPC frames, so a logged frame can expose
@@ -162,6 +206,29 @@ startup (`BRANDKLIPPAREN_API_KEYS`, or `BRANDKLIPPAREN_API_KEYS_FILE`
 pointing at a file holding them), never through a file in the repo;
 prefer that environment injection over putting a key in a client
 configuration file that is checked in or shared.
+
+Reading tools, one per REST feature, all read-only through the same
+services, guards, per-key caps and caches as the REST routes:
+
+- `assess_token`, `request_assessment`, `investigate_token`,
+  `onchain_features`
+- `explain_token`, `explain_function`, `get_decompiled_function`,
+  `get_proof_trace`, `get_verified_source`, `list_new_tokens`
+- `list_plugins`, `get_plugin_docs`, `get_plugin_audit`, plus one
+  `plugin_*` tool per registered detector
+
+Example call (one frame on stdin, key in `auth`):
+
+```json
+{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+ "params": {"name": "explain_token",
+ "arguments": {"address": "0x0102030405060708090a0b0c0d0e0f1011121314"}},
+ "auth": "<a value from BRANDKLIPPAREN_API_KEYS>"}
+```
+
+The response carries one text content block with the same body the
+matching REST route returns; replace the synthetic address with any
+ERC-20 contract address on Ethereum mainnet.
 
 ## Tests and gates
 

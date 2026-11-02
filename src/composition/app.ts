@@ -442,6 +442,13 @@ export function buildApp(config: AppConfig, deps: BuildAppDeps): Result<BuiltApp
     pluginWeights,
     assessmentService: assessment.value,
     investigationService: investigation.value,
+    explainService: explain.value,
+    explainCodeService: explainCode.value,
+    snippetRpc,
+    proofService,
+    sourceService,
+    liveTokens,
+    marketNew,
     onchain,
     rateLimit: rateLimit.value,
   });

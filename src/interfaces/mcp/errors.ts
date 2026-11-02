@@ -15,9 +15,13 @@ export type McpErrorCode =
   | "validation-error"
   | "request-too-large"
   | "unknown-tool"
+  | "not-found"
   | "assessment-not-configured"
   | "investigation-not-configured"
   | "onchain-not-configured"
+  | "snippet-not-available"
+  | "proof-not-available"
+  | "listings-not-configured"
   | "rate-limited"
   | "upstream-unavailable"
   | "service-unavailable"
@@ -104,6 +108,38 @@ export function onchainNotConfigured(requestId: string): McpToolError {
   return mcpError(
     "onchain-not-configured",
     "On-chain features are not configured: bind a chain port to enable them.",
+    requestId,
+  );
+}
+
+export function notFound(requestId: string): McpToolError {
+  return mcpError(
+    "not-found",
+    "No contract at this address and block.",
+    requestId,
+  );
+}
+
+export function snippetNotAvailable(requestId: string): McpToolError {
+  return mcpError(
+    "snippet-not-available",
+    "Code deepening is not available on this server: bind a chain port to enable it.",
+    requestId,
+  );
+}
+
+export function proofNotAvailable(requestId: string): McpToolError {
+  return mcpError(
+    "proof-not-available",
+    "Proof diagnostics are not available on this server.",
+    requestId,
+  );
+}
+
+export function listingsNotConfigured(requestId: string): McpToolError {
+  return mcpError(
+    "listings-not-configured",
+    "New-token listings are not configured on this server.",
     requestId,
   );
 }

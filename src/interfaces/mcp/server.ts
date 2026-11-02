@@ -26,6 +26,24 @@ import { serializeTokenAssessment } from "../../application/assessmentService.ts
 import type { AssessmentService } from "../../application/assessmentService.ts";
 import { serializeTokenInvestigation } from "../../application/investigationService.ts";
 import type { InvestigationService } from "../../application/investigationService.ts";
+import { EXPLAIN_PROMPT_VERSION, serializeExplainOutcome } from "../../application/explainService.ts";
+import type { ExplainService } from "../../application/explainService.ts";
+import { EXPLAIN_CODE_PROMPT_VERSION, serializeExplainCodeOutcome } from "../../application/explainCodeService.ts";
+import type { ExplainCodeService } from "../../application/explainCodeService.ts";
+import { envelopeMeanings, explainCoverageIds } from "../../application/modelMeanings.ts";
+import { ExplainCodeInput } from "../../ports/explainCodeModel.ts";
+import { ExplainInput } from "../../ports/explainModel.ts";
+import { resolveAnalysisCode } from "../../application/resolveAnalysisCode.ts";
+import { snippetForSelector } from "../../application/snippetService.ts";
+import type { SnippetDecompile } from "../../application/snippetService.ts";
+import type { ProofService } from "../../application/proofService.ts";
+import type { VerifiedSourceService } from "../../application/verifiedSource.ts";
+import { decompilePreferV2 } from "../../domain/decompileV2.ts";
+import type { Bytecode as BytecodeType } from "../../domain/types.ts";
+import type { LiveTokensReader } from "../../ports/liveTokens.ts";
+import { MARKET_CHAIN } from "../../ports/marketFeed.ts";
+import type { MarketNewReader } from "../../ports/marketFeed.ts";
+import { API_VERSION } from "../rest/server.ts";
 import { err, ok } from "../../domain/result.ts";
 import type { Result } from "../../domain/result.ts";
 import { canonicalSerialize } from "../../domain/serialize.ts";
@@ -41,10 +59,14 @@ import {
   invalidApiKey,
   investigationNotConfigured,
   keyInToolArgs,
+  listingsNotConfigured,
   missingApiKey,
+  notFound,
   onchainNotConfigured,
+  proofNotAvailable,
   rateLimited,
   requestTooLarge,
+  snippetNotAvailable,
   toMcpError,
   unknownTool,
   validationError,
@@ -55,9 +77,15 @@ import type { RateLimitConfig, RateLimiter } from "../rest/rateLimit.ts";
 import type { McpToolError } from "./errors.ts";
 import {
   ASSESS_TOKEN_TOOL,
+  EXPLAIN_FUNCTION_TOOL,
+  EXPLAIN_TOKEN_TOOL,
+  GET_DECOMPILED_FUNCTION_TOOL,
   GET_PLUGIN_AUDIT_TOOL,
   GET_PLUGIN_DOCS_TOOL,
+  GET_PROOF_TRACE_TOOL,
+  GET_VERIFIED_SOURCE_TOOL,
   INVESTIGATE_TOKEN_TOOL,
+  LIST_NEW_TOKENS_TOOL,
   LIST_PLUGINS_TOOL,
   ONCHAIN_FEATURES_TOOL,
   REQUEST_ASSESSMENT_TOOL,
@@ -65,14 +93,30 @@ import {
   TOOL_LIST_VERSION,
   findTool,
   parseAssessTokenInput,
+  parseDecompiledFunctionInput,
+  parseExplainFunctionInput,
+  parseExplainTokenInput,
   parseGetPluginAuditInput,
   parseGetPluginDocsInput,
   parseInvestigateInput,
+  parseListNewTokensInput,
   parseListPluginsInput,
   parseOnchainFeaturesInput,
+  parseProofTraceInput,
   parseRequestAssessmentInput,
+  parseVerifiedSourceInput,
 } from "./tools.ts";
-import type { AssessTokenInput, ToolDefinition } from "./tools.ts";
+import type {
+  AssessInputError,
+  AssessTokenInput,
+  DecompiledFunctionInput,
+  ExplainFunctionInput,
+  ExplainTokenInput,
+  ListNewTokensInput,
+  ProofTraceInput,
+  ToolDefinition,
+  VerifiedSourceInput,
+} from "./tools.ts";
 import { buildPluginToolDefinitions, pluginToolNameFor } from "./pluginTools.ts";
 import { pluginResultToCanonical } from "../../application/pluginExposure.ts";
 
@@ -127,6 +171,42 @@ export type McpServerOptions = {
   // unset). Absent means onchain_features answers onchain-not-configured
   // with zero chain calls. Read-only; the features never enter scoring.
   readonly onchain?: { readonly rpc: RpcPort; readonly weth: string | null } | undefined;
+  // Explain service for the sentence-level overlay (S-094, K-302): the
+  // same service the REST /v1/explain route reads. Absent or disabled
+  // means explain_token answers the not-configured envelope with zero
+  // provider calls and the deterministic analysis standing.
+  readonly explainService?: ExplainService | undefined;
+  // Explain-code service for the per-function code explanation (VS-B3):
+  // the same service the REST /v1/explain-code route reads. Absent or
+  // disabled means explain_function answers the not-configured envelope
+  // with zero provider calls and the deterministic code view standing.
+  readonly explainCodeService?: ExplainCodeService | undefined;
+  // Bytecode source for snippet, proof and code-explanation deepening
+  // (S-095, VS-B1, VS-B3): the route reads the contract code through
+  // this port. Absent means the deepening tools answer the typed
+  // not-available error without touching the pipeline.
+  readonly snippetRpc?: RpcPort | undefined;
+  // Injectable decompile pipeline for snippet deepening (S-095): defaults
+  // to the local pipeline. Tests inject a counting wrapper to prove
+  // unknown selectors fail before any pipeline call.
+  readonly snippetDecompile?: SnippetDecompile | undefined;
+  // Extended-proof diagnostics (VS-B1, main spec B-3): the application
+  // proof service with the bounded per-code-hash memo. Absent means proof
+  // diagnostics are not available on this server.
+  readonly proofService?: ProofService | undefined;
+  // Verified sources (VS-B2): the application source service with the
+  // bounded per-code-hash memo. Absent means the provider selection is
+  // off: get_verified_source answers unavailable with zero provider
+  // calls. Never part of the analysis; never in the score.
+  readonly sourceService?: VerifiedSourceService | undefined;
+  // Live new-tokens reader (E-11): the application service snapshot with
+  // the on-chain new pairs. Absent means the on-chain leg of the listing
+  // is off on this server.
+  readonly liveTokens?: LiveTokensReader | undefined;
+  // Market listing reader (DX-B1): the application service snapshot
+  // holding the server-side listing cache. Absent means the market leg of
+  // the listing is off on this server.
+  readonly marketNew?: MarketNewReader | undefined;
   // Shared rate and quota limits with the REST adapter per M-08 (K-504);
   // absent limits disable the check, as in local development.
   readonly rateLimit?: RateLimitConfig | undefined;
@@ -214,15 +294,16 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     (findTool(name) ?? pluginDefinitions.find((tool) => tool.name === name) ?? null);
 
   // Shared tool gate (A-11, A-16, K-026): API key, message size and the
-  // published input schema. Both reading tools reuse the same gate, so
-  // assess_token and request_assessment face identical limits. The stable
+  // published input schema. All reading tools reuse the same gate, so
+  // every tool faces identical key, size and quota limits. The stable
   // key id names the caller to the cost meter without exposing the key.
-  function gateToolArgs(
+  function gateParsed<T>(
     args: unknown,
-    parse: (raw: unknown) => { readonly kind: string; readonly message?: string } | { readonly input: AssessTokenInput },
+    parse: (raw: unknown) => AssessInputError | { readonly kind: string; readonly message?: string } | { readonly input: T },
     requestId: RequestId,
     callOptions: CallToolOptions | undefined,
-  ): Result<{ readonly input: AssessTokenInput; readonly apiKeyId: string }, McpToolError> {
+    usage: string,
+  ): Result<{ readonly input: T; readonly apiKeyId: string }, McpToolError> {
     let apiKeyId = "anonymous";
     if (keyGate) {
       const candidate = callOptions?.apiKey;
@@ -236,7 +317,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     }
     const argLength = safeJsonLength(args);
     if (argLength === null) {
-      return err(validationError("Invalid arguments: expected an object with address and block.", requestId as string));
+      return err(validationError(`Invalid arguments: expected ${usage}.`, requestId as string));
     }
     if (argLength > maxMessageBytes) {
       return err(requestTooLarge(requestId as string));
@@ -251,7 +332,7 @@ export function createMcpServer(options: McpServerOptions): McpServer {
         case "validation-error":
           return err(validationError(parsed.message ?? "Invalid arguments.", requestId as string));
         default:
-          return err(validationError("Invalid arguments: expected an object with address and block.", requestId as string));
+          return err(validationError(`Invalid arguments: expected ${usage}.`, requestId as string));
       }
     }
     // Rate and quota step before every expensive tool call (K-504, M-08),
@@ -264,6 +345,15 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       }
     }
     return ok({ input: parsed.input, apiKeyId });
+  }
+
+  function gateToolArgs(
+    args: unknown,
+    parse: (raw: unknown) => { readonly kind: string; readonly message?: string } | { readonly input: AssessTokenInput },
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Result<{ readonly input: AssessTokenInput; readonly apiKeyId: string }, McpToolError> {
+    return gateParsed(args, parse, requestId, callOptions, "an object with address and block");
   }
 
   // Current day as YYYY-MM-DD for the per-key daily cost meter (I-14).
@@ -487,6 +577,731 @@ export function createMcpServer(options: McpServerOptions): McpServer {
     });
     return ok({
       content: Object.freeze([textBlock(JSON.stringify({ features }))]),
+      isError: false,
+    });
+  }
+
+  // Resolved analysis code shared by the deepening tools (C-4, F-6): the
+  // implementation behind a proxy, matching the scored analysis. Absent
+  // chain access answers the caller-supplied not-available error; an
+  // unreadable target maps to the typed not-found and upstream errors, so
+  // port contents never cross the boundary.
+  async function resolveToolCode(
+    address: AssessTokenInput["address"],
+    block: AssessTokenInput["block"],
+    requestId: RequestId,
+    missing: McpToolError,
+  ): Promise<
+    Result<
+      {
+        readonly bytecode: BytecodeType;
+        readonly codeHash: string;
+        readonly codeAddress: AssessTokenInput["address"];
+      },
+      McpToolError
+    >
+  > {
+    const rpc = options.snippetRpc;
+    if (rpc === undefined) {
+      return err(missing);
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return err({
+        code: "internal-error",
+        message: "Analysis failed; retry with the same request ID.",
+        requestId,
+      } satisfies McpToolError);
+    }
+    const resolved = await resolveAnalysisCode({ rpc }, {
+      address,
+      block,
+      requestId,
+      deadline: deadline.value,
+    });
+    if (!resolved.ok) {
+      if (resolved.error.kind === "no-contract") {
+        return err(notFound(requestId as string));
+      }
+      if (resolved.error.kind === "rpc-error") {
+        return err({
+          code: "upstream-unavailable",
+          message: "Upstream data source unavailable; retry with the same request ID.",
+          requestId,
+        } satisfies McpToolError);
+      }
+      return err({
+        code: "internal-error",
+        message: "Analysis failed; retry with the same request ID.",
+        requestId,
+      } satisfies McpToolError);
+    }
+    return ok({
+      bytecode: resolved.value.bytecode,
+      codeHash: resolved.value.codeHash as string,
+      codeAddress: resolved.value.codeAddress,
+    });
+  }
+
+  // Sentence-level explanation overlay (S-094, K-302): the same gate and
+  // the same deterministic analysis as assess_token, then one overlay
+  // call over the frozen envelope through the shared explain service.
+  // The route-mirror envelope carries `not-configured` without a wired
+  // service and `invalid-output` for malformed model output, in both
+  // cases with the deterministic analysis standing. Scores, evidence and
+  // finding text are untouched: the analysis runs first and stands
+  // beside the overlay in every branch.
+  async function runExplainToken(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const gated = gateParsed<ExplainTokenInput>(
+      args,
+      parseExplainTokenInput,
+      requestId,
+      callOptions,
+      "an object with address and block",
+    );
+    if (!gated.ok) {
+      return err(gated.error);
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return err({
+        code: "internal-error",
+        message: "Analysis failed; retry with the same request ID.",
+        requestId,
+      } satisfies McpToolError);
+    }
+    const analysed = await options.services.analyzeToken({
+      address: gated.value.input.address,
+      block: gated.value.input.block,
+      requestId,
+      deadline: deadline.value,
+      modelVersion: options.modelVersion,
+      indexVersion: options.indexVersion,
+      templateVersion: options.templateVersion,
+      catalogue: options.catalogue,
+    });
+    if (!analysed.ok) {
+      const mapped = toMcpError(analysed.error);
+      return err({ ...mapped, requestId });
+    }
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return ok({ content: Object.freeze([textBlock(body)]), isError: false });
+    }
+    const envelope = analysed.value.envelope;
+    const codeHash = envelope.codeHash as string;
+    const service = options.explainService;
+    if (service === undefined || !service.enabled) {
+      return ok({
+        content: Object.freeze([
+          textBlock(
+            JSON.stringify({
+              status: "ok",
+              apiVersion: API_VERSION,
+              codeHash,
+              explain: { kind: "not-configured" },
+            }),
+          ),
+        ]),
+        isError: false,
+      });
+    }
+    const input = ExplainInput.create({
+      codeHash,
+      evidenceIds: [...envelope.signals.map((signal) => `signal:${signal.id as string}`), ...explainCoverageIds(envelope)],
+      promptVersion: EXPLAIN_PROMPT_VERSION,
+      meanings: envelopeMeanings(envelope),
+    });
+    if (input === null) {
+      return ok({
+        content: Object.freeze([
+          textBlock(
+            JSON.stringify({
+              status: "ok",
+              apiVersion: API_VERSION,
+              codeHash,
+              explain: { kind: "invalid-output" },
+            }),
+          ),
+        ]),
+        isError: false,
+      });
+    }
+    const outcome = await service.explain(input, gated.value.apiKeyId);
+    return ok({
+      content: Object.freeze([
+        textBlock(
+          JSON.stringify({
+            status: "ok",
+            apiVersion: API_VERSION,
+            codeHash,
+            explain: JSON.parse(serializeExplainOutcome(outcome)),
+          }),
+        ),
+      ]),
+      isError: false,
+    });
+  }
+
+  // Per-function code explanation overlay (VS-B3): the same gate as
+  // assess_token plus the selector and view checks, then the frozen
+  // function lines for that view, then the shared analysis, then one
+  // overlay call carrying the selector-filtered evidence meanings. The
+  // route-mirror envelope carries `not-configured` without a wired
+  // service and `invalid-output` for malformed model output. Scores,
+  // evidence and finding text are untouched: the analysis runs first and
+  // stands beside the overlay in every branch.
+  async function runExplainFunction(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const gated = gateParsed<ExplainFunctionInput>(
+      args,
+      parseExplainFunctionInput,
+      requestId,
+      callOptions,
+      "an object with address, selector and view",
+    );
+    if (!gated.ok) {
+      return err(gated.error);
+    }
+    const service = options.explainCodeService;
+    if (service === undefined || !service.enabled) {
+      return ok({
+        content: Object.freeze([
+          textBlock(JSON.stringify({ status: "ok", apiVersion: API_VERSION, explainCode: { kind: "not-configured" } })),
+        ]),
+        isError: false,
+      });
+    }
+    const resolved = await resolveToolCode(
+      gated.value.input.address,
+      gated.value.input.block,
+      requestId,
+      snippetNotAvailable(requestId as string),
+    );
+    if (!resolved.ok) {
+      return err(resolved.error);
+    }
+    const codeHash = resolved.value.codeHash;
+    const rawSelector = gated.value.input.selector;
+    const rawView = gated.value.input.view;
+    const wantedSelector = rawSelector.toLowerCase();
+    let viewLines: { readonly lineNumber: number; readonly text: string }[];
+    let viewFile: string | undefined;
+    if (rawView === "decompiled") {
+      const snippet = snippetForSelector(
+        resolved.value.bytecode,
+        rawSelector,
+        options.snippetDecompile ?? decompilePreferV2,
+      );
+      if (!snippet.ok) {
+        return err(
+          validationError(
+            "Unknown selector: the contract dispatcher carries no such entry.",
+            requestId as string,
+          ),
+        );
+      }
+      viewLines = snippet.value.lines.map((line) => ({ lineNumber: line.lineNumber, text: line.text }));
+    } else {
+      const sourceService = options.sourceService;
+      if (sourceService === undefined) {
+        return err(
+          validationError(
+            "No verified source covers this function: the source lookup is not available on this server.",
+            requestId as string,
+          ),
+        );
+      }
+      const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+      if (!deadline.ok) {
+        return err({
+          code: "internal-error",
+          message: "Analysis failed; retry with the same request ID.",
+          requestId,
+        } satisfies McpToolError);
+      }
+      // The explanation covers the implementation behind a proxy,
+      // matching the scored analysis.
+      const result = await sourceService.getSource(resolved.value.codeAddress, {
+        requestId,
+        deadline: deadline.value,
+        block: gated.value.input.block,
+      });
+      if (!result.ok) {
+        if (result.error === "no-code") {
+          return err(notFound(requestId as string));
+        }
+        return err({
+          code: "upstream-unavailable",
+          message: "Upstream data source unavailable; retry with the same request ID.",
+          requestId,
+        } satisfies McpToolError);
+      }
+      if (result.value.source.status !== "verified") {
+        return err(
+          validationError(
+            "No verified source covers this function: the author published no source code.",
+            requestId as string,
+          ),
+        );
+      }
+      const located = result.value.source.functions.find(
+        (entry) => entry.selector.toLowerCase() === wantedSelector,
+      );
+      if (located === undefined) {
+        return err(
+          validationError("No verified source covers this function.", requestId as string),
+        );
+      }
+      const file = result.value.source.files.find((entry) => entry.path === located.file);
+      if (file === undefined) {
+        return err(
+          validationError("No verified source covers this function.", requestId as string),
+        );
+      }
+      const fileLines = file.content.split("\n");
+      const ranged = fileLines.slice(located.startLine - 1, located.endLine);
+      if (ranged.length === 0) {
+        return err(
+          validationError("No verified source covers this function.", requestId as string),
+        );
+      }
+      viewLines = ranged.map((text, index) => ({ lineNumber: located.startLine + index, text }));
+      viewFile = located.file;
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return err({
+        code: "internal-error",
+        message: "Analysis failed; retry with the same request ID.",
+        requestId,
+      } satisfies McpToolError);
+    }
+    const analysed = await options.services.analyzeToken({
+      address: gated.value.input.address,
+      block: gated.value.input.block,
+      requestId,
+      deadline: deadline.value,
+      modelVersion: options.modelVersion,
+      indexVersion: options.indexVersion,
+      templateVersion: options.templateVersion,
+      catalogue: options.catalogue,
+    });
+    if (!analysed.ok) {
+      const mapped = toMcpError(analysed.error);
+      return err({ ...mapped, requestId });
+    }
+    if (analysed.value.kind === "no-contract") {
+      const body = canonicalSerialize({
+        kind: "no-contract",
+        target: analysed.value.target as string,
+        block: analysed.value.block as number,
+      });
+      return ok({ content: Object.freeze([textBlock(body)]), isError: false });
+    }
+    const envelope = analysed.value.envelope;
+    const meanings = envelopeMeanings(envelope).filter((meaning) =>
+      meaning.selectors.some((labelled) => labelled.selector.toLowerCase() === wantedSelector),
+    );
+    const evidenceIds = meanings.map((meaning) => meaning.id);
+    const input = ExplainCodeInput.create({
+      codeHash,
+      selector: rawSelector,
+      view: rawView,
+      promptVersion: EXPLAIN_CODE_PROMPT_VERSION,
+      lines: viewLines,
+      ...(viewFile === undefined ? {} : { file: viewFile }),
+      evidenceIds,
+      meanings,
+    });
+    if (input === null) {
+      return ok({
+        content: Object.freeze([
+          textBlock(
+            JSON.stringify({
+              status: "ok",
+              apiVersion: API_VERSION,
+              codeHash,
+              selector: rawSelector,
+              view: rawView,
+              explainCode: { kind: "invalid-output" },
+            }),
+          ),
+        ]),
+        isError: false,
+      });
+    }
+    const outcome = await service.explainCode(input, gated.value.apiKeyId);
+    return ok({
+      content: Object.freeze([
+        textBlock(
+          JSON.stringify({
+            status: "ok",
+            apiVersion: API_VERSION,
+            codeHash,
+            selector: input.selector,
+            view: rawView,
+            explainCode: JSON.parse(serializeExplainCodeOutcome(outcome)),
+          }),
+        ),
+      ]),
+      isError: false,
+    });
+  }
+
+  // Snippet deepening per selector (S-095, K-008): the same gate as
+  // assess_token plus the selector check, then one bytecode fetch through
+  // the resolved implementation, then the local decompilation pipeline.
+  // Unknown selectors fail before any pipeline call; quoted lines come
+  // from the pipeline's own emission. Display text only, never scored.
+  async function runGetDecompiledFunction(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const gated = gateParsed<DecompiledFunctionInput>(
+      args,
+      parseDecompiledFunctionInput,
+      requestId,
+      callOptions,
+      "an object with address and selector",
+    );
+    if (!gated.ok) {
+      return err(gated.error);
+    }
+    const resolved = await resolveToolCode(
+      gated.value.input.address,
+      gated.value.input.block,
+      requestId,
+      snippetNotAvailable(requestId as string),
+    );
+    if (!resolved.ok) {
+      return err(resolved.error);
+    }
+    const snippet = snippetForSelector(
+      resolved.value.bytecode,
+      gated.value.input.selector,
+      options.snippetDecompile ?? decompilePreferV2,
+    );
+    if (!snippet.ok) {
+      return err(
+        validationError(
+          "Unknown selector: the contract dispatcher carries no such entry.",
+          requestId as string,
+        ),
+      );
+    }
+    return ok({
+      content: Object.freeze([
+        textBlock(
+          JSON.stringify({
+            status: "ok",
+            apiVersion: API_VERSION,
+            codeHash: resolved.value.codeHash,
+            snippet: {
+              selector: snippet.value.selector,
+              entryPc: snippet.value.entryPc,
+              lines: snippet.value.lines.map((line) => ({
+                selector: line.selector,
+                lineNumber: line.lineNumber,
+                text: line.text,
+                pcs: line.pcs.slice(),
+              })),
+            },
+          }),
+        ),
+      ]),
+      isError: false,
+    });
+  }
+
+  // Extended-proof diagnostics (VS-B1, main spec B-3): the same gate as
+  // assess_token, then one bytecode fetch through the resolved
+  // implementation, then the local proof walk over the frozen code. The
+  // response carries the per-detector reports with code locations; it is
+  // never part of the analysis and never enters the score.
+  async function runGetProofTrace(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const gated = gateParsed<ProofTraceInput>(
+      args,
+      parseProofTraceInput,
+      requestId,
+      callOptions,
+      "an object with address and block",
+    );
+    if (!gated.ok) {
+      return err(gated.error);
+    }
+    if (options.snippetRpc === undefined) {
+      return err(proofNotAvailable(requestId as string));
+    }
+    const proofService = options.proofService;
+    if (proofService === undefined) {
+      return err(proofNotAvailable(requestId as string));
+    }
+    const resolved = await resolveToolCode(
+      gated.value.input.address,
+      gated.value.input.block,
+      requestId,
+      proofNotAvailable(requestId as string),
+    );
+    if (!resolved.ok) {
+      return err(resolved.error);
+    }
+    const proofs = proofService.proofsFor(resolved.value.bytecode, resolved.value.codeHash);
+    return ok({
+      content: Object.freeze([
+        textBlock(
+          JSON.stringify({
+            status: "ok",
+            apiVersion: API_VERSION,
+            codeHash: resolved.value.codeHash,
+            proofs: proofs.map((report) => ({
+              detector: report.detector,
+              steps: report.steps.map((entry) => ({ ...entry })),
+            })),
+          }),
+        ),
+      ]),
+      isError: false,
+    });
+  }
+
+  // Verified contract sources (VS-B2): the same gate as assess_token plus
+  // an optional function selector, then the application source service
+  // through the resolved implementation address. The tool answers the
+  // summarised record (status, match, compiler, functions) with full file
+  // content only for the requested function range. Never part of the
+  // analysis; never in the score.
+  async function runGetVerifiedSource(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const gated = gateParsed<VerifiedSourceInput>(
+      args,
+      parseVerifiedSourceInput,
+      requestId,
+      callOptions,
+      "an object with address and an optional functionSelector",
+    );
+    if (!gated.ok) {
+      return err(gated.error);
+    }
+    const service = options.sourceService;
+    if (service === undefined) {
+      return ok({
+        content: Object.freeze([
+          textBlock(
+            JSON.stringify({
+              status: "ok",
+              apiVersion: API_VERSION,
+              source: {
+                status: "unavailable",
+                provider: null,
+                match: null,
+                compiler: null,
+                files: [],
+                functions: [],
+              },
+            }),
+          ),
+        ]),
+        isError: false,
+      });
+    }
+    const deadline = Timestamp.of(Date.now() + analyzeTimeoutMs);
+    if (!deadline.ok) {
+      return err({
+        code: "internal-error",
+        message: "Analysis failed; retry with the same request ID.",
+        requestId,
+      } satisfies McpToolError);
+    }
+    let codeAddress = gated.value.input.address;
+    const codeRpc = options.snippetRpc;
+    if (codeRpc !== undefined) {
+      const resolved = await resolveAnalysisCode({ rpc: codeRpc }, {
+        address: gated.value.input.address,
+        block: gated.value.input.block,
+        requestId,
+        deadline: deadline.value,
+      });
+      if (!resolved.ok) {
+        if (resolved.error.kind === "no-contract") {
+          return err(notFound(requestId as string));
+        }
+        if (resolved.error.kind === "rpc-error") {
+          return err({
+            code: "upstream-unavailable",
+            message: "Upstream data source unavailable; retry with the same request ID.",
+            requestId,
+          } satisfies McpToolError);
+        }
+        return err({
+          code: "internal-error",
+          message: "Analysis failed; retry with the same request ID.",
+          requestId,
+        } satisfies McpToolError);
+      }
+      codeAddress = resolved.value.codeAddress;
+    }
+    const result = await service.getSource(codeAddress, {
+      requestId,
+      deadline: deadline.value,
+      block: gated.value.input.block,
+    });
+    if (!result.ok) {
+      if (result.error === "no-code") {
+        return err(notFound(requestId as string));
+      }
+      return err({
+        code: "upstream-unavailable",
+        message: "Upstream data source unavailable; retry with the same request ID.",
+        requestId,
+      } satisfies McpToolError);
+    }
+    const source = result.value.source;
+    const functions = source.functions.map((entry) => ({
+      selector: entry.selector,
+      name: entry.name,
+      signature: entry.signature,
+      file: entry.file,
+      startLine: entry.startLine,
+      endLine: entry.endLine,
+    }));
+    const wanted = gated.value.input.functionSelector?.toLowerCase();
+    if (wanted === undefined) {
+      return ok({
+        content: Object.freeze([
+          textBlock(
+            JSON.stringify({
+              status: "ok",
+              apiVersion: API_VERSION,
+              codeHash: result.value.codeHash,
+              source: {
+                status: source.status,
+                provider: source.provider,
+                match: source.match,
+                compiler: source.compiler,
+                files: [],
+                functions,
+              },
+            }),
+          ),
+        ]),
+        isError: false,
+      });
+    }
+    const located = functions.find((entry) => entry.selector.toLowerCase() === wanted);
+    if (located === undefined) {
+      return err(
+        validationError("No verified source covers this function.", requestId as string),
+      );
+    }
+    const file = source.files.find((entry) => entry.path === located.file);
+    if (file === undefined) {
+      return err(
+        validationError("No verified source covers this function.", requestId as string),
+      );
+    }
+    const ranged = file.content.split("\n").slice(located.startLine - 1, located.endLine);
+    if (ranged.length === 0) {
+      return err(
+        validationError("No verified source covers this function.", requestId as string),
+      );
+    }
+    return ok({
+      content: Object.freeze([
+        textBlock(
+          JSON.stringify({
+            status: "ok",
+            apiVersion: API_VERSION,
+            codeHash: result.value.codeHash,
+            source: {
+              status: source.status,
+              provider: source.provider,
+              match: source.match,
+              compiler: source.compiler,
+              files: [],
+              functions,
+              file: {
+                path: file.path,
+                startLine: located.startLine,
+                endLine: located.endLine,
+                content: ranged.join("\n"),
+              },
+            },
+          }),
+        ),
+      ]),
+      isError: false,
+    });
+  }
+
+  // New-token listings (E-11, DX-B1): the same key and quota gate as the
+  // other tools, then the on-chain new-pair snapshot beside the market
+  // listing cache. Display data only, never scored and never starting an
+  // analysis: items already analysed carry their deterministic summary.
+  async function runListNewTokens(
+    args: unknown,
+    requestId: RequestId,
+    callOptions: CallToolOptions | undefined,
+  ): Promise<Result<McpToolResult, McpToolError>> {
+    const gated = gateParsed<ListNewTokensInput>(
+      args,
+      parseListNewTokensInput,
+      requestId,
+      callOptions,
+      "an optional chain and since",
+    );
+    if (!gated.ok) {
+      return err(gated.error);
+    }
+    const live = options.liveTokens;
+    const market = options.marketNew;
+    if (live === undefined && market === undefined) {
+      return err(listingsNotConfigured(requestId as string));
+    }
+    const liveSnapshot = live?.snapshot(gated.value.input.sinceMs) ?? null;
+    let marketSnapshot: unknown = null;
+    if (market !== undefined) {
+      try {
+        marketSnapshot = await market.getMarket(MARKET_CHAIN);
+      } catch {
+        return err({
+          code: "upstream-unavailable",
+          message: "Market listing is unavailable; retry with the same request ID.",
+          requestId,
+        } satisfies McpToolError);
+      }
+    }
+    return ok({
+      content: Object.freeze([
+        textBlock(
+          JSON.stringify({
+            status: "ok",
+            apiVersion: API_VERSION,
+            chain: MARKET_CHAIN,
+            live: liveSnapshot,
+            market: marketSnapshot,
+          }),
+        ),
+      ]),
       isError: false,
     });
   }
@@ -756,6 +1571,24 @@ export function createMcpServer(options: McpServerOptions): McpServer {
       }
       if (name === ONCHAIN_FEATURES_TOOL) {
         return await runOnchainFeatures(args, requestId, callOptions);
+      }
+      if (name === EXPLAIN_TOKEN_TOOL) {
+        return await runExplainToken(args, requestId, callOptions);
+      }
+      if (name === EXPLAIN_FUNCTION_TOOL) {
+        return await runExplainFunction(args, requestId, callOptions);
+      }
+      if (name === GET_DECOMPILED_FUNCTION_TOOL) {
+        return await runGetDecompiledFunction(args, requestId, callOptions);
+      }
+      if (name === GET_VERIFIED_SOURCE_TOOL) {
+        return await runGetVerifiedSource(args, requestId, callOptions);
+      }
+      if (name === GET_PROOF_TRACE_TOOL) {
+        return await runGetProofTrace(args, requestId, callOptions);
+      }
+      if (name === LIST_NEW_TOKENS_TOOL) {
+        return await runListNewTokens(args, requestId, callOptions);
       }
       const pluginId = pluginIdByToolName.get(name);
       if (pluginId !== undefined) {

@@ -188,4 +188,40 @@ export const TOOL_SECURITY_REVIEWS: Readonly<Record<string, PluginToolSecurityRe
     scope: "read-only on-chain feature read over the shared service, display data only, never scored",
     verdict: "approved",
   }),
+  explain_token: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-11-02",
+    scope: "read-only explanation overlay over the shared service, narrative in its own field, never moves scores or evidence",
+    verdict: "approved",
+  }),
+  explain_function: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-11-02",
+    scope: "read-only per-function code explanation over the shared service, frozen lines only, never moves scores or evidence",
+    verdict: "approved",
+  }),
+  get_decompiled_function: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-11-02",
+    scope: "read-only snippet quote from the local pipeline, display text only, unknown selector rejected before any pipeline call",
+    verdict: "approved",
+  }),
+  get_verified_source: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-11-02",
+    scope: "read-only summarised source record, full file content only for one requested function range, never scored",
+    verdict: "approved",
+  }),
+  get_proof_trace: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-11-02",
+    scope: "read-only proof diagnostics over the frozen code, display data only, cached by code hash",
+    verdict: "approved",
+  }),
+  list_new_tokens: Object.freeze({
+    reviewer: "plugin-security-review",
+    date: "2026-11-02",
+    scope: "read-only listing merge of the live-tokens snapshot and the market cache, display data only, never starts an analysis",
+    verdict: "approved",
+  }),
 });
