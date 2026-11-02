@@ -56,7 +56,7 @@ export class FakePluginAuditModelAdapter implements PluginAuditModelPort {
   }
 
   provider(): PluginAuditProvider {
-    return "hosted-open-weights";
+    return "meta-model-api";
   }
 
   modelId(): ModelIdType {

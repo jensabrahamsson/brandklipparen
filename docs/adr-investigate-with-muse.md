@@ -1,4 +1,4 @@
-# ADR: Investigate with Muse — runtime agent loop on open weights
+# ADR: Investigate with Muse — runtime agent loop on Meta Model API
 
 Author: Jens Abrahamsson.
 Status: proposed. Sibling to `docs/adr-plugin-architecture.md`; this
@@ -23,11 +23,11 @@ plainly so neither is read as replacing the other:
    P-24–P-28): the token page shows what the user says matters to
    them, matched deterministically over `PLUGIN.md` frontmatter.
 2. **Investigate with Muse** (this ADR, P-29 onward): a deterministic
-   core plus an agentic investigation loop on open weights. The
+   core plus an agentic investigation loop on Meta Model API. The
    deterministic analysis (`analyzeToken`, score, signals, evidence)
    is computed first and frozen; only then, and only on an explicit
-   opt-in request, may Muse Spark Open
-   (`meta-models/muse-spark-open-1026`) on hosted decide which
+   opt-in request, may Muse Spark
+   (`muse-spark-1.3`) on Meta Model API decide which
    deterministic plugins and read-only facts to run next, step by
    step, and draft a narrative that cites the evidence it actually
    collected.
@@ -49,8 +49,8 @@ adaptive UI, the audit extension, or the AI personalize mode.
 
 | Decision | Choice |
 |---|---|
-| Feature shape | Opt-in runtime agent loop "Investigate with Muse", off by default, `not configured` without a hosted key (P-29). |
-| Model access | One new port, `InvestigationModelPort`, with a hosted Muse Spark Open adapter and a fake adapter. No second plugin system (P-30). |
+| Feature shape | Opt-in runtime agent loop "Investigate with Muse", off by default, `not configured` without a Meta Model API key (P-29). |
+| Model access | One new port, `InvestigationModelPort`, with a Meta Model API Muse Spark adapter and a fake adapter. No second plugin system (P-30). |
 | Control flow | An explicit typed state machine (graph) in the application layer; the model only proposes the next step, the runner validates and executes it (P-31). |
 | Tools | Read-only tools derived from the existing registry: registered detector plugins re-run on their frozen projection, plus frozen-fact readers. The same descriptors are exposed via MCP (P-32). |
 | Hard limits | Max steps, max tokens, wall-clock timeout, per-tool deadline, allowlist, and schema-validated calls, all from typed configuration (P-34). |
@@ -68,7 +68,7 @@ adaptive UI, the audit extension, or the AI personalize mode.
 | One `InvestigationModelPort` decide-method (P-30) | One port method per graph node (plan, decide, conclude as separate calls) | Three methods triple the contract surface for one conversation; a single closed decision union carries the node in its type and keeps fake/replay trivial | A node needs a materially different input or limit shape |
 | Registry-derived tools (P-32) | A second investigation-only tool registry beside the plugin registry | Two registries drift: a detector visible to MCP but not to investigation (or the reverse) is exactly the fork P-08–P-10 removed | Never while the plugin registry exists; extend its descriptors instead |
 | Sentence-level citation dropping (P-35) | Reject the whole narrative on any bad citation | One hallucinated sentence would erase a mostly sound investigation; dropping keeps the trace useful and makes the failure countable and visible | Evaluation shows dropped-sentence narratives mislead more than they help |
-| hosted open weights only (P-30) | Also bind the Meta Model API adapter for investigation | The judging headline is the open-weights loop; a second provider doubles caps, caching, and contract work for no demo gain. The port shape leaves the door open | Jens asks for provider choice on investigation |
+| Meta Model API only (P-30) | Bind a second provider for investigation | The headline is the Meta Model API loop; a second provider doubles caps, caching, and contract work for no demo gain. The port shape leaves the door open | Jens asks for provider choice on investigation |
 | Fresh chain reads inside the loop | Let tools call `RpcPort` for new slots or blocks mid-investigation | New reads break the frozen block context (K-102) and open a network path the allowlist cannot bound by plugin. Tools read only facts the host already fetched through existing adapters | A tool design names its block, budget, and determinism proof in an ADR amendment |
 
 ## 3. The graph: an explicit typed state machine
@@ -77,7 +77,7 @@ adaptive UI, the audit extension, or the AI personalize mode.
 `not configured` without a key.** Zero model calls and zero
 investigation tool runs happen ahead of an explicit request through
 the web UI button, the REST endpoint, or the MCP tool. Without a
-configured hosted key the investigation answers the typed outcome
+configured Meta Model API key the investigation answers the typed outcome
 `investigation-not-configured` with zero provider calls and the
 deterministic analysis standing — the same posture as
 `assessment-not-configured` (K-305) and the personalize
@@ -143,7 +143,7 @@ type InvestigationModelError =
 
 interface InvestigationModelPort {
   decide(input: InvestigationModelInput): Promise<Result<InvestigationDecision, InvestigationModelError>>;
-  provider(): "hosted-open-weights";
+  provider(): "meta-model-api";
   modelId(): ModelId;
 }
 ```
@@ -153,7 +153,7 @@ analysis summary (code hash, score band, signal ids), the tool
 catalogue (section 5), the trace so far (chosen tools, rationales,
 returned evidence ids — never raw provider text from earlier steps),
 and the remaining budgets. Two adapters implement the port: the
-hosted adapter beside the existing hosted assessment adapter,
+Meta Model API adapter beside the existing assessment adapter,
 reusing its transport, server-side key handling, and identity checks
 (I-13, I-18) under separate investigation limits and caps; and a
 fake adapter for tests and replay (P-36). Selection happens once in
@@ -266,7 +266,7 @@ type InvestigationReport = {
   readonly narrative: string;              // citation-checked text only
   readonly droppedClaims: number;          // sentences removed by the check
   readonly citedEvidenceIds: readonly string[];
-  readonly provider: "hosted-open-weights"; readonly modelId: ModelId;
+  readonly provider: "meta-model-api"; readonly modelId: ModelId;
   readonly limits: { stepsUsed: number; tokensUsed: number; elapsedMs: number };
 };
 ```
@@ -296,7 +296,7 @@ decision, tools re-run deterministically over the frozen facts, and
 the replayed report must equal the recorded report bit-for-bit
 apart from `elapsedMs`. Replay is the contract suite for the loop
 (`runInvestigationModelPortContract` against fake and recorded
-hosted transport, zero network), mirroring the assessment and
+Meta Model API transport, zero network), mirroring the assessment and
 audit contract suites.
 
 **P-37 The investigation is exposed as a REST endpoint, an MCP
@@ -356,7 +356,7 @@ point 4):
 Stories (backlog epic E-09, test-first, scheduled immediately after
 S-046 and before the S-059 adaptive-UI queue): S-072 investigation
 types, trace, and citation checker (MVP); S-073
-`InvestigationModelPort`, fake, and hosted adapter (MVP); S-074
+`InvestigationModelPort`, fake, and Meta Model API adapter (MVP); S-074
 graph runner, registry tools, limits, and replay (MVP); S-075 REST
 and MCP exposure with the events stream (MVP); S-076 web UI live
 graph/timeline (MVP); S-077 recorded-trace library and investigation
@@ -366,7 +366,7 @@ are in `backlog.md`.
 Open decisions for Jens (defaults chosen; none blocks S-072):
 
 1. Demo enablement. Default: the public demo shows the Investigate
-   action only when a hosted key is configured server-side;
+   action only when a Meta Model API key is configured server-side;
    otherwise the `not configured` state is shown. Whether the live
    demo spends investigation calls at all is Jens's call before
    S-076, as with the AI personalize toggle (plugin ADR decision 11).

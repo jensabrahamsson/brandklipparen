@@ -84,17 +84,11 @@ function validSpecBody(): Record<string, unknown> {
 describe("the experimental AI layout label names the configured provider honestly", () => {
   test("a configured provider names its provider and model id", () => {
     expect(
-      personalizeProviderLabel({ provider: "generic-compatible", modelId: "test-model-1" }),
-    ).toBe("Maps with generic-compatible · test-model-1.");
-    expect(personalizeProviderName({ provider: "generic-compatible", modelId: "test-model-1" })).toBe(
-      "generic-compatible · test-model-1",
+      personalizeProviderLabel({ provider: "meta-model-api", modelId: "test-model-1" }),
+    ).toBe("Maps with meta-model-api · test-model-1.");
+    expect(personalizeProviderName({ provider: "meta-model-api", modelId: "test-model-1" })).toBe(
+      "meta-model-api · test-model-1",
     );
-  });
-
-  test("a hosted provider names its own provider and model id, never a hard-coded one", () => {
-    expect(
-      personalizeProviderLabel({ provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" }),
-    ).toBe("Maps with hosted-open-weights · meta-models/muse-spark-open-1026.");
   });
 
   test("a meta-model-api provider names its own provider and model id", () => {

@@ -14,8 +14,8 @@ import type {
   InvestigationModelInput as InvestigationModelInputType,
 } from "../../src/ports/investigationModel.ts";
 import type { Result } from "../../src/domain/result.ts";
-import { hostedInvestigateAdapter } from "../../src/adapters/investigation/hostedInvestigateAdapter.ts";
-import type { hostedInvestigateTransportResponse } from "../../src/adapters/investigation/hostedInvestigateAdapter.ts";
+import { MetaModelApiInvestigateAdapter } from "../../src/adapters/investigation/metaModelApiInvestigateAdapter.ts";
+import type { MetaInvestigateTransportResponse } from "../../src/adapters/investigation/metaModelApiInvestigateAdapter.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
   if (!result.ok) {
@@ -55,12 +55,12 @@ function fixedContext(): InvestigationCallContext {
 
 type CapturedCall = { url: string; body: string; headers: Record<string, string> };
 
-function captureTransport(response: hostedInvestigateTransportResponse): {
+function captureTransport(response: MetaInvestigateTransportResponse): {
   calls: CapturedCall[];
   transport: (
     url: string,
     init: { body: string; headers: Record<string, string>; signal: AbortSignal },
-  ) => Promise<hostedInvestigateTransportResponse>;
+  ) => Promise<MetaInvestigateTransportResponse>;
 } {
   const calls: CapturedCall[] = [];
   return {
@@ -85,7 +85,7 @@ function envelopeFor(inner: unknown): string {
 
 function concludeInner(): unknown {
   return {
-    provider: "hosted-open-weights",
+    provider: "meta-model-api",
     modelId: MODEL_ID,
     decision: {
       kind: "conclude",
@@ -98,8 +98,8 @@ function concludeInner(): unknown {
 function makeAdapter(
   transport: ReturnType<typeof captureTransport>["transport"],
   endpoint = "https://api.example.invalid/v1/",
-): hostedInvestigateAdapter {
-  return new hostedInvestigateAdapter({
+): MetaModelApiInvestigateAdapter {
+  return new MetaModelApiInvestigateAdapter({
     endpoint,
     apiKey: new SecretString(FAKE_KEY),
     modelId: mustOk(ModelId.parse(MODEL_ID)),
@@ -123,10 +123,10 @@ describe("investigation chat-completions request shape", () => {
     expect(call.headers["Content-Type"]).toBe("application/json");
     const body = JSON.parse(call.body) as Record<string, unknown>;
     expect(body["model"]).toBe(MODEL_ID);
-    expect(Object.keys(body).sort()).toEqual(["max_tokens", "messages", "model", "temperature"]);
-    expect(body["max_tokens"]).toBe(1024);
+    expect(Object.keys(body).sort()).toEqual(["max_tokens", "messages", "model", "reasoning_effort", "temperature"]);
+    expect(body["max_tokens"]).toBe(8192);
     expect(body["temperature"]).toBe(0);
-    expect("reasoning_effort" in body).toBe(false);
+    expect(body["reasoning_effort"]).toBe("low");
     expect("top_p" in body).toBe(false);
     expect("codeHash" in body).toBe(false);
     expect("tools" in body).toBe(false);

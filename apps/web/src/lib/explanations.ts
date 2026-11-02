@@ -47,7 +47,6 @@ const PLUGIN_IDS = [
   "dev.brandklipparen.sell-block",
   "dev.brandklipparen.proxy-upgrade",
   "dev.brandklipparen.assessment.meta-model-api",
-  "dev.brandklipparen.assessment.hosted-open-weights",
 ] as const;
 
 const TEMPLATE_KEYS = [

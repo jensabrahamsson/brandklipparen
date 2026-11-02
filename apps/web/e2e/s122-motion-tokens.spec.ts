@@ -82,7 +82,7 @@ const INVESTIGATE_DONE = {
     },
     limits: { maxSteps: 8, maxTokens: 8000, deadlineMs: 60000, toolTimeoutMs: 5000 },
   },
-  investigationProvider: "hosted-open-weights",
+  investigationProvider: "meta-model-api",
   investigationModel: "meta-models/muse-spark-open-1026",
 };
 

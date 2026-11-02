@@ -195,8 +195,7 @@ export class HostileAssessmentModelAdapter implements AssessmentModelPort {
           evidence,
           {
             ...this.basePayload(evidence, promptVersion),
-            provider:
-              this.providerName === "meta-model-api" ? "hosted-open-weights" : "meta-model-api",
+            provider: "unknown-provider",
           },
           promptVersion,
         );

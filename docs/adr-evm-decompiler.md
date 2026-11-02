@@ -92,7 +92,7 @@ the score with patterns it never had.
 | Exposure | One detector plugin through the existing registry; detectors and the Expert view, REST, and MCP consume the same output; weight 0 until the artifact names it (D-07, D-08) |
 | Runtime relation | extdecomp stays the runtime `DecompilerPort` adapter in the deepening; the own pipeline is additive until a promotion story says otherwise (D-08) |
 | Comparison | Dev/eval-only harness on local bytecode via `extdecomp_BIN`, expected version `0.9.1`; never a runtime dependency (D-09, D-10) |
-| AI naming | Optional separate plugin: Muse Spark Open suggests names only, opt-in, display-only, never an analysis input (D-11) |
+| AI naming | Optional separate plugin: Muse Spark suggests names only, opt-in, display-only, never an analysis input (D-11) |
 
 ### 3.1 Alternatives for the load-bearing decisions
 
@@ -277,13 +277,13 @@ it, P-05) — the plugin is display and structured evidence only.
 
 **D-11 AI naming is a separate optional plugin: suggestions only,
 opt-in, display-only, never an analysis input.** Beside the
-deterministic plugin, a second plugin may ask Muse Spark Open
-(`meta-models/muse-spark-open-1026`) on hosted, through a port in
+deterministic plugin, a second plugin may ask Muse Spark
+(`muse-spark-1.3`) on Meta Model API, through a port in
 the personalize family, for human-readable function and variable
 names for the emitted items. Its discipline copies P-27/P-28 and
 the investigation quoting rules:
 
-- Off by default and `not configured` without a hosted key, with
+- Off by default and `not configured` without a Meta Model API key, with
   zero provider calls in that state; the deterministic emission
   stands untouched.
 - Input is the emitted items as quoted untrusted data under caps;

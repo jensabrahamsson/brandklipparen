@@ -26,16 +26,16 @@ describe("ai capabilities", () => {
   });
 
   test("s123_configured_capabilities_are_available", () => {
-    expect(toAvailability({ provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" })).toBe(
+    expect(toAvailability({ provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" })).toBe(
       "available",
     );
     expect(toAvailability({ available: true })).toBe("available");
     const availability = toAiAvailability({
       ...BASE,
-      investigation: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
-      explain: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
-      chat: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
-      rug: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      investigation: { provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" },
+      explain: { provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" },
+      chat: { provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" },
+      rug: { provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" },
       onchain: { available: true },
     });
     expect(availability).toEqual({

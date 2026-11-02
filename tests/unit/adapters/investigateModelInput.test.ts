@@ -13,7 +13,7 @@ import {
   collectedIdsForPrompt,
   meaningLinesForPrompt,
 } from "../../../src/adapters/investigation/investigateChatCompletions.ts";
-import { hostedInvestigateAdapter } from "../../../src/adapters/investigation/hostedInvestigateAdapter.ts";
+import { MetaModelApiInvestigateAdapter } from "../../../src/adapters/investigation/metaModelApiInvestigateAdapter.ts";
 import {
   MAX_CATALOGUE_FINDINGS_PER_TOOL,
   buildInvestigationCatalogue,
@@ -82,7 +82,7 @@ function fixedContext(): InvestigationCallContext {
 
 function concludeEnvelope(): string {
   const inner = {
-    provider: "hosted-open-weights",
+    provider: "meta-model-api",
     modelId: MODEL_ID,
     decision: {
       kind: "conclude",
@@ -154,7 +154,7 @@ describe("m02e investigation model input", () => {
 
   test("m02e_investigate_prompt_states_found_absent_never_contradict_and_lists_meanings", () => {
     const prompt = buildInvestigateSystemPrompt({
-      provider: "hosted-open-weights",
+      provider: "meta-model-api",
       modelId: mustOk(ModelId.parse(MODEL_ID)),
       stepsLeft: 7,
       concludeOnly: false,
@@ -212,7 +212,7 @@ describe("m02e investigation model input", () => {
   test("m02e_decide_posts_meanings_beside_ids_within_size_caps", async () => {
     const input = inputWithMeanings();
     const calls: Array<{ url: string; body: string }> = [];
-    const adapter = new hostedInvestigateAdapter({
+    const adapter = new MetaModelApiInvestigateAdapter({
       endpoint: "https://api.example.invalid/v1/",
       apiKey: new SecretString(FAKE_KEY),
       modelId: mustOk(ModelId.parse(MODEL_ID)),

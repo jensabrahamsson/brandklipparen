@@ -50,7 +50,7 @@ export class FakeInvestigationModelAdapter implements InvestigationModelPort {
   }
 
   provider(): InvestigationProvider {
-    return "hosted-open-weights";
+    return "meta-model-api";
   }
 
   modelId(): ModelIdType {

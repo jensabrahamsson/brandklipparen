@@ -8,7 +8,7 @@
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "{\"provider\":\"hosted-open-weights\",\"modelId\":\"meta-models/muse-spark-open-1026\",\"decision\":{\"kind\":\"conclude\"}}"
+        "content": "{\"provider\":\"meta-model-api\",\"modelId\":\"meta-models/muse-spark-open-1026\",\"decision\":{\"kind\":\"conclude\"}}"
       },
       "finish_reason": "stop"
     }

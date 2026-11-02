@@ -19,13 +19,8 @@ import type { AssessmentService } from "../application/assessmentService.ts";
 import { createPersonalizeService } from "../application/personalizeService.ts";
 import type { PersonalizeService } from "../application/personalizeService.ts";
 import { OverlayBudget } from "../application/overlayBudget.ts";
-import {
-  NotConfiguredPersonalizeAdapter,
-} from "../adapters/personalize/hostedPersonalizeAdapter.ts";
 import { createMetaModelApiPersonalizeAdapterFromConfig } from "../adapters/personalize/metaModelApiPersonalizeAdapter.ts";
 import type { MetaModelApiPersonalizeTransport } from "../adapters/personalize/metaModelApiPersonalizeAdapter.ts";
-import { createGenericCompatiblePersonalizeAdapterFromConfig } from "../adapters/personalize/GenericCompatiblePersonalizeAdapter.ts";
-import type { GenericCompatiblePersonalizeTransport } from "../adapters/personalize/GenericCompatiblePersonalizeAdapter.ts";
 import type { PluginPersonalizeModelPort } from "../ports/pluginPersonalizeModel.ts";
 import type { PluginPersonalizeProvider } from "../ports/pluginPersonalizeModel.ts";
 import {
@@ -37,13 +32,10 @@ import type { InvestigationService } from "../application/investigationService.t
 import { createDecompilerNamingService } from "../application/decompilerNaming.ts";
 import type { DecompilerNamingService } from "../application/decompilerNaming.ts";
 import type { DecompilerNamingPort } from "../ports/decompilerNaming.ts";
+import { NotConfiguredInvestigateAdapter } from "../adapters/investigation/notConfiguredInvestigateAdapter.ts";
+import type { MetaInvestigateTransport } from "../adapters/investigation/metaModelApiInvestigateAdapter.ts";
 import {
-  hostedInvestigateAdapter,
-  NotConfiguredInvestigateAdapter,
-  createhostedInvestigateAdapterFromConfig,
-} from "../adapters/investigation/hostedInvestigateAdapter.ts";
-import type { hostedInvestigateTransport } from "../adapters/investigation/hostedInvestigateAdapter.ts";
-import {
+  INVESTIGATE_META_MODEL_ID,
   META_INVESTIGATE_LOOP_DEADLINE_MS,
   META_INVESTIGATE_LOOP_MAX_TOKENS,
   createMetaModelApiInvestigateAdapterFromConfig,
@@ -72,11 +64,6 @@ import type { InvestigationModelPort } from "../ports/investigationModel.ts";
 import { DEFAULT_INVESTIGATION_LIMITS } from "../application/investigateToken.ts";
 import { createMetaModelApiAdapterFromConfig } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
 import type { MetaModelApiTransport } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
-import { createhostedOpenWeightsAdapterFromConfig } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
-import { hosted_OPEN_WEIGHTS_MODEL_ID } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
-import type { hostedOpenWeightsTransport } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
-import { createGenericCompatibleAdapterFromConfig } from "../adapters/assessment/GenericCompatible/GenericCompatibleAdapter.ts";
-import type { GenericCompatibleTransport } from "../adapters/assessment/GenericCompatible/GenericCompatibleAdapter.ts";
 import { PromptVersion } from "../domain/types.ts";
 import {
   assessmentPluginIdForProvider,
@@ -93,8 +80,6 @@ import type { PluginRegistryError } from "../plugins/registry.ts";
 import type { PluginId } from "../plugins/api.ts";
 import type { AppConfig, ConfigError } from "../ports/config.ts";
 import type { MetaModelApiAdapter } from "../adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
-import type { hostedOpenWeightsAdapter } from "../adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
-import type { GenericCompatibleAdapter } from "../adapters/assessment/GenericCompatible/GenericCompatibleAdapter.ts";
 import { ModelId } from "../domain/types.ts";
 import type { AssessmentProvider } from "../ports/assessmentModel.ts";
 
@@ -138,28 +123,20 @@ export type AssessmentHealthStatus =
 
 const PROVIDER_VARIABLE = "BRANDKLIPPAREN_ASSESSMENT_PROVIDER";
 
-// Documented default assessment intent (S-029, K-309): Jens's demo default
-// is the hosted open-weights provider with the published open-weights
-// model id. These constants guide documentation, the example environment
-// and UI labelling only. The composition root never auto-selects a
-// provider: an unset BRANDKLIPPAREN_ASSESSMENT_PROVIDER still disables the
-// feature, and a selected provider without its API key stays disabled with
-// zero provider calls (not configured) instead of failing startup.
-export const DEFAULT_ASSESSMENT_PROVIDER: AssessmentProvider = "hosted-open-weights";
-export const DEFAULT_hosted_MODEL_ID: string = hosted_OPEN_WEIGHTS_MODEL_ID;
+// Documented default assessment intent (S-029, K-309): the demo default
+// is the Meta Model API provider. This constant guides documentation,
+// the example environment and UI labelling only. The composition root
+// never auto-selects a provider: an unset BRANDKLIPPAREN_ASSESSMENT_PROVIDER
+// still disables the feature, and a selected provider without its API
+// key stays disabled with zero provider calls (not configured) instead
+// of failing startup.
+export const DEFAULT_ASSESSMENT_PROVIDER: AssessmentProvider = "meta-model-api";
 
 function hasProviderCredentials(config: AppConfig): boolean {
   return (
     config.assessmentMetaApiKey !== undefined ||
     config.assessmentMetaModelId !== undefined ||
-    config.assessmentMetaBaseUrl !== undefined ||
-    config.assessmenthostedApiKey !== undefined ||
-    config.assessmenthostedModelId !== undefined ||
-    config.assessmenthostedBaseUrl !== undefined ||
-    config.assessmenthostedDeploymentId !== undefined ||
-    config.assessmentGenericCompatibleApiKey !== undefined ||
-    config.assessmentGenericCompatibleModelId !== undefined ||
-    config.assessmentGenericCompatibleBaseUrl !== undefined
+    config.assessmentMetaBaseUrl !== undefined
   );
 }
 
@@ -186,34 +163,14 @@ export function selectAssessmentBinding(config: AppConfig): Result<AssessmentBin
   // calls, consistent with how a missing key already maps to disabled in
   // the adapter factory below. Present-but-malformed values never reach
   // this point: the config loader turns them away as typed startup errors.
-  if (provider === "meta-model-api") {
-    if (
-      config.assessmentMetaModelId === undefined ||
-      config.assessmentMetaApiKey === undefined ||
-      config.assessmentMetaBaseUrl === undefined
-    ) {
-      return ok({ kind: "disabled" });
-    }
-    return ok({ kind: "enabled", provider, modelId: config.assessmentMetaModelId, pluginId });
-  }
-  if (provider === "generic-compatible") {
-    if (
-      config.assessmentGenericCompatibleModelId === undefined ||
-      config.assessmentGenericCompatibleApiKey === undefined ||
-      config.assessmentGenericCompatibleBaseUrl === undefined
-    ) {
-      return ok({ kind: "disabled" });
-    }
-    return ok({ kind: "enabled", provider, modelId: config.assessmentGenericCompatibleModelId, pluginId });
-  }
   if (
-    config.assessmenthostedModelId === undefined ||
-    config.assessmenthostedApiKey === undefined ||
-    config.assessmenthostedBaseUrl === undefined
+    config.assessmentMetaModelId === undefined ||
+    config.assessmentMetaApiKey === undefined ||
+    config.assessmentMetaBaseUrl === undefined
   ) {
     return ok({ kind: "disabled" });
   }
-  return ok({ kind: "enabled", provider, modelId: config.assessmenthostedModelId, pluginId });
+  return ok({ kind: "enabled", provider, modelId: config.assessmentMetaModelId, pluginId });
 }
 
 // The single active assessment plugin id for an enabled binding, or null
@@ -263,8 +220,6 @@ function isPlaceholderModelId(modelId: string): boolean {
 
 export type AssessmentTransportOverrides = {
   readonly metaTransport?: MetaModelApiTransport | undefined;
-  readonly hostedTransport?: hostedOpenWeightsTransport | undefined;
-  readonly GenericCompatibleTransport?: GenericCompatibleTransport | undefined;
 };
 
 export type PersonalizeBinding =
@@ -299,30 +254,14 @@ export function selectPersonalizeBinding(config: AppConfig): Result<PersonalizeB
   if (provider === undefined) {
     return ok({ kind: "disabled" });
   }
-  if (provider === "meta-model-api") {
-    if (
-      config.assessmentMetaModelId === undefined ||
-      config.assessmentMetaApiKey === undefined ||
-      config.assessmentMetaBaseUrl === undefined
-    ) {
-      return ok({ kind: "disabled" });
-    }
-    return ok({ kind: "enabled", provider, modelId: config.assessmentMetaModelId });
+  if (
+    config.assessmentMetaModelId === undefined ||
+    config.assessmentMetaApiKey === undefined ||
+    config.assessmentMetaBaseUrl === undefined
+  ) {
+    return ok({ kind: "disabled" });
   }
-  if (provider === "generic-compatible") {
-    if (
-      config.assessmentGenericCompatibleModelId === undefined ||
-      config.assessmentGenericCompatibleApiKey === undefined ||
-      config.assessmentGenericCompatibleBaseUrl === undefined
-    ) {
-      return ok({ kind: "disabled" });
-    }
-    return ok({ kind: "enabled", provider, modelId: config.assessmentGenericCompatibleModelId });
-  }
-  // The hosted mapping triple has no validated configuration fields, so
-  // selecting it keeps the previous behaviour: not configured with zero
-  // provider calls and the deterministic baseline standing.
-  return ok({ kind: "disabled" });
+  return ok({ kind: "enabled", provider, modelId: config.assessmentMetaModelId });
 }
 
 // Provider and model id for the health response (K-104, S-123): the
@@ -336,13 +275,12 @@ export function personalizeHealthStatus(binding: PersonalizeBinding): { provider
 }
 
 export type PersonalizeTransportOverrides = {
-  readonly transport?: GenericCompatiblePersonalizeTransport | undefined;
   readonly metaTransport?: MetaModelApiPersonalizeTransport | undefined;
   readonly onWarn?: ((line: string) => void) | undefined;
 };
 
 // Builds the personalize service from the validated configuration
-// (S-069, P-27): the meta-model-api or generic-compatible mapping adapter
+// (S-069, P-27): the meta-model-api mapping adapter
 // when the provider is configured with its connection triple, otherwise
 // undefined so the routes answer not-configured with zero provider
 // calls. Missing values never fail startup: the feature is opt-in and
@@ -362,40 +300,20 @@ export function createPersonalizeServiceFromConfig(
   if (isPlaceholderModelId(binding.value.modelId as string)) {
     return ok(undefined);
   }
-  let adapter: PluginPersonalizeModelPort;
-  if (binding.value.provider === "meta-model-api") {
-    const built = createMetaModelApiPersonalizeAdapterFromConfig(
-      {
-        assessmentMetaBaseUrl: config.assessmentMetaBaseUrl,
-        assessmentMetaApiKey: config.assessmentMetaApiKey,
-        assessmentMetaModelId: config.assessmentMetaModelId,
-      },
-      overrides.metaTransport,
-      undefined,
-      overrides.onWarn,
-    );
-    if (!built.ok) {
-      return err(built.error);
-    }
-    adapter = built.value;
-  } else if (binding.value.provider === "generic-compatible") {
-    const built = createGenericCompatiblePersonalizeAdapterFromConfig(
-      {
-        assessmentGenericCompatibleBaseUrl: config.assessmentGenericCompatibleBaseUrl,
-        assessmentGenericCompatibleApiKey: config.assessmentGenericCompatibleApiKey,
-        assessmentGenericCompatibleModelId: config.assessmentGenericCompatibleModelId,
-      },
-      overrides.transport,
-      undefined,
-      overrides.onWarn,
-    );
-    if (!built.ok) {
-      return err(built.error);
-    }
-    adapter = built.value;
-  } else {
-    adapter = new NotConfiguredPersonalizeAdapter(undefined, binding.value.provider);
+  const built = createMetaModelApiPersonalizeAdapterFromConfig(
+    {
+      assessmentMetaBaseUrl: config.assessmentMetaBaseUrl,
+      assessmentMetaApiKey: config.assessmentMetaApiKey,
+      assessmentMetaModelId: config.assessmentMetaModelId,
+    },
+    overrides.metaTransport,
+    undefined,
+    overrides.onWarn,
+  );
+  if (!built.ok) {
+    return err(built.error);
   }
+  const adapter: PluginPersonalizeModelPort = built.value;
   return ok(
     createPersonalizeService({
       adapter,
@@ -424,7 +342,7 @@ export function createAssessmentAdapterForPlugin(
   pluginId: PluginId,
   config: AppConfig,
   overrides: AssessmentTransportOverrides = {},
-): Result<MetaModelApiAdapter | hostedOpenWeightsAdapter | GenericCompatibleAdapter, ConfigError> {
+): Result<MetaModelApiAdapter, ConfigError> {
   const assessed = buildDefaultAssessmentRegistry();
   if (!assessed.ok) {
     return err({
@@ -442,44 +360,16 @@ export function createAssessmentAdapterForPlugin(
       reason: "assessment plugin id is not registered",
     });
   }
-  if (plugin.provider === "meta-model-api") {
-    return createMetaModelApiAdapterFromConfig(
-      {
-        assessmentMetaBaseUrl: config.assessmentMetaBaseUrl,
-        assessmentMetaApiKey: config.assessmentMetaApiKey,
-        assessmentMetaModelId: config.assessmentMetaModelId,
-        assessmentDeadlineMs: config.assessmentDeadlineMs,
-        assessmentMaxInputBytes: config.assessmentMaxInputBytes,
-        assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
-      },
-      overrides.metaTransport,
-    );
-  }
-  if (plugin.provider === "generic-compatible") {
-    return createGenericCompatibleAdapterFromConfig(
-      {
-        assessmentGenericCompatibleBaseUrl: config.assessmentGenericCompatibleBaseUrl,
-        assessmentGenericCompatibleApiKey: config.assessmentGenericCompatibleApiKey,
-        assessmentGenericCompatibleModelId: config.assessmentGenericCompatibleModelId,
-        assessmentDeadlineMs: config.assessmentDeadlineMs,
-        assessmentMaxInputBytes: config.assessmentMaxInputBytes,
-        assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
-        assessmentGenericCompatibleTemperature: config.assessmentGenericCompatibleTemperature,
-        assessmentGenericCompatibleMaxTokens: config.assessmentGenericCompatibleMaxTokens,
-      },
-      overrides.GenericCompatibleTransport,
-    );
-  }
-  return createhostedOpenWeightsAdapterFromConfig(
+  return createMetaModelApiAdapterFromConfig(
     {
-      assessmenthostedBaseUrl: config.assessmenthostedBaseUrl,
-      assessmenthostedApiKey: config.assessmenthostedApiKey,
-      assessmenthostedModelId: config.assessmenthostedModelId,
+      assessmentMetaBaseUrl: config.assessmentMetaBaseUrl,
+      assessmentMetaApiKey: config.assessmentMetaApiKey,
+      assessmentMetaModelId: config.assessmentMetaModelId,
       assessmentDeadlineMs: config.assessmentDeadlineMs,
       assessmentMaxInputBytes: config.assessmentMaxInputBytes,
       assessmentMaxOutputBytes: config.assessmentMaxOutputBytes,
     },
-    overrides.hostedTransport,
+    overrides.metaTransport,
   );
 }
 
@@ -549,7 +439,7 @@ export function createAssessmentServiceFromConfig(
 
 // Builds the decompiler naming service (S-083, D-11): the default wiring
 // carries no port, so the suggested-names overlay stays off and the
-// deterministic pseudo-Solidity stands. A future hosted naming adapter (or
+// deterministic pseudo-Solidity stands. A future Meta naming adapter (or
 // the fake in tests) passes its port here explicitly to opt in; the
 // overlay never enters scoring, evidence or emitted structure.
 export function buildDecompilerNamingService(
@@ -558,51 +448,12 @@ export function buildDecompilerNamingService(
   return createDecompilerNamingService(port);
 }
 
-// Vendor-neutral sharing for local development: when the assessment
-// selects the vendor-neutral provider with a complete endpoint triple
-// and no investigation field is configured at all, the investigation
-// loop reuses the assessment endpoint, key and model id. Any explicit
-// investigation selection or field keeps the existing path below
-// (including the not-configured adapter on a partial triple); without
-// either, the loop stays not-configured. Returns null when sharing does
-// not apply.
-function sharedInvestigateAdapterFromAssessment(
-  config: AppConfig,
-  transport: hostedInvestigateTransport | undefined,
-): InvestigationModelPort | null {
-  if (config.investigateProvider !== undefined) {
-    return null;
+function defaultInvestigateModelId(): ModelId {
+  const parsed = ModelId.parse(INVESTIGATE_META_MODEL_ID);
+  if (!parsed.ok) {
+    throw new Error("the pinned investigate Meta model id must parse");
   }
-  if (
-    config.investigatehostedBaseUrl !== undefined ||
-    config.investigatehostedApiKey !== undefined ||
-    config.investigatehostedModelId !== undefined ||
-    config.investigateMetaBaseUrl !== undefined ||
-    config.investigateMetaApiKey !== undefined ||
-    config.investigateMetaModelId !== undefined
-  ) {
-    return null;
-  }
-  if (config.assessmentProvider !== "generic-compatible") {
-    return null;
-  }
-  const endpoint = config.assessmentGenericCompatibleBaseUrl;
-  const apiKey = config.assessmentGenericCompatibleApiKey;
-  const modelId = config.assessmentGenericCompatibleModelId;
-  if (endpoint === undefined || apiKey === undefined || modelId === undefined) {
-    return null;
-  }
-  return new hostedInvestigateAdapter({
-    endpoint,
-    apiKey,
-    modelId,
-    provider: "generic-compatible",
-    timeoutMs: config.investigateDeadlineMs,
-    maxBytesIn: config.investigateMaxOutputBytes,
-    maxBytesOut: config.investigateMaxInputBytes,
-    maxOutputChars: config.investigateMaxOutputBytes,
-    transport,
-  });
+  return parsed.value;
 }
 
 function buildInvestigationService(
@@ -638,110 +489,38 @@ function buildInvestigationService(
   });
 }
 
-function hostedInvestigateLimitsOf(config: AppConfig): {
-  readonly investigateDeadlineMs: number | undefined;
-  readonly investigateMaxInputBytes: number | undefined;
-  readonly investigateMaxOutputBytes: number | undefined;
-} {
-  return {
-    investigateDeadlineMs: config.investigateDeadlineMs,
-    investigateMaxInputBytes: config.investigateMaxInputBytes,
-    investigateMaxOutputBytes: config.investigateMaxOutputBytes,
-  };
-}
-
 // Builds the investigation service from the validated configuration
-// (S-075, P-29): the selected provider adapter when its connection triple
-// is complete (Meta Model API or hosted open weights), the shared
-// vendor-neutral adapter when the assessment selects the vendor-neutral
-// provider without an explicit investigation selection, otherwise the
-// not-configured adapter whose every call answers `not-configured` with
-// zero sends. The service reports unconfigured through its `configured`
-// flag so health can disable the loop while the routes keep their typed
-// not-configured response. Missing values never fail startup: the loop
-// is opt-in and disabled by default. Transports stay injectable so tests
-// replay recorded fixtures and never touch the network.
+// (S-075, P-29): the Meta Model API adapter when selected and its
+// connection triple is complete, otherwise the not-configured adapter
+// whose every call answers `not-configured` with zero sends. The service
+// reports unconfigured through its `configured` flag so health can
+// disable the loop while the routes keep their typed not-configured
+// response. Missing values never fail startup: the loop is opt-in and
+// disabled by default. Transports stay injectable so tests replay
+// recorded fixtures and never touch the network.
 export function createInvestigationServiceFromConfig(
   config: AppConfig,
   detectors: DetectorSet,
-  overrides: { readonly transport?: hostedInvestigateTransport | undefined } = {},
+  overrides: { readonly transport?: MetaInvestigateTransport | undefined } = {},
 ): Result<InvestigationService, ConfigError> {
   const selected = config.investigateProvider;
-  if (selected === "off") {
-    const built = createhostedInvestigateAdapterFromConfig(
-      {
-        investigatehostedBaseUrl: undefined,
-        investigatehostedApiKey: undefined,
-        investigatehostedModelId: undefined,
-        ...hostedInvestigateLimitsOf(config),
-      },
-      overrides.transport,
-    );
-    if (!built.ok) {
-      return err(built.error);
-    }
-    return ok(buildInvestigationService(built.value, config, detectors, false));
+  if (selected !== "meta-model-api") {
+    const adapter = new NotConfiguredInvestigateAdapter({
+      provider: "meta-model-api",
+      modelId: config.investigateMetaModelId,
+      defaultModelId: defaultInvestigateModelId(),
+      message: "investigation is not configured: set the Meta key",
+    });
+    return ok(buildInvestigationService(adapter, config, detectors, false));
   }
-  if (selected === "meta-model-api") {
-    const built = createMetaModelApiInvestigateAdapterFromConfig(
-      {
-        investigateMetaBaseUrl: config.investigateMetaBaseUrl,
-        investigateMetaApiKey: config.investigateMetaApiKey,
-        investigateMetaModelId: config.investigateMetaModelId,
-        investigateDeadlineMs: config.investigateDeadlineMs,
-        investigateMaxInputBytes: config.investigateMaxInputBytes,
-        investigateMaxOutputBytes: config.investigateMaxOutputBytes,
-      },
-      overrides.transport,
-    );
-    if (!built.ok) {
-      return err(built.error);
-    }
-    return ok(
-      buildInvestigationService(
-        built.value,
-        config,
-        detectors,
-        !(built.value instanceof NotConfiguredInvestigateAdapter),
-        {
-          maxTokens: META_INVESTIGATE_LOOP_MAX_TOKENS,
-          deadlineMs: META_INVESTIGATE_LOOP_DEADLINE_MS,
-        },
-      ),
-    );
-  }
-  if (selected === "hosted-open-weights") {
-    const built = createhostedInvestigateAdapterFromConfig(
-      {
-        investigatehostedBaseUrl: config.investigatehostedBaseUrl,
-        investigatehostedApiKey: config.investigatehostedApiKey,
-        investigatehostedModelId: config.investigatehostedModelId,
-        ...hostedInvestigateLimitsOf(config),
-      },
-      overrides.transport,
-    );
-    if (!built.ok) {
-      return err(built.error);
-    }
-    return ok(
-      buildInvestigationService(
-        built.value,
-        config,
-        detectors,
-        !(built.value instanceof NotConfiguredInvestigateAdapter),
-      ),
-    );
-  }
-  const shared = sharedInvestigateAdapterFromAssessment(config, overrides.transport);
-  if (shared !== null) {
-    return ok(buildInvestigationService(shared, config, detectors, true));
-  }
-  const built = createhostedInvestigateAdapterFromConfig(
+  const built = createMetaModelApiInvestigateAdapterFromConfig(
     {
-      investigatehostedBaseUrl: config.investigatehostedBaseUrl,
-      investigatehostedApiKey: config.investigatehostedApiKey,
-      investigatehostedModelId: config.investigatehostedModelId,
-      ...hostedInvestigateLimitsOf(config),
+      investigateMetaBaseUrl: config.investigateMetaBaseUrl,
+      investigateMetaApiKey: config.investigateMetaApiKey,
+      investigateMetaModelId: config.investigateMetaModelId,
+      investigateDeadlineMs: config.investigateDeadlineMs,
+      investigateMaxInputBytes: config.investigateMaxInputBytes,
+      investigateMaxOutputBytes: config.investigateMaxOutputBytes,
     },
     overrides.transport,
   );
@@ -754,6 +533,10 @@ export function createInvestigationServiceFromConfig(
       config,
       detectors,
       !(built.value instanceof NotConfiguredInvestigateAdapter),
+      {
+        maxTokens: META_INVESTIGATE_LOOP_MAX_TOKENS,
+        deadlineMs: META_INVESTIGATE_LOOP_DEADLINE_MS,
+      },
     ),
   );
 }

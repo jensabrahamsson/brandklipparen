@@ -93,7 +93,7 @@ function advancingClock(stepMs: number): () => number {
 function scriptedReplay(decisions: readonly InvestigationDecision[]): InvestigationModelPort {
   let calls = 0;
   return {
-    provider: () => "hosted-open-weights",
+    provider: () => "meta-model-api",
     modelId: () => "meta-models/muse-spark-open-1026" as never,
     async decide(): Promise<Result<InvestigationDecision, InvestigationModelError>> {
       const decision = decisions[calls];

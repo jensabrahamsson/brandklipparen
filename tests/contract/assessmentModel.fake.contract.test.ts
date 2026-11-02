@@ -9,10 +9,9 @@ import { runAssessmentModelPortContract } from "./assessmentModel.contract.ts";
 function makeFake(
   provider: AssessmentProvider,
 ): (scenario: AssessmentContractScenario) => AssessmentModelPort {
-  const modelId = provider === "meta-model-api" ? "fake-meta-spark-1" : "fake-open-weights-1";
+  const modelId = "fake-meta-spark-1";
   return (scenario: AssessmentContractScenario) =>
     new FakeAssessmentModelAdapter({ provider, modelId, promptVersion: "1.0.0", scenario });
 }
 
 runAssessmentModelPortContract("fake meta-model-api", makeFake("meta-model-api"));
-runAssessmentModelPortContract("fake hosted-open-weights", makeFake("hosted-open-weights"));

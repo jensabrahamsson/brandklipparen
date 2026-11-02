@@ -36,10 +36,10 @@ function baseCiEnv(): EnvInput {
 function compatEnv(overrides: EnvInput = {}): EnvInput {
   return {
     ...baseCiEnv(),
-    BRANDKLIPPAREN_PERSONALIZE_PROVIDER: "generic-compatible",
-    BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-compat-key-for-tests-only",
-    BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID: "fake-compat-model-1",
-    BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL: "https://compat.example.invalid",
+    BRANDKLIPPAREN_PERSONALIZE_PROVIDER: "meta-model-api",
+    BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-meta-key-for-tests-only",
+    BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "fake-meta-model-1",
+    BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta.example.invalid",
     ...overrides,
   };
 }
@@ -103,7 +103,7 @@ describe("personalize provider configuration", () => {
 
   test("a selected provider without its model id stays not-configured", () => {
     const loaded = loadConfig(
-      compatEnv({ BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID: "" }),
+      compatEnv({ BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "" }),
     );
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) {
@@ -125,7 +125,7 @@ describe("personalize provider configuration", () => {
 
   test("a selected provider without its key stays not-configured", () => {
     const loaded = loadConfig(
-      compatEnv({ BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "" }),
+      compatEnv({ BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "" }),
     );
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) {
@@ -145,30 +145,20 @@ describe("personalize provider configuration", () => {
     expect(service.value).toBeUndefined();
   });
 
-  test("a configured triple binds the generic-compatible provider and model honestly", () => {
-    const loaded = loadConfig(compatEnv());
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) {
+  test("a removed provider value fails config validation", () => {
+    const removed = ["base", "ten-open-weights"].join("");
+    const loaded = loadConfig(compatEnv({ BRANDKLIPPAREN_PERSONALIZE_PROVIDER: removed }));
+    expect(loaded.ok).toBe(false);
+    if (loaded.ok) {
       return;
     }
-    expect(loaded.value.personalizeProvider).toBe("generic-compatible");
-    const binding = selectPersonalizeBinding(loaded.value);
-    expect(binding.ok).toBe(true);
-    if (!binding.ok) {
-      return;
+    expect(loaded.error.variable).toBe("BRANDKLIPPAREN_PERSONALIZE_PROVIDER");
+    const removedCompat = ["open", "ai-compatible"].join("");
+    const loadedCompat = loadConfig(compatEnv({ BRANDKLIPPAREN_PERSONALIZE_PROVIDER: removedCompat }));
+    expect(loadedCompat.ok).toBe(false);
+    if (!loadedCompat.ok) {
+      expect(loadedCompat.error.variable).toBe("BRANDKLIPPAREN_PERSONALIZE_PROVIDER");
     }
-    expect(binding.value).toEqual({
-      kind: "enabled",
-      provider: "generic-compatible",
-      modelId: "fake-compat-model-1",
-    });
-    const service = createPersonalizeServiceFromConfig(loaded.value);
-    expect(service.ok).toBe(true);
-    if (!service.ok || service.value === undefined) {
-      throw new Error("expected the personalize service to be wired");
-    }
-    expect(service.value.provider).toBe("generic-compatible");
-    expect(service.value.modelId).toBe("fake-compat-model-1");
   });
 
   test("a configured meta triple binds the meta-model-api provider and model honestly", () => {
@@ -232,19 +222,19 @@ describe("personalize provider configuration", () => {
     expect(loaded.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL");
   });
 
-  test("selecting hosted keeps the previous unwired behaviour", () => {
-    const loaded = loadConfig(compatEnv({ BRANDKLIPPAREN_PERSONALIZE_PROVIDER: "hosted-open-weights" }));
+  test("a configured meta triple via the shared env binds honestly", () => {
+    const loaded = loadConfig(compatEnv());
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) {
       return;
     }
-    expect(loaded.value.personalizeProvider).toBe("hosted-open-weights");
+    expect(loaded.value.personalizeProvider).toBe("meta-model-api");
     const service = createPersonalizeServiceFromConfig(loaded.value);
     expect(service.ok).toBe(true);
-    if (!service.ok) {
-      return;
+    if (!service.ok || service.value === undefined) {
+      throw new Error("expected the personalize service to be wired");
     }
-    expect(service.value).toBeUndefined();
+    expect(service.value.provider).toBe("meta-model-api");
   });
 
   test("the daily cap parses and stays optional", () => {
@@ -272,13 +262,13 @@ describe("personalize provider configuration", () => {
 
   test("a malformed assessment endpoint stays a typed startup error", () => {
     const loaded = loadConfig(
-      compatEnv({ BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL: "http://compat.example.invalid" }),
+      compatEnv({ BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "http://meta.example.invalid" }),
     );
     expect(loaded.ok).toBe(false);
     if (loaded.ok) {
       return;
     }
-    expect(loaded.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL");
+    expect(loaded.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL");
   });
 
   test("credentials without a personalize provider stay disabled", () => {
@@ -288,7 +278,7 @@ describe("personalize provider configuration", () => {
       modelArtifactPath: "model/artifact-0.1.0.json",
       cloneIndexVersion: mustOk(IndexVersion.parse("1.0.0")),
       logLevel: "info",
-      assessmentGenericCompatibleApiKey: new SecretString("fake-compat-key-for-tests-only"),
+      assessmentMetaApiKey: new SecretString("fake-meta-key-for-tests-only"),
     };
     const binding = selectPersonalizeBinding(config);
     expect(binding.ok).toBe(true);

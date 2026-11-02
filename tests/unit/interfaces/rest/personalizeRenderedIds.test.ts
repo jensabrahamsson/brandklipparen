@@ -48,8 +48,8 @@ function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
 class CapturingPersonalizeAdapter implements PluginPersonalizeModelPort {
   public seen: PersonalizeInput | null = null;
 
-  provider(): "hosted-open-weights" {
-    return "hosted-open-weights";
+  provider(): "meta-model-api" {
+    return "meta-model-api";
   }
 
   modelId(): ModelIdType {

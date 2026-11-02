@@ -93,7 +93,7 @@ const TEST_PEPPER = "test-pepper-for-investigate-suite-only";
 // Deterministic with zero network.
 function scriptedAdapter(): InvestigationModelPort {
   return {
-    provider: () => "hosted-open-weights",
+    provider: () => "meta-model-api",
     modelId: () => mustOk(ModelId.parse("meta-models/muse-spark-open-1026")),
     async decide(
       input: InvestigationModelInput,

@@ -50,7 +50,7 @@ function scriptedAdapter(decisions: readonly InvestigationDecision[]): Investiga
   const modelId = mustOk(ModelId.parse("meta-models/muse-spark-open-1026"));
   let calls = 0;
   return {
-    provider: () => "hosted-open-weights",
+    provider: () => "meta-model-api",
     modelId: () => modelId,
     async decide(): Promise<Result<InvestigationDecision, InvestigationModelError>> {
       const next = decisions[Math.min(calls, decisions.length - 1)] as InvestigationDecision;

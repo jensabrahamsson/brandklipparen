@@ -73,102 +73,51 @@ function demoEnv(): EnvInput {
   };
 }
 
-describe("vendor-neutral provider for local development", () => {
-  const COMPAT_KEY = "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY";
-  const COMPAT_MODEL = "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID";
-  const COMPAT_URL = "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL";
-
-  function compatDemoEnv(): EnvInput {
-    const env = demoEnv();
-    delete env["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY"];
-    delete env["BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID"];
-    delete env["BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL"];
-    return {
-      ...env,
-      BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
-      BRANDKLIPPAREN_ASSESSMENT_PROMPT_VERSION: "1.0.0",
-      [COMPAT_KEY]: "fake-compat-key-for-tests-only",
-      [COMPAT_MODEL]: "fake-compat-model-1",
-      [COMPAT_URL]: "https://compat.example.invalid",
-    };
-  }
-
-  test("generic-compatible is accepted with all three values", () => {
-    const loaded = loadConfig(compatDemoEnv());
-    expect(loaded.ok).toBe(true);
-    if (!loaded.ok) {
-      return;
-    }
-    expect(loaded.value.assessmentProvider).toBe("generic-compatible");
-    expect(loaded.value.assessmentGenericCompatibleApiKey?.reveal()).toBe(
-      "fake-compat-key-for-tests-only",
-    );
-    expect(loaded.value.assessmentGenericCompatibleBaseUrl).toBe("https://compat.example.invalid");
-  });
-
-  test("generic-compatible loads with the assessment off when any value is missing (S-135)", () => {
-    for (const variable of [COMPAT_KEY, COMPAT_MODEL, COMPAT_URL]) {
-      const env = compatDemoEnv();
-      delete env[variable];
-      const loaded = loadConfig(env);
-      expect(loaded.ok).toBe(true);
+describe("removed assessment providers fail closed", () => {
+  test("removed provider values are a typed startup error", () => {
+    for (const removed of [
+      ["base", "ten-open-weights"].join(""),
+      ["open", "ai-compatible"].join(""),
+    ]) {
+      const loaded = loadConfig({ ...demoEnv(), BRANDKLIPPAREN_ASSESSMENT_PROVIDER: removed });
+      expect(loaded.ok).toBe(false);
       if (!loaded.ok) {
-        continue;
+        expect(loaded.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_PROVIDER");
       }
-      const binding = selectAssessmentBinding(loaded.value);
+    }
+  });
+
+  test("meta-model-api is accepted and off disables the assessment", () => {
+    const loaded = loadConfig(demoEnv());
+    expect(loaded.ok).toBe(true);
+    if (loaded.ok) {
+      expect(loaded.value.assessmentProvider).toBe("meta-model-api");
+    }
+    const off = loadConfig({ ...baseCiEnv(), BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "off" });
+    expect(off.ok).toBe(true);
+    if (off.ok) {
+      expect(off.value.assessmentProvider).toBeUndefined();
+      const binding = selectAssessmentBinding(off.value);
       expect(binding.ok).toBe(true);
-      if (!binding.ok) {
-        continue;
+      if (binding.ok) {
+        expect(binding.value).toEqual({ kind: "disabled" });
       }
-      expect(binding.value).toEqual({ kind: "disabled" });
     }
   });
 
-  test("generic-compatible rejects a non-https base URL without values", () => {
-    const env = compatDemoEnv();
-    env[COMPAT_URL] = "http://compat.example.invalid";
-    const loaded = loadConfig(env);
-    expect(loaded.ok).toBe(false);
-    if (!loaded.ok) {
-      expect(loaded.error.variable).toBe(COMPAT_URL);
-      const text = formatConfigError(loaded.error);
-      expect(text).toContain(COMPAT_URL);
-      expect(text.includes("fake-compat-key-for-tests-only")).toBe(false);
-    }
-  });
-
-  test("generic-compatible key is redacted in dumps and logs", () => {
-    const loaded = loadConfig(compatDemoEnv());
+  test("meta key is redacted in dumps and logs", () => {
+    const loaded = loadConfig(demoEnv());
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) {
       return;
     }
-    const secret = loaded.value.assessmentGenericCompatibleApiKey;
+    const secret = loaded.value.assessmentMetaApiKey;
     expect(secret).toBeDefined();
     if (secret === undefined) {
       return;
     }
-    expect(secret.reveal()).toBe("fake-compat-key-for-tests-only");
     expect(String(secret)).toBe("[REDACTED]");
-    expect(JSON.stringify(secret)).toBe('"[REDACTED]"');
-    expect(inspect(secret)).toContain("[REDACTED]");
-    expect(inspect(secret).includes("fake-compat-key-for-tests-only")).toBe(false);
-    const serialized = JSON.stringify(loaded.value);
-    expect(serialized).toContain("[REDACTED]");
-    expect(serialized.includes("fake-compat-key-for-tests-only")).toBe(false);
-  });
-
-  test("generic-compatible triple stays optional outside the demo", () => {
-    const loaded = loadConfig({
-      ...baseCiEnv(),
-      BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
-      [COMPAT_KEY]: "fake-compat-key-for-tests-only",
-      [COMPAT_MODEL]: "fake-compat-model-1",
-      [COMPAT_URL]: "https://compat.example.invalid",
-    });
-    expect(loaded.ok).toBe(true);
-    const bare = loadConfig(baseCiEnv());
-    expect(bare.ok).toBe(true);
+    expect(JSON.stringify(loaded.value).includes("fake-meta-key-for-tests-only")).toBe(false);
   });
 });
 
@@ -364,7 +313,7 @@ describe("typed config and secret handling at startup (K-505, K-510)", () => {
         fc.record({
           pepper: secretValue,
           metaKey: secretValue,
-          hostedKey: secretValue,
+          otherKey: secretValue,
           rpcUrl: fc.constant("https://rpc.example.invalid"),
           dropOne: fc.option(
             fc.constantFrom(
@@ -384,12 +333,11 @@ describe("typed config and secret handling at startup (K-505, K-510)", () => {
             BRANDKLIPPAREN_ENV: draw.breakEnv ? "broken-env-value" : "demo",
             BRANDKLIPPAREN_API_KEY_PEPPER: draw.pepper,
             BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: draw.metaKey,
-            BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY: draw.hostedKey,
           };
           if (draw.dropOne !== undefined) {
             delete env[draw.dropOne];
           }
-          const candidates = [draw.pepper, draw.metaKey, draw.hostedKey];
+          const candidates = [draw.pepper, draw.metaKey, draw.otherKey];
           const texts: string[] = [];
           const loaded = loadConfig(env);
           if (loaded.ok) {
@@ -417,41 +365,26 @@ describe("demo provider without key or model id means assessment off (S-135)", (
     "BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL",
   ] as const;
 
-  const hosted_VARS = [
-    "BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY",
-    "BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID",
-    "BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL",
-    "BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID",
-  ] as const;
-
-  const COMPAT_VARS = [
-    "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY",
-    "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID",
-    "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL",
-  ] as const;
-
-  function withoutProviderTriple(
-    provider: "meta-model-api" | "hosted-open-weights" | "generic-compatible",
-  ): EnvInput {
+  function withoutProviderTriple(provider: "meta-model-api"): EnvInput {
     const env: EnvInput = {
       ...demoEnv(),
       BRANDKLIPPAREN_ASSESSMENT_PROVIDER: provider,
     };
-    for (const name of [...META_VARS, ...hosted_VARS, ...COMPAT_VARS]) {
+    for (const name of META_VARS) {
       delete env[name];
     }
     return env;
   }
 
   function withProviderTriple(
-    provider: "meta-model-api" | "hosted-open-weights" | "generic-compatible",
+    provider: "meta-model-api",
     triple: Record<string, string>,
   ): EnvInput {
     const env: EnvInput = {
       ...demoEnv(),
       BRANDKLIPPAREN_ASSESSMENT_PROVIDER: provider,
     };
-    for (const name of [...META_VARS, ...hosted_VARS, ...COMPAT_VARS]) {
+    for (const name of META_VARS) {
       delete env[name];
     }
     return { ...env, ...triple };
@@ -492,54 +425,46 @@ describe("demo provider without key or model id means assessment off (S-135)", (
   }
 
   test("s135_demo_absent_assessment_key_means_off", () => {
-    // hosted open-weights selected with no model id and no key: the REST
-    // process starts and reports assessment off instead of exiting with
+    // Meta selected with no model id and no key: the REST process starts
+    // and reports assessment off instead of exiting with
     // "missing required variable".
-    expectAssessmentOff(withoutProviderTriple("hosted-open-weights"));
+    expectAssessmentOff(withoutProviderTriple("meta-model-api"));
     // Model id absent while the key is present still means off.
     expectAssessmentOff(
-      withProviderTriple("hosted-open-weights", {
-        BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY: "fake-hosted-key-for-tests-only",
-        BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL: "https://hosted.example.invalid",
-        BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID: "fake-deployment-1",
+      withProviderTriple("meta-model-api", {
+        BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-meta-key-for-tests-only",
+        BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta.example.invalid",
       }),
     );
     // Key absent while the model id is present still means off.
     expectAssessmentOff(
-      withProviderTriple("hosted-open-weights", {
-        BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID: "fake-open-weights-1",
-        BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL: "https://hosted.example.invalid",
-        BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID: "fake-deployment-1",
+      withProviderTriple("meta-model-api", {
+        BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "fake-meta-model-1",
+        BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta.example.invalid",
       }),
     );
-    // The same absence rule holds for the other two providers.
-    expectAssessmentOff(withoutProviderTriple("generic-compatible"));
-    expectAssessmentOff(withoutProviderTriple("meta-model-api"));
   });
 
   test("s135_present_but_malformed_assessment_value_stays_an_error", () => {
-    const badUrl = withProviderTriple("hosted-open-weights", {
-      BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY: "fake-hosted-key-for-tests-only",
-      BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID: "fake-open-weights-1",
-      BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL: "http://hosted.example.invalid",
-      BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID: "fake-deployment-1",
+    const badUrl = withProviderTriple("meta-model-api", {
+      BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-meta-key-for-tests-only",
+      BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "fake-meta-model-1",
+      BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "http://meta.example.invalid",
     });
     const loadedUrl = loadConfig(badUrl);
     expect(loadedUrl.ok).toBe(false);
     if (!loadedUrl.ok) {
-      expect(loadedUrl.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL");
+      expect(loadedUrl.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL");
     }
-    const badModel = withProviderTriple("generic-compatible", {
-      BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-compat-key-for-tests-only",
-      BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID: `m${"o".repeat(300)}`,
-      BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL: "https://compat.example.invalid",
+    const badModel = withProviderTriple("meta-model-api", {
+      BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-meta-key-for-tests-only",
+      BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: `m${"o".repeat(300)}`,
+      BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta.example.invalid",
     });
     const loadedModel = loadConfig(badModel);
     expect(loadedModel.ok).toBe(false);
     if (!loadedModel.ok) {
-      expect(loadedModel.error.variable).toBe(
-        "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID",
-      );
+      expect(loadedModel.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID");
     }
   });
 

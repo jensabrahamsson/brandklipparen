@@ -43,7 +43,7 @@ const PLUGINS_EMPTY = { plugins: [] };
 const PERSONALIZE_STATUS = {
   status: "ok",
   apiVersion: "v1",
-  personalize: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+  personalize: { provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" },
 };
 
 function liveEntry(partial: Record<string, unknown> = {}): Record<string, unknown> {

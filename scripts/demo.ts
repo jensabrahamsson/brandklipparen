@@ -287,9 +287,6 @@ export function buildViteChildEnv(
 // naming the selected provider, never a value or file contents.
 export const DEMO_ASSESSMENT_OFF_LINE = "assessment: off";
 export const DEMO_ASSESSMENT_META_READY_LINE = "assessment provider: meta-model-api (key loaded)";
-export const DEMO_ASSESSMENT_hosted_READY_LINE = "assessment provider: hosted-open-weights (key loaded)";
-export const DEMO_ASSESSMENT_generic_COMPATIBLE_READY_LINE =
-  "assessment provider: generic-compatible (key loaded)";
 
 export function demoAssessmentStatus(
   env: Readonly<Record<string, string | undefined>>,
@@ -298,25 +295,13 @@ export function demoAssessmentStatus(
   if (provider === "meta-model-api" && (env["BRANDKLIPPAREN_ASSESSMENT_META_API_KEY"] ?? "") !== "") {
     return DEMO_ASSESSMENT_META_READY_LINE;
   }
-  if (
-    provider === "hosted-open-weights" &&
-    (env["BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY"] ?? "") !== ""
-  ) {
-    return DEMO_ASSESSMENT_hosted_READY_LINE;
-  }
-  if (
-    provider === "generic-compatible" &&
-    (env["BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY"] ?? "") !== ""
-  ) {
-    return DEMO_ASSESSMENT_generic_COMPATIBLE_READY_LINE;
-  }
   return DEMO_ASSESSMENT_OFF_LINE;
 }
 
 // Demo default for the assessment provider: when the provider is unset
 // and a Meta key is configured (directly or via its pointer file), the
 // demo defaults the provider to meta-model-api. An explicit value
-// (including "off" and "generic-compatible") always wins. Pure: reads
+// (including "off") always wins. Pure: reads
 // names and presence only, never key values or file contents.
 export const DEMO_ASSESSMENT_META_PROVIDER = "meta-model-api";
 
@@ -342,8 +327,6 @@ export function withDemoAssessmentDefault(
 // naming the selected provider, never a value or file contents.
 export const DEMO_INVESTIGATE_OFF_LINE = "investigate: off";
 export const DEMO_INVESTIGATE_META_READY_LINE = "investigate provider: meta-model-api (key loaded)";
-export const DEMO_INVESTIGATE_hosted_READY_LINE =
-  "investigate provider: hosted-open-weights (key loaded)";
 
 export function demoInvestigateStatus(
   env: Readonly<Record<string, string | undefined>>,
@@ -351,12 +334,6 @@ export function demoInvestigateStatus(
   const provider = env["BRANDKLIPPAREN_INVESTIGATE_PROVIDER"] ?? "";
   if (provider === "meta-model-api" && (env["BRANDKLIPPAREN_INVESTIGATE_META_API_KEY"] ?? "") !== "") {
     return DEMO_INVESTIGATE_META_READY_LINE;
-  }
-  if (
-    provider === "hosted-open-weights" &&
-    (env["BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY"] ?? "") !== ""
-  ) {
-    return DEMO_INVESTIGATE_hosted_READY_LINE;
   }
   return DEMO_INVESTIGATE_OFF_LINE;
 }
@@ -568,8 +545,8 @@ export function demoExplainCodeStatus(
 // Experimental AI personalize default for the demo (brief 42): when the
 // personalize provider is unset and a Meta key is configured (directly
 // or via its pointer file), the demo defaults the mapping provider to
-// meta-model-api. An explicit value (including "off" and
-// "generic-compatible") always wins. Pure: reads names and presence
+// meta-model-api. An explicit value (including "off") always wins.
+// Pure: reads names and presence
 // only, never key values or file contents.
 export const DEMO_PERSONALIZE_META_PROVIDER = "meta-model-api";
 

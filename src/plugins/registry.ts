@@ -15,9 +15,7 @@ import { PLUGIN_API_VERSION, isSupportedApiVersion } from "./api.ts";
 import type { DetectorManifest, PluginId } from "./api.ts";
 import type { AssessmentPlugin } from "./assessment.ts";
 import type { DetectorPlugin } from "./detector.ts";
-import { hostedOpenWeightsAssessmentPlugin } from "./assessments/hosted-open-weights/index.ts";
 import { metaModelApiAssessmentPlugin } from "./assessments/meta-model-api/index.ts";
-import { GenericCompatibleAssessmentPlugin } from "./assessments/generic-compatible/index.ts";
 import { capabilityDetectorPlugin } from "./detectors/capability/index.ts";
 import { blacklistDetectorPlugin } from "./detectors/blacklist/index.ts";
 import { cloneMatchDetectorPlugin } from "./detectors/clone-match/index.ts";
@@ -213,15 +211,12 @@ export function getPlugin(registry: PluginRegistry, id: string): DetectorPlugin 
 }
 
 // First-party assessment set (S-045, P-12 step 3): the Meta Model API
-// adapter, the hosted open-weights adapter and the vendor-neutral
-// chat-completions adapter register as assessment plugins wrapping their
-// existing AssessmentModelPort implementations. The list is a frozen
-// static array; configuration selects exactly one of them as the active
-// plugin by plugin id and never names code to load (P-07).
+// adapter registers as the sole assessment plugin wrapping its existing
+// AssessmentModelPort implementation. The list is a frozen static array;
+// configuration selects it as the active plugin by plugin id and never
+// names code to load (P-07).
 export const ASSESSMENT_PLUGINS: readonly AssessmentPlugin[] = Object.freeze([
   metaModelApiAssessmentPlugin,
-  hostedOpenWeightsAssessmentPlugin,
-  GenericCompatibleAssessmentPlugin,
 ]);
 
 // The validated assessment registry: built through the same startup

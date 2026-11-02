@@ -79,22 +79,17 @@ example `BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE` or
 `ETHERSCAN_API_KEY_FILE`, absolute or repo-relative); the demo reads the
 file and sets the matching variable when it is not already set, so the
 environment wins over `.env.local`, which wins over the demo defaults.
-To try the model-assisted assessment against a temporary local
-chat-completions endpoint during development, set
-`BRANDKLIPPAREN_ASSESSMENT_PROVIDER=generic-compatible` together with
-`BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL` (the API root,
+To try the model-assisted assessment through the Meta Model API, set
+`BRANDKLIPPAREN_ASSESSMENT_PROVIDER=meta-model-api` together with
+`BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL` (the API root,
 for example ending in `/v1`; the adapter appends `/chat/completions`),
-`BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID` and
-`BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY`; the key may
+`BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID` and
+`BRANDKLIPPAREN_ASSESSMENT_META_API_KEY`; the key may
 instead be pointed to with
-`BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY_FILE` (an absolute
-path, or one relative to the repo root). Without `.env.local` the
-assessment stays off, exactly as before. Two optional variables tune the
-vendor-neutral request: `BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_TEMPERATURE`
-(a number in [0, 1]; when unset the request sends no sampling parameter
-at all, neither temperature nor top_p) and
-`BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MAX_TOKENS` (a bounded
-integer, default 4096 so a thinking model is not cut off). Any secret also loads from a
+`BRANDKLIPPAREN_ASSESSMENT_META_API_KEY_FILE` (an absolute
+path, or one relative to the repo root). Set
+`BRANDKLIPPAREN_ASSESSMENT_PROVIDER=off` (or leave it unset without a
+key) to keep the assessment off. Any secret also loads from a
 `<NAME>_FILE` pointer the same way, including `ETHERSCAN_API_KEY_FILE`
 for the optional LP feed (`lp feed: etherscan (key loaded)` when set,
 `lp feed: off` otherwise). The demo also points

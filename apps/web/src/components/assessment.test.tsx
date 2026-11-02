@@ -4,7 +4,7 @@ import { AssessmentPanel } from "./AssessmentPanel.tsx";
 import { RiskBadge } from "./RiskBadge.tsx";
 import type { ProviderInfo } from "../types.ts";
 
-const READY_PROVIDER: ProviderInfo = { status: "ready", provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" };
+const READY_PROVIDER: ProviderInfo = { status: "ready", provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" };
 const DISABLED_PROVIDER: ProviderInfo = { status: "disabled" };
 const LOADING_PROVIDER: ProviderInfo = { status: "loading" };
 
@@ -13,7 +13,7 @@ describe("assessment panel separation", () => {
     const html = renderToString(
       <AssessmentPanel state={{ status: "idle" }} score={84} provider={READY_PROVIDER} onRequest={() => undefined} />,
     );
-    expect(html).toContain("hosted-open-weights");
+    expect(html).toContain("Meta Model API");
     expect(html).toContain("meta-models/muse-spark-open-1026");
   });
 
@@ -22,7 +22,7 @@ describe("assessment panel separation", () => {
       <AssessmentPanel state={{ status: "idle" }} score={84} provider={DISABLED_PROVIDER} onRequest={() => undefined} />,
     );
     expect(html).toContain("not configured");
-    expect(html).not.toContain("hosted-open-weights");
+    expect(html).not.toContain("Meta Model API");
   });
 
   test("design_review_idle_shows_checking_while_health_loads", () => {
@@ -77,7 +77,7 @@ describe("assessment panel separation", () => {
         state={{
           status: "ready",
           text: "A hostile takeover narrative.",
-          provider: "hosted-open-weights",
+          provider: "meta-model-api",
           modelId: "meta-models/muse-spark-open-1026",
         }}
         score={84}

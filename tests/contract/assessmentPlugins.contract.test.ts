@@ -10,14 +10,8 @@ import { SecretString } from "../../src/ports/config.ts";
 import { ModelId, Selector, SignalId } from "../../src/domain/types.ts";
 import type { CodeHash, ModelId as ModelIdValue } from "../../src/domain/types.ts";
 import {
-  hostedOpenWeightsAdapter,
-} from "../../src/adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
-import {
   MetaModelApiAdapter,
 } from "../../src/adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
-import {
-  GenericCompatibleAdapter,
-} from "../../src/adapters/assessment/GenericCompatible/GenericCompatibleAdapter.ts";
 import { FakeAssessmentModelAdapter } from "../fakes/fakeAssessmentModel.ts";
 import type { AssessmentModelPort } from "../../src/ports/assessmentModel.ts";
 import { ASSESSMENT_PLUGINS } from "../../src/plugins/registry.ts";
@@ -170,88 +164,7 @@ function makeAdapterForPlugin(
         });
     }
   }
-  if (plugin.provider === "generic-compatible") {
-    const base = {
-      endpoint: "https://compat.example.invalid",
-      apiKey: new SecretString("fake-compat-key-for-tests-only"),
-      modelId: mustModelId("fake-compat-model-1"),
-    };
-    switch (scenario) {
-      case "success":
-        return new GenericCompatibleAdapter({
-          ...base,
-          transport: successTransport("compat-success.json"),
-        });
-      case "timeout":
-        return new GenericCompatibleAdapter({
-          ...base,
-          transport: hangingTransport(),
-          timeoutMs: 50,
-        });
-      case "rate-limited":
-        return new GenericCompatibleAdapter({
-          ...base,
-          transport: statusTransport(429, "rate limited"),
-        });
-      case "invalid-output":
-        return new GenericCompatibleAdapter({
-          ...base,
-          transport: fileTransport("compat-invalid-output.json"),
-        });
-      case "output-too-large":
-        return new GenericCompatibleAdapter({
-          ...base,
-          transport: fileTransport("compat-output-too-large.json"),
-        });
-      case "unavailable":
-        return new GenericCompatibleAdapter({ ...base, transport: failingTransport() });
-      case "provider-mismatch":
-        return new GenericCompatibleAdapter({
-          ...base,
-          transport: fileTransport("compat-provider-mismatch.json"),
-        });
-    }
-  }
-  const base = {
-    endpoint: "https://hosted.example.invalid",
-    apiKey: new SecretString("fake-hosted-key-for-tests-only"),
-    modelId: mustModelId("meta-models/muse-spark-open-1026"),
-  };
-  switch (scenario) {
-    case "success":
-      return new hostedOpenWeightsAdapter({
-        ...base,
-        transport: successTransport("hosted-success.json"),
-      });
-    case "timeout":
-      return new hostedOpenWeightsAdapter({
-        ...base,
-        transport: hangingTransport(),
-        timeoutMs: 50,
-      });
-    case "rate-limited":
-      return new hostedOpenWeightsAdapter({
-        ...base,
-        transport: statusTransport(429, "rate limited"),
-      });
-    case "invalid-output":
-      return new hostedOpenWeightsAdapter({
-        ...base,
-        transport: fileTransport("hosted-invalid-output.json"),
-      });
-    case "output-too-large":
-      return new hostedOpenWeightsAdapter({
-        ...base,
-        transport: fileTransport("hosted-output-too-large.json"),
-      });
-    case "unavailable":
-      return new hostedOpenWeightsAdapter({ ...base, transport: failingTransport() });
-    case "provider-mismatch":
-      return new hostedOpenWeightsAdapter({
-        ...base,
-        transport: fileTransport("hosted-provider-mismatch.json"),
-      });
-  }
+  throw new Error(`unsupported assessment provider: ${plugin.provider}`);
 }
 
 for (const plugin of ASSESSMENT_PLUGINS) {
@@ -265,8 +178,8 @@ runAssessmentModelPortContract(
   "fake assessment model",
   (scenario) =>
     new FakeAssessmentModelAdapter({
-      provider: "hosted-open-weights",
-      modelId: "fake-open-weights-1",
+      provider: "meta-model-api",
+      modelId: "fake-meta-spark-1",
       promptVersion: "1.0.0",
       scenario,
     }),

@@ -13,7 +13,6 @@ import type { PluginDocsError } from "../../../src/plugins/docs.ts";
 import { capabilityDetectorPlugin } from "../../../src/plugins/detectors/capability/index.ts";
 import { cloneMatchDetectorPlugin } from "../../../src/plugins/detectors/clone-match/index.ts";
 import { hardToAnalyzeDetectorPlugin } from "../../../src/plugins/detectors/hard-to-analyze/index.ts";
-import { hostedOpenWeightsAssessmentPlugin } from "../../../src/plugins/assessments/hosted-open-weights/index.ts";
 import { metaModelApiAssessmentPlugin } from "../../../src/plugins/assessments/meta-model-api/index.ts";
 import { feeCapabilityManifest } from "../../../examples/plugins/fee-capability/manifest.ts";
 
@@ -130,10 +129,6 @@ describe("required PLUGIN.md deterministic checks (S-052, K-517)", () => {
       { dir: "src/plugins/detectors/clone-match", manifest: cloneMatchDetectorPlugin.manifest },
       { dir: "src/plugins/detectors/hard-to-analyze", manifest: hardToAnalyzeDetectorPlugin.manifest },
       { dir: "src/plugins/assessments/meta-model-api", manifest: metaModelApiAssessmentPlugin.manifest },
-      {
-        dir: "src/plugins/assessments/hosted-open-weights",
-        manifest: hostedOpenWeightsAssessmentPlugin.manifest,
-      },
       { dir: "examples/plugins/fee-capability", manifest: feeCapabilityManifest },
     ];
     for (const entry of cases) {

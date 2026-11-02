@@ -30,7 +30,7 @@ export class FakePluginPersonalizeModelAdapter implements PluginPersonalizeModel
   }
 
   provider(): PluginPersonalizeProvider {
-    return "hosted-open-weights";
+    return "meta-model-api";
   }
 
   modelId(): ModelIdType {

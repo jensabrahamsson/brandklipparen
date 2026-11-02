@@ -174,7 +174,7 @@ K-402)
 |---|---|---|---|---|
 | Local | Outbound calls only for explicit fixture fetching under A-24; tests run against recorded fixtures | Only names in `.env.example` under I-08; the developer's own keys in a local environment variable for live debugging | Frozen fixtures with code hash | One developer |
 | Test/CI | Outbound network disabled in the test, coverage and determinism jobs under I-01 | CI secrets from the GitHub Actions secret store only for scanning and release under I-03 | Frozen fixtures with code hash | Ephemeral runners, one job per gate step |
-| Demo | Outbound calls only to allowlisted RPC hosts and the selected assessment provider (Meta Model API or hosted) under I-11, I-13 and I-18 | Real keys in the platform secret store under I-09 | Fresh public on-chain data that the project fetches itself | Public, quota-limited under I-12 and I-14 |
+| Demo | Outbound calls only to allowlisted RPC hosts and the selected assessment provider (Meta Model API) under I-11, I-13 and I-18 | Real keys in the platform secret store under I-09 | Fresh public on-chain data that the project fetches itself | Public, quota-limited under I-12 and I-14 |
 
 Acceptance: The integration test `i07_test_suite_makes_no_network_calls`
 runs the test suite with a network fake that counts every outbound call
@@ -212,10 +212,10 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_RPC_MAX_CONCURRENCY` | Parallel RPC calls under A-17 | No | Demo |
 | `BRANDKLIPPAREN_RPC_RETRY_BUDGET` | Retries with backoff rate per RPC call under A-17 | No | Demo |
 | `BRANDKLIPPAREN_RPC_MAX_RESPONSE_BYTES` | Size limit for RPC responses under A-17 | No | Demo |
-| `BRANDKLIPPAREN_ASSESSMENT_DEADLINE_MS` | Time limit per assessment call under A-17, for both providers under I-13 | No | Demo |
-| `BRANDKLIPPAREN_ASSESSMENT_MAX_INPUT_BYTES` | Input size limit per assessment call under A-17, for both providers | No | Demo |
-| `BRANDKLIPPAREN_ASSESSMENT_MAX_OUTPUT_BYTES` | Output size limit per assessment call under A-17, for both providers | No | Demo |
-| `BRANDKLIPPAREN_ASSESSMENT_MAX_CONCURRENCY` | Parallel assessment calls under A-17, for both providers | No | Demo |
+| `BRANDKLIPPAREN_ASSESSMENT_DEADLINE_MS` | Time limit per assessment call under A-17, for the provider under I-13 | No | Demo |
+| `BRANDKLIPPAREN_ASSESSMENT_MAX_INPUT_BYTES` | Input size limit per assessment call under A-17, for the provider | No | Demo |
+| `BRANDKLIPPAREN_ASSESSMENT_MAX_OUTPUT_BYTES` | Output size limit per assessment call under A-17, for the provider | No | Demo |
+| `BRANDKLIPPAREN_ASSESSMENT_MAX_CONCURRENCY` | Parallel assessment calls under A-17, for the provider | No | Demo |
 | `BRANDKLIPPAREN_DEMO_PUBLIC_URL` | Canonical public demo URL that the README links under I-12 and I-15 | No | Demo |
 | `BRANDKLIPPAREN_CACHE_DIR` | Directory or volume for cache per code hash under K-013 | No | Local, demo |
 | `BRANDKLIPPAREN_API_KEY_PEPPER` | Secret component in the salted hashing of API keys under K-510 | Yes | Demo |
@@ -224,27 +224,17 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_GLOBAL_RATE_PER_MINUTE` | Global rate limit for the demo under I-12 | No | Demo |
 | `BRANDKLIPPAREN_RATE_LIMIT_PER_KEY_GLOBAL_SHARE_PERCENT` | Largest share of the global minute window one API key may use, in percent (1 to 100, default 50 when unset) under I-12 | No | Optional in every setup |
 | `BRANDKLIPPAREN_AI_GLOBAL_DAILY_CALLS` | Global daily cap for Meta Model API calls across all API keys (positive integer, default 1000 when unset) under I-14 | No | Optional in every setup |
-| `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` | Daily cap for assessment calls per API key under I-14, for both providers | No | Demo |
+| `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` | Daily cap for assessment calls per API key under I-14, for the provider | No | Demo |
 | `BRANDKLIPPAREN_LOG_LEVEL` | Log level: `debug`, `info`, `warn` or `error` under I-10 | No | All |
-| `BRANDKLIPPAREN_ASSESSMENT_PROVIDER` | Selected assessment provider under K-309: `meta-model-api` (recommended), `hosted-open-weights` or `generic-compatible` (local development only); exactly one adapter is bound at startup per A-34. The demo defaults to `meta-model-api` when a Meta key is configured unless set explicitly | No | Demo |
+| `BRANDKLIPPAREN_ASSESSMENT_PROVIDER` | Selected assessment provider under K-309: `meta-model-api` or `off`; exactly one adapter is bound at startup per A-34. The demo defaults to `meta-model-api` when a Meta key is configured unless set explicitly | No | Demo |
 | `BRANDKLIPPAREN_ASSESSMENT_PROMPT_VERSION` | Prompt version for the Muse contract assessment; part of the cache key per K-305 and K-309 | No | Demo |
 | `BRANDKLIPPAREN_ASSESSMENT_META_API_KEY` | Key for the Meta Model API (Muse Spark), server-side only under I-13 | Yes | Demo with the Meta provider selected |
 | `BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID` | Model id for the Meta Model API provider, shown per assessment under K-305 | No | Demo with the Meta provider selected |
 | `BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL` | Allowlisted endpoint for the Meta Model API, validated at startup under K-503 | No | Demo with the Meta provider selected |
-| `BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY` | Key for hosted (Muse Spark Open), server-side only under I-13 and I-18 | Yes | Demo with the hosted provider selected |
-| `BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID` | Model id for the hosted provider: `meta-models/muse-spark-open-1026` per K-309 | No | Demo with the hosted provider selected |
-| `BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL` | Allowlisted endpoint for the hosted deployment, validated at startup under K-503 and I-18 | No | Demo with the hosted provider selected |
-| `BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID` | Deployment identifier for the hosted open-weights serving under I-18 | No | Demo with the hosted provider selected |
-| `BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY` | Key for the vendor-neutral chat-completions provider, server-side only under I-13 | Yes | Local development with the vendor-neutral provider selected |
-| `BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID` | Model id for the vendor-neutral provider, shown per assessment under K-305 | No | Local development with the vendor-neutral provider selected |
-| `BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL` | Base URL for the vendor-neutral provider (temporary local endpoint), validated at startup under K-503 | No | Local development with the vendor-neutral provider selected |
-| `BRANDKLIPPAREN_INVESTIGATE_PROVIDER` | Selected investigation provider: `meta-model-api`, `hosted-open-weights` or `off`; exactly one adapter is bound at startup. The demo defaults to `meta-model-api` when the assessment Meta key file is set unless set explicitly; `off` or a provider without its key leaves the loop answering not-configured | No | Demo with the investigation loop enabled |
+| `BRANDKLIPPAREN_INVESTIGATE_PROVIDER` | Selected investigation provider: `meta-model-api` or `off`; exactly one adapter is bound at startup. The demo defaults to `meta-model-api` when the assessment Meta key file is set unless set explicitly; `off` or a provider without its key leaves the loop answering not-configured | No | Demo with the investigation loop enabled |
 | `BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL` | Allowlisted endpoint for the Meta Model API investigation loop, validated at startup under K-503; unset leaves the loop answering not-configured | No | Demo with the Meta investigation provider selected |
 | `BRANDKLIPPAREN_INVESTIGATE_META_API_KEY` | Key for the Meta Model API investigation loop, server-side only under K-505; loads only via its `*_FILE` pointer | Yes | Demo with the Meta investigation provider selected |
 | `BRANDKLIPPAREN_INVESTIGATE_META_MODEL_ID` | Model id for the Meta Model API investigation loop: `muse-spark-1.3` per K-036 | No | Demo with the Meta investigation provider selected |
-| `BRANDKLIPPAREN_INVESTIGATE_hosted_BASE_URL` | Allowlisted endpoint for the investigation deployment, validated at startup under K-503; unset leaves the loop answering not-configured | No | Demo with the investigation loop enabled |
-| `BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY` | Key for the investigation deployment (Muse Spark Open), server-side only under K-505 | Yes | Demo with the investigation loop enabled |
-| `BRANDKLIPPAREN_INVESTIGATE_hosted_MODEL_ID` | Model id for the investigation loop: `meta-models/muse-spark-open-1026` per K-036 | No | Demo with the investigation loop enabled |
 | `BRANDKLIPPAREN_INVESTIGATE_DEADLINE_MS` | Wall-clock budget per investigation under A-17 | No | Demo with the investigation loop enabled |
 | `BRANDKLIPPAREN_INVESTIGATE_MAX_INPUT_BYTES` | Input size budget per investigation call under A-17 | No | Demo with the investigation loop enabled |
 | `BRANDKLIPPAREN_INVESTIGATE_MAX_OUTPUT_BYTES` | Output size budget per investigation call under A-17 | No | Demo with the investigation loop enabled |
@@ -280,8 +270,7 @@ table. (K-008, K-503, K-505, A-05, A-15, M-07, M-11)
 | `BRANDKLIPPAREN_SOURCE_PROVIDER` | Selected verified-source provider: `sourcify` or `off`; the open source-verification API is primary with the block explorer source endpoint as fallback (only when `ETHERSCAN_API_KEY` is set). The demo defaults to `sourcify` unless set explicitly; `off` or unset leaves the source route answering unavailable with zero sends. Never in the score | No | Demo with verified sources enabled |
 
 The selected provider's variables are required in the demo per the
-table; the other provider's key stays in the secret store for a
-configuration switch. Ahead of an explicit assessment request, the
+table. Ahead of an explicit assessment request, the
 analysis path runs with zero assessment calls under I-16. The operations limits in the table are filled
 with values in the versioned operations configuration under I-11, I-12
 and I-14; the risk model's learned values live only in the calibration
@@ -311,7 +300,7 @@ under I-02 as the check. Each new key is created in Jens
 Abrahamsson's name for this project, with least privilege
 for its task: read permission for RPC access, separate keys
 per environment (local, CI and demo under I-07), and a dedicated key per
-assessment provider (Meta Model API and hosted per K-309 and I-18).
+assessment provider (Meta Model API per K-309 and I-18).
 Each provider key is scoped to its provider and model, stored in the
 platform secret store, and rotated on the same schedule. Each key has a
 record outside the repo with owner (Jens Abrahamsson), purpose, scope,
@@ -372,11 +361,11 @@ output. (K-104, K-509, A-29, M-16)
 
 Redaction happens in the logging library configuration with named
 paths (`req.headers.authorization`, `req.headers.*key*`,
-`*.apiKey`, `*.rpcUrl` and the corresponding fields for both assessment
-provider keys):
+`*.apiKey`, `*.rpcUrl` and the corresponding fields for the assessment
+provider key):
 API keys, `Authorization` headers and other
-authentication headers, RPC URLs with an embedded key, and both
-assessment provider keys are replaced with a fixed redaction marker before output.
+authentication headers, RPC URLs with an embedded key, and the
+assessment provider key is replaced with a fixed redaction marker before output.
 Timestamps are written in UTC, and the logs go to the process stdout
 so the platform under I-11 collects them per container and day.
 Prompts are logged as prompt version and evidence IDs under K-302, with
@@ -416,13 +405,11 @@ the table, and Modal is chosen for the demo application:
 | Platform (credit) | Fit for the demo | Role in the project |
 |---|---|---|
 | Modal | Web endpoints, containers that scale to zero, isolated execution, volumes and secret store in the same platform | Chosen platform for the public demo application under this rule |
-| hosted | Serving of open-weight models with GPU inference as the core offering | Serves Muse Spark Open with model id `meta-models/muse-spark-open-1026` for the hosted assessment adapter under I-18 |
-| Fireworks | Inference API for open models as the core offering | The project uses the Meta Model API and hosted per I-13 and I-18 for the assessment providers |
+| Meta Model API | Hosted Meta model access through the configured model id | Serves Muse Spark with the configured model id `muse-spark-1.3` for the Meta Model API assessment adapter under I-18 |
 
 Brandklipparen serves its risk model as a frozen artifact in
 the process under A-20 and delivers the Muse contract assessment
-through the selected provider per K-309 (Meta Model API or hosted
-open weights), so the demo application choice is decided by containers,
+through the Meta Model API per K-309, so the demo application choice is decided by containers,
 sandbox and operations in the same platform.
 (K-008, K-402, K-501, A-17, A-20, A-27, M-01, M-02)
 
@@ -434,7 +421,7 @@ sandbox and operations in the same platform.
 | Internal decompiler | Same container as the API | Deterministic in-process engine behind `DecompilerPort` under A-27; bytecode as the sole input flow under M-01 |
 | Cache and index | Modal volume | Cache entries per code hash and model version under K-013, clone index and calibration artifact as versioned files |
 | Database for keys and consumption | Modal-managed storage behind the adapter | Salted key hashes, quotas and consumption per key under K-510 and I-14 |
-| Assessment calls | Outbound HTTPS calls from the API container to the selected assessment provider (Meta Model API or hosted) | Solely after an explicit assessment request under I-13 and I-18 |
+| Assessment calls | Outbound HTTPS calls from the API container to the selected assessment provider (Meta Model API) | Solely after an explicit assessment request under I-13 and I-18 |
 | RPC calls | Outbound HTTPS calls from the API container to allowlisted RPC hosts | Bytecode, storage and block number under K-001 |
 
 Deployment of the demo happens from the CI job `build` under I-01 and
@@ -493,7 +480,7 @@ holds per key; the limits are read from the configuration under I-08
 and are summarised in the table. Exceeding a limit produces a
 machine-readable error with the HTTP status for rate limiting exceeded
 and a retry time under A-18. Expensive steps (in-process decompilation
-and Muse contract assessment calls for either provider per K-309)
+and Muse contract assessment calls for the provider per K-309)
 require a valid key with
 remaining quota under K-504; cached responses are delivered within the
 same rate limits and continue within the per-key daily caps under I-14.
@@ -523,12 +510,11 @@ The project calls Muse only from the server through
 `AssessmentModelPort` under A-05 and A-34. Muse is the product's
 only AI model in the assessment. Configuration per I-08 selects exactly
 one provider at startup: Meta Model API with Muse Spark through
-`BRANDKLIPPAREN_ASSESSMENT_META_API_KEY`, or hosted open weights per
-I-18 through `BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY`. Each key lives
+`BRANDKLIPPAREN_ASSESSMENT_META_API_KEY` per I-18, or `off`.
+The key lives
 in the platform secret store under I-09 and leaves the server only as
-an authentication header to the selected provider's allowlisted
-endpoint (`BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL` or
-`BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL`), validated at startup
+an authentication header to the provider's allowlisted
+endpoint (`BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL`), validated at startup
 under K-503. Ahead of an explicit assessment request, each interface
 shows the template text under K-301 and the analysis makes zero
 assessment calls under I-16. After a request, the selected adapter
@@ -538,7 +524,7 @@ input and output size limits per K-309, valid text is labelled with
 provider and model id and cached per code hash, prompt version,
 provider and model id under K-013, and each error branch produces the
 template text under K-306 with the assessment field stating the
-fallback. Both adapters are MVP per K-309; the demo default provider
+fallback. The adapter is MVP per K-309; the demo default provider
 is the open decision for Jens in section 13 of
 `docs/requirements.md`, and the selected provider works in the demo in
 either selection. (K-305, K-309, K-302, K-307, K-502, K-513, A-19,
@@ -549,7 +535,7 @@ Acceptance: The integration test
 text in each interface and zero calls to `AssessmentModelPort` ahead
 of a request, for each provider selection; the integration test
 `k305_client_response_has_no_model_key` searches for key patterns for
-both providers in each client response and requires zero hits;
+the provider in each client response and requires zero hits;
 the integration test
 `k305_refined_text_cached_per_codehash_and_template_version`
 requires that a cache hit with the full key per K-309 consumes zero new
@@ -557,33 +543,30 @@ assessment calls; the unit test
 `k307_scores_and_evidence_identical_with_and_without_adapter`
 requires bit-identical probabilities, scores, signals and evidence
 with and without an assessment, for each adapter; the contract suite
-`runAssessmentModelPortContract` is green against both adapters and
+`runAssessmentModelPortContract` is green against the adapter and
 the fake per K-309.
 
-**I-18 hosted deployment of the open-weight model.**
-The project serves Muse Spark Open on hosted with model id
-`meta-models/muse-spark-open-1026` for the hosted assessment adapter
-per K-309. The deployment is configured through
-`BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL`,
-`BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID` and
-`BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID` under I-08, with the
-key `BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY` in the platform secret
-store under I-09. The deployment states model id, deployment id and
+**I-18 Meta Model API access for the assessment model.**
+The project calls Muse Spark through the Meta Model API with the
+configured model id `muse-spark-1.3` for the Meta Model API assessment
+adapter per K-309. Access is configured through
+`BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL` and
+`BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID` under I-08, with the
+key `BRANDKLIPPAREN_ASSESSMENT_META_API_KEY` in the platform secret
+store under I-09. The provider states model id and
 health in its operator view, scales within the per-key daily caps per I-14, and
 answers solely assessment requests from the demo server with the key
-as a server-side header. Running on this deployment qualifies the
-project for the bonus prize "Best Build on Meta Open Weight Models"
-per K-309. The deterministic core runs in the demo application per
-I-11 and makes zero calls to the deployment ahead of an explicit
+as a server-side header. The deterministic core runs in the demo application per
+I-11 and makes zero calls to the provider ahead of an explicit
 assessment request. (K-305, K-309, K-402, K-513, A-34, M-09, M-20)
 
 Acceptance: The integration test
-`k309_hosted_adapter_uses_open_weights_model_id` requires model id
-`meta-models/muse-spark-open-1026` and provider and model labelling on
-each hosted assessment response; the contract suite
-`runAssessmentModelPortContract` is green against the hosted adapter
-over a recorded transport; the health check per I-12 shows the hosted
-provider status with the deployment selected.
+`k309_meta_adapter_uses_configured_model_id` requires model id
+`muse-spark-1.3` and provider and model labelling on
+each Meta Model API assessment response; the contract suite
+`runAssessmentModelPortContract` is green against the Meta Model API adapter
+over a recorded transport; the health check per I-12 shows the Meta Model API
+provider status when selected.
 
 ## 8. Costs
 
@@ -612,9 +595,9 @@ zero paid calls under I-07. (K-013, K-107, K-504, K-513, M-08, M-09)
 
 | Cap (v1) | Configuration variable under I-08 | Scope | Enforced through |
 |---|---|---|---|
-| At most one assessment call per uncached request | Fixed rule in the assessment path per K-305 | Each assessment request, both providers | Caching per code hash, prompt version, provider and model id under K-013 and K-309, with call counting per request in the log under I-10 |
+| At most one assessment call per uncached request | Fixed rule in the assessment path per K-305 | Each assessment request, the provider | Caching per code hash, prompt version, provider and model id under K-013 and K-309, with call counting per request in the log under I-10 |
 | Zero external calls on a cache hit | `CacheKey` under A-10 | Each cache hit | Cache lookup before RPC, decompilation and assessment in the request path |
-| Daily cap for assessment calls per key | `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` | Each API key, both providers | Per-key, per-day meter in the assessment service; the key's assessment steps close at the cap and the template text under K-301 keeps responding |
+| Daily cap for assessment calls per key | `BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS` | Each API key, the provider | Per-key, per-day meter in the assessment service; the key's assessment steps close at the cap and the template text under K-301 keeps responding |
 | Global daily cap for Meta Model API calls | `BRANDKLIPPAREN_AI_GLOBAL_DAILY_CALLS` (default 1000 when unset) | All API keys together, per day | Global per-day meter in the assessment service and the overlay budgets; past the cap the AI features return their unavailable or capped state with zero provider calls, and scores and evidence stand |
 | At most one investigation per uncached request | Fixed rule in the investigation path per K-036 | Each investigation request | Caching per code hash, prompt version, provider and model id, with the trace replayed from the recorded-trace library |
 | Daily cap for investigations per key | `BRANDKLIPPAREN_INVESTIGATE_DAILY_CAP_PER_KEY` | Each API key | Consumption measurement per key and day; the key's investigation steps close at the cap with a typed `budget-exhausted` outcome and the deterministic analysis standing |
@@ -656,7 +639,7 @@ and writes the result to the change's review record.
    structure under A-01, the use of Muse as the build tool through
    Muse Code under section 9 of `docs/requirements.md`, the deterministic
    analysis under K-102, the Muse contract assessment per K-305 and
-   K-309 with both providers and the run
+   K-309 with the provider and the run
    instructions for the demo locally.
 4. The run instructions are verified from a clean clone on a
    second machine under K-403: installation from the lockfile,

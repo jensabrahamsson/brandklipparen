@@ -192,8 +192,7 @@ export class FakeAssessmentModelAdapter implements AssessmentModelPort {
         return this.validated(
           evidence,
           this.canned(evidence, promptVersion, {
-            provider:
-              this.providerName === "meta-model-api" ? "hosted-open-weights" : "meta-model-api",
+            provider: "unknown-provider",
           }),
           promptVersion,
         );
@@ -211,7 +210,7 @@ export class FakeAssessmentModelAdapter implements AssessmentModelPort {
     promptVersion: PromptVersionType,
     override?: {
       text?: string;
-      provider?: AssessmentProvider;
+      provider?: string;
       claims?: ReadonlyArray<{
         text: string;
         signalLinks: readonly string[];

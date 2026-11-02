@@ -248,10 +248,10 @@ holds by construction and by CI enforcement, not by convention.
 | Score influence | Plugin findings are reported with weight 0. A finding enters the score only after calibration names it in the versioned model artifact (P-05). |
 | Registry exposure | One registry drives the REST plugin list and analysis output, the MCP tool surface, and the generic web UI panel (P-08–P-10). |
 | Isolation | Detector plugins run in-process as trusted, pure, size-bounded functions in v1. Worker isolation is a precondition for any untrusted detector code (P-06). Assessment plugins keep the existing port limits, deadline, and cost caps. |
-| Plugin audit | Deterministic static checks first, then an optional advisory AI review through a dedicated audit port on the existing hosted open-weights transport. The AI result never approves a plugin and never affects scores or evidence (P-13, P-14). |
+| Plugin audit | Deterministic static checks first, then an optional advisory AI review through a dedicated audit port on the existing Meta Model API transport. The AI result never approves a plugin and never affects scores or evidence (P-13, P-14). |
 | Plugin documentation | Every plugin ships a required `PLUGIN.md` with a strict YAML frontmatter (`id`, `kind`, `version`, controlled-vocabulary `tags`, `audience`, severity range on the domain `low \| medium \| high` scale) and fixed plain-English sections, validated deterministically in CI and exposed read-only through REST, MCP, and the web UI with sanitized rendering (P-15 refined, P-16). The audit checks documented claims against the code (P-17). |
 | Adaptive web UI (after plugin core) | Schema-driven rendering from each plugin's `outputSchema` through a fixed component library, a deterministic risk-adaptive layout, and a Simple / Expert toggle persisted locally (P-18–P-20). No per-plugin UI code. |
-| Experimental AI presentation | One mode only: AI personalize (P-27). Off by default. Muse Spark Open returns one declarative ranking-plus-layout spec that only chooses, orders, and emphasises whitelisted sections and plugin cards. It never emits HTML, code, URLs, or styles and never changes scores, evidence, or finding text. Invalid or missing spec falls back to the deterministic baseline (P-25), then to the deterministic layout (P-19). The former separate AI layout mode is retired before implementation (section 0.1). |
+| Experimental AI presentation | One mode only: AI personalize (P-27). Off by default. Muse Spark returns one declarative ranking-plus-layout spec that only chooses, orders, and emphasises whitelisted sections and plugin cards. It never emits HTML, code, URLs, or styles and never changes scores, evidence, or finding text. Invalid or missing spec falls back to the deterministic baseline (P-25), then to the deterministic layout (P-19). The former separate AI layout mode is retired before implementation (section 0.1). |
 | User-priority personalization — **demo headline innovation** | The UI shows what the **user** says matters to them. Priorities are free text stored locally only, matched deterministically to plugin frontmatter tags (no network), and only ever sent to a model when the user explicitly opts in to the single experimental AI personalize mode for that mapping call. Critical findings are never hidden and scores, evidence, and finding text never change (section 14, P-24–P-28). |
 
 Note on status: story S-042 (plugin API, manifest validation, and the
@@ -309,7 +309,7 @@ table is the load-bearing summary the review asked for.
 | Detector weight 0 until artifact promotion (P-05) | Let a manifest declare a capped weight (for example max 5 points) so useful detectors score immediately | A plugin grading its own findings breaks the calibration separation (K-210); caps still need evaluation data to set, so the saving is illusory and the gaming channel is real | Never for self-declared weights; promotion speed is an offline-chain problem, not a manifest field |
 | Static registration trust: in-process detectors (P-06) | Worker-isolate every detector from day one (plugin-worker style) | Correct for untrusted code, costly for three reviewed first-party functions: process hops, serialisation of bytecode per detector, deadline tuning before any evidence a detector misbehaves | The first unreviewed detector registers (then it is a precondition, S-050, not a choice) |
 | TS types + JSON Schema descriptor, no schema library (3.3) | zod (or similar) as single source of truth, deriving types and JSON Schema | New runtime dependency under K-506/I-04 plus a second idiom beside the repo's smart constructors; the closed shapes here are small and the dual representations are contract-tested against each other | A plugin shape outgrows plain checks (deep recursion, cross-field rules) in a shipped story |
-| Separate audit port, shared transport (P-14) | Reuse `AssessmentModelPort` for audit calls | Inputs differ in kind (whole source files vs the closed K-302 evidence list), lifecycle differs (CI/operator vs on-request), and reuse would force source-file branches into the assessment contract suite and muddy the K-307 freeze proof. Sharing the hosted transport helper keeps the saving without the leak | The audit port's second method ever mirrors an assessment call shape-for-shape |
+| Separate audit port, shared transport (P-14) | Reuse `AssessmentModelPort` for audit calls | Inputs differ in kind (whole source files vs the closed K-302 evidence list), lifecycle differs (CI/operator vs on-request), and reuse would force source-file branches into the assessment contract suite and muddy the K-307 freeze proof. Sharing the Meta Model API transport helper keeps the saving without the leak | The audit port's second method ever mirrors an assessment call shape-for-shape |
 | One unified AI personalize mode (P-27) | Ship AI layout first, add a separate ranking mode later with a precedence rule | Two specs can disagree (ranking says A first, layout buries A), so the precedence rule becomes a third design; two ports, suites, caches, and toggles for one presentation concern | A caller needs layout with no priorities concept at all (none exists; the web UI is the only caller) |
 | Local-only priorities (P-24) | Server profile per API key, synced across devices | Priorities are PII-ish free text; a profile adds storage, retention, log-scrubbing, and consent surface to save the user retyping one sentence. Local-only makes "never leaves the device" true by architecture (H-26) | The product gains accounts for an unrelated reason and users ask for sync |
 | Deterministic matcher before any AI (P-25 before P-27) | AI-first mapping (model reads priorities, matcher as fallback) | The demo headline must work offline, free, and explainably ("Matched: honeypot, fees"); an AI-first headline fails closed to a worse demo without a key and cannot be golden-tested | The deterministic matcher measurably misses on real demo phrasings and the AI mode has shipped and proven stable |
@@ -516,8 +516,7 @@ per A-32. Section 5.1 states the enforcement.
 
 **P-04 Assessment plugins wrap `AssessmentModelPort`.** An assessment
 plugin is an `AssessmentModelPort` implementation plus a manifest with
-`kind: "assessment"`. The existing Meta Model API adapter and hosted
-open-weights adapter become the first two assessment plugins by
+`kind: "assessment"`. The existing Meta Model API adapter becomes the first assessment plugin by
 registration; the port, its error union (A-15), its limits (A-17), the
 contract suite `runAssessmentModelPortContract`, and the exactly-one
 selection in the composition root (A-03, A-34) all stay as they are.
@@ -857,7 +856,7 @@ step except for the reviewed additive `pluginResults` field.
 | 0 | S-042 | Plugin API types, manifest smart constructors, registry builder with startup validation, proposed K-IDs entered in `docs/requirements.md`, threat-model rows from section 10 merged. No behaviour change; the registry starts empty beside the existing path. | Nothing yet; the empty registry is the only addition. |
 | 1 | S-043 | The capability detector becomes the detector plugin `dev.brandklipparen.capability`, wrapping the existing `detectCapabilities` logic moved behind `detect`. `analyzeToken` calls it through the registry. Its findings convert to today's `Signal` values through the existing catalogue path, so scores stay bit-identical; the plugin also reports findings with weight 0 in `pluginResults` during this step only as a shadow record checked equal to the converted signals in tests. | The direct `detectCapabilities` call in `analyzeToken` and the shadow comparison, once parity tests pass in the same story. |
 | 2 | S-044 | Clone matching becomes `dev.brandklipparen.clone-match` over the `cloneMatch` input. The hard-to-analyze synthesis in `analyzeToken` becomes `dev.brandklipparen.hard-to-analyze`, fed by the deepening outcome as a declared host fact. | Direct `cloneMatchSignal` wiring and the inline fallback-signal construction in `analyzeToken`. |
-| 3 | S-045 | The two assessment adapters register as assessment plugins (`dev.brandklipparen.assessment.meta-model-api`, `dev.brandklipparen.assessment.hosted-open-weights`) wrapping their existing `AssessmentModelPort` implementations. Composition still binds exactly one active adapter (A-34). | The provider-selection branches that name concrete adapters outside the registry registration; selection by configured plugin id replaces them in the same story. |
+| 3 | S-045 | The assessment adapter registers as an assessment plugin (`dev.brandklipparen.assessment.meta-model-api`) wrapping its existing `AssessmentModelPort` implementation. Composition still binds exactly one active adapter (A-34). | The provider-selection branches that name concrete adapters outside the registry registration; selection by configured plugin id replaces them in the same story. |
 | 4 | S-046 | Registry exposure ships: `GET /v1/plugins`, `pluginResults` in the envelope and REST schema, the `list_plugins` MCP tool, and the generic Plugins panel in the web UI. | Hand-written per-detector rendering and any per-detector response shaping in the interfaces. |
 | 5 | S-047 | Calibration promotion path: the offline chain can name a plugin finding in a new artifact version, and the host converts promoted findings to signals ahead of `score`. | The interim conversion special cases from steps 1–2; one conversion path through the artifact mapping remains. |
 | 6 | S-047 (same story, final commit) | Callers in REST, MCP, and web UI read solely registry output. A repository search for the legacy detector entry points (`detectCapabilities`, `cloneMatchSignal` as direct service calls) returns hits only inside plugin modules and their tests. | Any remaining dual path. The migration ends here; running both paths past this step is a defect, not a phase. |
@@ -1016,10 +1015,10 @@ the named points; none blocks S-042:
    recorded human acceptance becomes a required PR check (rather than
    review practice) is Jens's call before S-054 starts.
 6. Audit provider scope. The default in P-14 sends plugin source solely
-   to Muse Spark Open on hosted through the existing assessment
+   to Muse Spark on Meta Model API through the existing assessment
    provider path. Whether the Meta Model API adapter may also run audit
    reviews, and whether audit may run against plugins whose authors have
-   not consented to source disclosure, is open; the default is hosted
+   not consented to source disclosure, is open; the default is Meta Model API
    only, opt-in per run, with the source files listed before any send.
 7. Docs endpoint scope. The default in P-16 exposes `PLUGIN.md` content
    read-only to the same API-key holders as `GET /v1/plugins`. Whether
@@ -1041,7 +1040,7 @@ the named points; none blocks S-042:
 11. Priorities on the demo. The default in P-24 keeps priorities
     local-only with the deterministic baseline (P-25) as the demo
     path. Whether the public demo enables the AI personalize toggle
-    at all (it sends the visitor's priorities text to hosted for
+    at all (it sends the visitor's priorities text to Meta Model API for
     that mapping call and costs a provider call per uncached view)
     is Jens's call before S-070 starts; the default is demo-off for
     the AI toggle, locally testable with a key, with the
@@ -1100,9 +1099,9 @@ phases, and the second phase never runs when the first fails:
 2. Optional AI review. Only after the deterministic phase passes, and
    only when the operator opts in for that run, the audit sends the
    plugin source, its manifest, and its `PLUGIN.md` to Muse Spark
-   Open (`meta-models/muse-spark-open-1026`) on hosted for a
+   Open (`muse-spark-1.3`) on Meta Model API for a
    vulnerability and semantic-drift review (P-14, P-17). Without a
-   configured hosted key the AI phase reports the typed outcome
+   configured Meta Model API key the AI phase reports the typed outcome
    `not configured` — the same posture as the assessment path, where
    an unconfigured provider answers `assessment-not-configured` and
    makes zero provider calls — and the deterministic result stands
@@ -1135,7 +1134,7 @@ as an approval on its own.
 advisory only.** The AI step reuses the existing assessment provider
 machinery without reusing its contract:
 
-- Transport and selection: the audit calls the hosted open-weights
+- Transport and selection: the audit calls the Meta Model API
   adapter through the same validated configuration, server-side key
   handling, deadline, size limits, concurrency bound, and cost caps
   as `AssessmentModelPort` (A-17, A-34, I-13, I-14, K-309). It does
@@ -1148,16 +1147,16 @@ machinery without reusing its contract:
   error branches mirrored from `AssessmentModelError` (`timeout`,
   `rate-limited`, `invalid-output`, `output-too-large`,
   `provider-mismatch`, `unavailable`, plus `not-configured`). The
-  hosted adapter implements it beside its `AssessmentModelPort`
+  Meta Model API adapter implements it beside its `AssessmentModelPort`
   implementation, sharing transport code; the composition root wires
   it only when audit AI is configured. This keeps the assessment
   contract suite (`runAssessmentModelPortContract`) untouched and
   gives the audit its own contract suite,
   `runPluginAuditModelPortContract`, run against a fake adapter and
-  the hosted adapter over a recorded transport, with zero network in
+  the Meta Model API adapter over a recorded transport, with zero network in
   tests — the same contract style as the existing assessment tests.
 - Port boundaries, stated once for all three model ports. The repo
-  ends with exactly three model ports over one shared hosted/Meta
+  ends with exactly three model ports over one shared Meta Model API
   transport layer, and the table below is the whole sharing contract:
 
   | Port | Caller and lifecycle | Input (closed) | Output | Contract suite |
@@ -1413,7 +1412,7 @@ plugin docs check <plugin-dir> [--format text|json]
 - `plugin docs check` runs only the P-15/P-17 deterministic docs
   checks, for fast CI use on doc-only changes.
 - CI runs `plugin audit` in deterministic mode as a blocking job for
-  plugin changes and, where a hosted key is configured for the job,
+  plugin changes and, where a Meta Model API key is configured for the job,
   the AI phase as a non-blocking job that uploads the structured
   report as an artifact. An optional REST/MCP read view of the last
   CI audit report per plugin is a stretch item (S-058); triggering an
@@ -1553,17 +1552,17 @@ same sections from a declarative layout spec; it is off by default,
 clearly labelled, and presentation-only.** The mode is Stretch. When
 a visitor explicitly enables it on the token page, the web UI asks
 the server for a layout spec for the current analysis; the server —
-never the browser — calls Muse Spark Open
-(`meta-models/muse-spark-open-1026`) on hosted through a new small
+never the browser — calls Muse Spark
+(`muse-spark-1.3`) on Meta Model API through a new small
 port, working title `PluginLayoutModelPort`, built in parallel to
-`PluginAuditModelPort` (P-14) and reusing the hosted adapter's
+`PluginAuditModelPort` (P-14) and reusing the Meta Model API adapter's
 transport, server-side key handling, deadline, size limits,
 concurrency bound, and cost caps (A-17, I-13, I-14). It does not
 reuse the K-302 evidence list or the K-305 assessment schema: layout
 input is presentation facts, not contract evidence. Working REST
 shape: `POST /v1/layout` behind the same API-key gate as the analysis
 routes (K-024), returning the validated spec with provider and model
-id, or the typed `layout-not-configured` outcome when no hosted key
+id, or the typed `layout-not-configured` outcome when no Meta Model API key
 is configured — the same posture as `assessment-not-configured`,
 with zero provider calls. There is no MCP layout tool in v1; layout
 is a web-UI presentation concern.
@@ -1574,7 +1573,7 @@ the A-15 branches mirrored from the audit port (`timeout`,
 `provider-mismatch`, `unavailable`, plus `not-configured`). Tests run
 against a fake adapter with zero network, in the same contract style
 as `runPluginAuditModelPortContract`: a `runPluginLayoutModelPortContract`
-suite against the fake and the hosted adapter over a recorded
+suite against the fake and the Meta Model API adapter over a recorded
 transport.
 
 Hard bounds, by construction:
@@ -1862,7 +1861,7 @@ and model id. The mode is OFF by default for every visitor.
   token view, the web UI sends the server the code hash, the
   closed layout facts P-21 already defines, and — only for this
   call — the current priorities text (P-24). The server calls Muse
-  Spark Open (`meta-models/muse-spark-open-1026`) on hosted, which
+  Spark (`muse-spark-1.3`) on Meta Model API, which
   maps the free-text priorities to plugin ids using the plugins'
   `PLUGIN.md` frontmatter and the `What it checks` /
   `Why it matters to you` sections as quoted reference data, and
@@ -1877,14 +1876,14 @@ and model id. The mode is OFF by default for every visitor.
 - Port shape: one small port, working title
   `PluginPersonalizeModelPort`, built in parallel to
   `PluginLayoutModelPort` (P-21) and `PluginAuditModelPort` (P-14)
-  and reusing the hosted adapter's transport, server-side key
+  and reusing the Meta Model API adapter's transport, server-side key
   handling, deadline, size limits, concurrency bound, and cost
   caps (A-17, I-13, I-14). It returns
   `Result<PersonalizeSpec, PluginPersonalizeModelError>` with the
   A-15 branches mirrored from the layout port (`timeout`,
   `rate-limited`, `invalid-output`, `output-too-large`,
   `provider-mismatch`, `unavailable`, plus `not-configured`).
-  Without a configured hosted key it reports `not configured`
+  Without a configured Meta Model API key it reports `not configured`
   with zero provider calls — the assessment posture (K-305) —
   and the deterministic baseline (P-25) stands. Whether the
   implementation extends `PluginLayoutModelPort` in place or adds

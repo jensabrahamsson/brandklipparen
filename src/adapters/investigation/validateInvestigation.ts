@@ -1,5 +1,5 @@
 // Validation of investigation provider output (S-073, K-036, K-520,
-// K-513, P-38). Pure function shared by the hosted adapter and the fake:
+// K-513, P-38). Pure function shared by the Meta adapter and the fake:
 // strict key sets at every level, provider and model id matched exactly,
 // rationale and draft length-capped. Every rejection keeps the
 // deterministic analysis standing; no message carries response content,

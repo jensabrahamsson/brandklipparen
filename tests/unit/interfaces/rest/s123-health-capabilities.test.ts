@@ -16,7 +16,7 @@ function assessment(provider: string | null, modelId: string | null): Assessment
 }
 
 function investigation(): InvestigationService {
-  return { provider: () => "hosted-open-weights", modelId: () => "meta-models/muse-spark-open-1026" } as unknown as InvestigationService;
+  return { provider: () => "meta-model-api", modelId: () => "meta-models/muse-spark-open-1026" } as unknown as InvestigationService;
 }
 
 function unconfiguredInvestigation(): InvestigationService {
@@ -30,7 +30,7 @@ function unconfiguredInvestigation(): InvestigationService {
 function explain(enabled: boolean): ExplainService {
   return {
     enabled,
-    provider: "hosted-open-weights",
+    provider: "meta-model-api",
     modelId: "meta-models/muse-spark-open-1026",
   } as unknown as ExplainService;
 }
@@ -61,7 +61,7 @@ function explainCode(enabled: boolean): ExplainCodeService {
 
 function personalize(): PersonalizeService {
   return {
-    provider: "hosted-open-weights",
+    provider: "meta-model-api",
     modelId: "meta-models/muse-spark-open-1026",
   } as unknown as PersonalizeService;
 }
@@ -85,7 +85,7 @@ describe("health capabilities", () => {
   test("s123_configured_services_report_provider_and_model", () => {
     expect(
       healthCapabilities({
-        assessmentService: assessment("hosted-open-weights", "assessment-model-1"),
+        assessmentService: assessment("meta-model-api", "assessment-model-1"),
         investigationService: investigation(),
         explainService: explain(true),
         chatService: chat(true),
@@ -95,13 +95,13 @@ describe("health capabilities", () => {
         onchain: { rpc: {}, weth: null },
       }),
     ).toEqual({
-      assessment: { provider: "hosted-open-weights", modelId: "assessment-model-1" },
-      investigation: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
-      explain: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      assessment: { provider: "meta-model-api", modelId: "assessment-model-1" },
+      investigation: { provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" },
+      explain: { provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" },
       chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
       rug: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
       explainCode: { provider: "meta-model-api", modelId: "muse-spark-1.3" },
-      personalize: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      personalize: { provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" },
       onchain: { available: true },
       market: { disabled: true },
       source: { disabled: true },
@@ -139,7 +139,7 @@ describe("health capabilities", () => {
       }),
     ).toEqual({
       assessment: { disabled: true },
-      investigation: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+      investigation: { provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" },
       explain: { disabled: true },
       chat: { disabled: true },
       rug: { disabled: true },

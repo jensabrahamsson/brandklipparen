@@ -11,7 +11,6 @@ import {
   activeAssessmentPluginId,
   createAssessmentServiceFromConfig,
   DEFAULT_ASSESSMENT_PROVIDER,
-  DEFAULT_hosted_MODEL_ID,
   selectAssessmentBinding,
 } from "../../src/composition/root.ts";
 import { assessmentPluginTable, getAssessmentPlugin } from "../../src/plugins/assessment.ts";
@@ -62,10 +61,8 @@ function sharedDemoEnv(): Record<string, string | undefined> {
     BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_RPC_CALLS: "10000",
     BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS: "1000",
     BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_META: "500",
-    BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_hosted: "500",
     BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS: "100",
     BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_META: "50",
-    BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_hosted: "50",
     BRANDKLIPPAREN_ALARM_LEVELS_PERCENT: "50,80,95",
     BRANDKLIPPAREN_ASSESSMENT_PROMPT_VERSION: "1.0.0",
   };
@@ -78,27 +75,6 @@ function demoMetaEnv(): Record<string, string | undefined> {
     BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-meta-key-for-tests-only",
     BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID: "fake-meta-spark-1",
     BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL: "https://meta-api.example.invalid",
-  };
-}
-
-function demohostedEnv(): Record<string, string | undefined> {
-  return {
-    ...sharedDemoEnv(),
-    BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "hosted-open-weights",
-    BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY: "fake-hosted-key-for-tests-only",
-    BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID: "fake-open-weights-1",
-    BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL: "https://hosted.example.invalid",
-    BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID: "fake-deployment-1",
-  };
-}
-
-function demoGenericCompatibleEnv(): Record<string, string | undefined> {
-  return {
-    ...sharedDemoEnv(),
-    BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
-    BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-compat-key-for-tests-only",
-    BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID: "fake-compat-model-1",
-    BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL: "https://compat.example.invalid",
   };
 }
 
@@ -120,18 +96,6 @@ describe("composition-root assessment provider selection (K-309)", () => {
         provider: "meta-model-api",
         modelId: "fake-meta-spark-1",
         pluginId: "dev.brandklipparen.assessment.meta-model-api",
-      },
-      {
-        env: demohostedEnv(),
-        provider: "hosted-open-weights",
-        modelId: "fake-open-weights-1",
-        pluginId: "dev.brandklipparen.assessment.hosted-open-weights",
-      },
-      {
-        env: demoGenericCompatibleEnv(),
-        provider: "generic-compatible",
-        modelId: "fake-compat-model-1",
-        pluginId: "dev.brandklipparen.assessment.generic-compatible",
       },
     ] as const;
     for (const { env, provider, modelId, pluginId } of cases) {
@@ -161,17 +125,7 @@ describe("composition-root assessment provider selection (K-309)", () => {
       {
         env: demoMetaEnv(),
         pluginId: "dev.brandklipparen.assessment.meta-model-api",
-        otherId: "dev.brandklipparen.assessment.hosted-open-weights",
-      },
-      {
-        env: demohostedEnv(),
-        pluginId: "dev.brandklipparen.assessment.hosted-open-weights",
-        otherId: "dev.brandklipparen.assessment.meta-model-api",
-      },
-      {
-        env: demoGenericCompatibleEnv(),
-        pluginId: "dev.brandklipparen.assessment.generic-compatible",
-        otherId: "dev.brandklipparen.assessment.hosted-open-weights",
+        otherId: "dev.brandklipparen.assessment.other",
       },
     ] as const;
     for (const { env, pluginId, otherId } of cases) {
@@ -197,7 +151,7 @@ describe("composition-root assessment provider selection (K-309)", () => {
       expect(ASSESSMENT_PLUGINS.some((entry) => entry.manifest.id === pluginId)).toBe(true);
       expect(activeAssessmentPluginId(binding.value)).not.toBe(otherId);
     }
-    expect(ASSESSMENT_PLUGINS.length).toBe(3);
+    expect(ASSESSMENT_PLUGINS.length).toBe(1);
   });
 
   test("k309_no_provider_disables_assessment", () => {
@@ -215,8 +169,16 @@ describe("composition-root assessment provider selection (K-309)", () => {
     expect(assessmentHealthStatus(binding.value)).toEqual({ disabled: true });
   });
 
+  test("unknown_assessment_provider_fails_config_validation", () => {
+    const loaded = loadConfig({ ...baseCiEnv(), BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "bogus-provider" });
+    expect(loaded.ok).toBe(false);
+    if (!loaded.ok) {
+      expect(loaded.error.variable).toBe("BRANDKLIPPAREN_ASSESSMENT_PROVIDER");
+    }
+  });
+
   test("s135_provider_without_model_id_disables_assessment", () => {
-    for (const provider of ["meta-model-api", "hosted-open-weights", "generic-compatible"] as const) {
+    for (const provider of ["meta-model-api"] as const) {
       const binding = selectAssessmentBinding({
         ...manualBaseConfig(),
         assessmentProvider: provider,
@@ -247,10 +209,9 @@ describe("composition-root assessment provider selection (K-309)", () => {
   });
 });
 
-describe("default assessment intent is hosted open-weights (S-029, K-309)", () => {
-  test("s029_default_provider_is_hosted_open_weights", () => {
-    expect(DEFAULT_ASSESSMENT_PROVIDER).toBe("hosted-open-weights");
-    expect(DEFAULT_hosted_MODEL_ID).toBe("meta-models/muse-spark-open-1026");
+describe("default assessment intent is the Meta Model API (S-029, K-309)", () => {
+  test("s029_default_provider_is_meta_model_api", () => {
+    expect(DEFAULT_ASSESSMENT_PROVIDER).toBe("meta-model-api");
   });
 
   test("k309_missing_assessment_key_disables_assessment", () => {
@@ -258,21 +219,9 @@ describe("default assessment intent is hosted open-weights (S-029, K-309)", () =
     const cases: readonly AppConfig[] = [
       {
         ...manualBaseConfig(),
-        assessmentProvider: "hosted-open-weights",
-        assessmenthostedModelId: mustOk(ModelId.parse("meta-models/muse-spark-open-1026")),
-        assessmenthostedBaseUrl: "https://hosted.example.invalid",
-      },
-      {
-        ...manualBaseConfig(),
         assessmentProvider: "meta-model-api",
         assessmentMetaModelId: mustOk(ModelId.parse("fake-meta-spark-1")),
         assessmentMetaBaseUrl: "https://meta-api.example.invalid",
-      },
-      {
-        ...manualBaseConfig(),
-        assessmentProvider: "generic-compatible",
-        assessmentGenericCompatibleModelId: mustOk(ModelId.parse("fake-compat-model-1")),
-        assessmentGenericCompatibleBaseUrl: "https://compat.example.invalid",
       },
     ];
     for (const config of cases) {

@@ -1,9 +1,8 @@
 // Shared chat-completions assessment core (K-305, K-309).
-// The Meta Model API, hosted open-weights and vendor-neutral providers
-// share one request shape, one transport shape and one validation path:
-// only the base URL, model id, key and provider label change per
-// provider. This module owns that shared logic so the thin provider
-// modules carry solely their variable names, defaults and labels. No
+// The Meta Model API provider uses one request shape, one transport
+// shape and one validation path. This module owns that shared logic so
+// the thin provider module carries solely its variable names, defaults
+// and labels. No
 // default provider or model is chosen here. Tests replay recorded
 // fixtures through the injected transport and never touch the network;
 // production passes the fetch-based transport. Every call POSTs a
@@ -108,9 +107,9 @@ export function resolveChatCompletionsMaxBytesOut(value: number | undefined): nu
 }
 
 // Standard chat-completions sampling bounds: one bounded completion per
-// call at deterministic temperature. top_p is never sent. Providers that
-// need no sampling parameters (the vendor-neutral provider by default)
-// set `omitSamplingParams` and send neither temperature nor top_p.
+// call at deterministic temperature. top_p is never sent. A caller that
+// needs no sampling parameters sets `omitSamplingParams` and sends
+// neither temperature nor top_p.
 export const CHAT_COMPLETIONS_MAX_TOKENS = 1024;
 export const CHAT_COMPLETIONS_TEMPERATURE = 0;
 
@@ -138,13 +137,12 @@ export type ChatCompletionsAdapterOptions = {
   // Opt-in per-provider flag, defaulting off: some servers reject the
   // JSON-object response format, so it travels only when enabled.
   readonly jsonResponseFormat?: boolean | undefined;
-  // Completion budget override: the vendor-neutral provider defaults to
-  // a larger budget so a thinking model is not cut off.
+  // Completion budget override.
   readonly maxTokens?: number | undefined;
   // Sampling control: unset means deterministic temperature 0 (the Meta
-  // and hosted default). `omitSamplingParams` sends neither temperature
-  // nor top_p (the vendor-neutral default); an explicit `temperature`
-  // travels only when sampling parameters are sent.
+  // default). `omitSamplingParams` sends neither temperature nor top_p;
+  // an explicit `temperature` travels only when sampling parameters are
+  // sent.
   readonly temperature?: number | undefined;
   readonly omitSamplingParams?: boolean | undefined;
   // Opt-in reasoning effort for reasoning models (the Meta reasoning

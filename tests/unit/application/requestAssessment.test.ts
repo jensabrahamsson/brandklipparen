@@ -258,11 +258,9 @@ describe("one-way explanation chain and hostile strings (S-024)", () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(signalArb(code, hash), { minLength: 1, maxLength: 4 }),
-        fc.constantFrom("meta-model-api", "hosted-open-weights") as fc.Arbitrary<
-          "meta-model-api" | "hosted-open-weights"
-        >,
+        fc.constantFrom("meta-model-api") as fc.Arbitrary<"meta-model-api">,
         async (signals, provider) => {
-          const modelId = provider === "meta-model-api" ? "fake-meta-spark-1" : "fake-open-weights-1";
+          const modelId = "fake-meta-spark-1";
           const flat: EvidenceType[] = [];
           for (const signal of signals) {
             flat.push(...signal.evidence);
@@ -374,11 +372,9 @@ describe("one-way explanation chain and hostile strings (S-024)", () => {
     await fc.assert(
       fc.asyncProperty(
         fc.array(hostilePiece, { minLength: 1, maxLength: 3 }),
-        fc.constantFrom("meta-model-api", "hosted-open-weights") as fc.Arbitrary<
-          "meta-model-api" | "hosted-open-weights"
-        >,
+        fc.constantFrom("meta-model-api") as fc.Arbitrary<"meta-model-api">,
         async (pieces, provider) => {
-          const modelId = provider === "meta-model-api" ? "fake-meta-spark-1" : "fake-open-weights-1";
+          const modelId = "fake-meta-spark-1";
           const contractName = pieces.join(" ");
           const contractSymbol = pieces.slice().reverse().join(" | ");
           const revertText = pieces.join(" ; ");
@@ -511,7 +507,7 @@ describe("one-way explanation chain and hostile strings (S-024)", () => {
             {
               raw: {
                 ...validBase,
-                provider: provider === "meta-model-api" ? "hosted-open-weights" : "meta-model-api",
+                provider: "other-provider",
               },
               kind: "provider-mismatch",
             },

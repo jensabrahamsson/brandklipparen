@@ -190,7 +190,7 @@ describe("meta investigate adapter over a fake transport", () => {
   });
 
   test("invalid output is rejected with typed errors", async () => {
-    const providerMismatch = decideCase(concludeInner("hosted-open-weights"));
+    const providerMismatch = decideCase(concludeInner("other-provider"));
     const wrongProvider = await makeAdapter(providerMismatch.transport).decide(fixedInput(), fixedContext());
     expect(wrongProvider.ok).toBe(false);
     if (!wrongProvider.ok) {

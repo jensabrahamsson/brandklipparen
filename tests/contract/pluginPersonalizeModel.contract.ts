@@ -1,7 +1,6 @@
 // Shared contract for the experimental PluginPersonalizeModelPort
-// (S-069, K-519, P-27). Every adapter — the fake, the hosted adapter,
-// the generic-compatible adapter and the meta-model-api adapter, each over
-// a recorded transport — gives equal
+// (S-069, K-519, P-27). Every adapter — the fake and the
+// meta-model-api adapter, each over a recorded transport — gives equal
 // outcomes: the "ordered"
 // scenario returns the validated spec, every error scenario reports its
 // typed branch with no spec shown, and the input stays frozen.
@@ -87,7 +86,7 @@ export function runPluginPersonalizeModelPortContract(
   label: string,
   makeAdapter: (scenario: PluginPersonalizeContractScenario) => PluginPersonalizeModelPort,
   expected: { readonly provider: string; readonly modelId: string } = {
-    provider: "hosted-open-weights",
+    provider: "meta-model-api",
     modelId: "meta-models/muse-spark-open-1026",
   },
 ): void {

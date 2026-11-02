@@ -1,5 +1,5 @@
 // Shared contract suite for InvestigationModelPort (S-073, K-036, K-520,
-// K-513). The fake runs it here; the hosted adapter runs the same suite
+// K-513). The fake runs it here; the Meta adapter runs the same suite
 // over a recorded transport with zero network. Equal outcomes across
 // adapters keep the fake honest and prove a swap changes nothing but the
 // label. The suite also proves the one-way chain: the input leaves the
@@ -108,9 +108,9 @@ export function runInvestigationModelPortContract(
       expect(result.value.kind).toBe("conclude");
     });
 
-    test("adapter labels the open-weights provider and model id", () => {
+    test("adapter labels the provider and model id", () => {
       const adapter = makeAdapter("run-tool");
-      expect(adapter.provider()).toBe("hosted-open-weights");
+      expect(adapter.provider()).toBe("meta-model-api");
       expect(String(adapter.modelId())).toBe("meta-models/muse-spark-open-1026");
     });
 

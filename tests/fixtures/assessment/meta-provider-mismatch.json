@@ -8,7 +8,7 @@
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "{\n  \"provider\": \"hosted-open-weights\",\n  \"modelId\": \"meta-muse-spark-test-1\",\n  \"promptVersion\": \"1.0.0\",\n  \"explanationVersion\": \"1.0.0\",\n  \"claims\": [\n    {\n      \"text\": \"Recorded claim linked to the request evidence.\",\n      \"signalLinks\": [\n        \"0xa4633e51f155cd3b9bb833dd26aa8f156863b87e4e23b3cdfc608dd478096361\"\n      ],\n      \"temporality\": {\n        \"kind\": \"can-change\",\n        \"changer\": \"0xe943a4b43ad372355be29445a2532cc0920a7108\"\n      }\n    }\n  ],\n  \"text\": \"Recorded assessment text for tests only.\"\n}\n"
+        "content": "{\n  \"provider\": \"unknown-provider\",\n  \"modelId\": \"meta-muse-spark-test-1\",\n  \"promptVersion\": \"1.0.0\",\n  \"explanationVersion\": \"1.0.0\",\n  \"claims\": [\n    {\n      \"text\": \"Recorded claim linked to the request evidence.\",\n      \"signalLinks\": [\n        \"0xa4633e51f155cd3b9bb833dd26aa8f156863b87e4e23b3cdfc608dd478096361\"\n      ],\n      \"temporality\": {\n        \"kind\": \"can-change\",\n        \"changer\": \"0xe943a4b43ad372355be29445a2532cc0920a7108\"\n      }\n    }\n  ],\n  \"text\": \"Recorded assessment text for tests only.\"\n}\n"
       },
       "finish_reason": "stop"
     }

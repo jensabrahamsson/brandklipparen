@@ -7,7 +7,7 @@
 // frontmatter and doc excerpts, prompt version) and the output is one
 // validated `PersonalizeSpec`. The port never shares prompt text, input
 // shapes, output schemas or caching keys with the assessment or audit
-// ports; only the hosted transport layer is shared. Key handling stays
+// ports; only the Meta transport layer is shared. Key handling stays
 // server-side (K-505, K-513).
 import { err, ok } from "../domain/result.ts";
 import type { Result } from "../domain/result.ts";
@@ -21,7 +21,7 @@ import type {
   BlockNumber as BlockNumberType,
 } from "../domain/types.ts";
 
-export type PluginPersonalizeProvider = "hosted-open-weights" | "generic-compatible" | "meta-model-api";
+export type PluginPersonalizeProvider = "meta-model-api";
 
 // One plugin's quoted reference data for the mapping call (P-27): the
 // validated frontmatter tags plus capped excerpts of the `What it checks`

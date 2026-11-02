@@ -35,7 +35,7 @@ flowchart TB
         INTDEC["adapters/decompiler: internal engine (K-008, K-501)"]
         SEL["adapters/selectors, adapters/clones (K-009, K-017)"]
         STOR["adapters/cache (K-013)"]
-        MUSE["adapters/assessment/metaModelApi and adapters/assessment/hostedOpenWeights (K-305, K-309, K-513)"]
+        MUSE["adapters/assessment/metaModelApi (K-305, K-309, K-513)"]
         MISC["adapters/clock, adapters/config (K-102, K-104)"]
     end
     WEB --> APP
@@ -69,8 +69,7 @@ adapter once, binds each port to exactly one adapter and hands a
 ready `AppServices` structure to the driving adapters. Each
 driving adapter receives `AppServices` through constructor injection.
 The root selects exactly one `AssessmentModelPort` adapter from the
-validated configuration per A-34: the Meta Model API adapter or the
-hosted open-weights adapter. The startup test `a03_each_port_bound_to_exactly_one_adapter` verifies that
+validated configuration per A-34: the Meta Model API adapter. The startup test `a03_each_port_bound_to_exactly_one_adapter` verifies that
 each port in the root is bound to exactly one adapter (K-027), and the
 integration test `k309_config_selects_exactly_one_assessment_adapter`
 verifies the selected provider and model id in the health response
@@ -109,8 +108,8 @@ its port. The ports are:
 | `SelectorTablePort` | `src/ports/selectorTable.ts` | Local lookup of selector to name suggestion and risk relevance | K-009 |
 | `CloneIndexPort` | `src/ports/cloneIndex.ts` | Code-hash and skeleton-hash matching against known templates | K-017 |
 | `CachePort` | `src/ports/cache.ts` | Reading and writing of analysis results per code hash and model version, and assessment text per code hash, prompt version, provider and model id | K-013, K-305, K-309, K-511 |
-| `AssessmentModelPort` | `src/ports/assessmentModel.ts` | Muse contract assessment with structured evidence through the selected provider, server-side only (I-13): Meta Model API (Muse Spark) or hosted open weights (Muse Spark Open, `meta-models/muse-spark-open-1026`) | K-305, K-309, K-302, K-307, K-502, K-513 |
-| `InvestigationModelPort` | `src/ports/investigationModel.ts` | Opt-in investigation loop proposing the next registry-derived check through hosted open weights (Muse Spark Open, `meta-models/muse-spark-open-1026`), server-side only (I-13); `not-configured` without a key | K-036, K-520, K-307, K-502, K-513 |
+| `AssessmentModelPort` | `src/ports/assessmentModel.ts` | Muse contract assessment with structured evidence through the selected provider, server-side only (I-13): Meta Model API (Muse Spark, `muse-spark-1.3`) | K-305, K-309, K-302, K-307, K-502, K-513 |
+| `InvestigationModelPort` | `src/ports/investigationModel.ts` | Opt-in investigation loop proposing the next registry-derived check through the Meta Model API (Muse Spark, `muse-spark-1.3`), server-side only (I-13); `not-configured` without a key | K-036, K-520, K-307, K-502, K-513 |
 | `ModelArtifactPort` | `src/ports/modelArtifact.ts` | Loading and checksum verification of the model artifact | K-011, K-210, K-211 |
 | `DeploymentFeedPort` | `src/ports/deploymentFeed.ts` | Recently deployed tokens for the Just-deployed flow | K-014, K-015 |
 | `ClockPort` | `src/ports/clock.ts` | Current time as a value to the core | K-102, K-104 |
@@ -160,7 +159,7 @@ interface CachePort {
     Promise<Result<void, CacheError>>;                      // K-013
 }
 
-type AssessmentProvider = "meta-model-api" | "hosted-open-weights";
+type AssessmentProvider = "meta-model-api";
 
 interface AssessmentModelPort {
   assess(evidence: EvidenceList, promptVersion: PromptVersion,
@@ -308,11 +307,9 @@ K-502, K-513)
 
 **A-34 Swappable assessment provider behind `AssessmentModelPort`.**
 `AssessmentModelPort` in `src/ports/assessmentModel.ts` is the single
-port for the Muse contract assessment. Two adapters implement the port:
+port for the Muse contract assessment. One adapter implements the port:
 `adapters/assessment/metaModelApi` calls Muse Spark through the Meta
-Model API, and `adapters/assessment/hostedOpenWeights` calls Muse
-Spark Open served on hosted with model id
-`meta-models/muse-spark-open-1026`. Both adapters are MVP per K-309.
+Model API with the configured model id `muse-spark-1.3`. The adapter is MVP per K-309.
 The composition root per A-03 reads the provider selection from the
 validated configuration per I-08 and I-13 and binds exactly one adapter
 to the port at startup; the demo default provider is the open decision
@@ -321,19 +318,17 @@ the same port limits per A-17: cost limit, timeout, input size limit
 and output size limit, schema validation of the provider response and
 cache per code hash, prompt version, provider and model id. Each
 response carries provider and model id. Contract tests run the same
-shared suite `runAssessmentModelPortContract` against both adapters and
+shared suite `runAssessmentModelPortContract` against the adapter and
 a fake in `tests/fakes/`, with equal outcomes for success, timeout,
 rate limit, invalid output, oversize output and unavailable provider.
-Running the hosted adapter qualifies the project for the bonus prize
-"Best Build on Meta Open Weight Models" per K-309. (K-305, K-309,
-K-513, A-03, A-22, A-23)
+(K-305, K-309, K-513, A-03, A-22, A-23)
 
 **A-35 Opt-in investigation loop behind `InvestigationModelPort`.**
 `InvestigationModelPort` in `src/ports/investigationModel.ts` is the
 single port for the Investigate with Muse loop. One adapter implements
-the port: `adapters/investigation/hostedInvestigateAdapter` calls Muse
-Spark Open served on hosted with model id
-`meta-models/muse-spark-open-1026`, plus a fake adapter in
+the port: `adapters/investigation/metaModelApiInvestigateAdapter` calls Muse
+Spark through the Meta Model API with the configured model id
+`muse-spark-1.3`, plus a fake adapter in
 `tests/fakes/` and a not-configured adapter bound when the key is
 absent. The graph runner in `src/application/investigateToken.ts`
 owns the typed state machine, the registry-derived read-only tool
@@ -373,7 +368,7 @@ the core's values:
 | `IndexVersion` | `string` | Semver form, same format as `ModelVersion` | `IndexVersion.parse(raw)` |
 | `TemplateVersion` | `string` | Semver form for the template version under K-301 | `TemplateVersion.parse(raw)` |
 | `PromptVersion` | `string` | Semver form for the assessment prompt version under K-305 and K-309 | `PromptVersion.parse(raw)` |
-| `ModelId` | `string` | Provider model identifier; the hosted value is `meta-models/muse-spark-open-1026` per K-309 | `ModelId.parse(raw)` |
+| `ModelId` | `string` | Provider model identifier; the Meta Model API value is `muse-spark-1.3` per K-309 | `ModelId.parse(raw)` |
 | `ExplanationSchemaVersion` | `string` | Semver form for the explanation schema under K-305 | `ExplanationSchemaVersion.parse(raw)` |
 | `ArtifactChecksum` | `string` | SHA-256 in hex, 64 characters | `ArtifactChecksum.parse(raw)` |
 | `RequestId` | `string` | UUID form; generated at the boundary and follows the analysis (I-10) | `RequestId.generate(clock)` |
@@ -569,7 +564,7 @@ I-12, I-14) and are read at startup through `ConfigPort`. The internal
 decompiler needs no operational variables: it runs under the engine's
 own deterministic caps with port-level input and output byte caps
 under K-008. `AssessmentModelPort`
-carries the same fields for both adapters per A-34: deadline, input and
+carries the same fields for the adapter per A-34: deadline, input and
 output size limits, concurrency and the cost limit per K-309 and I-14.
 The risk model's thresholds,
 weights and limits follow a separate path and live solely in
@@ -691,8 +686,7 @@ against the port's real adapter over a recorded transport:
 (K-001), `runDecompilerPortContract` tries successful decompilation and
 the cap and structural branches (K-008), `runAssessmentModelPortContract` tries
 schema-validated assessment, provider and model labelling, limits and
-fallback against the fake, the Meta Model API adapter and the hosted
-open-weights adapter with equal outcomes (K-305, K-309, K-513),
+fallback against the fake and the Meta Model API adapter with equal outcomes (K-305, K-309, K-513),
 `runCachePortContract` tries hit, miss and corrupt entry (K-013,
 K-511) and `runSelectorTableContract` tries known and unknown selector
 (K-009). Fake and adapter give the same outcome in the suite, so the fake is kept
@@ -701,7 +695,7 @@ honest against the port contract.
 The security tests from `docs/threat-model.md` are part of the same suite and in
 the same CI gate: each M-xx has its test method stated in the threat model, and
 the suite carries the tests for fuzzing of bytecode (M-01, M-02), injection strings
-in the prompt for both providers (M-03–M-06, M-20), allowlist for outgoing calls (M-07), rate and
+in the prompt for the provider (M-03–M-06, M-20), allowlist for outgoing calls (M-07), rate and
 quota (M-08, M-09), key in header and hashed comparison (M-10, M-11),
 pinned supply chain (M-12), text rendering in the UI (M-13), validated
 RPC responses and cache entries (M-14), read-only MCP tools (M-15) and
@@ -812,7 +806,7 @@ src/
     clones/          # CloneIndexPort (K-017)
     cache/           # CachePort (K-013, M-14)
     assessment/      # AssessmentModelPort (A-34): metaModelApi/ (Meta Model API, Muse Spark)
-                     # and hostedOpenWeights/ (hosted, Muse Spark Open) (K-305, K-309, M-03–M-06, M-20)
+                     # (K-305, K-309, M-03–M-06, M-20)
     model/           # ModelArtifactPort, checksum (K-210, K-211)
     feed/            # DeploymentFeedPort (K-014)
     clock/ config/   # ClockPort, ConfigPort (K-102, K-505, I-08)
@@ -853,7 +847,7 @@ change:
 | 5 | Domain values are created through smart constructors; new states are expressed as branches in the discriminated unions | K-106, A-10–A-13 |
 | 6 | The same input gives bit-identical output in the reproduction test; responses carry block number, code hash, model version, artifact checksum, index version and template version | K-102, A-32 |
 | 7 | External data is validated with a boundary check at the boundary, errors follow Result and the error catalogue, and each external port keeps its limit fields | K-501, K-511, A-14–A-17 |
-| 8 | Affected security tests from the threat model are green: bytecode fuzzing and sandbox (M-01, M-02), injection for both providers (M-03–M-06, M-20), allowlist (M-07), rate and quota (M-08, M-09), keys (M-10, M-11), supply chain (M-12), text rendering (M-13), validated responses (M-14), MCP (M-15), logs (M-16) | K-501–K-513, M-01–M-20 |
+| 8 | Affected security tests from the threat model are green: bytecode fuzzing and sandbox (M-01, M-02), injection for the provider (M-03–M-06, M-20), allowlist (M-07), rate and quota (M-08, M-09), keys (M-10, M-11), supply chain (M-12), text rendering (M-13), validated responses (M-14), MCP (M-15), logs (M-16) | K-501–K-513, M-01–M-20 |
 | 9 | The secret scan (gitleaks) is green and the configuration is validated in a typed way at startup with named variables | K-505, K-506, I-02, I-08 |
 | 10 | Model values are read solely from the versioned artifact with a verified checksum; operational limits are read solely from the operational configuration | K-008, K-210, K-211, A-17, A-20 |
 | 11 | The risk model's response states the model version; a new version keys new cache entries | K-011, K-013 |

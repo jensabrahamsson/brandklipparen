@@ -64,7 +64,7 @@ function scriptedAdapter(decisions: readonly InvestigationDecision[]): Investiga
   const modelId = mustOk(ModelId.parse("meta-models/muse-spark-open-1026"));
   return {
     calls: 0,
-    provider: () => "hosted-open-weights",
+    provider: () => "meta-model-api",
     modelId: () => modelId,
     async decide(): Promise<Result<InvestigationDecision, InvestigationModelError>> {
       calls += 1;
@@ -287,7 +287,7 @@ describe("forced conclusion at the step budget (M-2c)", () => {
     let calls = 0;
     return {
       inputs,
-      provider: () => "hosted-open-weights",
+      provider: () => "meta-model-api",
       modelId: () => modelId,
       async decide(input: InvestigationModelInput): Promise<Result<InvestigationDecision, InvestigationModelError>> {
         inputs.push(input);
@@ -389,7 +389,7 @@ describe("forced conclusion at the step budget (M-2c)", () => {
   test("m2c_prompt_states_steps_left_and_must_conclude", () => {
     const modelId = mustOk(ModelId.parse("meta-models/muse-spark-open-1026"));
     const normal = buildInvestigateSystemPrompt({
-      provider: "hosted-open-weights",
+      provider: "meta-model-api",
       modelId,
       stepsLeft: 5,
       concludeOnly: false,
@@ -399,7 +399,7 @@ describe("forced conclusion at the step budget (M-2c)", () => {
     expect(normal).toContain("must call conclude");
     expect(normal).not.toContain("reply with a conclude decision only");
     const last = buildInvestigateSystemPrompt({
-      provider: "hosted-open-weights",
+      provider: "meta-model-api",
       modelId,
       stepsLeft: 1,
       concludeOnly: true,
@@ -482,7 +482,7 @@ describe("m2d conclude prompt and tolerant citation check", () => {
   test("m2d_prompt_shows_syntax_example_over_a_collected_id", () => {
     const modelId = mustOk(ModelId.parse("meta-models/muse-spark-open-1026"));
     const prompt = buildInvestigateSystemPrompt({
-      provider: "hosted-open-weights",
+      provider: "meta-model-api",
       modelId,
       stepsLeft: 1,
       concludeOnly: true,
@@ -554,7 +554,7 @@ describe("m02e runner carries meanings into model inputs", () => {
     const seen: InvestigationModelInput[] = [];
     const modelId = mustOk(ModelId.parse("meta-models/muse-spark-open-1026"));
     const adapter: InvestigationModelPort = {
-      provider: () => "hosted-open-weights",
+      provider: () => "meta-model-api",
       modelId: () => modelId,
       async decide(input: InvestigationModelInput): Promise<Result<InvestigationDecision, InvestigationModelError>> {
         seen.push(input);

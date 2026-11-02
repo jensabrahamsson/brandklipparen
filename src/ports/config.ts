@@ -52,7 +52,7 @@ export function formatConfigError(error: ConfigError): string {
 
 export type EnvironmentName = "local" | "ci" | "demo";
 export type LogLevel = "debug" | "info" | "warn" | "error";
-export type AssessmentProvider = "meta-model-api" | "hosted-open-weights" | "generic-compatible";
+export type AssessmentProvider = "meta-model-api";
 
 // Validated operational configuration (I-08). Fields required only in some
 // setups stay optional here; loadConfig enforces the per-setup rules and
@@ -89,42 +89,29 @@ export type AppConfig = {
   // Daily cap for assessment calls per API key: the only enforced
   // provider-adjacent cap. There is no global per-provider daily cap.
   readonly budgetPerKeyDailyCapAssessmentCalls?: number;
+  // Assessment provider selection: the loader accepts "meta-model-api"
+  // or "off" (and unset); "off" and unset both map to disabled by storing
+  // no provider here, so composition treats both the same.
   readonly assessmentProvider?: AssessmentProvider;
   readonly assessmentPromptVersion?: PromptVersion;
   readonly assessmentMetaApiKey?: SecretString;
   readonly assessmentMetaModelId?: ModelId;
   readonly assessmentMetaBaseUrl?: string;
-  readonly assessmenthostedApiKey?: SecretString;
-  readonly assessmenthostedModelId?: ModelId;
-  readonly assessmenthostedBaseUrl?: string;
-  readonly assessmenthostedDeploymentId?: string;
-  // Vendor-neutral chat-completions triple for a temporary local endpoint
-  // during development (local development only). All optional here;
-  // loadConfig enforces the per-setup rules and freezes the whole value.
-  readonly assessmentGenericCompatibleApiKey?: SecretString;
-  readonly assessmentGenericCompatibleModelId?: ModelId;
-  readonly assessmentGenericCompatibleBaseUrl?: string;
   // Experimental AI personalize toggle (S-069, P-27): unset means the
-  // feature stays off. The meta-model-api and generic-compatible
-  // personalize adapters reuse their assessment triples above, so no
-  // second key or endpoint travels. The union mirrors
-  // PluginPersonalizeProvider beside the port, the same way
-  // AssessmentProvider is mirrored here (ports stay self-contained).
-  readonly personalizeProvider?: "hosted-open-weights" | "generic-compatible" | "meta-model-api";
+  // feature stays off. The meta-model-api personalize adapter reuses the
+  // assessment Meta triple above, so no second key or endpoint travels.
+  // The union mirrors PluginPersonalizeProvider beside the port, the same
+  // way AssessmentProvider is mirrored here (ports stay self-contained).
+  readonly personalizeProvider?: "meta-model-api";
   // Daily cap for personalize mapping calls per API key (S-069): the
   // composition falls back to its small placeholder default when unset.
   readonly personalizeDailyCapPerKey?: number;
-  // Optional sampling temperature in [0, 1] for the vendor-neutral
-  // provider: sent only when set, otherwise no sampling parameter
-  // travels. Optional completion budget override (default 4096).
-  readonly assessmentGenericCompatibleTemperature?: number;
-  readonly assessmentGenericCompatibleMaxTokens?: number;
   // Investigation loop provider selection: unset or "off" leaves the
   // loop disabled with the deterministic analysis standing; a named
   // provider binds its adapter when its connection triple is complete,
   // otherwise the loop answers `not-configured` with zero provider calls
   // instead of failing startup.
-  readonly investigateProvider?: "meta-model-api" | "hosted-open-weights" | "off";
+  readonly investigateProvider?: "meta-model-api" | "off";
   // Meta Model API connection for the investigation loop: the key loads
   // only via its pointer file in the demo, the model id defaults to
   // muse-spark-1.3 in the adapter, and the base URL is validated as an
@@ -132,12 +119,6 @@ export type AppConfig = {
   readonly investigateMetaBaseUrl?: string;
   readonly investigateMetaApiKey?: SecretString;
   readonly investigateMetaModelId?: ModelId;
-  // Investigation loop on open weights (S-073, P-29, P-30, P-34): all
-  // optional in every setup. An absent key leaves the loop answering
-  // `not-configured` with zero provider calls instead of failing startup.
-  readonly investigatehostedBaseUrl?: string;
-  readonly investigatehostedApiKey?: SecretString;
-  readonly investigatehostedModelId?: ModelId;
   readonly investigateDeadlineMs?: number;
   readonly investigateMaxInputBytes?: number;
   readonly investigateMaxOutputBytes?: number;

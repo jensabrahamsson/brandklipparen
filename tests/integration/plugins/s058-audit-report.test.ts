@@ -101,7 +101,7 @@ function storedReport(): StoredAuditReport {
     ai: Object.freeze({
       kind: "advisory",
       findings: [],
-      provider: "hosted-open-weights",
+      provider: "meta-model-api",
       modelId: "meta-models/muse-spark-open-1026",
     }),
     humanReview: "recorded",
@@ -138,7 +138,7 @@ describe("k516_last_audit_report_shown_as_advisory_with_provider_and_model", () 
       const ai = body["ai"] as { kind?: unknown; provider?: unknown; modelId?: unknown };
       expect(deterministic.kind).toBe("pass");
       expect(ai.kind).toBe("advisory");
-      expect(ai.provider).toBe("hosted-open-weights");
+      expect(ai.provider).toBe("meta-model-api");
       expect(ai.modelId).toBe("meta-models/muse-spark-open-1026");
       expect(body["humanReview"]).toBe("recorded");
 

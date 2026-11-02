@@ -7,7 +7,7 @@
 // names the mapping task, the user message carries layout facts plus
 // quoted priorities and per-plugin references as data, and the
 // assistant content validates into a PersonalizeSpec exactly like the
-// hosted envelope (provider and model id echoed, spec parsed against
+// Meta envelope (provider and model id echoed, spec parsed against
 // the request context). Priorities and doc excerpts travel quoted as
 // data (M-24): the system instruction names them data, never
 // instructions to follow. A missing key, model id or endpoint binds the
@@ -32,6 +32,7 @@ import type { PromptVersion as PromptVersionType } from "../../domain/types.ts";
 import {
   fetchChatCompletionsTransport,
   joinChatCompletionsUrl,
+  stripJsonFence,
 } from "../assessment/chatCompletions/chatCompletionsAdapter.ts";
 import type {
   ChatCompletionsTransport,
@@ -42,12 +43,8 @@ import {
   NotConfiguredPersonalizeAdapter,
   classifyPersonalizeValidationCheck,
   parsePersonalizeResponse,
-} from "./hostedPersonalizeAdapter.ts";
-import type { hostedPersonalizeLogEntry } from "./hostedPersonalizeAdapter.ts";
-import {
-  buildPersonalizeMappingExample,
-  readAssistantContent,
-} from "./GenericCompatiblePersonalizeAdapter.ts";
+} from "./notConfiguredPersonalizeAdapter.ts";
+import type { PersonalizeLogEntry } from "./notConfiguredPersonalizeAdapter.ts";
 
 // Single HTTP round trip over the injected chat-completions byte channel,
 // the same shape the assessment uses. Headers travel beside the body so
@@ -107,7 +104,7 @@ export type MetaModelApiPersonalizeAdapterOptions = {
   // Optional completion budget override: defaults to 1024.
   readonly maxTokens?: number | undefined;
   readonly transport?: MetaModelApiPersonalizeTransport | undefined;
-  readonly onLog?: ((entry: hostedPersonalizeLogEntry) => void) | undefined;
+  readonly onLog?: ((entry: PersonalizeLogEntry) => void) | undefined;
   readonly onWarn?: ((line: string) => void) | undefined;
 };
 
@@ -127,14 +124,14 @@ export type MetaModelApiPersonalizeAdapterConfig = {
 export function createMetaModelApiPersonalizeAdapterFromConfig(
   config: MetaModelApiPersonalizeAdapterConfig,
   transport?: MetaModelApiPersonalizeTransport | undefined,
-  onLog?: ((entry: hostedPersonalizeLogEntry) => void) | undefined,
+  onLog?: ((entry: PersonalizeLogEntry) => void) | undefined,
   onWarn?: ((line: string) => void) | undefined,
 ): Result<PluginPersonalizeModelPort, ConfigError> {
   const endpoint = config.assessmentMetaBaseUrl;
   const apiKey = config.assessmentMetaApiKey;
   const modelId = config.assessmentMetaModelId;
   if (endpoint === undefined || apiKey === undefined || modelId === undefined) {
-    return ok(new NotConfiguredPersonalizeAdapter(modelId, "meta-model-api"));
+    return ok(new NotConfiguredPersonalizeAdapter(modelId));
   }
   if (!endpoint.startsWith("https://") || endpoint.length > 2048 || endpoint.includes(" ")) {
     return err({ kind: "invalid-value", variable: ENDPOINT_VARIABLE, reason: "must be an https URL" });
@@ -153,6 +150,127 @@ export function createMetaModelApiPersonalizeAdapterFromConfig(
 
 function byteLength(text: string): number {
   return new TextEncoder().encode(text).length;
+}
+
+export function buildPersonalizeMappingExample(input: {
+  readonly provider: "meta-model-api";
+  readonly modelId: ModelIdType;
+  readonly sectionIds: readonly string[];
+  readonly pluginIds: readonly string[];
+}): string {
+  const picks: string[] = [];
+  for (const id of ["score", "explanation"]) {
+    if (input.sectionIds.includes(id)) {
+      picks.push(id);
+    }
+  }
+  for (const id of input.sectionIds) {
+    if (picks.length >= 2) {
+      break;
+    }
+    if (!picks.includes(id)) {
+      picks.push(id);
+    }
+  }
+  return JSON.stringify({
+    provider: input.provider,
+    modelId: input.modelId as string,
+    spec: {
+      specVersion: 1,
+      pluginRanking: input.pluginIds.slice(0, 2),
+      placements: picks.map((sectionId) => ({ sectionId, emphasis: "normal" })),
+    },
+  });
+}
+
+function envelopeRecord(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return null;
+  }
+  return raw as Record<string, unknown>;
+}
+
+function extractFencedBlock(content: string): string | null {
+  const match = /```[ \t]*([A-Za-z]*)[ \t]*(?:\r?\n)?([\s\S]*?)```/.exec(content);
+  if (match === null) {
+    return null;
+  }
+  const tag = match[1] ?? "";
+  if (tag !== "" && tag.toLowerCase() !== "json") {
+    return null;
+  }
+  const full = match[0] ?? "";
+  const at = content.indexOf(full);
+  const before = content.slice(0, at);
+  const after = content.slice(at + full.length);
+  if (before.includes("```") || after.includes("```")) {
+    return null;
+  }
+  const inner = (match[2] ?? "").trim();
+  if (inner.length === 0 || inner.includes("```")) {
+    return null;
+  }
+  return inner;
+}
+
+function extractMappingPayload(content: string): Result<string, { kind: "invalid-output"; message: string }> {
+  const trimmed = content.trim();
+  const stripped = stripJsonFence(trimmed);
+  try {
+    JSON.parse(stripped);
+    return ok(stripped);
+  } catch {
+    // Fall through to the fence and brace-span attempts below.
+  }
+  const fenced = extractFencedBlock(content);
+  if (fenced !== null) {
+    return ok(fenced);
+  }
+  if (!content.includes("```")) {
+    const start = content.indexOf("{");
+    const end = content.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      const span = content.slice(start, end + 1);
+      try {
+        JSON.parse(span);
+        return ok(span);
+      } catch {
+        // Fall through to the extraction failure below.
+      }
+    }
+  }
+  return err({ kind: "invalid-output", message: "personalize response is not valid JSON" });
+}
+
+export function readAssistantContent(bodyText: string): Result<string, PluginPersonalizeModelError> {
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(bodyText) as unknown;
+  } catch {
+    return err({ kind: "invalid-output", message: "personalize response is not valid JSON" });
+  }
+  const record = envelopeRecord(envelope);
+  const choices = record?.["choices"];
+  if (!Array.isArray(choices) || choices.length === 0) {
+    return err({ kind: "invalid-output", message: "personalize response carries no choices" });
+  }
+  const first = envelopeRecord(choices[0]);
+  if (first === null) {
+    return err({ kind: "invalid-output", message: "personalize response carries no choices" });
+  }
+  if (first["finish_reason"] === "length") {
+    return err({ kind: "invalid-output", message: "personalize response was cut off by the length limit" });
+  }
+  const message = envelopeRecord(first["message"]);
+  const content = message?.["content"];
+  if (typeof content !== "string" || content.trim().length === 0) {
+    return err({ kind: "invalid-output", message: "personalize response carries no message content" });
+  }
+  const extracted = extractMappingPayload(content);
+  if (extracted.ok) {
+    return ok(extracted.value);
+  }
+  return err({ kind: "invalid-output", message: "personalize response is not valid JSON" });
 }
 
 // Mapping system instruction in its own field (M-24): priorities and doc
@@ -298,7 +416,7 @@ export class MetaModelApiPersonalizeAdapter implements PluginPersonalizeModelPor
   private readonly maxTokens: number;
   private readonly temperature: number | undefined;
   private readonly transport: MetaModelApiPersonalizeTransport;
-  private readonly onLog: ((entry: hostedPersonalizeLogEntry) => void) | undefined;
+  private readonly onLog: ((entry: PersonalizeLogEntry) => void) | undefined;
   private readonly onWarn: (line: string) => void;
 
   constructor(options: MetaModelApiPersonalizeAdapterOptions) {

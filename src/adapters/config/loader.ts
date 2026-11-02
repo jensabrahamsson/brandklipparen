@@ -133,17 +133,6 @@ function parseInteger(
   return ok(value);
 }
 
-function parseBoundedNumber(name: string, raw: string, min: number, max: number): Result<number, ConfigError> {
-  if (!/^\d+(\.\d+)?$/.test(raw)) {
-    return err(invalid(name, `must be a number in [${min}, ${max}]`));
-  }
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
-    return err(invalid(name, `must be a number in [${min}, ${max}]`));
-  }
-  return ok(parsed);
-}
-
 function parseHttpsUrl(name: string, raw: string): Result<string, ConfigError> {
   if (!raw.startsWith("https://") || raw.length > 2048 || raw.includes(" ")) {
     return err(invalid(name, "must be an https URL"));
@@ -246,24 +235,12 @@ const V = {
   assessmentMetaApiKey: "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY",
   assessmentMetaModelId: "BRANDKLIPPAREN_ASSESSMENT_META_MODEL_ID",
   assessmentMetaBaseUrl: "BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL",
-  assessmenthostedApiKey: "BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY",
-  assessmenthostedModelId: "BRANDKLIPPAREN_ASSESSMENT_hosted_MODEL_ID",
-  assessmenthostedBaseUrl: "BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL",
-  assessmenthostedDeploymentId: "BRANDKLIPPAREN_ASSESSMENT_hosted_DEPLOYMENT_ID",
-  assessmentGenericCompatibleApiKey: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY",
-  assessmentGenericCompatibleModelId: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MODEL_ID",
-  assessmentGenericCompatibleBaseUrl: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_BASE_URL",
-  assessmentGenericCompatibleTemperature: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_TEMPERATURE",
-  assessmentGenericCompatibleMaxTokens: "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_MAX_TOKENS",
   personalizeProvider: "BRANDKLIPPAREN_PERSONALIZE_PROVIDER",
   personalizeDailyCapPerKey: "BRANDKLIPPAREN_PERSONALIZE_DAILY_CAP_PER_KEY",
   investigateProvider: "BRANDKLIPPAREN_INVESTIGATE_PROVIDER",
   investigateMetaBaseUrl: "BRANDKLIPPAREN_INVESTIGATE_META_BASE_URL",
   investigateMetaApiKey: "BRANDKLIPPAREN_INVESTIGATE_META_API_KEY",
   investigateMetaModelId: "BRANDKLIPPAREN_INVESTIGATE_META_MODEL_ID",
-  investigatehostedBaseUrl: "BRANDKLIPPAREN_INVESTIGATE_hosted_BASE_URL",
-  investigatehostedApiKey: "BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY",
-  investigatehostedModelId: "BRANDKLIPPAREN_INVESTIGATE_hosted_MODEL_ID",
   investigateDeadlineMs: "BRANDKLIPPAREN_INVESTIGATE_DEADLINE_MS",
   investigateMaxInputBytes: "BRANDKLIPPAREN_INVESTIGATE_MAX_INPUT_BYTES",
   investigateMaxOutputBytes: "BRANDKLIPPAREN_INVESTIGATE_MAX_OUTPUT_BYTES",
@@ -306,33 +283,33 @@ const parseEnvName = (raw: string): Result<EnvironmentName, ConfigError> =>
 const parseLogLevel = (raw: string): Result<LogLevel, ConfigError> =>
   parseEnum<LogLevel>(V.logLevel, ["debug", "info", "warn", "error"], "debug, info, warn or error")(raw);
 
-const parseProvider = (raw: string): Result<AssessmentProvider, ConfigError> =>
-  parseEnum<AssessmentProvider>(
+const parseProvider = (raw: string): Result<AssessmentProvider | "off", ConfigError> =>
+  parseEnum<AssessmentProvider | "off">(
     V.assessmentProvider,
-    ["meta-model-api", "hosted-open-weights", "generic-compatible"],
-    "meta-model-api, hosted-open-weights or generic-compatible",
+    ["meta-model-api", "off"],
+    "meta-model-api or off",
   )(raw);
 
 // Experimental AI personalize provider (S-069, P-27): unset or "off"
-// leaves the feature disabled; the two wired providers select the mapping
+// leaves the feature disabled; "meta-model-api" selects the mapping
 // adapter. Anything else is a typed startup error naming the variable.
 const parsePersonalizeProvider = (raw: string): Result<PluginPersonalizeProvider | "off", ConfigError> =>
   parseEnum<PluginPersonalizeProvider | "off">(
     V.personalizeProvider,
-    ["off", "meta-model-api", "hosted-open-weights", "generic-compatible"],
-    "off, meta-model-api, hosted-open-weights or generic-compatible",
+    ["off", "meta-model-api"],
+    "off or meta-model-api",
   )(raw);
 
 // Investigation loop provider (M-2): unset or "off" leaves the loop
-// disabled; a named provider selects the investigate adapter. Anything
+// disabled; "meta-model-api" selects the investigate adapter. Anything
 // else is a typed startup error naming the variable.
 const parseInvestigateProvider = (
   raw: string,
-): Result<"meta-model-api" | "hosted-open-weights" | "off", ConfigError> =>
-  parseEnum<"meta-model-api" | "hosted-open-weights" | "off">(
+): Result<"meta-model-api" | "off", ConfigError> =>
+  parseEnum<"meta-model-api" | "off">(
     V.investigateProvider,
-    ["meta-model-api", "hosted-open-weights", "off"],
-    "meta-model-api, hosted-open-weights or off",
+    ["meta-model-api", "off"],
+    "meta-model-api or off",
   )(raw);
 
 // Opt-in overlay provider (explain, chat, rug): unset or "off" leaves the
@@ -358,10 +335,7 @@ export const SECRET_FILE_ALLOWLIST: readonly string[] = Object.freeze([
   V.apiKeyPepper,
   V.rpcUrls,
   V.assessmentMetaApiKey,
-  V.assessmenthostedApiKey,
-  V.assessmentGenericCompatibleApiKey,
   V.investigateMetaApiKey,
-  V.investigatehostedApiKey,
   V.explainMetaApiKey,
   V.chatMetaApiKey,
   V.rugMetaApiKey,
@@ -640,91 +614,6 @@ export function loadConfig(env: EnvInput, options?: LoadConfigOptions): Result<A
   if (!assessmentMetaBaseUrl.ok) {
     return assessmentMetaBaseUrl;
   }
-  const assessmenthostedApiKey = optionalField(env, V.assessmenthostedApiKey, (raw) =>
-    parseSecret(V.assessmenthostedApiKey, raw),
-  );
-  if (!assessmenthostedApiKey.ok) {
-    return assessmenthostedApiKey;
-  }
-  const assessmenthostedModelId = optionalField(env, V.assessmenthostedModelId, (raw) =>
-    mapDomain(
-      V.assessmenthostedModelId,
-      "must be a 1-256 character model identifier",
-      ModelId.parse(raw),
-    ),
-  );
-  if (!assessmenthostedModelId.ok) {
-    return assessmenthostedModelId;
-  }
-  const assessmenthostedBaseUrl = optionalField(env, V.assessmenthostedBaseUrl, (raw) =>
-    parseHttpsUrl(V.assessmenthostedBaseUrl, raw),
-  );
-  if (!assessmenthostedBaseUrl.ok) {
-    return assessmenthostedBaseUrl;
-  }
-  const assessmenthostedDeploymentId = optionalField(
-    env,
-    V.assessmenthostedDeploymentId,
-    (raw) => parseNonEmpty(V.assessmenthostedDeploymentId, raw, "a non-empty deployment identifier"),
-  );
-  if (!assessmenthostedDeploymentId.ok) {
-    return assessmenthostedDeploymentId;
-  }
-  // Vendor-neutral chat-completions triple for a temporary local endpoint
-  // during development (local development only): optional in every setup
-  // like the Meta/hosted triples above, so a selected provider without
-  // its key, model id or endpoint means not configured instead of a
-  // startup failure. No deployment identifier: only the base URL, model
-  // id and key change next to the other providers.
-  const assessmentGenericCompatibleApiKey = optionalField(
-    env,
-    V.assessmentGenericCompatibleApiKey,
-    (raw) => parseSecret(V.assessmentGenericCompatibleApiKey, raw),
-  );
-  if (!assessmentGenericCompatibleApiKey.ok) {
-    return assessmentGenericCompatibleApiKey;
-  }
-  const assessmentGenericCompatibleModelId = optionalField(
-    env,
-    V.assessmentGenericCompatibleModelId,
-    (raw) =>
-      mapDomain(
-        V.assessmentGenericCompatibleModelId,
-        "must be a 1-256 character model identifier",
-        ModelId.parse(raw),
-      ),
-  );
-  if (!assessmentGenericCompatibleModelId.ok) {
-    return assessmentGenericCompatibleModelId;
-  }
-  const assessmentGenericCompatibleBaseUrl = optionalField(
-    env,
-    V.assessmentGenericCompatibleBaseUrl,
-    (raw) => parseHttpsUrl(V.assessmentGenericCompatibleBaseUrl, raw),
-  );
-  if (!assessmentGenericCompatibleBaseUrl.ok) {
-    return assessmentGenericCompatibleBaseUrl;
-  }
-  // Optional sampling temperature in [0, 1] for the vendor-neutral
-  // provider: sent only when set, otherwise no sampling parameter
-  // travels. Optional completion budget override (default 4096, bounded
-  // so a thinking model is not cut off while caps stay meaningful).
-  const assessmentGenericCompatibleTemperature = optionalField(
-    env,
-    V.assessmentGenericCompatibleTemperature,
-    (raw) => parseBoundedNumber(V.assessmentGenericCompatibleTemperature, raw, 0, 1),
-  );
-  if (!assessmentGenericCompatibleTemperature.ok) {
-    return assessmentGenericCompatibleTemperature;
-  }
-  const assessmentGenericCompatibleMaxTokens = optionalField(
-    env,
-    V.assessmentGenericCompatibleMaxTokens,
-    (raw) => parseInteger(V.assessmentGenericCompatibleMaxTokens, raw, 1, 128000),
-  );
-  if (!assessmentGenericCompatibleMaxTokens.ok) {
-    return assessmentGenericCompatibleMaxTokens;
-  }
   // Experimental AI personalize toggle (S-069, P-27): optional in every
   // setup, so local and CI runs stay key-free with the mapping route
   // answering `not-configured`. Unset or "off" means disabled; a named
@@ -771,28 +660,6 @@ export function loadConfig(env: EnvInput, options?: LoadConfigOptions): Result<A
   );
   if (!investigateMetaModelId.ok) {
     return investigateMetaModelId;
-  }
-  const investigatehostedBaseUrl = optionalField(env, V.investigatehostedBaseUrl, (raw) =>
-    parseHttpsUrl(V.investigatehostedBaseUrl, raw),
-  );
-  if (!investigatehostedBaseUrl.ok) {
-    return investigatehostedBaseUrl;
-  }
-  const investigatehostedApiKey = optionalField(env, V.investigatehostedApiKey, (raw) =>
-    parseSecret(V.investigatehostedApiKey, raw),
-  );
-  if (!investigatehostedApiKey.ok) {
-    return investigatehostedApiKey;
-  }
-  const investigatehostedModelId = optionalField(env, V.investigatehostedModelId, (raw) =>
-    mapDomain(
-      V.investigatehostedModelId,
-      "must be a 1-256 character model identifier",
-      ModelId.parse(raw),
-    ),
-  );
-  if (!investigatehostedModelId.ok) {
-    return investigatehostedModelId;
   }
   const investigateDeadlineMs = optionalField(env, V.investigateDeadlineMs, (raw) =>
     parseInteger(V.investigateDeadlineMs, raw, 1, 3600000),
@@ -1095,7 +962,9 @@ export function loadConfig(env: EnvInput, options?: LoadConfigOptions): Result<A
     ...(budgetPerKeyDailyCapAssessmentCalls.value === undefined
       ? {}
       : { budgetPerKeyDailyCapAssessmentCalls: budgetPerKeyDailyCapAssessmentCalls.value }),
-    ...(assessmentProvider.value === undefined ? {} : { assessmentProvider: assessmentProvider.value }),
+    ...(assessmentProvider.value === undefined || assessmentProvider.value === "off"
+      ? {}
+      : { assessmentProvider: assessmentProvider.value }),
     ...(assessmentPromptVersion.value === undefined
       ? {}
       : { assessmentPromptVersion: assessmentPromptVersion.value }),
@@ -1108,41 +977,14 @@ export function loadConfig(env: EnvInput, options?: LoadConfigOptions): Result<A
     ...(assessmentMetaBaseUrl.value === undefined
       ? {}
       : { assessmentMetaBaseUrl: assessmentMetaBaseUrl.value }),
-    ...(assessmenthostedApiKey.value === undefined
-      ? {}
-      : { assessmenthostedApiKey: assessmenthostedApiKey.value }),
-    ...(assessmenthostedModelId.value === undefined
-      ? {}
-      : { assessmenthostedModelId: assessmenthostedModelId.value }),
-    ...(assessmenthostedBaseUrl.value === undefined
-      ? {}
-      : { assessmenthostedBaseUrl: assessmenthostedBaseUrl.value }),
-    ...(assessmenthostedDeploymentId.value === undefined
-      ? {}
-      : { assessmenthostedDeploymentId: assessmenthostedDeploymentId.value }),
-    ...(assessmentGenericCompatibleApiKey.value === undefined
-      ? {}
-      : { assessmentGenericCompatibleApiKey: assessmentGenericCompatibleApiKey.value }),
-    ...(assessmentGenericCompatibleModelId.value === undefined
-      ? {}
-      : { assessmentGenericCompatibleModelId: assessmentGenericCompatibleModelId.value }),
-    ...(assessmentGenericCompatibleBaseUrl.value === undefined
-      ? {}
-      : { assessmentGenericCompatibleBaseUrl: assessmentGenericCompatibleBaseUrl.value }),
-    ...(assessmentGenericCompatibleTemperature.value === undefined
-      ? {}
-      : { assessmentGenericCompatibleTemperature: assessmentGenericCompatibleTemperature.value }),
-    ...(assessmentGenericCompatibleMaxTokens.value === undefined
-      ? {}
-      : { assessmentGenericCompatibleMaxTokens: assessmentGenericCompatibleMaxTokens.value }),
     ...(personalizeProvider.value === undefined || personalizeProvider.value === "off"
       ? {}
       : { personalizeProvider: personalizeProvider.value }),
     ...(personalizeDailyCapPerKey.value === undefined
       ? {}
       : { personalizeDailyCapPerKey: personalizeDailyCapPerKey.value }),
-    // "off" stays in the config (unlike the personalize toggle): the
-    // shared vendor-neutral path below must see it and stay disabled.
+    // "off" stays in the config (unlike the personalize toggle) so
+    // composition sees it and stays disabled.
     ...(investigateProvider.value === undefined
       ? {}
       : { investigateProvider: investigateProvider.value }),
@@ -1155,15 +997,6 @@ export function loadConfig(env: EnvInput, options?: LoadConfigOptions): Result<A
     ...(investigateMetaModelId.value === undefined
       ? {}
       : { investigateMetaModelId: investigateMetaModelId.value }),
-    ...(investigatehostedBaseUrl.value === undefined
-      ? {}
-      : { investigatehostedBaseUrl: investigatehostedBaseUrl.value }),
-    ...(investigatehostedApiKey.value === undefined
-      ? {}
-      : { investigatehostedApiKey: investigatehostedApiKey.value }),
-    ...(investigatehostedModelId.value === undefined
-      ? {}
-      : { investigatehostedModelId: investigatehostedModelId.value }),
     ...(investigateDeadlineMs.value === undefined
       ? {}
       : { investigateDeadlineMs: investigateDeadlineMs.value }),

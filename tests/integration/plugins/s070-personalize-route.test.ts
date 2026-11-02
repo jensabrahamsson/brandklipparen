@@ -28,7 +28,7 @@ import { SecretString } from "../../../src/ports/config.ts";
 import { validatePluginDocs } from "../../../src/plugins/docs.ts";
 import type { PluginDocsMap } from "../../../src/plugins/exposure.ts";
 import { capabilityDetectorPlugin } from "../../../src/plugins/detectors/capability/index.ts";
-import { NotConfiguredPersonalizeAdapter } from "../../../src/adapters/personalize/hostedPersonalizeAdapter.ts";
+import { NotConfiguredPersonalizeAdapter } from "../../../src/adapters/personalize/notConfiguredPersonalizeAdapter.ts";
 import { FakePluginPersonalizeModelAdapter } from "../../fakes/fakePluginPersonalizeModel.ts";
 import { mustDefaultDetectorSet } from "../../helpers/detectorSets.ts";
 import { FakeClockAdapter } from "../../fakes/fakeClock.ts";

@@ -89,7 +89,7 @@ function placeholderArtifact(): FakeModelArtifactAdapter {
 // a draft citing the first collected id. Deterministic with zero network.
 function scriptedAdapter(counter: { calls: number }): InvestigationModelPort {
   return {
-    provider: () => "hosted-open-weights",
+    provider: () => "meta-model-api",
     modelId: () => mustOk(ModelId.parse("meta-models/muse-spark-open-1026")),
     async decide(
       input: InvestigationModelInput,
@@ -206,8 +206,8 @@ describe("investigation cache and caps", () => {
     } as unknown as CanonicalValue;
     const base = {
       promptVersion: "1.0.0",
-      provider: "hosted-open-weights",
-      modelId: "open-weights-1",
+      provider: "meta-model-api",
+      modelId: "meta-model-1",
       facts: baseFacts,
       catalogue: baseCatalogue,
     };
@@ -227,7 +227,7 @@ describe("investigation cache and caps", () => {
     expect(investigationCacheKeyOf({ ...base, promptVersion: "2.0.0" })).not.toBe(
       investigationCacheKeyOf({ ...base }),
     );
-    expect(investigationCacheKeyOf({ ...base, modelId: "open-weights-2" })).not.toBe(
+    expect(investigationCacheKeyOf({ ...base, modelId: "meta-model-2" })).not.toBe(
       investigationCacheKeyOf({ ...base }),
     );
   });

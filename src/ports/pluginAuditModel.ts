@@ -4,7 +4,7 @@
 // version), and the output is structured advisory findings validated by
 // `parsePluginAuditReport` before any human sees them. The port never
 // shares prompt text, input shapes, output schemas or caching keys with
-// the assessment ports; only the hosted transport layer is shared.
+// the assessment ports; only the Meta transport layer is shared.
 // Findings are display values no code maps to risk, direction or weight:
 // the report carries no field the registry, scoring or analysis path
 // reads (P-13, K-307). Key handling stays server-side (K-505, K-513).
@@ -18,7 +18,7 @@ import type {
   BlockNumber as BlockNumberType,
 } from "../domain/types.ts";
 
-export type PluginAuditProvider = "hosted-open-weights";
+export type PluginAuditProvider = "meta-model-api";
 
 // One quoted source file in the audit input (P-14, M-24): path plus
 // content quoted through `UntrustedText.quote` under the per-file cap.

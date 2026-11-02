@@ -13,7 +13,6 @@ import type { EnvInput } from "../../../src/adapters/config/loader.ts";
 import { createRpcAdapterFromConfig, JsonRpcAdapter } from "../../../src/adapters/rpc/jsonRpcAdapter.ts";
 import type { RpcTransportResponse } from "../../../src/adapters/rpc/jsonRpcAdapter.ts";
 import { createMetaModelApiAdapterFromConfig } from "../../../src/adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
-import { createhostedOpenWeightsAdapterFromConfig } from "../../../src/adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
 import { ModelId } from "../../../src/domain/types.ts";
 
 function mustOk<T, E extends { message: string }>(result: Result<T, E>): T {
@@ -51,10 +50,8 @@ function baseEnv(): EnvInput {
     BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_RPC_CALLS: "10000",
     BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS: "1000",
     BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_META: "1000",
-    BRANDKLIPPAREN_BUDGET_DAILY_CAP_ASSESSMENT_CALLS_hosted: "1000",
     BRANDKLIPPAREN_BUDGET_PER_KEY_DAILY_CAP_ASSESSMENT_CALLS: "100",
     BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_META: "100",
-    BRANDKLIPPAREN_ASSESSMENT_DAILY_COST_CAP_hosted: "100",
     BRANDKLIPPAREN_ALARM_LEVELS_PERCENT: "50,80,95",
     BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "meta-model-api",
     BRANDKLIPPAREN_ASSESSMENT_PROMPT_VERSION: "1.0.0",
@@ -106,15 +103,6 @@ describe("outbound targets come from validated configuration (K-503, M-07)", () 
       assessmentMaxOutputBytes: 100,
     });
     expect(metaHttp.ok).toBe(false);
-    const hostedFile = createhostedOpenWeightsAdapterFromConfig({
-      assessmenthostedBaseUrl: "file:///etc/hosts",
-      assessmenthostedApiKey: new SecretString("placeholder-hosted-key"),
-      assessmenthostedModelId: mustOk(ModelId.parse("meta-test-model")),
-      assessmentDeadlineMs: 1000,
-      assessmentMaxInputBytes: 100,
-      assessmentMaxOutputBytes: 100,
-    });
-    expect(hostedFile.ok).toBe(false);
     // User input becomes call parameters, never the request target: the
     // transport observes the configured endpoint for every crafted but
     // otherwise valid address, slot and call-data value.

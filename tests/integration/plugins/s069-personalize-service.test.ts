@@ -15,7 +15,7 @@ import {
   Selector,
   Timestamp,
 } from "../../../src/domain/types.ts";
-import { NotConfiguredPersonalizeAdapter } from "../../../src/adapters/personalize/hostedPersonalizeAdapter.ts";
+import { NotConfiguredPersonalizeAdapter } from "../../../src/adapters/personalize/notConfiguredPersonalizeAdapter.ts";
 import {
   createPersonalizeService,
   requiredFlooredSections,

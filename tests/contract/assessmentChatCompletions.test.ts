@@ -14,8 +14,6 @@ import type { AssessmentModelPort, CallContext, EvidenceList as EvidenceListType
 import type { PromptVersion as PromptVersionType } from "../../src/domain/types.ts";
 import type { Result } from "../../src/domain/result.ts";
 import { MetaModelApiAdapter } from "../../src/adapters/assessment/metaModelApi/metaModelApiAdapter.ts";
-import { hostedOpenWeightsAdapter } from "../../src/adapters/assessment/hostedOpenWeights/hostedOpenWeightsAdapter.ts";
-import { GenericCompatibleAdapter } from "../../src/adapters/assessment/GenericCompatible/GenericCompatibleAdapter.ts";
 import { fetchChatCompletionsTransport } from "../../src/adapters/assessment/chatCompletions/chatCompletionsAdapter.ts";
 import type { ChatCompletionsTransportResponse } from "../../src/adapters/assessment/chatCompletions/chatCompletionsAdapter.ts";
 
@@ -114,39 +112,11 @@ const BINDINGS: readonly Binding[] = [
         onWarn: () => undefined,
       }),
   },
-  {
-    name: "hosted",
-    provider: "hosted-open-weights",
-    model: "meta-models/muse-spark-open-1026",
-    make: (transport) =>
-      new hostedOpenWeightsAdapter({
-        endpoint: "https://hosted.example.invalid",
-        apiKey: new SecretString(FAKE_KEY),
-        modelId: mustOk(ModelId.parse("meta-models/muse-spark-open-1026")),
-        transport,
-        onWarn: () => undefined,
-      }),
-  },
-  {
-    name: "generic-compatible",
-    provider: "generic-compatible",
-    model: "fake-compat-model-1",
-    make: (transport) =>
-      new GenericCompatibleAdapter({
-        endpoint: "https://compat.example.invalid/",
-        apiKey: new SecretString(FAKE_KEY),
-        modelId: mustOk(ModelId.parse("fake-compat-model-1")),
-        transport,
-        onWarn: () => undefined,
-      }),
-  },
 ];
 
-// Per-provider request budgets (session 18, M2b): the hosted binding
-// keeps deterministic sampling (temperature 0, 1024 tokens), the Meta
-// reasoning binding sends 8192 tokens with a low reasoning effort, and
-// the vendor-neutral binding sends no sampling parameter at all with a
-// larger token budget. Only the Meta binding sends reasoning_effort.
+// Per-provider request budget: the Meta reasoning binding sends 8192
+// tokens with a low reasoning effort and temperature 0. Only the Meta
+// binding sends reasoning_effort.
 const EXPECTED_REQUEST: Record<
   string,
   { keys: readonly string[]; maxTokens: number; temperature: number | undefined; reasoningEffort: string | undefined }
@@ -157,24 +127,10 @@ const EXPECTED_REQUEST: Record<
     temperature: 0,
     reasoningEffort: "low",
   },
-  hosted: {
-    keys: ["max_tokens", "messages", "model", "temperature"],
-    maxTokens: 1024,
-    temperature: 0,
-    reasoningEffort: undefined,
-  },
-  "generic-compatible": {
-    keys: ["max_tokens", "messages", "model"],
-    maxTokens: 4096,
-    temperature: undefined,
-    reasoningEffort: undefined,
-  },
 };
 
 const EXPECTED_URLS: Record<string, string> = {
   meta: "https://meta-api.example.invalid/chat/completions",
-  hosted: "https://hosted.example.invalid/chat/completions",
-  "generic-compatible": "https://compat.example.invalid/chat/completions",
 };
 
 describe("assessment chat-completions request shape", () => {

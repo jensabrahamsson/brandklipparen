@@ -26,10 +26,7 @@ import type {
 
 // Selected provider behind the port (K-309). The same union appears in the
 // validated configuration; the composition root maps one to the other.
-// The third value is the vendor-neutral chat-completions shape for a
-// temporary local endpoint during development; it shares the request and
-// validation logic with the other two through the shared core.
-export type AssessmentProvider = "meta-model-api" | "hosted-open-weights" | "generic-compatible";
+export type AssessmentProvider = "meta-model-api";
 
 // Closed evidence list: the sole input source for the assessment (K-302).
 // Raw bytecode stays in the analysis path and never enters the prompt.

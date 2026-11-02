@@ -124,10 +124,9 @@ const TEST_API_KEY = "test-key-for-s038-suite-only";
 const TEST_PEPPER = "test-pepper-for-s038-suite-only";
 const TEST_DAY = "2026-10-27";
 
-const PROVIDERS = ["meta-model-api", "hosted-open-weights"] as const;
+const PROVIDERS = ["meta-model-api"] as const;
 const MODEL_IDS = {
   "meta-model-api": "fake-meta-spark-1",
-  "hosted-open-weights": "fake-open-weights-1",
 } as const;
 
 function prompt10(): PromptVersionType {
@@ -388,9 +387,8 @@ describe("S-038 assessment service over fakes (K-305, K-309)", () => {
       const otherPrompt = await otherPromptService.requestForToken(input);
       expect(otherPrompt.ok).toBe(true);
       expect(adapter.callCount).toBe(2);
-      // The other provider misses: provider and model id are key parts.
-      const otherProvider = provider === "meta-model-api" ? "hosted-open-weights" : "meta-model-api";
-      const otherAdapter = fakeAdapter(otherProvider);
+      // Another model id misses: provider and model id are key parts.
+      const otherAdapter = new FakeAssessmentModelAdapter({ provider, modelId: "another-model-id" });
       const otherProviderService = assessmentServiceFor(services, otherAdapter, { sharedCache: cache });
       const otherProviderResult = await otherProviderService.requestForToken(input);
       expect(otherProviderResult.ok).toBe(true);
@@ -417,7 +415,6 @@ describe("S-038 assessment service over fakes (K-305, K-309)", () => {
         },
         { ...base, promptVersion: "2.0.0" },
         { ...base, templateVersion: "2.0.0" },
-        { ...base, provider: otherProvider, modelId: MODEL_IDS[otherProvider] },
         { ...base, modelId: "another-model-id" },
         {
           ...base,
@@ -551,7 +548,6 @@ describe("S-038 assessment end to end over REST and MCP (K-305, K-309)", () => {
   let mcp: McpServer;
   const adapters = {
     "meta-model-api": fakeAdapter("meta-model-api"),
-    "hosted-open-weights": fakeAdapter("hosted-open-weights"),
   };
 
   let assessment: AssessmentService | undefined;
@@ -572,7 +568,7 @@ describe("S-038 assessment end to end over REST and MCP (K-305, K-309)", () => {
     });
     restBaseUrl = await rest.listen("127.0.0.1", 0);
     const stack = buildStack();
-    const mcpAssessment = assessmentServiceFor(stack.services, adapters["hosted-open-weights"]);
+    const mcpAssessment = assessmentServiceFor(stack.services, adapters["meta-model-api"]);
     mcp = createMcpServer({ detectors: mustDefaultDetectorSet(),
       services: stack.services,
       modelVersion: versions.modelVersion,
@@ -630,8 +626,8 @@ describe("S-038 assessment end to end over REST and MCP (K-305, K-309)", () => {
     const text = tool.value.content[0]?.text ?? "";
     const mcpBody = JSON.parse(text) as Record<string, unknown>;
     const mcpAssessment = mcpBody["assessment"] as Record<string, unknown> | null;
-    expect(mcpAssessment?.["provider"]).toBe("hosted-open-weights");
-    expect(mcpAssessment?.["modelId"]).toBe("fake-open-weights-1");
+    expect(mcpAssessment?.["provider"]).toBe("meta-model-api");
+    expect(mcpAssessment?.["modelId"]).toBe("fake-meta-spark-1");
     expect(deterministicFingerprint(mcpBody)).toBe(deterministicFingerprint(analysedBody));
   });
 

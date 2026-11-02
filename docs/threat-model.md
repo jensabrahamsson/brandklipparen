@@ -54,10 +54,10 @@ application service; driven adapters each implement one port.
 | Selector and clone adapters | `adapters/selectors`, `adapters/clones` behind `SelectorTablePort`, `CloneIndexPort` | Local, synchronous lookups: selector to name suggestion and risk relevance; code hash and skeleton hash matching against known templates. | K-009, K-017 |
 | Cache adapter | `adapters/cache` behind `CachePort` | Reading and writing analysis results per code hash and model version. | K-013 |
 | Model artifact adapter | `adapters/model` behind `ModelArtifactPort` | Loading and checksum verification of the frozen calibration artifact at startup. | K-011, K-210, K-211 |
-| Muse assessment adapters | `adapters/assessment/metaModelApi` and `adapters/assessment/hostedOpenWeights` behind `AssessmentModelPort` | Free-text Muse contract assessment through the selected provider, solely server-side and solely on request: Meta Model API with Muse Spark, or hosted with Muse Spark Open (`meta-models/muse-spark-open-1026`). | K-305, K-309, K-502, K-513 |
-| Layout model adapter (design per ADR section 13; retired by the critical review, ADR section 0.1) | `adapters/layout/hostedOpenWeights` behind `PluginLayoutModelPort` | Retired before implementation: the layout-only port, spec, and `POST /v1/layout` never ship. The single AI presentation surface is the personalize adapter below (ADR P-27). H-21–H-25 and M-27–M-31 are kept as the record of the retired leg; the live discipline is H-26–H-30 and M-32–M-36. | K-518 (proposed), K-513 |
-| Personalize model adapter (design per ADR section 14) | `adapters/personalize/hostedOpenWeights` behind `PluginPersonalizeModelPort` (working title) | Experimental AI personalize through hosted with Muse Spark Open (`meta-models/muse-spark-open-1026`), solely server-side and solely after the explicit `AI personalize (experimental)` opt-in: maps quoted user priorities and quoted `PLUGIN.md` frontmatter/sections to a whitelist ranking-plus-layout spec. Without a key it reports `not configured` with zero provider calls; the deterministic priority baseline stands. This is the unified mode that extends the layout adapter (ADR P-27); no second AI toggle ships beside it. | K-519 (proposed), K-513 |
-| Investigation model adapter (design per `docs/adr-investigate-with-muse.md`, P-29 onward) | `adapters/investigation/hostedOpenWeights` behind `InvestigationModelPort`, runner in `application` | Opt-in "Investigate with Muse" loop through hosted with Muse Spark Open (`meta-models/muse-spark-open-1026`), solely server-side and solely after an explicit request: the model proposes the next read-only registry tool, the typed graph runner validates, executes, and records each step. Without a key it reports `not configured` with zero provider calls. Never an input to score or evidence. | K-036 (proposed), K-520 (proposed), K-513 |
+| Muse assessment adapter | `adapters/assessment/metaModelApi` behind `AssessmentModelPort` | Free-text Muse contract assessment through the Meta Model API, solely server-side and solely on request: Muse Spark (`muse-spark-1.3`) with the configured model id. | K-305, K-309, K-502, K-513 |
+| Layout model adapter (design per ADR section 13; retired by the critical review, ADR section 0.1) | `adapters/layout/metaModelApi` behind `PluginLayoutModelPort` | Retired before implementation: the layout-only port, spec, and `POST /v1/layout` never ship. The single AI presentation surface is the personalize adapter below (ADR P-27). H-21–H-25 and M-27–M-31 are kept as the record of the retired leg; the live discipline is H-26–H-30 and M-32–M-36. | K-518 (proposed), K-513 |
+| Personalize model adapter (design per ADR section 14) | `adapters/personalize/metaModelApi` behind `PluginPersonalizeModelPort` (working title) | Experimental AI personalize through Meta Model API with Muse Spark (`muse-spark-1.3`), solely server-side and solely after the explicit `AI personalize (experimental)` opt-in: maps quoted user priorities and quoted `PLUGIN.md` frontmatter/sections to a whitelist ranking-plus-layout spec. Without a key it reports `not configured` with zero provider calls; the deterministic priority baseline stands. This is the unified mode that extends the layout adapter (ADR P-27); no second AI toggle ships beside it. | K-519 (proposed), K-513 |
+| Investigation model adapter (design per `docs/adr-investigate-with-muse.md`, P-29 onward) | `adapters/investigation/metaModelApi` behind `InvestigationModelPort`, runner in `application` | Opt-in "Investigate with Muse" loop through Meta Model API with Muse Spark (`muse-spark-1.3`), solely server-side and solely after an explicit request: the model proposes the next read-only registry tool, the typed graph runner validates, executes, and records each step. Without a key it reports `not configured` with zero provider calls. Never an input to score or evidence. | K-036 (proposed), K-520 (proposed), K-513 |
 | DeploymentFeed adapter | `adapters/feed` behind `DeploymentFeedPort` | Recently deployed tokens for the Just-deployed feed. | K-014, K-015 |
 | Clock and configuration adapters | `adapters/clock`, `adapters/config` behind `ClockPort`, `ConfigPort` | Current time as a value to the core; validated operational configuration as a typed value at startup. | K-102, K-104 |
 | Composition root | `composition` | The sole module that knows concrete adapter classes. Binds every port to exactly one adapter and hands a ready `AppServices` to the driving adapters. | K-027 |
@@ -98,7 +98,7 @@ flowchart TB
     LOGG["Structured logs, health check"]
     RPCN["Allowlisted RPC nodes, Ethereum mainnet"]
     META["Meta Model API: Muse Spark"]
-    hosted["hosted: Muse Spark Open, meta-models/muse-spark-open-1026"]
+    META["Meta Model API: Muse Spark, muse-spark-1.3"]
     OFF["offline/: training and calibration"]
     CI["CI: build and deployment"]
 
@@ -123,9 +123,9 @@ flowchart TB
     CONF -.->|F-14 typed configuration and time at startup and per call| APP
     APP -->|F-06 closed evidence list via AssessmentModelPort, solely on request| MUSEA
     MUSEA -->|F-12 assessment call to selected provider, server-side| META
-    MUSEA -->|F-12 assessment call to selected provider, server-side| hosted
+    MUSEA -->|F-12 assessment call to selected provider, server-side| META
     META -->|F-12 validated assessment text with provider and model id| MUSEA
-    hosted -->|F-12 validated assessment text with provider and model id| MUSEA
+    META -->|F-12 validated assessment text with provider and model id| MUSEA
     APP -->|F-08 analysis log with allowlisted fields| LOGG
     CI -->|F-16 pinned artifacts, image and demo deployment| REST
 ```
@@ -143,16 +143,16 @@ flowchart TB
 | F-09 | Application service ↔ DeploymentFeed adapter via `DeploymentFeedPort` | Page size out; list of recently deployed tokens with address, block and deploy time in. | B3, B6 |
 | F-10 | Offline chain → model artifact → application service via `ModelArtifactPort` | Versioned artifact with model version, checksum, training data version and explanation schema version; verified on loading before the first analysis. | B9 |
 | F-11 | Application service ↔ selector and clone adapters | Selector out and name suggestion with risk relevance in; code hash and skeleton hash out and clone hit with index version in. Local and synchronous lookups. | B3 |
-| F-12 | Selected Muse assessment adapter → selected provider (Meta Model API or hosted) | Closed evidence list out with the provider key as a server-side header to the selected allowlisted endpoint; validated assessment text in with provider and model id. Active solely on request as per section 6. | B5, B6 |
+| F-12 | Selected Muse assessment adapter → selected provider (Meta Model API) | Closed evidence list out with the provider key as a server-side header to the selected allowlisted endpoint; validated assessment text in with provider and model id. Active solely on request as per section 6. | B5, B6 |
 | F-13 | RPC adapter → RPC nodes | `eth_getCode`, `eth_getStorageAt`, `eth_call` and block number to allowlisted hosts with the provider key in URL or header. | B5, B6 |
 | F-14 | Configuration, secrets and clock → composition root, application service and adapters | Typed operational configuration at startup, keys as environment variables from the secret store and current time as a `Timestamp` value per call. | B7 |
 | F-15 | Application service → client via web UI, REST API and MCP server | Assessment with probabilities, grade, signals with evidence, can't tell list, template-based explanation and, on request, clearly marked Muse-refined text. The response side of F-01 and F-02. | B8 |
 | F-16 | CI and build chain → running components and demo | Installed dependencies from lockfile, digest-pinned image, model artifact and deployment to the demo. | B9 |
-| F-17 | Operator or CI → plugin audit, and on opt-in audit → hosted endpoint (design per ADR section 12) | Plugin source, manifest, and `PLUGIN.md` from one plugin directory in; deterministic check results and, on opt-in, structured advisory findings out. | B9, B5, B6 |
+| F-17 | Operator or CI → plugin audit, and on opt-in audit → Meta Model API endpoint (design per ADR section 12) | Plugin source, manifest, and `PLUGIN.md` from one plugin directory in; deterministic check results and, on opt-in, structured advisory findings out. | B9, B5, B6 |
 | F-18 | Plugin registry → REST, MCP, and web UI callers (design per ADR P-16) | Validated `PLUGIN.md` content with its section list, read-only. | B8 |
-| F-19 | Web UI → REST layout route → layout service → hosted endpoint (design per ADR section 13; retired by the critical review, ADR section 0.1 — never implemented) | Closed layout facts and quoted finding titles out after an explicit opt-in; validated declarative layout spec in with provider and model id. The deterministic adaptive layout (schema-driven rendering, risk-adaptive order, Simple / Expert) is client-side over F-15 data and adds no flow. Kept as the record of the retired leg; the live AI presentation flow is F-20 only. | B1, B8, B5, B6 |
-| F-20 | Web UI → REST personalize route → personalize service → hosted endpoint (design per ADR section 14) | Current user priorities text (quoted untrusted data), closed layout facts, and per-plugin quoted frontmatter plus `What it checks` / `Why it matters to you` excerpts out after the explicit `AI personalize (experimental)` opt-in for that mapping call; validated ranking-plus-layout spec in with provider and model id. The deterministic priority baseline (keyword/tag matching over frontmatter) is client-side over F-15 and F-18 data and adds no flow; priorities have no server-side profile in any mode. | B1, B8, B5, B6 |
-| F-21 | Client → REST/MCP investigation → graph runner → hosted endpoint, registry tools, and step stream (design per `docs/adr-investigate-with-muse.md`, P-29 onward) | Frozen analysis summary, registry tool catalogue, trace so far, and quoted on-chain/`PLUGIN.md` strings out after an explicit investigation request; schema-validated decision (one allowlisted tool call or conclude) in per step; trace steps streamed to the web UI over the REST events route. Tools read only frozen facts fetched through existing adapters; no new chain reads. | B1, B8, B5, B6 |
+| F-19 | Web UI → REST layout route → layout service → Meta Model API endpoint (design per ADR section 13; retired by the critical review, ADR section 0.1 — never implemented) | Closed layout facts and quoted finding titles out after an explicit opt-in; validated declarative layout spec in with provider and model id. The deterministic adaptive layout (schema-driven rendering, risk-adaptive order, Simple / Expert) is client-side over F-15 data and adds no flow. Kept as the record of the retired leg; the live AI presentation flow is F-20 only. | B1, B8, B5, B6 |
+| F-20 | Web UI → REST personalize route → personalize service → Meta Model API endpoint (design per ADR section 14) | Current user priorities text (quoted untrusted data), closed layout facts, and per-plugin quoted frontmatter plus `What it checks` / `Why it matters to you` excerpts out after the explicit `AI personalize (experimental)` opt-in for that mapping call; validated ranking-plus-layout spec in with provider and model id. The deterministic priority baseline (keyword/tag matching over frontmatter) is client-side over F-15 and F-18 data and adds no flow; priorities have no server-side profile in any mode. | B1, B8, B5, B6 |
+| F-21 | Client → REST/MCP investigation → graph runner → Meta Model API endpoint, registry tools, and step stream (design per `docs/adr-investigate-with-muse.md`, P-29 onward) | Frozen analysis summary, registry tool catalogue, trace so far, and quoted on-chain/`PLUGIN.md` strings out after an explicit investigation request; schema-validated decision (one allowlisted tool call or conclude) in per step; trace steps streamed to the web UI over the REST events route. Tools read only frozen facts fetched through existing adapters; no new chain reads. | B1, B8, B5, B6 |
 
 The fast path as per K-101 consists of F-01/F-02, F-03, F-04/F-13,
 F-11, F-07 and F-15 with a template-based explanation from the core.
@@ -197,7 +197,7 @@ flowchart LR
     subgraph Z5["Z5: external services"]
         RPCN["Allowlisted RPC nodes"]
         META["Meta Model API"]
-        hostedZ["hosted open weights"]
+        METAZ["Meta Model API"]
     end
     subgraph Z6["Z6: secrets, build and training"]
         SEC["Secret store and environment variables"]
@@ -220,7 +220,7 @@ flowchart LR
 | B2: Z1 → Z2 | F-03 | Validated address and key identity | Solely typed domain values through smart constructors as per A-11; raw text stays in the driving adapter (M-10, M-15). |
 | B3: Z2 → Z3/Z4 | F-04, F-05, F-06, F-07, F-09, F-11 | Address and block to the RPC adapter, bytecode to the internal decompiler, evidence list to the selected Muse assessment adapter, keys to cache and feed and lookup values to the selector and clone adapters | Calls go solely through the ports as per A-05 with `CallContext`, deadline and limits as per A-17 (M-01, M-07, M-20). |
 | B4: Z2 → Z4 | F-05 out | Bytecode as the sole input to the internal engine | Bytecode is treated as hostile input; the engine runs in-process under its deterministic caps with port-level input and output byte caps as per A-27 (M-01). |
-| B5: Z3/Z2 → Z5 | F-12, F-13 | RPC calls to allowlisted nodes; assessment calls to the selected provider (Meta Model API or hosted) after an explicit request | Targets are fetched solely from validated configuration as per I-08, I-13 and I-18; server-side provider keys; a valid key with remaining quota before expensive steps (M-07, M-08, M-09, M-20). |
+| B5: Z3/Z2 → Z5 | F-12, F-13 | RPC calls to allowlisted nodes; assessment calls to the selected provider (Meta Model API) after an explicit request | Targets are fetched solely from validated configuration as per I-08, I-13 and I-18; server-side provider keys; a valid key with remaining quota before expensive steps (M-07, M-08, M-09, M-20). |
 | B6: Z5/Z4/Z3 → Z2 | F-04 in, F-05 in, F-06 in, F-07 in, F-09 in, F-13 in | RPC responses, decompiled code, provider assessment output, cache entries, feed entries and lookup responses | Boundary validation at the boundary as per A-16, size limits as per A-17 and typed error branches as per A-15; provider and model identity is verified per M-20; contract strings pass `UntrustedText.quote` as per A-10 (M-02, M-05, M-14, M-20). |
 | B7: Z6 → Z1/Z2 | F-08 out, F-14 in | Configuration and keys at startup; logs and health responses out | Keys are read solely from the environment at startup and are logged solely in redacted form; log fields follow the allowlist as per I-10 (M-11, M-16). |
 | B8: Z1/Z2 → Z0 | F-15, the response side of F-01 and F-02 and F-08 | Assessment, evidence, explanations, MCP output and health status | Contract data and explanation text are rendered as text with a strict CSP in the web UI; MCP output is marked as untrusted data with a size limit (M-13, M-15). |
@@ -334,7 +334,7 @@ section 5.
 | D | A large or crafted artifact binds startup or analysis. | The artifact format is validated on loading against A-20; a crafted artifact gives the `artifact-malformed` error branch and a typed startup error (H-11, M-17). |
 | E | The training chain writes into the runtime or changes a running artifact. | The offline chain delivers solely artifact files under `model/`; the runtime reads the artifact at startup through the port (H-11, H-12, M-17, M-18). |
 
-### 4.10 Muse assessment adapters and both providers (F-06, F-12)
+### 4.10 Muse assessment adapters and the provider (F-06, F-12)
 
 The table applies after an explicit assessment request with either
 provider selected per K-309. Ahead of a request the flows F-06 and F-12
@@ -344,10 +344,10 @@ surface in every mode per section 6.
 | Cat. | Threat | Handling |
 |---|---|---|
 | S | A response comes from an endpoint outside the allowlist or impersonates the selected provider or model. | Calls go solely to the selected provider's allowlisted endpoint in the configuration as per I-13 and I-18; provider and model id are verified, logged per assessment and travel with the response (H-02, H-14, M-07, M-20). |
-| T | Contract strings, metadata or decompiled code steer the prompt as instruction for either provider. | The prompt carries a closed typed evidence list; contract strings are quoted as untrusted data with a length limit through `UntrustedText.quote`; calls are tool-free (H-02, M-03, M-04). |
+| T | Contract strings, metadata or decompiled code steer the prompt as instruction for the provider. | The prompt carries a closed typed evidence list; contract strings are quoted as untrusted data with a length limit through `UntrustedText.quote`; calls are tool-free (H-02, M-03, M-04). |
 | R | An incorrect assessment wording is disputed afterwards. | Prompt version, provider, model id and evidence IDs are logged as per I-10; the response carries prompt version, provider, model id and the Muse-generated marking (H-02, M-04, M-05, M-20). |
-| I | Either provider key or prompt content leaks to client or log. | Both keys live in the secret store and leave the server solely as a header to the selected provider; prompts are logged as version and evidence IDs (H-05, H-10, M-11, M-16, M-20). |
-| D | A slow or expensive provider response binds the assessment or the budget for either provider. | Time limit per call, at most one assessment call per uncached request, caching per code hash, prompt version, provider and model id and per-key daily caps as per I-14; every error branch gives the template text (H-04, M-09, M-20). |
+| I | The provider key or prompt content leaks to client or log. | Both keys live in the secret store and leave the server solely as a header to the selected provider; prompts are logged as version and evidence IDs (H-05, H-10, M-11, M-16, M-20). |
+| D | A slow or expensive provider response binds the assessment or the budget for the provider. | Time limit per call, at most one assessment call per uncached request, caching per code hash, prompt version, provider and model id and per-key daily caps as per I-14; every error branch gives the template text (H-04, M-09, M-20). |
 | E | Provider output steers probabilities, grade, signals or tools. | The output is validated against the versioned assessment schema as per K-305 with size limits and provider identity check; scores and evidence are frozen before the call and left bit-identical as per K-307 (H-02, H-14, M-05, M-06, M-20). |
 
 ### 4.11 DeploymentFeed adapter (F-09)
@@ -407,7 +407,7 @@ discipline carries into M-33–M-35.
 
 | Cat. | Threat | Handling |
 |---|---|---|
-| S | A layout response comes from an endpoint outside the allowlist or impersonates the selected provider or model. | Calls go solely to the hosted allowlisted endpoint from validated configuration; provider and model id are verified and shown with the `Experimental AI layout` label (H-21, M-27). |
+| S | A layout response comes from an endpoint outside the allowlist or impersonates the selected provider or model. | Calls go solely to the Meta Model API allowlisted endpoint from validated configuration; provider and model id are verified and shown with the `Experimental AI layout` label (H-21, M-27). |
 | T | Analysis or plugin text instructs the layout model to hide, invent, or restyle content, or a crafted spec orders content deceptively. | Layout input is closed facts plus quoted finding titles in a tool-free call; the spec is whitelist-validated and can only order and emphasise unchanged frozen content (H-22, H-23, M-28, M-29). |
 | R | A visitor disputes what was shown under an AI-chosen order. | The deterministic content, score, and evidence are identical in every layout; the applied layout source, provider, model id, and layout prompt version are stated on the page (H-23, M-29). |
 | I | The layout call leaks the provider key, full analysis text, or neighbouring page data to the provider or the client. | The call is server-side with the key as header only; input is minimised to closed layout facts and capped quoted titles, logged as ids and versions (H-22, M-28). |
@@ -424,7 +424,7 @@ toggle, one spec family; ADR P-27).
 
 | Cat. | Threat | Handling |
 |---|---|---|
-| S | A personalize response comes from an endpoint outside the allowlist or impersonates the selected provider or model. | Calls go solely to the hosted allowlisted endpoint from validated configuration; provider and model id are verified and shown with the `Experimental AI personalize` label (H-29, M-35). |
+| S | A personalize response comes from an endpoint outside the allowlist or impersonates the selected provider or model. | Calls go solely to the Meta Model API allowlisted endpoint from validated configuration; provider and model id are verified and shown with the `Experimental AI personalize` label (H-29, M-35). |
 | T | User priorities or `PLUGIN.md` text instructs the personalize model to hide critical evidence, invent plugins, or change scores, or a crafted spec ranks deceptively. | Priorities and docs reach the model solely as quoted untrusted data in a tool-free call; the spec is whitelist-validated and the severity floor keeps critical evidence always visible over unchanged frozen content (H-27, H-28, M-33, M-34). |
 | R | A visitor disputes what was emphasised under a personalized order. | Scores, evidence, and finding text are identical in every order; the page states the applied source (priorities match with matched tags, or AI with provider, model id, and personalize prompt version) and offers one-click return to the standard order (H-28, M-34). |
 | I | Priorities text — which a user may fill with PII-ish context — leaks to the server, logs, cache keys, other visitors, or the provider without the opt-in. | Priorities live only under one `localStorage` key, are never logged, cached, or profiled server-side, and leave the device solely inside the single opted-in F-20 mapping call as quoted data (H-26, M-32). |
@@ -439,7 +439,7 @@ opt-in loop, its read-only tools, and the streamed trace.
 
 || Cat. | Threat | Handling |
 |---|---|---|
-| S | An investigation response comes from an endpoint outside the allowlist or impersonates the provider or model. | Calls go solely to the hosted allowlisted endpoint from validated configuration; provider and model id are verified and shown with the `Investigated with Muse` label (H-31, M-37). |
+| S | An investigation response comes from an endpoint outside the allowlist or impersonates the provider or model. | Calls go solely to the Meta Model API allowlisted endpoint from validated configuration; provider and model id are verified and shown with the `Investigated with Muse` label (H-31, M-37). |
 | T | On-chain strings or `PLUGIN.md` text instructs the model to run a planted tool, skip a detector, or conclude falsely; a crafted decision names a disallowed tool or malformed args. | All strings enter the prompt solely as quoted untrusted data in a tool-free decision call; every decision passes allowlist and schema validation in the runner before any tool runs (H-31, H-34, M-37, M-40). |
 | R | A visitor disputes what the investigation claimed or which evidence it used. | Every step records tool, rationale, and returned evidence ids; the narrative survives only with citations into that recorded set, with drops counted (H-32, M-38). |
 | I | The investigation call or stream leaks the provider key, full bytecode, or neighbouring analysis data to the provider or the client. | The call is server-side with the key as header only; input is minimised to the frozen summary, tool catalogue, and trace ids, logged as ids and versions (H-36, M-42). |
@@ -625,12 +625,12 @@ K-102, with every individual analysis appearing correct.
   `a32_domain_has_no_clock_random_or_network` searches clock,
   randomness and network calls in `domain` and requires zero hits.
 
-### 5.3 The Muse contract assessment with both providers
+### 5.3 The Muse contract assessment with the provider
 
 The section has its own heading because the surface is bounded to the
 on-request assessment path. The full description of the request modes,
 injection paths and cost protection is in section 6. The threats
-below apply after an explicit assessment request, with either provider
+below apply after an explicit assessment request, with the provider
 selected per K-309. The deterministic core has no prompt injection
 surface in every mode per section 6.1 and K-502.
 
@@ -640,32 +640,32 @@ Token name, symbol, metadata, revert strings, function names or
 decompiled code carry instruction-like text that tries to make
 Muse depart from the evidence list, invent capabilities, downplay or
 exaggerate a risk or phrase intent in place of capability, through
-either provider per K-309.
+the provider per K-309.
 
 - M-03 Closed typed evidence list with separate instruction and
   data fields: prompt construction receives the closed evidence list as per
   K-302 as the sole input source, with the system instruction in its own
-  field and every evidence entry as typed data, for both providers.
+  field and every evidence entry as typed data, for the provider.
   Raw bytecode stays in
   the analysis path. Requirement: K-502. Test: the unit test
   `k302_prompt_contains_closed_typed_evidence_list` requires a
-  closed typed list as the sole input source against both adapters and
+  closed typed list as the sole input source against the adapter and
   the fake, and the unit test
   `k302_prompt_builder_accepts_evidence_only` requires that
   prompt construction receives evidence entries as its input.
 - M-04 Quoted untrusted data with a length limit: every
   contract string and metadata string passes `UntrustedText.quote` as per A-10,
   capped at the length limit as per A-17, and is shown as a quotation in
-  the explanation as per K-308, for both providers. The prompt is logged as prompt version,
+  the explanation as per K-308, for the provider. The prompt is logged as prompt version,
   provider, model id and evidence IDs as per I-10. Requirement: K-502. Test: the unit test
   `k308_contract_strings_quoted_with_length_cap` requires quoting
   with a length limit in prompt and template construction; the unit test
   `k502_injection_strings_yield_at_most_one_quote` feeds
   injection strings in name, symbol, metadata and revert texts against
-  both adapters and the fake and requires
+  the adapter and the fake and requires
   at most one quotation in the output with unchanged structure.
 - M-05 Schema-validated structured output with template fallback:
-  assessment text from either provider is validated against the versioned
+  assessment text from the provider is validated against the versioned
   assessment schema as per K-305, which states claims,
   signal links, the markers holds now and can change and language.
   Claims with a missing or invalid signal link are removed in
@@ -675,7 +675,7 @@ either provider per K-309.
   Test: the unit test `k305_schema_covers_claims_links_markers_language`
   requires the schema's fields for each adapter; the integration test
   `k305_invalid_output_routes_to_template` requires template text at
-  schema breach for both adapters and the fake.
+  schema breach for the adapter and the fake.
 - M-06 One-way explanation chain with frozen numbers:
   probabilities, grade, signals and evidence are computed and frozen
   in the fast path before every assessment call as per A-19 and
@@ -695,14 +695,14 @@ either provider per K-309.
 
 **H-14 Tampered or oversize assessment provider response, or wrong
 provider identity (F-06, F-12, B5, B6).**
-A response from either provider (Meta Model API or hosted) arrives
+A response from the Meta Model API arrives
 tampered in transit or at the provider, with a provider or model id
 different from the selected configuration, malformed against the
 assessment schema, or oversize beyond the output limit, and reaches
 the user as a credible Muse assessment or binds the assessment path.
 
 - M-20 Validated, size-bounded and identity-checked provider responses
-  with protected keys for both providers: each adapter validates the
+  with protected keys for the provider: the adapter validates the
   response against the versioned assessment schema per K-305, enforces
   the input and output size limits and timeout per K-309 and A-17,
   verifies provider and model id against the selected configuration,
@@ -722,7 +722,7 @@ the user as a credible Muse assessment or binds the assessment path.
   `runAssessmentModelPortContract` require the same outcomes per
   adapter; the integration test
   `k513_both_provider_keys_absent_from_client_and_logs` searches client
-  responses and logs for both provider key patterns and requires zero
+  responses and logs for the provider key pattern and requires zero
   hits.
 
 Cost abuse against the same assessment path is handled by M-08 and
@@ -742,7 +742,7 @@ a redirect there.
   RPC hosts and both assessment provider endpoints are fetched solely from
   the environment variables `BRANDKLIPPAREN_RPC_URLS`,
   `BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL` and
-  `BRANDKLIPPAREN_ASSESSMENT_hosted_BASE_URL` as per I-08, I-13 and I-18, validated against
+  `BRANDKLIPPAREN_ASSESSMENT_META_BASE_URL` as per I-08, I-13 and I-18, validated against
   the typed schema at startup and compared against the allowlist at
   every call. User input becomes address values, slot values and
   call data in the calls; targets are fetched solely from the configuration.
@@ -782,8 +782,8 @@ key caps during the assessment period.
   key with remaining quota before every expensive step; the load test
   `k504_limits_hold_under_overload_and_cache_serves` requires that
   the limits hold under overload.
-- M-09 Per-key daily caps and cache as cost protection for both
-  providers: every
+- M-09 Per-key daily caps and cache as cost protection for the
+  provider: every
   analysis sums the count of RPC calls per key and, per assessment
   request, the count of assessment calls per provider and
   model id separately as per K-107 and K-309. At most one
@@ -825,7 +825,7 @@ paths under the stolen key's quota and consumption profile.
   including both assessment provider keys:
   keys are created in Jens Abrahamsson's name for the project with
   least privilege and separate keys per environment and per assessment
-  provider (Meta Model API and hosted), stored in
+  provider (Meta Model API), stored in
   the platform secret store and read solely as environment variables
   at startup as per I-08, I-09, I-13 and I-18. Each provider key travels
   solely as a server-side header to its provider's allowlisted endpoint
@@ -1010,11 +1010,11 @@ section 1 point 4 of this file.
 The audit and docs update (ADR section 12, P-13–P-17) adds two further
 surfaces inside this same section, so plugin threats stay in one
 place: a `plugin audit` step (CLI and CI job, with an optional advisory
-AI review through the hosted open-weights path) and a required
+AI review through the Meta Model API path) and a required
 `PLUGIN.md` per plugin, exposed read-only through REST, MCP, and the
 web UI. Two flows are named for these surfaces: F-17 (plugin source,
 manifest, and `PLUGIN.md` from the operator or CI to the audit, and on
-opt-in from the audit to the selected hosted endpoint and back),
+opt-in from the audit to the selected Meta Model API endpoint and back),
 crossing B9 and, for the provider leg, B5/B6; and F-18 (validated
 `PLUGIN.md` content from the registry to REST, MCP, and web UI
 callers), crossing B8. The K-IDs K-516 and K-517, and the functional
@@ -1166,7 +1166,7 @@ whole files, written by the party who benefits from a clean report.
   prompt to carry them as quoted data and the report to carry no
   approval state; the contract suite
   `runPluginAuditModelPortContract` requires the same quoting against
-  the fake and the hosted adapter over a recorded transport, with
+  the fake and the Meta Model API adapter over a recorded transport, with
   zero network in tests.
 
 **H-18 Advisory AI audit result treated as approval, or as score or
@@ -1197,7 +1197,7 @@ P-05 and K-307.
 **H-19 Leakage of plugin source to the model provider (F-17, B5,
 B6).**
 The AI audit phase sends plugin source and `PLUGIN.md` content to
-hosted. Source that an author has not published — a third-party-style
+Meta Model API. Source that an author has not published — a third-party-style
 plugin under evaluation, or a future private plugin — leaves the
 repo boundary to a provider whose retention the project does not
 control, and a careless audit run could widen the send to repo files,
@@ -1205,7 +1205,7 @@ configuration values, or secrets that were never meant to leave.
 
 - M-25 Opt-in, minimised, and logged source disclosure for the audit:
   the AI phase runs solely on explicit opt-in per audit run; without
-  a configured hosted key it reports `not configured` and makes zero
+  a configured Meta Model API key it reports `not configured` and makes zero
   provider calls. Before any send, the audit lists the exact files it
   will send (the plugin directory's source, manifest, and `PLUGIN.md`
   only — no repo-wide files, no configuration values, no secrets; the
@@ -1271,7 +1271,7 @@ layout, and a Simple / Expert toggle persisted in `localStorage` —
 plus an experimental, off-by-default AI layout mode. One flow is named
 for the AI leg: F-19 (closed layout facts and quoted finding titles
 from the web UI through the REST layout route and the layout service
-to the hosted endpoint, and the validated layout spec back), crossing
+to the Meta Model API endpoint, and the validated layout spec back), crossing
 B1 and B8 on the client leg and B5/B6 on the provider leg. The
 deterministic adaptive parts run client-side over F-15 data and add no
 flow. The K-ID K-518, and the functional K-034, are proposed in the ADR
@@ -1299,7 +1299,7 @@ steered by an unvalidated value or the page binds on a huge spec.
   `output-too-large`, or `provider-mismatch` branch per A-15, the raw
   model text is discarded, and the deterministic P-19 layout stands.
   Provider and model id are verified against the selected
-  configuration, and calls go solely to the hosted allowlisted
+  configuration, and calls go solely to the Meta Model API allowlisted
   endpoint with deadline and size limits per A-17. Requirement:
   K-518 (proposed), K-513. Test: the unit test
   `k518_layout_spec_rejects_html_code_url_style_fields` feeds specs
@@ -1309,7 +1309,7 @@ steered by an unvalidated value or the page binds on a huge spec.
   checks the typed spec and the descriptor against each other on
   frozen examples in both directions; the contract suite
   `runPluginLayoutModelPortContract` requires the same outcomes
-  against the fake adapter and the hosted adapter over a recorded
+  against the fake adapter and the Meta Model API adapter over a recorded
   transport, with zero network in tests.
 
 **H-22 Prompt injection via analysis or plugin text into the layout
@@ -1340,7 +1340,7 @@ string in it is attacker-influenced through the analysed contract.
   fake layout adapter and requires them as quoted data in the prompt
   and no non-spec field in the result; the contract suite
   `runPluginLayoutModelPortContract` requires the same quoting
-  against the fake and the hosted adapter over a recorded transport.
+  against the fake and the Meta Model API adapter over a recorded transport.
 
 **H-23 AI layout treated as authority over evidence (F-19, B8).**
 An AI-chosen order is read — by a visitor, a screenshot, or later
@@ -1433,7 +1433,7 @@ for the AI leg: F-20 (current priorities text as quoted untrusted
 data, closed layout facts, and quoted per-plugin frontmatter plus
 `What it checks` / `Why it matters to you` excerpts from the web UI
 through the REST personalize route and the personalize service to
-the hosted endpoint, and the validated ranking-plus-layout spec
+the Meta Model API endpoint, and the validated ranking-plus-layout spec
 back), crossing B1 and B8 on the client leg and B5/B6 on the
 provider leg. The deterministic baseline and the local store add
 no flow. The K-ID K-519, and the functional K-035, are proposed in
@@ -1512,7 +1512,7 @@ spec validation, not by filtering the user's words.
   adapter and requires them as quoted data in the prompt and no
   non-spec field in the result; the contract suite
   `runPluginPersonalizeModelPortContract` requires the same quoting
-  against the fake and the hosted adapter over a recorded
+  against the fake and the Meta Model API adapter over a recorded
   transport, with zero network in tests.
 
 **H-28 Personalization suppresses or buries critical findings, or
@@ -1581,7 +1581,7 @@ adds the ranking checks.
   (P-25) — or the P-19 layout when no priorities are stated —
   stands with a fallback notice. Provider and model id are verified
   against the selected configuration, calls go solely to the
-  hosted allowlisted endpoint with deadline and size limits per
+  Meta Model API allowlisted endpoint with deadline and size limits per
   A-17, and all spec and content rendering stays escaped text under
   the strict CSP with no new HTML sink (K-507, M-30 discipline).
   Requirement: K-519 (proposed), K-513. Test: the unit test
@@ -1594,7 +1594,7 @@ adds the ranking checks.
   the typed spec and the descriptor against each other on frozen
   examples in both directions; the contract suite
   `runPluginPersonalizeModelPortContract` requires the same outcomes
-  against the fake adapter and the hosted adapter over a recorded
+  against the fake adapter and the Meta Model API adapter over a recorded
   transport, with zero network in tests; the Playwright test
   `k519_invalid_or_missing_personalize_spec_falls_back_to_deterministic_baseline`
   serves an invalid spec and a missing spec through the fake adapter
@@ -1639,11 +1639,11 @@ state, no other visitor, and no analysis value reads the value.
 The Investigate epic in `docs/adr-investigate-with-muse.md`
 (P-29–P-38) adds one component, the typed graph runner
 `investigateToken` in `src/application` beside `analyzeToken`, one
-port (`InvestigationModelPort` with its hosted Muse Spark Open
+port (`InvestigationModelPort` with its Meta Model API Muse Spark
 adapter and fake), and one flow: F-21 (frozen analysis summary,
 registry tool catalogue, trace so far, and quoted on-chain and
 `PLUGIN.md` strings from the client through REST/MCP to the runner
-and on to the hosted endpoint, with trace steps streamed back over
+and on to the Meta Model API endpoint, with trace steps streamed back over
 the REST events route), crossing B1, B8, B5, and B6. The
 deterministic analysis runs first and is frozen; the investigation
 adds no analysis flow, performs no new chain reads, and writes only
@@ -1694,7 +1694,7 @@ trace order and a narrative the citation check then constrains
   excerpts through the fake adapter and requires them present only
   as quoted data with no non-decision result field; the contract
   suite `runInvestigationModelPortContract` requires the same
-  quoting against the fake and the hosted adapter over a recorded
+  quoting against the fake and the Meta Model API adapter over a recorded
   transport, with zero network in tests.
 - M-40 (cross-reference): every returned decision still passes the
   allowlist and schema validation in H-34/M-40 before any tool
@@ -1845,7 +1845,7 @@ markup, or one caller's trace to another caller. Rationale strings
 are model output and therefore untrusted content in a browser.
 
 - M-42 Minimised server-side calls, id-only logging, and text-only
-  stream rendering: the call is server-side with the hosted key
+  stream rendering: the call is server-side with the Meta Model API key
   as a header only to the allowlisted endpoint from validated
   configuration (I-08, I-13); input is minimised to the frozen
   analysis summary (code hash, score band, signal ids), the tool
@@ -2098,15 +2098,15 @@ native-zero side outside V4.
   `k039_v4_hooks_stay_context_never_score`, and the property
   test `k039_feed_leaves_score_and_evidence_unchanged`.
 
-## 6. Muse contract assessment: bounded MVP feature with both providers
+## 6. Muse contract assessment: bounded MVP feature with the provider
 
 The MVP feature is the button or tab "Muse contract assessment" in
 the web UI, with the REST endpoint and the MCP tool over the same
 application service. The feature delivers a free-text assessment
 through the selected provider per K-309: Meta Model API with Muse
-Spark through `adapters/assessment/metaModelApi`, or hosted with Muse
-Spark Open (`meta-models/muse-spark-open-1026`) through
-`adapters/assessment/hostedOpenWeights`, both behind
+Spark through `adapters/assessment/metaModelApi`, or Meta Model API with Muse
+Spark (`muse-spark-1.3`) through
+`adapters/assessment/metaModelApi`, both behind
 `AssessmentModelPort` and built solely on the closed
 evidence list as per K-302. The feature follows K-305, K-309, I-13
 and I-18.
@@ -2148,16 +2148,16 @@ The statement holds explicitly:
   separate from the build surface.
 
 The threat model applies to the assessment path after a request with
-either provider selected; H-02 and H-14 are active on that path, with
+the provider selected; H-02 and H-14 are active on that path, with
 the deterministic core outside it at all times.
 
-### 6.2 On-request assessment with either provider: injection paths
+### 6.2 On-request assessment with the provider: injection paths
 
 After an explicit request, the assessment runs solely through the
 button or tab, the REST endpoint or the MCP tool, with the selected
 provider per K-309. The injection paths
 into the prompt are exhaustively these, each handled by
-M-03–M-06 and M-20 against H-02 and H-14 for both providers:
+M-03–M-06 and M-20 against H-02 and H-14 for the provider:
 
 | Path | Carrier into the prompt | Handling |
 |---|---|---|
@@ -2167,7 +2167,7 @@ M-03–M-06 and M-20 against H-02 and H-14 for both providers:
 | Decompiled code | Snippets from the internal decompiler linked to signals after the deepening | The snippet travels with the evidence entry as quoted data with a size limit; raw bytecode stays in the analysis path as per K-302 (M-03, M-04). |
 | Current values and capabilities | Measured values as per K-016 and permissions from proxy resolution | Typed fields in the evidence entry with value, slot, block and point in time and authorised changer respectively as per K-303 (M-03). |
 
-Every path meets the same protections in series for both providers: the closed typed
+Every path meets the same protections in series for the provider: the closed typed
 evidence list in M-03 keeps instruction and data in separate fields,
 quoting in M-04 keeps the strings as data, schema validation
 in M-05 keeps the response within claims with valid signal links and
@@ -2178,7 +2178,7 @@ tampered or oversize provider responses at the template text. A successful injec
 the wording in a response that is validated, marked and cached as per
 section 6.3, with the template text as the outcome at every deviation.
 
-### 6.3 Marking, caching and cost protection for both providers
+### 6.3 Marking, caching and cost protection for the provider
 
 - Marking: assessment text is clearly marked as Muse-generated in
   web UI, REST API and MCP, with its own field, provider and model id
@@ -2195,7 +2195,7 @@ section 6.3, with the template text as the outcome at every deviation.
   Test: the integration test
   `k305_refined_text_cached_per_codehash_and_template_version`
   requires zero new calls at a cache hit with the full key (M-09, K-504).
-- Cost limit for both providers: at most one assessment call per
+- Cost limit for the provider: at most one assessment call per
   uncached request
   applies as a fixed rule; every request sums its assessment calls
   per provider and model id as per K-107; the per-key daily cap
@@ -2208,19 +2208,19 @@ section 6.3, with the template text as the outcome at every deviation.
   requires zero assessment calls and zero assessment cost ahead of an
   explicit request (M-08, M-09,
   K-504, K-513).
-- Key protection for both providers: both provider keys live in the
+- Key protection for the provider: the provider key lives in the
   platform secret store,
   leave the server solely as an authentication header to the
   selected provider's allowlisted endpoint and appear in client
   responses and logs with zero
   hits. Test: the integration test
   `k305_client_response_has_no_model_key` searches for key patterns for
-  both providers in
+  the provider in
   every client response and requires zero hits; the integration test
   `k513_both_provider_keys_absent_from_client_and_logs` covers logs
   (M-11, M-20, K-505, K-513).
 - Provider response protection: tampered, malformed, oversize or
-  identity-mismatched responses from either provider give the template
+  identity-mismatched responses from the provider give the template
   text per M-20. Test: the integration test
   `k513_tampered_or_oversize_provider_response_rejected` against both
   adapters and the fake (M-20, K-513).
@@ -2230,7 +2230,7 @@ section 6.3, with the template text as the outcome at every deviation.
   gives the template-based text as per K-306 within the assessment
   time target as per K-101. Test: the timing test
   `k305_assessment_within_timeout_or_template` tests the target with
-  delayed fakes for both providers (M-05, M-20, K-502, K-513).
+  delayed fakes for the provider (M-05, M-20, K-502, K-513).
 
 ### 6.4 Experimental AI layout: bounded presentation surface (retired leg)
 
@@ -2243,7 +2243,7 @@ the assessment is the AI personalize mode in section 6.5 only.
 The experimental AI layout (ADR P-21–P-23, H-21–H-24) is a second
 bounded model surface beside the assessment, with the same shape: off
 by default, solely after an explicit opt-in in the web UI, solely
-server-side through `PluginLayoutModelPort` to hosted, and never an
+server-side through `PluginLayoutModelPort` to Meta Model API, and never an
 input to the deterministic core, which keeps zero prompt injection
 surface per section 6.1 — the analysis path makes zero layout calls
 ahead of the opt-in, and the layout result reaches only the section
@@ -2266,7 +2266,7 @@ layout, and it replaces the layout-only reading of the second: one
 toggle, one spec, one fallback (ADR section 14.4). It is off by
 default, solely after the explicit `AI personalize (experimental)`
 opt-in in the web UI, solely server-side through
-`PluginPersonalizeModelPort` to hosted, and never an input to the
+`PluginPersonalizeModelPort` to Meta Model API, and never an input to the
 deterministic core, which keeps zero prompt injection surface per
 section 6.1 — the analysis path makes zero personalize calls ahead
 of the opt-in, and the result reaches only plugin ranking and
@@ -2315,12 +2315,12 @@ as per K-210.
 | CI: push, pull request and release | GitHub permission with least privilege per job as per I-03 | Code, lockfiles, fixtures and artifacts | Green gate with eleven named blocking jobs as per I-01; pinned Actions on SHA, images on digest; gitleaks, vulnerability and licence checks (M-12). |
 | Offline chain: dataset and training | Operator access outside the repo; run during the hackathon | Fresh public on-chain data with address, bytecode, deploy block and label source | Provenance per data point, label policy, time- and cluster-divided splits, locked seeds and a reproducible command; export solely as artifact under `model/` (M-18, M-19). |
 | Plugin registry and `pluginResults` (design per `docs/adr-plugin-architecture.md`) | Internal; registration solely at build time from reviewed source in the repo | Frozen manifests and declared deterministic facts in; validated findings out under `pluginResults` | Static compile-time registration with startup manifest, API-version, and capability validation; output schema, evidence, count, and size bounds; weight 0 until the artifact names the plugin; text-only generic rendering (M-21, M-22). |
-| Plugin audit: CLI and CI job (design per ADR P-13, P-14) | Operator or CI identity; AI phase solely on opt-in with a configured hosted key | Plugin source, manifest, and `PLUGIN.md` from one plugin directory in; deterministic check results and, on opt-in, structured advisory findings out | Deterministic checks run first and block on failure; the AI phase sends solely the listed plugin files, quoted as untrusted data under size caps, tool-free; findings are schema-validated and advisory only; without a key the AI phase reports `not configured` with zero provider calls (M-23–M-25). |
+| Plugin audit: CLI and CI job (design per ADR P-13, P-14) | Operator or CI identity; AI phase solely on opt-in with a configured Meta Model API key | Plugin source, manifest, and `PLUGIN.md` from one plugin directory in; deterministic check results and, on opt-in, structured advisory findings out | Deterministic checks run first and block on failure; the AI phase sends solely the listed plugin files, quoted as untrusted data under size caps, tool-free; findings are schema-validated and advisory only; without a key the AI phase reports `not configured` with zero provider calls (M-23–M-25). |
 | Plugin docs: `PLUGIN.md` via REST, MCP, and web UI (design per ADR P-15, P-16) | API key in header for REST and MCP as per the plugin list; web UI through the REST API | Plugin id in; validated markdown with its section list out | Read-only; presence and required sections validated deterministically before exposure; markdown rendered through a sanitizer with raw HTML as inert text under the strict CSP (M-26, M-13). |
 | Adaptive web UI: schema-driven panel, risk-adaptive layout, Simple / Expert (design per ADR P-18–P-20) | Open surface that calls the REST API through the published schema; mode preference in `localStorage` on the device | Frozen analysis and registry output in; ordered sections out | Client-side only; fixed component library with canonical-JSON fallback; deterministic order from frozen fields; stored mode read against the closed `simple` / `expert` union (M-30, M-31). |
-| AI layout: `POST /v1/layout` and hosted layout call (design per ADR P-21) | API key in header; solely after an explicit opt-in in the web UI | Code hash and closed layout facts in; validated layout spec with provider and model id out | Off by default; `layout-not-configured` with zero provider calls without a key; whitelist spec validation with total deterministic fallback; at most one call per uncached view with the per-key daily cap (M-27–M-29). |
+| AI layout: `POST /v1/layout` and Meta Model API layout call (design per ADR P-21) | API key in header; solely after an explicit opt-in in the web UI | Code hash and closed layout facts in; validated layout spec with provider and model id out | Off by default; `layout-not-configured` with zero provider calls without a key; whitelist spec validation with total deterministic fallback; at most one call per uncached view with the per-key daily cap (M-27–M-29). |
 | User priorities and deterministic baseline: priorities field, `localStorage` store, frontmatter matcher (design per ADR P-24, P-25) | Open surface in `apps/web`; no server authentication because no server state exists | Free-text priorities (capped at 500 characters) and validated `PLUGIN.md` frontmatter `tags` in; ordered plugin ids, matched tags, and highlight set out | Client-side only; one versioned key with a closed-shape read rejected to empty; pure matcher with zero network calls; severity floor keeps `high`/`critical` evidence always visible; no log, cache-key, or profile copy (M-32, M-34, M-36). |
-| AI personalize: `POST /v1/personalize` and hosted personalize call (design per ADR P-27) | API key in header; solely after the explicit `AI personalize (experimental)` opt-in in the web UI | Current priorities text (quoted), code hash, closed layout facts, and quoted frontmatter/section excerpts in; validated ranking-plus-layout spec with provider and model id out | Off by default; `not-configured` with zero provider calls without a key; whitelist spec validation with total fallback to the deterministic baseline; cache per code hash, prompt version, provider, and model id (never per priorities text); at most one call per uncached view with the per-key daily cap (M-33–M-35). |
+| AI personalize: `POST /v1/personalize` and Meta Model API personalize call (design per ADR P-27) | API key in header; solely after the explicit `AI personalize (experimental)` opt-in in the web UI | Current priorities text (quoted), code hash, closed layout facts, and quoted frontmatter/section excerpts in; validated ranking-plus-layout spec with provider and model id out | Off by default; `not-configured` with zero provider calls without a key; whitelist spec validation with total fallback to the deterministic baseline; cache per code hash, prompt version, provider, and model id (never per priorities text); at most one call per uncached view with the per-key daily cap (M-33–M-35). |
 | Investigate with Muse: `POST /v1/tokens/:address/investigate`, `GET /v1/investigations/:id/events`, MCP `investigate_token` (design per `docs/adr-investigate-with-muse.md`) | API key with remaining quota; solely after an explicit investigation request | Frozen analysis summary, registry tool catalogue, trace so far, and quoted on-chain/`PLUGIN.md` strings in; schema-validated decision (one allowlisted tool call or conclude) out per step; trace steps streamed to the web UI | Off by default; `investigation-not-configured` with zero provider calls without a key; runner-enforced max steps, max tokens, wall-clock and per-tool deadlines; allowlist and schema validation before any tool runs; read-only tools over frozen facts only; server-side call with minimised input and id-only logging (M-37–M-42). |
 | Own decompiler pipeline as a detector plugin (design per `docs/adr-evm-decompiler.md`) | Internal; registration solely at build time from reviewed source in the repo | Frozen bytecode in; structured pseudo-Solidity with exact `[startPc, endPc)` ranges, unresolved-jump count, and token-pattern annotations out under `pluginResults` | Pure, deterministic, bounded stages; resolve-or-record jump accounting; interpreter-checked lifting; weight 0 until the artifact names the plugin; text-only generic rendering (M-43–M-46, M-22). |
 | Internal decompiler eval (dev/eval only, operator machine) | Operator identity outside the repo; never a runtime entry point | Frozen corpus files in; metrics table out | Local corpus files only with no external binary or process on the path (M-47). |
@@ -2348,7 +2348,7 @@ has no prompt injection surface as per section 6.1, and the assessment
 path runs solely after an explicit request. On that path H-02 reaches
 the assessment wording at most, with M-03–M-06 and M-20, marking,
 caching and schema validation as per section 6 as the governing
-protections for both providers. H-11 artifact manipulation carries the highest impact per
+protections for the provider. H-11 artifact manipulation carries the highest impact per
 hit and the lowest likelihood through the repo's and the gate's protections, and
 therefore stands as the first threat outside the list.
 
@@ -2374,7 +2374,7 @@ section 1:
   the hard-to-analyze code signal where the structure deviates, as per
   `kunskap/bytecode-forskning.md`.
 - Muse phrases with a wrong nuance within a valid schema from
-  either provider. Signal links as per K-304, provider and model
+  the provider. Signal links as per K-304, provider and model
   marking per K-305 and the template text as a comparison keep every claim
   checkable against the evidence.
 - A vulnerability in a pinned dependency is detected through the
@@ -2434,7 +2434,7 @@ Assumptions, each verified as far as the review reaches:
 - A majority of the allowlisted RPC nodes respond honestly on
   Ethereum mainnet, and responses are bound to block number as per
   K-102 so every assessment is recreated.
-- Each assessment provider (Meta Model API and hosted) responds as
+- Each assessment provider (Meta Model API) responds as
   per its documented schema from the demo after a request, and every
   deviation gives the template text as per K-306 and M-20.
 - The platform secret store, TLS, container isolation and
@@ -2462,7 +2462,7 @@ K-5xx to its threats and countermeasures, is in section 12.2 in
 | M-06 One-way explanation chain | H-02 | K-502 | `k307_scores_and_evidence_identical_with_and_without_adapter` (unit) |
 | M-07 Allowlisted outbound targets | H-03 | K-503 | `k503_crafted_inputs_stay_within_allowlist` (unit) |
 | M-08 Rate limits and quotas | H-04 | K-504 | `k504_limits_hold_under_overload_and_cache_serves` (load test) |
-| M-09 Per-key daily caps and cache for both providers | H-04 | K-504, K-513 | `k107_analysis_sums_rpc_and_assessment_calls` (integration) |
+| M-09 Per-key daily caps and cache for the provider | H-04 | K-504, K-513 | `k107_analysis_sums_rpc_and_assessment_calls` (integration) |
 | M-10 Header transport and hashed comparison | H-05 | K-510 | `k510_key_comparison_is_constant_time` (property) |
 | M-11 Lifecycle and secret-free history for all keys | H-05 | K-505, K-510, K-513 | `k505_gitleaks_clean_on_repo_and_history` (CI check) |
 | M-12 Locked and scanned supply chain | H-06 | K-506 | `k506_pinning_and_vulnerability_scan_block_release` (CI check) |

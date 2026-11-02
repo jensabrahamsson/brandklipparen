@@ -1,5 +1,5 @@
 // Validation of plugin audit provider output (S-054, K-516, P-14, M-26).
-// Pure function shared by the hosted adapter and the fake: strict key
+// Pure function shared by the Meta adapter and the fake: strict key
 // sets at every level, closed severity and category enums, capped text,
 // confidence in [0, 1], and identity match on provider, model, plugin id,
 // plugin version and prompt version. Schema-invalid, oversize or
@@ -19,7 +19,7 @@ import type {
 } from "../../ports/pluginAuditModel.ts";
 
 export type PluginAuditExpectation = {
-  readonly provider: "hosted-open-weights";
+  readonly provider: "meta-model-api";
   readonly modelId: ModelIdType;
   readonly maxOutputChars: number;
 };
@@ -192,6 +192,6 @@ export const PLUGIN_AUDIT_REPORT_SCHEMA = Object.freeze({
     pluginId: Object.freeze({ type: "string", minLength: 1 }),
     pluginVersion: Object.freeze({ type: "string", minLength: 1 }),
     promptVersion: Object.freeze({ type: "string", minLength: 1 }),
-    provider: Object.freeze({ const: "hosted-open-weights" }),
+    provider: Object.freeze({ const: "meta-model-api" }),
   }),
 });

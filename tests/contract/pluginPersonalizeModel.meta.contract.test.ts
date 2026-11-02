@@ -80,7 +80,7 @@ function recordedTransport(scenario: PluginPersonalizeContractScenario): MetaMod
           status: 200,
           bodyText: chatBody(
             JSON.stringify({
-              provider: "hosted-open-weights",
+              provider: "other-provider",
               modelId: "other-model",
               spec: {
                 specVersion: 1,

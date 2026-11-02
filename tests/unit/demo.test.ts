@@ -16,14 +16,11 @@ import {
   withoutResolvedSecretFilePointers,
   checkNodeVersion,
   decideNode22Startup,
-  DEMO_ASSESSMENT_hosted_READY_LINE,
   DEMO_ASSESSMENT_META_PROVIDER,
   DEMO_ASSESSMENT_META_READY_LINE,
   DEMO_ASSESSMENT_OFF_LINE,
-  DEMO_ASSESSMENT_generic_COMPATIBLE_READY_LINE,
   DEMO_DEFAULTS,
   DEMO_DEFAULT_RPC_URL,
-  DEMO_INVESTIGATE_hosted_READY_LINE,
   DEMO_INVESTIGATE_META_PROVIDER,
   DEMO_INVESTIGATE_META_READY_LINE,
   DEMO_INVESTIGATE_OFF_LINE,
@@ -256,7 +253,7 @@ describe("demo .env.local precedence", () => {
 });
 
 describe("demo secret file indirection", () => {
-  const KEY = "BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY";
+  const KEY = "BRANDKLIPPAREN_ASSESSMENT_META_API_KEY";
 
   function tempRoot(): string {
     const dir = mkdtempSync(join(tmpdir(), "demo-secret-file-"));
@@ -429,24 +426,6 @@ describe("demo assessment status line", () => {
       }),
     ).toBe(DEMO_ASSESSMENT_META_READY_LINE);
     expect(DEMO_ASSESSMENT_META_READY_LINE).toBe("assessment provider: meta-model-api (key loaded)");
-    expect(
-      demoAssessmentStatus({
-        BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "hosted-open-weights",
-        BRANDKLIPPAREN_ASSESSMENT_hosted_API_KEY: "fake-key-for-tests-only",
-      }),
-    ).toBe(DEMO_ASSESSMENT_hosted_READY_LINE);
-    expect(DEMO_ASSESSMENT_hosted_READY_LINE).toBe(
-      "assessment provider: hosted-open-weights (key loaded)",
-    );
-    expect(
-      demoAssessmentStatus({
-        BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "generic-compatible",
-        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-key-for-tests-only",
-      }),
-    ).toBe(DEMO_ASSESSMENT_generic_COMPATIBLE_READY_LINE);
-    expect(DEMO_ASSESSMENT_generic_COMPATIBLE_READY_LINE).toBe(
-      "assessment provider: generic-compatible (key loaded)",
-    );
   });
 
   test("reports off without a provider, without a key, or on a key mismatch", () => {
@@ -463,7 +442,7 @@ describe("demo assessment status line", () => {
     expect(
       demoAssessmentStatus({
         BRANDKLIPPAREN_ASSESSMENT_PROVIDER: "meta-model-api",
-        BRANDKLIPPAREN_ASSESSMENT_generic_COMPATIBLE_API_KEY: "fake-key-for-tests-only",
+        BRANDKLIPPAREN_INVESTIGATE_META_API_KEY: "fake-key-for-tests-only",
       }),
     ).toBe(DEMO_ASSESSMENT_OFF_LINE);
   });
@@ -487,7 +466,7 @@ describe("demo assessment provider default (meta-model-api)", () => {
   });
 
   test("an explicit provider value always wins over the Meta key", () => {
-    for (const explicit of ["off", "generic-compatible", "meta-model-api", "hosted-open-weights"]) {
+    for (const explicit of ["off", "meta-model-api"]) {
       const { env: kept, defaulted: applied } = withDemoAssessmentDefault({
         [PROVIDER]: explicit,
         [META_KEY]: FAKE_KEY,
@@ -528,12 +507,6 @@ describe("demo investigate status line", () => {
       }),
     ).toBe(DEMO_INVESTIGATE_META_READY_LINE);
     expect(DEMO_INVESTIGATE_META_READY_LINE).toBe("investigate provider: meta-model-api (key loaded)");
-    expect(
-      demoInvestigateStatus({
-        BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "hosted-open-weights",
-        BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY: "fake-key-for-tests-only",
-      }),
-    ).toBe(DEMO_INVESTIGATE_hosted_READY_LINE);
   });
 
   test("reports off without a provider, without a key, or on a key mismatch", () => {
@@ -550,7 +523,7 @@ describe("demo investigate status line", () => {
     expect(
       demoInvestigateStatus({
         BRANDKLIPPAREN_INVESTIGATE_PROVIDER: "meta-model-api",
-        BRANDKLIPPAREN_INVESTIGATE_hosted_API_KEY: "fake-key-for-tests-only",
+        BRANDKLIPPAREN_ASSESSMENT_META_API_KEY: "fake-key-for-tests-only",
       }),
     ).toBe(DEMO_INVESTIGATE_OFF_LINE);
   });
@@ -578,7 +551,7 @@ describe("demo investigate provider default (meta-model-api)", () => {
   });
 
   test("an explicit investigate provider or pointer always wins", () => {
-    for (const explicit of ["off", "hosted-open-weights", "meta-model-api"]) {
+    for (const explicit of ["off", "meta-model-api"]) {
       const { env: kept, defaulted: applied } = withDemoInvestigateDefault({
         [PROVIDER]: explicit,
         [ASSESSMENT_KEY_FILE]: "secrets/meta-key.txt",
@@ -747,7 +720,7 @@ describe("demo personalize provider default (meta-model-api)", () => {
   });
 
   test("an explicit provider value always wins over the Meta key", () => {
-    for (const explicit of ["off", "generic-compatible", "meta-model-api", "hosted-open-weights"]) {
+    for (const explicit of ["off", "meta-model-api"]) {
       const { env: kept, defaulted: applied } = withDemoPersonalizeDefault({
         [PROVIDER]: explicit,
         [META_KEY]: FAKE_KEY,

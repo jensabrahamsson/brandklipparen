@@ -3,8 +3,8 @@
 // it reads plugin directories, runs the deterministic static checks from
 // `src/plugins/audit.ts`, prints the three states on separate lines and
 // writes the report JSON to `audits/<pluginId>.json`. A deterministic
-// failure exits non-zero and blocks the AI phase; with `--ai` and a
-// configured hosted key the advisory AI phase runs after a deterministic
+// failure exits non-zero and blocks the AI phase; with `--ai` the
+// advisory AI phase runs after a deterministic
 // pass. Human review arrives as a sidecar file
 // `audits/reviews/<pluginId>.json` maintained by reviewers; its presence
 // records the review, its absence leaves `missing`. Usage:
@@ -122,33 +122,14 @@ async function auditOne(pluginId: string, withAi: boolean): Promise<boolean> {
   let ai: AiState = { kind: "not-run" };
   if (deterministic.passed && withAi) {
     const { runPluginAudit } = await import("../src/plugins/audit.ts");
-    const { createhostedAuditAdapterFromConfig } = await import(
-      "../src/adapters/audit/hostedAuditAdapter.ts"
+    const { NotConfiguredAuditAdapter } = await import(
+      "../src/adapters/audit/notConfiguredAuditAdapter.ts"
     );
-    const { SecretString } = await import("../src/ports/config.ts");
-    const { ModelId, PromptVersion, RequestId, Timestamp } = await import("../src/domain/types.ts");
+    const { PromptVersion, RequestId, Timestamp } = await import("../src/domain/types.ts");
     const { randomUUID } = await import("node:crypto");
-    const baseUrl = process.env["BRANDKLIPPAREN_AUDIT_hosted_BASE_URL"];
-    const key = process.env["BRANDKLIPPAREN_AUDIT_hosted_API_KEY"];
-    const model = process.env["BRANDKLIPPAREN_AUDIT_hosted_MODEL_ID"];
-    const builtAdapter = createhostedAuditAdapterFromConfig({
-      audithostedBaseUrl: baseUrl,
-      audithostedApiKey: key === undefined ? undefined : new SecretString(key),
-      audithostedModelId:
-        model === undefined
-          ? undefined
-          : (() => {
-              const parsed = ModelId.parse(model);
-              if (!parsed.ok) {
-                throw new Error("audit model id is invalid");
-              }
-              return parsed.value;
-            })(),
-    });
-    if (!builtAdapter.ok) {
-      console.error(`audit adapter failed: ${builtAdapter.error.kind}`);
-      return false;
-    }
+    // No Meta audit adapter is configured in this tooling path, so the
+    // AI phase reports not-configured; deterministic checks are unchanged.
+    const adapter = new NotConfiguredAuditAdapter();
     const promptVersion = PromptVersion.parse("1.0.0");
     if (!promptVersion.ok) {
       throw new Error("audit prompt version is invalid");
@@ -176,7 +157,7 @@ async function auditOne(pluginId: string, withAi: boolean): Promise<boolean> {
         humanReview: humanReview as "recorded" | "missing",
       },
       {
-        adapter: builtAdapter.value,
+        adapter,
         ctx: {
           requestId: requestId.value,
           deadline: deadline.value,

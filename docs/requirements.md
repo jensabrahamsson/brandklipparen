@@ -142,9 +142,8 @@ user's own systems.
   carries a visible Muse-generated label with provider and model id,
   and leaves the score and evidence unchanged per K-307.
 - **Assessment provider:** the selected provider behind
-  `AssessmentModelPort` per K-309: Meta Model API with Muse Spark, or
-  open weights with Muse Spark Open served on hosted with model id
-  `meta-models/muse-spark-open-1026`. Configuration selects the provider.
+  `AssessmentModelPort` per K-309: Meta Model API with Muse Spark and the configured model id
+  `muse-spark-1.3`. Configuration selects the provider, or `off`.
 - **Prompt version:** the versioned identifier of the assessment prompt
   and evidence format. The assessment cache key carries code hash,
   prompt version, provider and model id per K-305 and K-309.
@@ -240,7 +239,7 @@ resolution, timeline, current storage values and baseline comparison.
 | K-306 Validation and template text on assessment error | MVP | The token page always shows an explanation |
 | K-307 One-way explanation chain | MVP | Score and evidence equal with and without the assessment |
 | K-308 Contract strings untrusted | MVP | Security from day one |
-| K-309 Assessment provider port with both adapters | MVP | A swappable provider qualifies the project at judging step 1 with either provider; both adapters pass the same contract suite |
+| K-309 Assessment provider port with the Meta adapter | MVP | A swappable provider qualifies the project at judging step 1 with the provider; the adapter pass the same contract suite |
 | K-401 Demo video | MVP | Submission requirement: 3 minutes on YouTube, hackathon work only |
 | K-402 Public demo environment | MVP | Assessment uses a clickable demo |
 | K-403 Public GitHub repo | MVP | Submission requirement |
@@ -249,8 +248,8 @@ resolution, timeline, current storage values and baseline comparison.
 | K-406 Submission package: track, problem statement and texts | MVP | Submission requirement: Indie Developer, Build for Your World, and both Meta texts |
 | K-407 Live final preparation | Stretch | Top 5 per track present live; preparation starts after submission and keeps the presentation ready |
 | K-501 Hostile bytecode | MVP | Attack surface exists from the first call; M-01, M-02 |
-| K-502 Prompt injection | MVP | Applies to the on-request Muse contract assessment with either provider; the deterministic core carries zero prompt injection surface; M-03–M-06, M-20 |
-| K-513 Assessment provider response and key protection | MVP | Both providers give validated, size-bounded responses with protected keys; M-11, M-20 |
+| K-502 Prompt injection | MVP | Applies to the on-request Muse contract assessment with the provider; the deterministic core carries zero prompt injection surface; M-03–M-06, M-20 |
+| K-513 Assessment provider response and key protection | MVP | The provider give validated, size-bounded responses with protected keys; M-11, M-20 |
 | K-514 Plugin supply chain: static registration only | MVP | Reviewed source only, no dynamic or remote code loading; M-21 |
 | K-503 SSRF | MVP | Address-driven fetch requires an allowlist from the start; M-07 |
 | K-504 Rate limiting | MVP | Cost protection from day one; M-08, M-09 |
@@ -648,19 +647,17 @@ migration.
 
 ### K-030 Assessment plugins behind AssessmentModelPort (MVP)
 
-Both assessment adapters register as assessment plugins with kind
-`assessment`, wrapping their existing `AssessmentModelPort`
-implementations. Proposed in `docs/adr-plugin-architecture.md` (P-04);
+The assessment adapter registers as an assessment plugin with kind
+`assessment`, wrapping its existing `AssessmentModelPort`
+implementation. Proposed in `docs/adr-plugin-architecture.md` (P-04);
 this story enters the ID with the implementation. The port, its error
 union, its limits and the exactly-one rule (A-34) stay as they are.
 
 - The Meta Model API adapter registers as
-  `dev.brandklipparen.assessment.meta-model-api` and the hosted
-  open-weights adapter as
-  `dev.brandklipparen.assessment.hosted-open-weights`. Each manifest
+  `dev.brandklipparen.assessment.meta-model-api`. Its manifest
   declares no detector inputs and assessment defaults for capabilities
   and limits. Verification: unit test
-  `exactly_two_assessment_plugins_registered_with_fixed_ids`.
+  `exactly_one_assessment_plugin_registered_with_fixed_id`.
 - Every registered assessment plugin resolves to an implementation that
   passes the shared contract suite over a recorded transport, and the
   fake passes the same suite. Verification: contract test
@@ -991,8 +988,8 @@ evidence and finding text never change.
 ### K-036 Investigate with Muse: opt-in runtime agent loop (MVP)
 
 The deterministic analysis computes first and freezes; only then, and
-only on an explicit opt-in request, the Muse Spark Open model
-(`meta-models/muse-spark-open-1026`) on hosted decides which
+only on an explicit opt-in request, the Muse Spark model
+(`muse-spark-1.3`) through the Meta Model API decides which
 deterministic registry-derived tools to run next, step by step, and
 drafts a narrative that cites the evidence it collected. Proposed in
 `docs/adr-investigate-with-muse.md` (P-29–P-38); this story enters the
@@ -1021,7 +1018,7 @@ probabilities, signals, findings or evidence.
   `droppedClaims`, never trusted. Verification: unit tests
   `k520_citation_check_keeps_only_sentences_citing_collected_evidence`
   and `k520_zero_surviving_sentences_yields_empty_narrative_with_drop_count`.
-- Without a hosted key the investigation answers the typed outcome
+- Without a Meta Model API key the investigation answers the typed outcome
   `investigation-not-configured` with zero provider calls and the
   deterministic analysis standing. Verification: integration test
   `k520_investigation_without_key_reports_not_configured_and_sends_nothing`
@@ -1085,7 +1082,7 @@ from receipt of a validated address. The targets hold at p95.
   configuration per K-309; on timeout or validation error the template
   text per K-301 stands and the assessment field states the fallback.
   Verification: timing test `k305_assessment_within_timeout_or_template`
-  with delayed fakes for both providers per K-309.
+  with delayed fakes for the provider per K-309.
 - Step targets within the fast path: selector extraction p95 at most
   1 second from received bytecode, and proxy resolution p95 at most
   3 seconds per address. Verification: timing tests
@@ -1227,7 +1224,7 @@ separately per request, per provider and per model id.
   assessment calls and zero assessment cost. Verification: integration
   test `k107_no_request_zero_assessment_calls_and_cost`, which runs the
   analysis ahead of a request and requires zero calls to
-  `AssessmentModelPort` for either provider.
+  `AssessmentModelPort` for the provider.
 - The per-key, per-feature daily caps are versioned in
   `docs/infrastructure.md`. Verification: integration test
   `k305_daily_cost_cap_per_key_stops_assessment_calls` and integration test
@@ -1449,8 +1446,8 @@ K-301. Muse contract assessment per K-305 and K-309 is an MVP feature
 that delivers a separate free-text assessment solely on request through
 the selected assessment provider and leaves score and evidence
 unchanged at all times. The project passes judging step 1 (pass/fail,
-reasonable use of the Meta Model API or open-weight models) through
-K-305 and K-309 with either provider selected.
+reasonable use of the Meta Model API models) through
+K-305 and K-309 with the provider selected.
 
 ### Use of Muse
 
@@ -1568,7 +1565,7 @@ probabilities and evidence, carries a visible Muse-generated label
 with provider and model id, and leaves score, probabilities, signals
 and evidence unchanged per K-307. The template-based explanations per
 K-301 appear at all times. Cost limit, timeout, input size limit,
-output size limit, schema validation and cache apply to both providers
+output size limit, schema validation and cache apply to the provider
 per K-309: the cache key carries code hash, prompt version, provider
 and model id.
 
@@ -1599,18 +1596,18 @@ and model id.
   evidence and template text. Verification: e2e test and
   schema-validation test `k305_refined_text_marked_in_ui_rest_and_mcp`.
 - Cost stays within the per-key daily cap per K-107 and
-  I-14 in `docs/infrastructure.md` for both providers: at most one
+  I-14 in `docs/infrastructure.md` for the provider: at most one
   assessment call per uncached request and
   template text standing when the cap is reached. Timeout and input
-  and output size limits per K-309 apply to both providers. Contract
+  and output size limits per K-309 apply to the provider. Contract
   strings pass as untrusted data per K-308 into the prompt.
   Verification: integration test
   `k305_daily_cost_cap_per_key_stops_assessment_calls` for each provider
   and unit test `k308_contract_strings_quoted_with_length_cap`.
-- The client receives the assessment text and both provider keys stay
+- The client receives the assessment text and the provider key stays
   on the server. Verification: integration test
   `k305_client_response_has_no_model_key`, which searches each client
-  response for key patterns for both providers and requires zero hits.
+  response for key patterns for the provider and requires zero hits.
 - The provider response is validated against a versioned schema ahead
   of display, with size limits per K-309 and K-513. The schema states
   claims, signal links, holds-now / can-change markers and language.
@@ -1625,20 +1622,17 @@ and model id.
   and model id travel with the response. Verification: integration test
   `k305_response_carries_explanation_schema_version` for each adapter.
 
-### K-309 Assessment provider port with both adapters (MVP)
+### K-309 Assessment provider port with the Meta adapter (MVP)
 
 The project delivers the Muse contract assessment through a swappable
 provider behind `AssessmentModelPort` (A-33 and A-34 in
-`docs/architecture.md`), with two MVP adapters selected by
-configuration: Meta Model API with Muse Spark, and open weights with
-Muse Spark Open served on hosted with model id
-`meta-models/muse-spark-open-1026`. Running on open weights qualifies
-the project for the bonus prize "Best Build on Meta Open Weight
-Models". Both adapters are MVP. The demo default provider is an open
+`docs/architecture.md`), with the MVP adapter selected by
+configuration: Meta Model API with Muse Spark and the configured model id
+`muse-spark-1.3`, or `off`. The adapter is MVP. The demo default provider is an open
 decision for Jens per section 13; the selected provider works in the
 demo per K-305 in either selection. Cost limit, timeout, input size
 limit, output size limit, schema validation and cache per code hash,
-prompt version, provider and model id apply to both adapters. Each
+prompt version, provider and model id apply to the adapter. Each
 response carries provider and model id as its label.
 
 - Configuration selects exactly one adapter at startup, and the health
@@ -1651,16 +1645,16 @@ response carries provider and model id as its label.
   Verification: contract test in the shared suite
   `runAssessmentModelPortContract` against the Meta adapter over a
   recorded transport per A-34.
-- The hosted open-weights adapter delivers the assessment with Muse
-  Spark Open, model id `meta-models/muse-spark-open-1026`, served on
-  hosted per I-13 and I-18 in `docs/infrastructure.md`. Verification:
+- The Meta Model API adapter delivers the assessment with Muse
+  Spark, model id `muse-spark-1.3`, served through
+  the Meta Model API per I-13 and I-18 in `docs/infrastructure.md`. Verification:
   contract test in the shared suite `runAssessmentModelPortContract`
-  against the hosted adapter over a recorded transport per A-34.
-- Contract tests run the same suite against both adapters and a fake,
+  against the Meta Model API adapter over a recorded transport per A-34.
+- Contract tests run the same suite against the adapter and a fake,
   with equal outcomes for success, timeout, rate limit, invalid output,
   oversize output and unavailable provider. Verification: contract suite
-  `runAssessmentModelPortContract` green against the fake, the Meta
-  adapter and the hosted adapter per A-34.
+  `runAssessmentModelPortContract` green against the fake and the Meta
+  adapter per A-34.
 - Each adapter enforces the cost limit, timeout, input size limit and
   output size limit, validates the response against the versioned
   schema and uses the cache per code hash, prompt version, provider
@@ -1724,7 +1718,7 @@ The project treats strings from the contract (name, symbol, revert
 texts, function names) as untrusted data in the explanation chain.
 
 - The strings are enclosed as quoted data with a length cap in the
-  template build and in the assessment prompt for both providers per
+  template build and in the assessment prompt for the provider per
   K-305 and K-309. Verification: unit test
   `k308_contract_strings_quoted_with_length_cap`.
 - The strings appear as quotes in the explanation. Verification: unit
@@ -1861,7 +1855,7 @@ the 3-minute demo video linked from YouTube per K-401.
   Verification: review `k406_submission_problem_build_for_your_world`
   on the submitted entry.
 - The text "Describe your use of Meta products" describes the Muse
-  contract assessment per K-305 and K-309 with both providers, the
+  contract assessment per K-305 and K-309 with the provider, the
   deterministic core per K-102 and Muse as the build tool through
   Muse Code. Verification: review
   `k406_describe_use_of_meta_products_written`, signed ahead of
@@ -1897,8 +1891,8 @@ technical depth per section 10.1.
 ### 10.1 Judging criteria mapped to requirements and demo moments
 
 Judging step 1 is pass/fail: the project reasonably uses the Meta
-Model API or open-weight models. K-305 and K-309 pass step 1 with
-either provider selected, and the demo shows the assessment working
+Model API models. K-305 and K-309 pass step 1 with
+the provider selected, and the demo shows the assessment working
 per K-401 and K-402. The scored criteria map as follows.
 
 | Criterion | Weight | Requirements | Demo moments |
@@ -1955,14 +1949,14 @@ against H-02 and H-14 in `docs/threat-model.md`.
   `k102_analysis_path_makes_no_model_calls` and
   `k305_no_assessment_call_until_user_requests_assessment`.
 - The evidence list to Muse is strictly typed, with instruction and
-  data in separate fields, for both providers. Verification: unit test
+  data in separate fields, for the provider. Verification: unit test
   `k302_prompt_contains_closed_typed_evidence_list` against both
   adapters and the fake per K-309.
 - Injection strings in names, symbols, metadata and revert texts give at most one
-  quote in the output and leave the structure unchanged, for both
-  providers. Verification: unit test
-  `k502_injection_strings_yield_at_most_one_quote` against both
-  adapters and the fake per K-309.
+  quote in the output and leave the structure unchanged, for the
+  provider. Verification: unit test
+  `k502_injection_strings_yield_at_most_one_quote` against the
+  adapter and the fake per K-309.
 - Score and evidence are computed ahead of the Muse call and are
   identical with and without the adapter per K-307. Verification: unit
   test `k307_scores_and_evidence_identical_with_and_without_adapter`.
@@ -1994,7 +1988,7 @@ in `docs/threat-model.md`.
   Verification: integration test
   `k504_over_limit_returns_retryable_machine_error`.
 - Expensive steps (decompilation and Muse contract assessment calls
-  per K-305 for either provider per K-309) require a valid key with
+  per K-305 for the provider per K-309) require a valid key with
   remaining quota and an unspent per-key daily cap per I-14.
   Verification: integration test
   `k504_expensive_steps_require_key_with_quota` for each provider.
@@ -2132,10 +2126,10 @@ H-13 in `docs/threat-model.md`.
 
 ### K-513 Assessment provider response and key protection (MVP)
 
-The project protects the Muse contract assessment for both providers
+The project protects the Muse contract assessment for the provider
 per K-309: provider responses are schema-validated and size-bounded,
 provider and model identity are verified against the selected
-configuration, cost abuse is capped per key, and both provider
+configuration, cost abuse is capped per key, and the provider
 keys stay server-side in the secret store. Fulfilled by M-11 and M-20
 against H-05 and H-14 in `docs/threat-model.md`, with cost caps in
 M-09 against H-04.
@@ -2154,7 +2148,7 @@ M-09 against H-04.
   the selected provider, and appear with zero hits in client responses
   and logs. Verification: integration test
   `k513_both_provider_keys_absent_from_client_and_logs`.
-- Cost abuse against either provider is bounded by the per-key daily
+- Cost abuse against the provider is bounded by the per-key daily
   caps, timeout and size limits per K-309 and I-14. Verification: integration test
   `k305_daily_cost_cap_per_key_stops_assessment_calls`.
 
@@ -2199,11 +2193,11 @@ not an analysis-path feature, and never affects scores or evidence.
   and the CI step `npm run audit:plugins`.
 - The optional AI phase sends the plugin source, manifest and
   `PLUGIN.md` solely as quoted data through `PluginAuditModelPort`
-  to Muse Spark Open (`meta-models/muse-spark-open-1026`) on hosted,
+  to Muse Spark (`muse-spark-1.3`) through the Meta Model API,
   and validates every response with `parsePluginAuditReport` before
   any human sees it as findings. Without a key it reports
   `not-configured` with zero sends. Verification: contract suite
-  `runPluginAuditModelPortContract` against the fake and the hosted
+  `runPluginAuditModelPortContract` against the fake and the Meta Model API
   adapter over a recorded transport, unit tests
   `k516_audit_without_key_reports_not_configured_and_sends_nothing`,
   `k516_injection_in_source_or_docs_stays_quoted_data`,
@@ -2243,7 +2237,7 @@ P-38); this story enters the ID with the implementation.
   citations are re-checked deterministically with drops counted.
   Verification: unit tests
   `k520_citation_check_keeps_only_sentences_citing_collected_evidence`
-  and the redacted-logging pattern of the hosted adapters.
+  and the redacted-logging pattern of the Meta Model API adapters.
 
 ### K-037 Own ERC-20 EVM decompiler (MVP)
 
@@ -2395,7 +2389,7 @@ the test per acceptance criterion.
 | K-303 | `k303_each_capability_marked_now_or_changeable` (unit) |
 | K-304 | `k304_every_displayed_claim_has_valid_link` (property) |
 | K-305 | `k305_assessment_works_in_demo_ui_rest_and_mcp` (e2e) |
-| K-309 | `runAssessmentModelPortContract` (contract, both adapters and fake) |
+| K-309 | `runAssessmentModelPortContract` (contract, adapter and fake) |
 | K-306 | `k306_template_built_deterministically_from_evidence` (unit) |
 | K-307 | `k307_scores_and_evidence_identical_with_and_without_adapter` (unit) |
 | K-308 | `k308_hostile_strings_leave_explanation_structure_intact` (unit) |
@@ -2478,11 +2472,10 @@ here, A-xx in `docs/architecture.md`, I-xx in
 ## 13. Open decisions
 
 One open decision remains for Jens: the demo default assessment
-provider per K-309. Both adapters are MVP and each works in the demo
-per K-305: Meta Model API with Muse Spark, and open weights with Muse
-Spark Open on hosted, model id `meta-models/muse-spark-open-1026`.
-Jens selects the demo default provider ahead of the 2/11 demo script
-in `backlog.md`; the other adapter stays selectable by configuration
+provider per K-309. The adapter is MVP and works in the demo
+per K-305: Meta Model API with Muse Spark, model id `muse-spark-1.3`.
+Jens selects the demo default ahead of the 2/11 demo script
+in `backlog.md`; the adapter stays selectable by configuration
 and green in the contract suite per K-309. The Muse contract
 assessment per K-305 is MVP and works in the demo in either selection:
 it runs solely on request via button or tab, REST endpoint and MCP

@@ -97,7 +97,7 @@ async function mockToken(page: Page): Promise<void> {
       body: JSON.stringify({
         status: "ok",
         apiVersion: "v1",
-        personalize: { provider: "hosted-open-weights", modelId: "meta-models/muse-spark-open-1026" },
+        personalize: { provider: "meta-model-api", modelId: "meta-models/muse-spark-open-1026" },
       }),
     });
   });

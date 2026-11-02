@@ -1,5 +1,5 @@
 // Shared contract suite for PluginAuditModelPort (S-054, K-516, P-14).
-// The fake runs it here; the hosted adapter runs the same suite over a
+// The fake runs it here; the Meta adapter runs the same suite over a
 // recorded transport with zero network. Equal outcomes across adapters
 // keep the fake honest. The suite also proves the advisory shape: closed
 // finding enums, identity match, and no approval state in any response.
@@ -112,9 +112,9 @@ export function runPluginAuditModelPortContract(
       }
     });
 
-    test("adapter labels the open-weights provider and model id", () => {
+    test("adapter labels the provider and model id", () => {
       const adapter = makeAdapter("clean");
-      expect(adapter.provider()).toBe("hosted-open-weights");
+      expect(adapter.provider()).toBe("meta-model-api");
       expect(String(adapter.modelId())).toBe("meta-models/muse-spark-open-1026");
     });
 

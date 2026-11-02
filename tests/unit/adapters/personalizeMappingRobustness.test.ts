@@ -17,15 +17,12 @@ import type {
   PluginPersonalizeModelPort,
   PluginPersonalizeProvider,
 } from "../../../src/ports/pluginPersonalizeModel.ts";
-import { GenericCompatiblePersonalizeAdapter } from "../../../src/adapters/personalize/GenericCompatiblePersonalizeAdapter.ts";
-import type { GenericCompatiblePersonalizeTransport } from "../../../src/adapters/personalize/GenericCompatiblePersonalizeAdapter.ts";
 import { MetaModelApiPersonalizeAdapter } from "../../../src/adapters/personalize/metaModelApiPersonalizeAdapter.ts";
 import type { MetaModelApiPersonalizeTransport } from "../../../src/adapters/personalize/metaModelApiPersonalizeAdapter.ts";
 
 type ChatTransport = (url: string, init: { body: string; headers: Record<string, string>; signal: AbortSignal }) => Promise<{ status: number; bodyText: string }>;
 
 const PROVIDERS: readonly { provider: PluginPersonalizeProvider; modelId: string; endpoint: string }[] = [
-  { provider: "generic-compatible", modelId: "compat-robust-model-1", endpoint: "https://compat.example.invalid" },
   { provider: "meta-model-api", modelId: "meta-robust-model-1", endpoint: "https://meta.example.invalid" },
 ];
 
@@ -105,26 +102,14 @@ function runAdapter(options: {
   const onWarn = (line: string): void => {
     options.warns.push(line);
   };
-  let adapter: PluginPersonalizeModelPort;
-  if (options.provider === "meta-model-api") {
-    adapter = new MetaModelApiPersonalizeAdapter({
-      endpoint: options.endpoint,
-      apiKey: new SecretString("test-personalize-key-only"),
-      modelId: mustModelId(options.modelId),
-      timeoutMs: 5000,
-      transport: transport as MetaModelApiPersonalizeTransport,
-      onWarn,
-    });
-  } else {
-    adapter = new GenericCompatiblePersonalizeAdapter({
-      endpoint: options.endpoint,
-      apiKey: new SecretString("test-personalize-key-only"),
-      modelId: mustModelId(options.modelId),
-      timeoutMs: 5000,
-      transport: transport as GenericCompatiblePersonalizeTransport,
-      onWarn,
-    });
-  }
+  const adapter: PluginPersonalizeModelPort = new MetaModelApiPersonalizeAdapter({
+    endpoint: options.endpoint,
+    apiKey: new SecretString("test-personalize-key-only"),
+    modelId: mustModelId(options.modelId),
+    timeoutMs: 5000,
+    transport: transport as MetaModelApiPersonalizeTransport,
+    onWarn,
+  });
   return adapter.personalize(fixedInput(), fixedContext()) as Promise<
     Result<import("../../../src/plugins/personalizeSpec.ts").PersonalizeSpec, { kind: string; message: string }>
   >;
@@ -185,7 +170,7 @@ describe("personalize mapping robustness over recorded transports", () => {
         { name: "not-json", content: "not json {", check: "check=not-json", kind: "invalid-output" },
         {
           name: "provider-echo",
-          content: envelopeText("hosted-open-weights", "other-model-quux-9", validSpec()),
+          content: envelopeText("other-provider", "other-model-quux-9", validSpec()),
           check: "check=provider-echo",
           kind: "provider-mismatch",
         },
