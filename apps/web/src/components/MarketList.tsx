@@ -90,7 +90,7 @@ function chipFor(item: MarketItem, recentByToken: ReadonlyMap<string, RecentAnal
           className="feed-chip"
           title={
             chip.extended > 0
-              ? `${chip.found} owner powers, ${chip.extended} additional finding${chip.extended === 1 ? "" : "s"}`
+              ? `${chip.found} owner powers, ${chip.extended} more found`
               : `${chip.found} owner powers`
           }
         >
@@ -99,10 +99,10 @@ function chipFor(item: MarketItem, recentByToken: ReadonlyMap<string, RecentAnal
         </span>
       );
     }
-    return <span className="feed-chip">◌ {chip.extended} finding{chip.extended === 1 ? "" : "s"}</span>;
+    return <span className="feed-chip">◌ {chip.extended} owner power{chip.extended === 1 ? "" : "s"}</span>;
   }
   if (chip.kind === "none") {
-    return <span className="feed-chip feed-chip-dim">○ No owner power found</span>;
+    return <span className="feed-chip feed-chip-dim">○ No owner powers</span>;
   }
   if (chip.kind === "unscanned") {
     return <span className="feed-chip feed-chip-dim">◌ Not scanned</span>;
@@ -146,7 +146,7 @@ function metaFor(item: MarketItem, updatedTitle: string): JSX.Element {
         </span>{" "}
         {liquidity === null ? (
           <span className="muted" title="DexScreener did not report liquidity">
-            can&apos;t tell
+            unknown
           </span>
         ) : (
           liquidity
@@ -157,7 +157,7 @@ function metaFor(item: MarketItem, updatedTitle: string): JSX.Element {
           <Pictogram name="volume" size={16} />
         </span>{" "}
         {volume.label}{" "}
-        {volumeText === null ? <span className="muted">can&apos;t tell</span> : volumeText}
+        {volumeText === null ? <span className="muted">unknown</span> : volumeText}
       </span>
     </>
   );
@@ -225,7 +225,7 @@ export function MarketListRows({
       {items.length === 0 ? (
         <div className="card" style={{ marginTop: 16 }}>
           <p className="muted" style={{ margin: 0 }}>
-            No Ethereum tokens promoted in the last 24 h.
+            None promoted in 24 h.
           </p>
         </div>
       ) : (
@@ -255,7 +255,7 @@ export function MarketListRows({
                     <>
                       {metaFor(entry, updatedTitle)}
                       {liveTokens.has(key) ? (
-                        <span className="feed-chip feed-chip-dim">Also in New pairs</span>
+                        <span className="feed-chip feed-chip-dim">In New pairs</span>
                       ) : null}
                     </>
                   }
@@ -311,7 +311,7 @@ export function MarketList({
   readonly onCount: (shown: number, total: number) => void;
   readonly onMarket: (items: readonly MarketItem[]) => void;
   readonly onUnavailable: () => void;
-}): JSX.Element {
+}): JSX.Element | null {
   const [view, setView] = useState<{ snapshot: MarketSnapshot; buffered: readonly MarketItem[] } | null>(null);
   const [lastPollAt, setLastPollAt] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -392,11 +392,11 @@ export function MarketList({
 
   if (view === null && error !== null) {
     return (
-      <section aria-label="Promoted on DexScreener" className="feed-section market-frame" hidden={hidden} {...panelProps}>
+      <section aria-label="Paid promotions" className="feed-section market-frame" hidden={hidden} {...panelProps}>
         <div className="feedhead">
-          <h2>Promoted on DexScreener</h2>
+          <h2>Paid promotions</h2>
         </div>
-        <p className="feed-sub">Tokens someone paid to promote. Market data from DexScreener. Not part of the score.</p>
+        <p className="feed-sub">Tokens that paid DexScreener for visibility — scan before you swap.</p>
         <div className="card" style={{ marginTop: 16 }}>
           <p className="muted" style={{ margin: 0 }} role="status">
             {error}
@@ -413,40 +413,43 @@ export function MarketList({
 
   if (view === null) {
     return (
-      <section aria-label="Promoted on DexScreener" className="feed-section market-frame" hidden={hidden} {...panelProps}>
+      <section aria-label="Paid promotions" className="feed-section market-frame" hidden={hidden} {...panelProps}>
         <div className="feedhead">
-          <h2>Promoted on DexScreener</h2>
+          <h2>Paid promotions</h2>
         </div>
-        <p className="feed-sub">Tokens someone paid to promote. Market data from DexScreener. Not part of the score.</p>
+        <p className="feed-sub">Tokens that paid DexScreener for visibility — scan before you swap.</p>
         <div className="card" style={{ marginTop: 16 }}>
           <p className="muted" style={{ margin: 0 }}>
-            Loading market listings…
+            Loading…
           </p>
         </div>
       </section>
     );
   }
 
+  if (view.snapshot.items.length === 0 && view.buffered.length === 0) {
+    return null;
+  }
+
   return (
     <section
-      aria-label="Promoted on DexScreener"
+      aria-label="Paid promotions"
       ref={sectionRef}
       className="feed-section market-frame"
       hidden={hidden}
       {...panelProps}
     >
       <div className="feedhead">
-        <h2>Promoted on DexScreener</h2>
+        <h2>Paid promotions</h2>
         <span className="count feed-count">
-          <span className="meta-item">Ethereum only</span>
+          <span className="meta-item">Ethereum</span>
           <span className="meta-item">newest first</span>
-          <span className="meta-item">Market data</span>
         </span>
         {lastPollAt === null ? null : (
           <span className="quiet numeric">{marketStatusLabel(view.snapshot.updatedAt, lastPollAt)}</span>
         )}
       </div>
-      <p className="feed-sub">Tokens someone paid to promote. Market data from DexScreener. Not part of the score.</p>
+      <p className="feed-sub">Tokens that paid DexScreener for visibility — scan before you swap.</p>
       <MarketListRows
         snapshot={view.snapshot}
         buffered={view.buffered}

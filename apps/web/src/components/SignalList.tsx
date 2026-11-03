@@ -43,12 +43,12 @@ export function withSignalSeverity(sentence: string): string {
 export function signalStrengthWord(severity: Signal["severity"]): string {
   const level = severityClass(severity);
   if (level === "high") {
-    return "Strong signal";
+    return "Strong";
   }
   if (level === "low") {
-    return "Weak signal";
+    return "Weak";
   }
-  return "Moderate signal";
+  return "Medium";
 }
 
 // Inline code spans: split on backticks and wrap the fenced parts in
@@ -141,21 +141,21 @@ function Temporality({ claim }: { readonly claim: ExplanationClaim }): JSX.Eleme
     <div className="quiet" style={{ marginTop: 4 }}>
       {claim.temporality.kind === "applies-now" ? (
         account === null ? (
-          "Applies now"
+          "Active"
         ) : (
           <>
-            Applies now
+            Active
             {" · "}
-            <span className="chip">Owner can change this</span> <AccountChip address={account} />
+            <span className="chip">Owner can change it</span> <AccountChip address={account} />
           </>
         )
       ) : claim.temporality.kind === "can-change-unknown" ? (
-        "Owner-controlled · owner not read yet"
+        "Owner not read"
       ) : account === null ? (
-        <span className="chip">Owner can change this</span>
+        <span className="chip">Owner can change it</span>
       ) : (
         <>
-          <span className="chip">Owner can change this</span> <AccountChip address={account} />
+          <span className="chip">Owner can change it</span> <AccountChip address={account} />
         </>
       )}
     </div>

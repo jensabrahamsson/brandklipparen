@@ -329,7 +329,7 @@ describe("renounced ownership lifts the score floor (SCORE-2)", () => {
     const finding = extendedFinding(
       "dev.brandklipparen.blacklist",
       { fact: "blacklist", proof: "extended" },
-      "The owner can stop chosen wallets from sending tokens. Found by extended analysis; not counted in the score.",
+      "Owner can block wallets. Found by extended analysis; not counted in the score.",
     );
     const envelope = await analyse(
       ownerSlotTokenHex(),
@@ -351,7 +351,7 @@ describe("renounced ownership lifts the score floor (SCORE-2)", () => {
     const finding = extendedFinding(
       "dev.brandklipparen.blacklist",
       { fact: "blacklist", proof: "extended" },
-      "The owner can stop chosen wallets from sending tokens. Found by extended analysis; not counted in the score.",
+      "Owner can block wallets. Found by extended analysis; not counted in the score.",
     );
     const envelope = await analyse(
       ownerSlotTokenHex(),

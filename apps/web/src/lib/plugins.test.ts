@@ -95,7 +95,7 @@ describe("plugin parsing for the schema-driven panel", () => {
     ]);
   });
 
-  test("decompiler findings keep ranges, annotations and unresolved counts for the Expert view", () => {
+  test("decompiler findings keep ranges, annotations and unresolved counts for the Expert", () => {
     const views = toPluginResultViews([
       {
         pluginId: "dev.brandklipparen.decompiler",

@@ -33,15 +33,15 @@ describe("typewriter", () => {
 
   test("renders the full text at once under reduced motion with no cursor", () => {
     stubMatchMedia(true);
-    const html = renderToString(<Sentence text="The owner can stop transfers." />);
-    expect(html).toContain("The owner can stop transfers.");
+    const html = renderToString(<Sentence text="Owner can stop transfers." />);
+    expect(html).toContain("Owner can stop transfers.");
     expect(html).not.toContain("▌");
   });
 
   test("keeps the full text in the accessibility tree while typing", () => {
     stubMatchMedia(false);
-    const html = renderToString(<Sentence text="The owner can stop transfers." />);
-    expect(html).toContain('<span class="sr-only">The owner can stop transfers.</span>');
+    const html = renderToString(<Sentence text="Owner can stop transfers." />);
+    expect(html).toContain('<span class="sr-only">Owner can stop transfers.</span>');
     expect(html).toContain("▌");
   });
 });

@@ -1,5 +1,5 @@
 // Playwright for the token page toolbar and Ask field (UI v2 §1.4,
-// W-8): the Expert switch persists across reload and reveals raw data,
+// W-8): technical details reveal raw data and persist across reload,
 // the Ask field persists under the priorities key (K-035), typing
 // highlights matching tiles with zero network, and one Ask press sends
 // one /v1/chat request. Every REST response is route-mocked; no test
@@ -122,7 +122,7 @@ const CHAT_OK = {
   codeHash: "0xabc",
   chat: {
     kind: "ok",
-    answers: ["The owner can stop chosen wallets from sending tokens."],
+    answers: ["Owner can block wallets."],
     droppedClaims: 0,
     provider: "test-adapter",
     modelId: "muse-spark-1.3",
@@ -157,8 +157,6 @@ test("technical_details_open_without_a_mode_switch", async ({ page }) => {
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
   await expect(page.locator("details.customize")).toHaveCount(0);
-  await expect(page.getByTestId("expert-switch")).toHaveCount(0);
-  await expect(page.getByRole("switch", { name: "Expert view" })).toHaveCount(0);
   await page.locator("details.tech-details > summary", { hasText: "Technical details" }).click();
   await expect(page.getByTestId("expert-detail")).toBeVisible();
   await page.reload();
@@ -166,7 +164,7 @@ test("technical_details_open_without_a_mode_switch", async ({ page }) => {
   await expect(page.locator("details.tech-details > summary", { hasText: "Technical details" })).toBeVisible();
 });
 
-test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) => {
+test("k034_technical_details_reveal_bytecode_selectors_raw_data", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
   const scoreSection = page.locator('section[aria-label="Combined score"]');
@@ -178,6 +176,10 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
   // and "91%" lands while the dial is still below its final 84.
   await expect(scoreSection.getByText("84", { exact: true })).toBeVisible();
   await expect(scoreSection).toContainText("91%");
+  // The rug-pull and bot-pump gauges settle on their own count-up, so
+  // wait for their final percents before the one-shot read too.
+  await expect(scoreSection).toContainText("62%");
+  await expect(scoreSection).toContainText("34%");
   const simpleScore = await scoreSection.innerText();
   await page.locator("details.tech-details > summary", { hasText: "Technical details" }).click();
   await expect(page.getByTestId("expert-detail")).toContainText("0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF");
@@ -202,14 +204,14 @@ test("k034_expert_mode_reveals_bytecode_selectors_raw_data", async ({ page }) =>
 test("k035_ask_field_persists_across_reload_and_clear_removes_it", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  const ask = page.getByLabel("Ask about this token");
+  const ask = page.getByLabel("Ask Muse");
   await ask.fill("Can the owner stop me selling?");
-  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches your question");
+  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches question");
   await page.reload();
-  await expect(page.getByLabel("Ask about this token")).toHaveValue("Can the owner stop me selling?");
-  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches your question");
+  await expect(page.getByLabel("Ask Muse")).toHaveValue("Can the owner stop me selling?");
+  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches question");
   await page.getByTestId("ask-clear").click();
-  await expect(page.getByLabel("Ask about this token")).toHaveValue("");
+  await expect(page.getByLabel("Ask Muse")).toHaveValue("");
   await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toHaveCount(0);
   const stored = await page.evaluate(() => localStorage.getItem("brandklipparen-user-priorities:v1"));
   expect(stored).toBe(null);
@@ -225,9 +227,9 @@ test("k035_typing_highlights_tiles_without_network", async ({ page }) => {
   await expect(page.getByTestId("plugin-board")).toBeVisible();
   const settled = urls.length;
   expect(settled).toBeGreaterThan(0);
-  await page.getByLabel("Ask about this token").fill("Can the owner stop me selling?");
-  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches your question");
-  await expect(page.getByTestId("matched-dev.brandklipparen.capability")).toContainText("Matches your question");
+  await page.getByLabel("Ask Muse").fill("Can the owner stop me selling?");
+  await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toContainText("Matches question");
+  await expect(page.getByTestId("matched-dev.brandklipparen.capability")).toContainText("Matches question");
   await page.waitForTimeout(400);
   // Typing only re-runs the local matcher: no new request leaves the page.
   expect(urls.length).toBe(settled);
@@ -237,7 +239,7 @@ test("k035_typing_highlights_tiles_without_network", async ({ page }) => {
 test("k519_critical_finding_visible_with_unrelated_question", async ({ page }) => {
   await mockRest(page);
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByLabel("Ask about this token").fill("What a nice day for a walk");
+  await page.getByLabel("Ask Muse").fill("What a nice day for a walk");
   await expect(page.getByTestId("matched-dev.brandklipparen.clone-match")).toHaveCount(0);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
   await expect(page.locator('section[aria-label="Why this score"]')).toContainText("Owner can block transfers");
@@ -257,20 +259,20 @@ test("k519_ask_sends_one_chat_request_per_press", async ({ page }) => {
   const chatPosts = { count: 0 };
   await mockRest(page, chatPosts);
   await page.goto(`/#/token/${ADDRESS}`);
-  const ask = page.getByLabel("Ask about this token");
+  const ask = page.getByLabel("Ask Muse");
   await ask.fill("Can the owner stop me selling?");
   await page.getByTestId("ask-submit").click();
   await expect(page.getByTestId("muse-output")).toContainText(
-    "The owner can stop chosen wallets from sending tokens.",
+    "Owner can block wallets.",
   );
   await expect.poll(() => chatPosts.count).toBe(1);
   await ask.fill("Can fees change?");
   await page.getByTestId("ask-submit").click();
   await expect.poll(() => chatPosts.count).toBe(2);
   await expect(page.getByTestId("muse-output")).toContainText(
-    "The owner can stop chosen wallets from sending tokens.",
+    "Owner can block wallets.",
   );
-  await expect(page.getByTestId("muse-advisory")).toContainText("AI explanation · doesn't change the score");
+  await expect(page.getByTestId("muse-advisory")).toContainText("Muse does not change the score.");
 });
 
 test("k519_empty_ask_sends_nothing", async ({ page }) => {
@@ -282,9 +284,9 @@ test("k519_empty_ask_sends_nothing", async ({ page }) => {
   await expect(page.getByTestId("ask-hint")).toHaveCount(0);
   // Enter in the empty field submits the form, which focuses the field
   // and shows the error hint instead of sending.
-  await page.getByLabel("Ask about this token").focus();
+  await page.getByLabel("Ask Muse").focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByTestId("ask-hint")).toContainText("Type a question first, then press Ask.");
+  await expect(page.getByTestId("ask-hint")).toContainText("Type a question.");
   await page.waitForTimeout(300);
   expect(chatPosts.count).toBe(0);
   await expect(page.getByTestId("muse-output")).toHaveCount(0);

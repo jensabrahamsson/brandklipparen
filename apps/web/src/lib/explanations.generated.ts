@@ -31,156 +31,156 @@ export const EXPLANATIONS = Object.freeze({
     "body": "What it checks: An opt-in Muse contract assessment of the analysed token: a short generated text beside the deterministic probabilities, score and evidence. The text never changes scores, signals or evidence. Why it matters: The deterministic page tells you what the bytecode contains; the assessment reads like a second opinion in plain words, useful when the signals alone do not answer whether you should buy."
   },
   "plugin:dev.brandklipparen.blacklist": {
-    "title": "Blacklist detector",
+    "title": "Blacklist",
     "body": "What it checks: A transfer gate on a mapping entry that a privileged caller can set. The proof needs both at once: the transfer path reads a mapping entry beside an equality compare, or beside an ISZERO with no range compare between the load and the gate, with a conditional jump that can revert; and a caller-guarded function writes a mapping slot. The two may share one merged function. One finding names the first provable pair. A plain balance check or an allowance check never counts: both compile to a range compare closed by ISZERO, which the ordered veto excludes. Why it matters: A privileged block list lets the owner stop your sale while letting other transfers through. The finding names the function that writes the entry and the transfer function that reads it, so you can see both ends."
   },
   "plugin:dev.brandklipparen.capability": {
-    "title": "Capability detector",
+    "title": "Capabilities",
     "body": "What it checks: Structural ERC-20 bytecode capabilities, one finding per capability key: - `selfdestruct`: the contract can destroy itself and redirect funds. - `delegatecall`: the contract can run foreign code in local storage context. - `call`: the contract can forward calls to an outside contract. - `storage-write`: the contract can write storage. Detection fires solely on opcode presence in the reachable disassembly with PUSH data skipped, so constants never count as opcodes. No count, share, or size cutoff steers detection: one occurrence is enough. A CALL that pays out to msg.sender stays silent: withdrawing is not an outside-contract power. Why it matters: These capabilities decide what the owner can still do after you buy. A selfdestruct or delegatecall capability can drain or redirect funds, and a storage-write capability can change the rules under you."
   },
   "plugin:dev.brandklipparen.clone-match": {
-    "title": "Clone-match detector",
+    "title": "Clone-match",
     "body": "What it checks: A known trap-template hit from the clone index: at most one finding per analysis, naming the matched template group with its similarity share and prior count. Why it matters: Trap templates get reused. A bytecode match against a known honeypot template means someone has run this exact trap before, so you can walk away before it runs on you."
   },
   "plugin:dev.brandklipparen.decompiler": {
-    "title": "Decompiler detector",
+    "title": "Decompiler",
     "body": "What it checks: The own deterministic ERC-20 decompiler pipeline (disassembly to CFG, stack-to-SSA lifting, structuring, pseudo-Solidity emission): one finding per dispatcher function entry, carrying the function name, selector, entry PC, exact bytecode range, token-pattern annotations, cause label and the contract-wide unresolved-jump count. Why it matters: When the analyzer can show the reconstructed function beside its exact bytecode range, you can check every claim against the bytes. The annotations name the token shapes the pipeline recognised (for example a guarded state update), and the cause label names the ones it left as a labelled region instead of guessing."
   },
   "plugin:dev.brandklipparen.hard-to-analyze": {
-    "title": "Hard-to-analyze detector",
+    "title": "Obfuscated code",
     "body": "What it checks: A failed decompilation: at most one finding per analysis, naming the cause the host derived from the decompiler failure (`timeout`, `resource-limit`, `decompiler-error` or `obfuscated-structure`). Why it matters: When the analyzer cannot read the contract, neither can you. An `obfuscated-structure` cause can mean deliberate hiding, and any cause means the rest of the page reasons from less evidence than usual."
   },
   "plugin:dev.brandklipparen.mint": {
-    "title": "Mint detector",
+    "title": "Mint",
     "body": "What it checks: A privileged mint that grows supply and credits a balance. The scored proof needs a caller-guarded writer that stores to a constant slot with addition beside the store (the supply increase) and a mapping store beside calldata in the same writer region (the balance credit keyed by an address the caller chose), plus a transfer path that loads the same slot beside addition arithmetic. The writer and the reader may share one merged function, with distinct functions preferred when both prove the same slot. One finding names the lowest provable slot. When the scored proof finds nothing, the extended analysis re-runs the search on the reachability v2 view and reports a weight-0 fact that never counts in the score. The extended proof drops the transfer-path read: the supply slot is the constant slot the `totalSupply()` region loads, and the guard may be an owner check, a minter role-slot check (`require(msg.sender == <slot>)`), or an auth-mapping check (`require(wards[msg.sender] == 1)`). The payload names the guard kind in `auth`, the credit recipient in `recipient` (`argument` for a caller-chosen address, `stored` for a stored account such as the owner), and whether a cap compare sits in the writer in `capped`. Why it matters: A privileged mint lets the owner create new tokens from nothing and sell them into your position. The finding names the function that writes the supply and the transfer function that reads it, so you can see both ends."
   },
   "plugin:dev.brandklipparen.ownership": {
-    "title": "Ownership detector",
+    "title": "Ownership",
     "body": "What it checks: The owner slot, the privileged functions and the renounce path. The owner slot is the lowest constant slot loaded beside a caller compare; privileged functions are the caller-guarded regions; a renounce path is any store of zero to the owner slot. One finding names the owner slot with the privileged function count, and a second finding names the renounce store when one exists. Why it matters: Every other owner power in this pack flows from the owner seat: who holds it decides who can mint, block, tax or pause you. A renounce path shows the seat can be given up. The findings name the functions that check the seat, so you can count the powers behind it."
   },
   "plugin:dev.brandklipparen.pause": {
-    "title": "Pause detector",
+    "title": "Pause",
     "body": "What it checks: A boolean flag set by a privileged caller that gates the transfer path. The proof needs a caller-guarded writer storing a flag value (zero or a small boolean constant) to a constant slot, and the transfer path loading the same slot beside an equality compare, or beside an ISZERO with no range compare between the load and the gate, plus a conditional jump that can revert. The writer and the gate may share one merged function. One finding names the lowest provable slot with its mode: a one-way enable reports `trading-toggle`, a flag that also writes zero reports `pause`, and anything else reports `unknown`. Why it matters: A pause switch lets the owner freeze every transfer, and a trading toggle that never opens again locks the same door. The finding names the setter function and the transfer function it gates, with the mode the stores prove, so you can see whether the flag flips both ways."
   },
   "plugin:dev.brandklipparen.proxy-upgrade": {
-    "title": "Proxy-upgrade detector",
+    "title": "Proxy-upgrade",
     "body": "What it checks: Proxy upgradeability as a privileged capability, reusing the domain proxy helpers. An upgrade entry behind a caller guard reports the UUPS kind; a delegatecall-behind-storage region beside an upgrade entry reports the EIP-1967 kind. One finding names the first provable shape with the upgrade selector it proves. Why it matters: An upgradeable proxy can swap the token logic after you buy: today's rules are not tomorrow's. The finding names the upgrade function and, for the delegatecall shape, the forwarding call site, so you can see who holds the upgrade path."
   },
   "plugin:dev.brandklipparen.sell-block": {
-    "title": "Sell-block detector",
+    "title": "Sell-block",
     "body": "What it checks: Sell-blocking honeypot branching in the transfer path. The proof needs a caller-guarded writer storing a pair or router address to a constant slot, and a transfer path that loads the same slot beside an equality compare against the recipient, with calldata and a conditional jump that can revert. An equality beside CALLER is access control, never a sell branch. One finding names the first provable pair with its condition: a mapping read beside the transfer reports `pair-mapping`, and no mapping read reports `recipient-equals-stored`. A lone balance mapping read, an equality with no stored address, or a stored address no privileged writer controls never proves a sell block. Why it matters: A sell block lets you buy but never sell: the transfer succeeds one way and reverts the other. The finding names the transfer function and the compared storage reads, so you can see which stored address decides your sale."
   },
   "plugin:dev.brandklipparen.transfer-fee": {
-    "title": "Transfer-fee detector",
+    "title": "Transfer-fee",
     "body": "What it checks: A fee rate set by a privileged caller and deducted in the transfer path. The proof needs a caller-guarded writer storing a caller-chosen rate (a computed, non-constant value) to a constant slot, and the transfer path loading the same slot beside multiply or divide arithmetic (the rate application) with a subtraction in the region (the deduction from the transfer amount). The writer and the reader may share one merged function. One finding names the lowest provable slot and reports the max-fee bound when the setter bounds it with a constant compare, or an unknown bound when it does not. When the scored proof finds nothing, the extended analysis re-runs the search on the reachability v2 view and reports a weight-0 fact that never counts in the score. The extended proof resolves the rate slot through swaps and stack shuffles the scored beside window cannot see, or through a transfer condition that multiplies or divides the loaded slot far from its load, and it reports the rate slot with the cap slot when a second guarded slot clamps the fee. Fee arithmetic with no privileged writer, or a hardcoded constant rate, stays silent. Why it matters: A fee on every transfer takes a cut of your sale, and a 100 percent fee is a honeypot: you can buy but never sell for value. The finding names the setter function and the transfer function it feeds, with the bound the setter proves, so you can see the worst case."
   },
   "plugin:dev.brandklipparen.transfer-hooks": {
-    "title": "Transfer-hooks detector",
+    "title": "Transfer-hooks",
     "body": "What it checks: External calls reachable in the transfer path. One finding carries every external CALL site in a transfer region as selector evidence with PC offsets, with the best-effort target source of the first site: an address loaded from storage or an argument from calldata. Only the `call` kind to a stored or caller-chosen target counts: static calls to precompiles (such as ecrecover in permit) or balance lookups, delegatecalls, calls to hardcoded constant addresses, calls whose target the window cannot resolve, and payouts to msg.sender never prove a hook. Why it matters: A transfer that calls out can run foreign logic on your sale: a hook contract, an oracle, or a drain. The finding names the transfer function and the call site, with where the target address comes from, so you can see whether the destination is fixed or itself changeable."
   },
   "plugin:dev.brandklipparen.transfer-limits": {
-    "title": "Transfer-limits detector",
+    "title": "Transfer-limits",
     "body": "What it checks: Max-tx and max-wallet limits set by a privileged caller and compared in the transfer path. The proof needs a caller-guarded writer storing a caller-chosen limit (a computed value) or a large constant to a limit slot, and the transfer path loading the same slot beside a less than or greater than compare. A flag constant (0 or 1) is a pause toggle, never a limit. The writer and the reader may share one merged function. One finding names the lowest provable slot with its kind: a compare against a balance mapping lookup reports `max-wallet`, a compare against a calldata value with no mapping read reports `max-tx`, and anything else reports `unknown`. Why it matters: A max-tx limit caps how much you can sell at once, and a max-wallet limit caps how much you can hold: both let the owner shape the market against you. The finding names the setter function and the transfer function it constrains, with the kind the reads prove."
   },
   "template:capability:rug-pull": {
     "title": "Template wording for rug-pull",
-    "body": "The template says the contract code lets an account move funds out of the contract. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+    "body": "The contract code lets an account move funds out of the contract. Names the capability, not intent."
   },
   "template:clone-match:rug-pull": {
     "title": "Template wording for a rug-pull template match",
-    "body": "Trap templates get reused. A bytecode match against a known template means someone has run this exact trap before. This names the matched group with its similarity share, never a verdict."
+    "body": "Matches a known trap template. Trap templates get reused, so it is a warning, not a verdict."
   },
   "template:capability:honeypot": {
     "title": "Template wording for honeypot",
-    "body": "The template says the contract code lets an account block a withdrawal, so funds stay in. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+    "body": "The contract code lets an account block a withdrawal, so funds stay in. Names the capability, not intent."
   },
   "template:clone-match:honeypot": {
     "title": "Template wording for a honeypot template match",
-    "body": "Trap templates get reused. A bytecode match against a known template means someone has run this exact trap before. This names the matched group with its similarity share, never a verdict."
+    "body": "Matches a known trap template. Trap templates get reused, so it is a warning, not a verdict."
   },
   "template:capability:bot-pump": {
     "title": "Template wording for bot-pump",
-    "body": "The template says the contract code lets an account favor one trade over another. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+    "body": "The contract code lets an account favor one trade over another. Names the capability, not intent."
   },
   "template:clone-match:bot-pump": {
     "title": "Template wording for a bot-pump template match",
-    "body": "Trap templates get reused. A bytecode match against a known template means someone has run this exact trap before. This names the matched group with its similarity share, never a verdict."
+    "body": "Matches a known trap template. Trap templates get reused, so it is a warning, not a verdict."
   },
   "template:hard-to-analyze:timeout": {
     "title": "Template wording for timeout",
-    "body": "The analysis ran out of time before it could read all of the code. The finding marks a coverage gap, not a risk."
+    "body": "The analysis ran out of time before it could read all of the code. Owner powers in unread code may be missed."
   },
   "template:hard-to-analyze:resource-limit": {
     "title": "Template wording for resource-limit",
-    "body": "The analysis ran out of resources before it could read all of the code. The finding marks a coverage gap, not a risk."
+    "body": "The analysis ran out of resources before it could read all of the code. Owner powers in unread code may be missed."
   },
   "template:hard-to-analyze:decompiler-error": {
     "title": "Template wording for decompiler-error",
-    "body": "The decompiler reported an error, so the analysis could not read all of the code. The finding marks a coverage gap, not a risk."
+    "body": "The decompiler reported an error, so the analysis could not read all of the code. Owner powers in unread code may be missed."
   },
   "template:hard-to-analyze:obfuscated-structure": {
     "title": "Template wording for obfuscated-structure",
-    "body": "The code structure resists direct reading, so the analysis could not map all of it. The finding marks a coverage gap, not a risk."
+    "body": "The code structure resists direct reading, so the analysis could not map all of it. Owner powers in unread code may be missed."
   },
   "evidence:selector": {
     "title": "Where in the code",
-    "body": "The function in the contract where we saw this. Copy it to check on a block explorer."
+    "body": "Function where this appears."
   },
   "evidence:offset": {
-    "title": "Bytecode offset",
-    "body": "PC offset: the PC offset travels beside the selector in every case where the offset is derived from the bytecode. Offsets are counted in bytes from the start of the deployed code."
+    "title": "Byte position",
+    "body": "Byte position in the deployed code."
   },
   "evidence:snippet": {
     "title": "Decompiled snippet",
-    "body": "A decompiled snippet joins the entry after the deepening. The text is quoted readout data, never the original source."
+    "body": "Rebuilt from bytes, not original source."
   },
   "evidence:payload": {
     "title": "Finding details",
-    "body": "The payload carries the finding fields the detector reported, such as the capability key or the matched group with its similarity share."
+    "body": "Raw fields the check reported."
   },
   "score:combined": {
     "title": "Risk score",
-    "body": "How worried to be, from 0 to 100, based on what this contract lets its owner do. Under 30 is low, 30-59 elevated, 60 and up high. It is an estimate from the code, not a safety guarantee: read the findings below before you buy."
+    "body": "0–100. Under 30 low, 30–59 elevated, 60+ high. Based on what the owner can do."
   },
   "score:gauge:rug-pull": {
     "title": "Rug pull",
-    "body": "The chance that the people behind this token can take the money and leave, for example by creating new tokens or draining the pool. Each owner power below is one way to do it. With nothing found, this is the usual rate for new tokens."
+    "body": "Chance the owner can take the money and leave. Estimate from past tokens."
   },
   "score:gauge:honeypot": {
     "title": "Honeypot",
-    "body": "The chance that you can buy this token but not sell it, for example because the owner can block wallets or freeze transfers. Check Pause, Blacklist and Sell block below, and try a small sell before a large buy."
+    "body": "Chance you can buy but not sell."
   },
   "score:gauge:bot-pump": {
     "title": "Bot pump",
-    "body": "The chance that the launch favours bots or insiders: code that lets some wallets trade first, pay lower fees or skip limits, so early buyers can dump on late ones. Be careful in the first hours, and check Fee and Limits below."
+    "body": "Chance bots or insiders dump on late buyers."
   },
   "score:band": {
     "title": "Risk band",
-    "body": "Low means no strong owner power was found, which is not the same as safe. Elevated means some risky powers exist. High means the owner can hurt holders: look before any transfer."
+    "body": "Low: no strong owner power found. Elevated: risky powers. High: owner can block holders."
   },
   "score:strip": {
     "title": "Result summary",
-    "body": "Pinned summary of the score and the strongest single risk, shown once the score ring scrolls out of view and always on the assessment tab."
+    "body": "Score and top risk, pinned."
   },
   "powers:extended": {
-    "title": "Extended analysis",
-    "body": "Extended analysis is newer and not yet calibrated. A proven owner power sets a minimum score: High if it can block holders, Elevated for other risky powers. Other findings do not move the score, but the finding is still real: open it to see the proof."
+    "title": "Owner powers",
+    "body": "Block powers set the score to at least 60. Mint, fee, limits and upgrade set it to at least 30. Renounced owner: no floor."
   },
   "explanation:claim": {
     "title": "About these claims",
-    "body": "Every claim links to the signal it renders and carries that signal's evidence pointers as quoted data. Temporality says whether the pattern holds now or can change later."
+    "body": "Each line links to its proof."
   },
   "cant-tell": {
     "title": "What code can't tell",
-    "body": "Questions the code alone can't answer, such as who holds the supply or whether the pool is locked. Check these on a block explorer before you buy."
+    "body": "Things bytecode can't show. Check them yourself."
   },
   "investigation:step": {
     "title": "Investigation step",
-    "body": "One check Muse chose to run on the frozen result. It can add context, never change the score."
+    "body": "A check Muse ran."
   },
   "investigation:narrative": {
-    "title": "Checked narrative",
-    "body": "A sentence survives only when it cites at least one collected id and cites no uncollected id; every surviving sentence quotes its evidence. The narrative never moves the score, signals or evidence."
+    "title": "Summary",
+    "body": "Only sentences with proof are shown."
   }
 }) as Record<string, GeneratedExplanationEntry>;
 
@@ -191,156 +191,156 @@ export const EXPLANATION_PAYLOAD = {
       "body": "What it checks: An opt-in Muse contract assessment of the analysed token: a short generated text beside the deterministic probabilities, score and evidence. The text never changes scores, signals or evidence. Why it matters: The deterministic page tells you what the bytecode contains; the assessment reads like a second opinion in plain words, useful when the signals alone do not answer whether you should buy."
     },
     "plugin:dev.brandklipparen.blacklist": {
-      "title": "Blacklist detector",
+      "title": "Blacklist",
       "body": "What it checks: A transfer gate on a mapping entry that a privileged caller can set. The proof needs both at once: the transfer path reads a mapping entry beside an equality compare, or beside an ISZERO with no range compare between the load and the gate, with a conditional jump that can revert; and a caller-guarded function writes a mapping slot. The two may share one merged function. One finding names the first provable pair. A plain balance check or an allowance check never counts: both compile to a range compare closed by ISZERO, which the ordered veto excludes. Why it matters: A privileged block list lets the owner stop your sale while letting other transfers through. The finding names the function that writes the entry and the transfer function that reads it, so you can see both ends."
     },
     "plugin:dev.brandklipparen.capability": {
-      "title": "Capability detector",
+      "title": "Capabilities",
       "body": "What it checks: Structural ERC-20 bytecode capabilities, one finding per capability key: - `selfdestruct`: the contract can destroy itself and redirect funds. - `delegatecall`: the contract can run foreign code in local storage context. - `call`: the contract can forward calls to an outside contract. - `storage-write`: the contract can write storage. Detection fires solely on opcode presence in the reachable disassembly with PUSH data skipped, so constants never count as opcodes. No count, share, or size cutoff steers detection: one occurrence is enough. A CALL that pays out to msg.sender stays silent: withdrawing is not an outside-contract power. Why it matters: These capabilities decide what the owner can still do after you buy. A selfdestruct or delegatecall capability can drain or redirect funds, and a storage-write capability can change the rules under you."
     },
     "plugin:dev.brandklipparen.clone-match": {
-      "title": "Clone-match detector",
+      "title": "Clone-match",
       "body": "What it checks: A known trap-template hit from the clone index: at most one finding per analysis, naming the matched template group with its similarity share and prior count. Why it matters: Trap templates get reused. A bytecode match against a known honeypot template means someone has run this exact trap before, so you can walk away before it runs on you."
     },
     "plugin:dev.brandklipparen.decompiler": {
-      "title": "Decompiler detector",
+      "title": "Decompiler",
       "body": "What it checks: The own deterministic ERC-20 decompiler pipeline (disassembly to CFG, stack-to-SSA lifting, structuring, pseudo-Solidity emission): one finding per dispatcher function entry, carrying the function name, selector, entry PC, exact bytecode range, token-pattern annotations, cause label and the contract-wide unresolved-jump count. Why it matters: When the analyzer can show the reconstructed function beside its exact bytecode range, you can check every claim against the bytes. The annotations name the token shapes the pipeline recognised (for example a guarded state update), and the cause label names the ones it left as a labelled region instead of guessing."
     },
     "plugin:dev.brandklipparen.hard-to-analyze": {
-      "title": "Hard-to-analyze detector",
+      "title": "Obfuscated code",
       "body": "What it checks: A failed decompilation: at most one finding per analysis, naming the cause the host derived from the decompiler failure (`timeout`, `resource-limit`, `decompiler-error` or `obfuscated-structure`). Why it matters: When the analyzer cannot read the contract, neither can you. An `obfuscated-structure` cause can mean deliberate hiding, and any cause means the rest of the page reasons from less evidence than usual."
     },
     "plugin:dev.brandklipparen.mint": {
-      "title": "Mint detector",
+      "title": "Mint",
       "body": "What it checks: A privileged mint that grows supply and credits a balance. The scored proof needs a caller-guarded writer that stores to a constant slot with addition beside the store (the supply increase) and a mapping store beside calldata in the same writer region (the balance credit keyed by an address the caller chose), plus a transfer path that loads the same slot beside addition arithmetic. The writer and the reader may share one merged function, with distinct functions preferred when both prove the same slot. One finding names the lowest provable slot. When the scored proof finds nothing, the extended analysis re-runs the search on the reachability v2 view and reports a weight-0 fact that never counts in the score. The extended proof drops the transfer-path read: the supply slot is the constant slot the `totalSupply()` region loads, and the guard may be an owner check, a minter role-slot check (`require(msg.sender == <slot>)`), or an auth-mapping check (`require(wards[msg.sender] == 1)`). The payload names the guard kind in `auth`, the credit recipient in `recipient` (`argument` for a caller-chosen address, `stored` for a stored account such as the owner), and whether a cap compare sits in the writer in `capped`. Why it matters: A privileged mint lets the owner create new tokens from nothing and sell them into your position. The finding names the function that writes the supply and the transfer function that reads it, so you can see both ends."
     },
     "plugin:dev.brandklipparen.ownership": {
-      "title": "Ownership detector",
+      "title": "Ownership",
       "body": "What it checks: The owner slot, the privileged functions and the renounce path. The owner slot is the lowest constant slot loaded beside a caller compare; privileged functions are the caller-guarded regions; a renounce path is any store of zero to the owner slot. One finding names the owner slot with the privileged function count, and a second finding names the renounce store when one exists. Why it matters: Every other owner power in this pack flows from the owner seat: who holds it decides who can mint, block, tax or pause you. A renounce path shows the seat can be given up. The findings name the functions that check the seat, so you can count the powers behind it."
     },
     "plugin:dev.brandklipparen.pause": {
-      "title": "Pause detector",
+      "title": "Pause",
       "body": "What it checks: A boolean flag set by a privileged caller that gates the transfer path. The proof needs a caller-guarded writer storing a flag value (zero or a small boolean constant) to a constant slot, and the transfer path loading the same slot beside an equality compare, or beside an ISZERO with no range compare between the load and the gate, plus a conditional jump that can revert. The writer and the gate may share one merged function. One finding names the lowest provable slot with its mode: a one-way enable reports `trading-toggle`, a flag that also writes zero reports `pause`, and anything else reports `unknown`. Why it matters: A pause switch lets the owner freeze every transfer, and a trading toggle that never opens again locks the same door. The finding names the setter function and the transfer function it gates, with the mode the stores prove, so you can see whether the flag flips both ways."
     },
     "plugin:dev.brandklipparen.proxy-upgrade": {
-      "title": "Proxy-upgrade detector",
+      "title": "Proxy-upgrade",
       "body": "What it checks: Proxy upgradeability as a privileged capability, reusing the domain proxy helpers. An upgrade entry behind a caller guard reports the UUPS kind; a delegatecall-behind-storage region beside an upgrade entry reports the EIP-1967 kind. One finding names the first provable shape with the upgrade selector it proves. Why it matters: An upgradeable proxy can swap the token logic after you buy: today's rules are not tomorrow's. The finding names the upgrade function and, for the delegatecall shape, the forwarding call site, so you can see who holds the upgrade path."
     },
     "plugin:dev.brandklipparen.sell-block": {
-      "title": "Sell-block detector",
+      "title": "Sell-block",
       "body": "What it checks: Sell-blocking honeypot branching in the transfer path. The proof needs a caller-guarded writer storing a pair or router address to a constant slot, and a transfer path that loads the same slot beside an equality compare against the recipient, with calldata and a conditional jump that can revert. An equality beside CALLER is access control, never a sell branch. One finding names the first provable pair with its condition: a mapping read beside the transfer reports `pair-mapping`, and no mapping read reports `recipient-equals-stored`. A lone balance mapping read, an equality with no stored address, or a stored address no privileged writer controls never proves a sell block. Why it matters: A sell block lets you buy but never sell: the transfer succeeds one way and reverts the other. The finding names the transfer function and the compared storage reads, so you can see which stored address decides your sale."
     },
     "plugin:dev.brandklipparen.transfer-fee": {
-      "title": "Transfer-fee detector",
+      "title": "Transfer-fee",
       "body": "What it checks: A fee rate set by a privileged caller and deducted in the transfer path. The proof needs a caller-guarded writer storing a caller-chosen rate (a computed, non-constant value) to a constant slot, and the transfer path loading the same slot beside multiply or divide arithmetic (the rate application) with a subtraction in the region (the deduction from the transfer amount). The writer and the reader may share one merged function. One finding names the lowest provable slot and reports the max-fee bound when the setter bounds it with a constant compare, or an unknown bound when it does not. When the scored proof finds nothing, the extended analysis re-runs the search on the reachability v2 view and reports a weight-0 fact that never counts in the score. The extended proof resolves the rate slot through swaps and stack shuffles the scored beside window cannot see, or through a transfer condition that multiplies or divides the loaded slot far from its load, and it reports the rate slot with the cap slot when a second guarded slot clamps the fee. Fee arithmetic with no privileged writer, or a hardcoded constant rate, stays silent. Why it matters: A fee on every transfer takes a cut of your sale, and a 100 percent fee is a honeypot: you can buy but never sell for value. The finding names the setter function and the transfer function it feeds, with the bound the setter proves, so you can see the worst case."
     },
     "plugin:dev.brandklipparen.transfer-hooks": {
-      "title": "Transfer-hooks detector",
+      "title": "Transfer-hooks",
       "body": "What it checks: External calls reachable in the transfer path. One finding carries every external CALL site in a transfer region as selector evidence with PC offsets, with the best-effort target source of the first site: an address loaded from storage or an argument from calldata. Only the `call` kind to a stored or caller-chosen target counts: static calls to precompiles (such as ecrecover in permit) or balance lookups, delegatecalls, calls to hardcoded constant addresses, calls whose target the window cannot resolve, and payouts to msg.sender never prove a hook. Why it matters: A transfer that calls out can run foreign logic on your sale: a hook contract, an oracle, or a drain. The finding names the transfer function and the call site, with where the target address comes from, so you can see whether the destination is fixed or itself changeable."
     },
     "plugin:dev.brandklipparen.transfer-limits": {
-      "title": "Transfer-limits detector",
+      "title": "Transfer-limits",
       "body": "What it checks: Max-tx and max-wallet limits set by a privileged caller and compared in the transfer path. The proof needs a caller-guarded writer storing a caller-chosen limit (a computed value) or a large constant to a limit slot, and the transfer path loading the same slot beside a less than or greater than compare. A flag constant (0 or 1) is a pause toggle, never a limit. The writer and the reader may share one merged function. One finding names the lowest provable slot with its kind: a compare against a balance mapping lookup reports `max-wallet`, a compare against a calldata value with no mapping read reports `max-tx`, and anything else reports `unknown`. Why it matters: A max-tx limit caps how much you can sell at once, and a max-wallet limit caps how much you can hold: both let the owner shape the market against you. The finding names the setter function and the transfer function it constrains, with the kind the reads prove."
     },
     "template:capability:rug-pull": {
       "title": "Template wording for rug-pull",
-      "body": "The template says the contract code lets an account move funds out of the contract. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+      "body": "The contract code lets an account move funds out of the contract. Names the capability, not intent."
     },
     "template:clone-match:rug-pull": {
       "title": "Template wording for a rug-pull template match",
-      "body": "Trap templates get reused. A bytecode match against a known template means someone has run this exact trap before. This names the matched group with its similarity share, never a verdict."
+      "body": "Matches a known trap template. Trap templates get reused, so it is a warning, not a verdict."
     },
     "template:capability:honeypot": {
       "title": "Template wording for honeypot",
-      "body": "The template says the contract code lets an account block a withdrawal, so funds stay in. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+      "body": "The contract code lets an account block a withdrawal, so funds stay in. Names the capability, not intent."
     },
     "template:clone-match:honeypot": {
       "title": "Template wording for a honeypot template match",
-      "body": "Trap templates get reused. A bytecode match against a known template means someone has run this exact trap before. This names the matched group with its similarity share, never a verdict."
+      "body": "Matches a known trap template. Trap templates get reused, so it is a warning, not a verdict."
     },
     "template:capability:bot-pump": {
       "title": "Template wording for bot-pump",
-      "body": "The template says the contract code lets an account favor one trade over another. This sentence names the capability, never intent: every claim links to the signal it renders and carries that signal's evidence pointers as quoted data."
+      "body": "The contract code lets an account favor one trade over another. Names the capability, not intent."
     },
     "template:clone-match:bot-pump": {
       "title": "Template wording for a bot-pump template match",
-      "body": "Trap templates get reused. A bytecode match against a known template means someone has run this exact trap before. This names the matched group with its similarity share, never a verdict."
+      "body": "Matches a known trap template. Trap templates get reused, so it is a warning, not a verdict."
     },
     "template:hard-to-analyze:timeout": {
       "title": "Template wording for timeout",
-      "body": "The analysis ran out of time before it could read all of the code. The finding marks a coverage gap, not a risk."
+      "body": "The analysis ran out of time before it could read all of the code. Owner powers in unread code may be missed."
     },
     "template:hard-to-analyze:resource-limit": {
       "title": "Template wording for resource-limit",
-      "body": "The analysis ran out of resources before it could read all of the code. The finding marks a coverage gap, not a risk."
+      "body": "The analysis ran out of resources before it could read all of the code. Owner powers in unread code may be missed."
     },
     "template:hard-to-analyze:decompiler-error": {
       "title": "Template wording for decompiler-error",
-      "body": "The decompiler reported an error, so the analysis could not read all of the code. The finding marks a coverage gap, not a risk."
+      "body": "The decompiler reported an error, so the analysis could not read all of the code. Owner powers in unread code may be missed."
     },
     "template:hard-to-analyze:obfuscated-structure": {
       "title": "Template wording for obfuscated-structure",
-      "body": "The code structure resists direct reading, so the analysis could not map all of it. The finding marks a coverage gap, not a risk."
+      "body": "The code structure resists direct reading, so the analysis could not map all of it. Owner powers in unread code may be missed."
     },
     "evidence:selector": {
       "title": "Where in the code",
-      "body": "The function in the contract where we saw this. Copy it to check on a block explorer."
+      "body": "Function where this appears."
     },
     "evidence:offset": {
-      "title": "Bytecode offset",
-      "body": "PC offset: the PC offset travels beside the selector in every case where the offset is derived from the bytecode. Offsets are counted in bytes from the start of the deployed code."
+      "title": "Byte position",
+      "body": "Byte position in the deployed code."
     },
     "evidence:snippet": {
       "title": "Decompiled snippet",
-      "body": "A decompiled snippet joins the entry after the deepening. The text is quoted readout data, never the original source."
+      "body": "Rebuilt from bytes, not original source."
     },
     "evidence:payload": {
       "title": "Finding details",
-      "body": "The payload carries the finding fields the detector reported, such as the capability key or the matched group with its similarity share."
+      "body": "Raw fields the check reported."
     },
     "score:combined": {
       "title": "Risk score",
-      "body": "How worried to be, from 0 to 100, based on what this contract lets its owner do. Under 30 is low, 30-59 elevated, 60 and up high. It is an estimate from the code, not a safety guarantee: read the findings below before you buy."
+      "body": "0–100. Under 30 low, 30–59 elevated, 60+ high. Based on what the owner can do."
     },
     "score:gauge:rug-pull": {
       "title": "Rug pull",
-      "body": "The chance that the people behind this token can take the money and leave, for example by creating new tokens or draining the pool. Each owner power below is one way to do it. With nothing found, this is the usual rate for new tokens."
+      "body": "Chance the owner can take the money and leave. Estimate from past tokens."
     },
     "score:gauge:honeypot": {
       "title": "Honeypot",
-      "body": "The chance that you can buy this token but not sell it, for example because the owner can block wallets or freeze transfers. Check Pause, Blacklist and Sell block below, and try a small sell before a large buy."
+      "body": "Chance you can buy but not sell."
     },
     "score:gauge:bot-pump": {
       "title": "Bot pump",
-      "body": "The chance that the launch favours bots or insiders: code that lets some wallets trade first, pay lower fees or skip limits, so early buyers can dump on late ones. Be careful in the first hours, and check Fee and Limits below."
+      "body": "Chance bots or insiders dump on late buyers."
     },
     "score:band": {
       "title": "Risk band",
-      "body": "Low means no strong owner power was found, which is not the same as safe. Elevated means some risky powers exist. High means the owner can hurt holders: look before any transfer."
+      "body": "Low: no strong owner power found. Elevated: risky powers. High: owner can block holders."
     },
     "score:strip": {
       "title": "Result summary",
-      "body": "Pinned summary of the score and the strongest single risk, shown once the score ring scrolls out of view and always on the assessment tab."
+      "body": "Score and top risk, pinned."
     },
     "powers:extended": {
-      "title": "Extended analysis",
-      "body": "Extended analysis is newer and not yet calibrated. A proven owner power sets a minimum score: High if it can block holders, Elevated for other risky powers. Other findings do not move the score, but the finding is still real: open it to see the proof."
+      "title": "Owner powers",
+      "body": "Block powers set the score to at least 60. Mint, fee, limits and upgrade set it to at least 30. Renounced owner: no floor."
     },
     "explanation:claim": {
       "title": "About these claims",
-      "body": "Every claim links to the signal it renders and carries that signal's evidence pointers as quoted data. Temporality says whether the pattern holds now or can change later."
+      "body": "Each line links to its proof."
     },
     "cant-tell": {
       "title": "What code can't tell",
-      "body": "Questions the code alone can't answer, such as who holds the supply or whether the pool is locked. Check these on a block explorer before you buy."
+      "body": "Things bytecode can't show. Check them yourself."
     },
     "investigation:step": {
       "title": "Investigation step",
-      "body": "One check Muse chose to run on the frozen result. It can add context, never change the score."
+      "body": "A check Muse ran."
     },
     "investigation:narrative": {
-      "title": "Checked narrative",
-      "body": "A sentence survives only when it cites at least one collected id and cites no uncollected id; every surviving sentence quotes its evidence. The narrative never moves the score, signals or evidence."
+      "title": "Summary",
+      "body": "Only sentences with proof are shown."
     }
   },
   "from": [

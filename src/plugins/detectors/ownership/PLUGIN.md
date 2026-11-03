@@ -6,7 +6,7 @@ tags: [owner-powers, supply]
 audience: [holder, auditor]
 severity: { min: low, max: high }
 ---
-# PLUGIN.md: Ownership detector (`dev.brandklipparen.ownership`)
+# PLUGIN.md: Ownership (`dev.brandklipparen.ownership`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 

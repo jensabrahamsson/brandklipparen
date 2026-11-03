@@ -28,25 +28,31 @@ const LAMP_GLYPH: Record<
 // SCORE-6: the accessible status reads the single power status, so
 // the tile agrees with the hero chip for the same power. Quiet, error
 // and not-run states keep their own words.
-function statusPhrase(status: PowerStatus, state: PluginState, severity: TileSeverity): string {
+function statusPhrase(
+  status: PowerStatus,
+  state: PluginState,
+  severity: TileSeverity,
+  copy: PluginCopyEntry,
+  payloads: readonly unknown[],
+): string {
   if (status === "renounced") {
     return "owner renounced";
   }
   if (status === "floor") {
     const level = severity === "high" ? "high" : severity === "medium" ? "medium" : "low";
-    return `found, ${level}, sets the minimum score`;
+    return `found, ${level}, sets score floor`;
   }
   if (status === "found") {
     const level = severity === "high" ? "high" : severity === "medium" ? "medium" : "low";
     return `found, ${level}`;
   }
   if (status === "extended") {
-    return "found, not in score";
+    return "found, not yet scored";
   }
   if (status === "cant-tell") {
     return "can't tell";
   }
-  return PLUGIN_STATE_WORD[state].toLowerCase();
+  return checkStatusWord(copy, state, payloads).toLowerCase();
 }
 
 // Owner-tile status before SCORE-6 callers pass powerStatus: the same
@@ -122,8 +128,9 @@ export function PluginTile({
           : "not-found";
   const found = status === "found" || status === "floor" || status === "extended" || isRanTool;
   const counted = useCountUp(evidenceCount, 600);
-  const body = status === "renounced"
-    ? "This power may exist in code, but the owner is renounced."
+  // A quiet tile drops its body when the status word already says it.
+  const body: string | null = status === "renounced"
+    ? `${copy.title} no longer counts.`
     : found ? copy.foundLine(payloads) : tileQuietBody(copy, state);
   const displayState: PluginState = isRanTool
     ? "ran"
@@ -133,18 +140,18 @@ export function PluginTile({
         ? "extended"
         : state;
   const statusWord = isRanTool
-    ? ranStatusWord(copy, payloads.length)
+    ? checkStatusWord(copy, state, payloads)
     : status === "renounced"
       ? "Owner renounced"
       : status === "floor"
-        ? "Found · Sets minimum score"
+        ? "Found · Sets floor"
         : status === "found"
           ? `Found · ${severityWord(severity)}`
           : status === "extended"
-            ? "Found · Not in score"
+            ? "Found · Not yet scored"
             : status === "cant-tell" && isOwner
               ? "Can't tell"
-            : PLUGIN_STATE_WORD[state];
+            : checkStatusWord(copy, state, payloads);
   const lampGlyph =
     state === "ran" ? copy.pictogram : LAMP_GLYPH[displayState as Exclude<PluginState, "ran">];
   const lampClass =
@@ -160,7 +167,7 @@ export function PluginTile({
       <a
         className={`tile is-compact state-${displayState} sev-${severity}`}
         href={pluginHref(address, pluginId, allIds)}
-        aria-label={`${copy.title}: ${statusPhrase(status, state, severity)}. ${copy.question} Open details.`}
+        aria-label={`${copy.title}: ${statusPhrase(status, state, severity, copy, payloads)}. ${copy.question} Open details.`}
         data-testid={`plugin-tile-${copy.slug}`}
         data-tile-slug={copy.slug}
         style={{ "--i": Math.min(index, 12) } as CSSProperties}
@@ -173,7 +180,7 @@ export function PluginTile({
         </span>
         {matched ? (
           <span className="tile-match" data-testid={`matched-${pluginId}`}>
-            Matches your question
+            Matches question
           </span>
         ) : null}
         <span className="tile-chev" aria-hidden="true">
@@ -186,7 +193,7 @@ export function PluginTile({
     <a
       className={`tile state-${displayState} sev-${severity}`}
       href={pluginHref(address, pluginId, allIds)}
-      aria-label={`${copy.title}: ${statusPhrase(status, state, severity)}. ${copy.question} Open details.`}
+      aria-label={`${copy.title}: ${statusPhrase(status, state, severity, copy, payloads)}. ${copy.question} Open details.`}
       data-testid={`plugin-tile-${copy.slug}`}
       data-tile-slug={copy.slug}
       style={{ "--i": Math.min(index, 12) } as CSSProperties}
@@ -197,7 +204,7 @@ export function PluginTile({
         <span className="tile-title">{copy.title}</span>
         {matched ? (
           <span className="tile-match" data-testid={`matched-${pluginId}`}>
-            Matches your question
+            Matches question
           </span>
         ) : null}
         <span className="tile-chev" aria-hidden="true">
@@ -213,7 +220,7 @@ export function PluginTile({
         </span>
       </span>
       <span className="tile-question">{copy.question}</span>
-      <span className="tile-body">{body}</span>
+      {body === null ? null : <span className="tile-body">{body}</span>}
       {copy.slug === "decompiler" || evidenceCount === 0 ? null : (
         <span className="tile-count numeric">
           {counted} {counted === 1 ? "place" : "places"} in code
@@ -227,15 +234,52 @@ export function severityWord(severity: TileSeverity): string {
   return severity === "high" ? "High" : severity === "medium" ? "Medium" : "Low";
 }
 
-function tileQuietBody(copy: PluginCopyEntry, state: PluginState): string {
+// Per-check status words (owner-facing): each check reads its own words
+// instead of a generic "Not found". Obfuscation reads Obfuscated, Read
+// incomplete or Readable; clone match reads Match found or No match; the
+// decompiler reads No functions when it finds none; other analysis tools
+// that ran read "Ran". Detail and tile share this helper.
+export function checkStatusWord(copy: PluginCopyEntry, state: PluginState, payloads: readonly unknown[]): string {
+  if (copy.slug === "hard-to-analyze") {
+    if (state === "ran") {
+      const obfuscated = payloads.some((payload) => {
+        const record = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : null;
+        return record?.["cause"] === "obfuscated-structure";
+      });
+      return obfuscated ? "Obfuscated" : "Read incomplete";
+    }
+    if (state === "not-found") {
+      return "Readable";
+    }
+  }
+  if (copy.slug === "clone-match") {
+    if (state === "ran") {
+      return "Match found";
+    }
+    if (state === "not-found") {
+      return "No match";
+    }
+  }
+  if (copy.slug === "decompiler" && state === "not-found") {
+    return "No functions";
+  }
+  if (state === "ran") {
+    return ranStatusWord(copy, payloads.length);
+  }
+  return PLUGIN_STATE_WORD[state];
+}
+
+// Quiet body for a check with no finding. Not found returns null: the
+// status word already says it, so the tile carries no extra line.
+function tileQuietBody(copy: PluginCopyEntry, state: PluginState): string | null {
   if (state === "error") {
-    return "This check could not finish. Other results are not affected.";
+    return "Could not finish.";
   }
   if (state === "not-run") {
-    return "Needs a tool this server does not have.";
+    return "Tool missing on server.";
   }
   if (state === "cant-tell") {
     return copy.cantTellLine;
   }
-  return "Not found in the code we could read.";
+  return null;
 }

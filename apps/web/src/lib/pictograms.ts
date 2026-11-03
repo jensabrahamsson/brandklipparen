@@ -260,7 +260,7 @@ export const PICTOGRAMS: Record<PictogramName, { readonly label: string; readonl
       ] as const),
     },
     tangle: {
-      label: "Hard to read",
+      label: "Obfuscated code",
       nodes: Object.freeze([["path", { d: "M3.5 12c2-5 5-5 6 0s4 5 6 0 3-4 5-2" }]] as const),
     },
     block: {
@@ -294,7 +294,7 @@ export const PICTOGRAMS: Record<PictogramName, { readonly label: string; readonl
       ] as const),
     },
     extended: {
-      label: "Not in score",
+      label: "Not yet scored",
       nodes: Object.freeze([
         ["circle", { cx: 12, cy: 12, r: 8.25, pathLength: "40", dash: "2 2" }],
         ["circle", { cx: 12, cy: 12, r: 3.5, fill: true }],

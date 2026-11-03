@@ -1,5 +1,5 @@
 // Owner chip for the plugin detail header (UI v2 §5.2): who controls
-// the contract when proven, or an honest dashed "Owner not identified"
+// the contract when proven, or an honest dashed "Owner unknown"
 // chip when not. The address is full EIP-55 and wraps by group; the
 // chip never invents an address (plugin-plan RC-3).
 import { Fragment, type JSX } from "react";
@@ -16,10 +16,10 @@ export type ProvenOwner = {
 };
 
 const KIND_LABEL: Record<OwnerKind, string> = Object.freeze({
-  "safe-multisig": "Safe multisig · from owner()",
-  "single-key": "Single key (EOA)",
+  "safe-multisig": "Safe multisig",
+  "single-key": "Single wallet",
   contract: "Contract",
-  renounced: "Nobody controls this now.",
+  renounced: "Renounced. No owner.",
 });
 
 export function OwnerChip({ owner }: { readonly owner: ProvenOwner | null }): JSX.Element {
@@ -27,7 +27,7 @@ export function OwnerChip({ owner }: { readonly owner: ProvenOwner | null }): JS
     return (
       <span className="owner-chip is-unknown">
         <Pictogram name="canttell" size={20} />
-        <span className="status-word">Owner not identified</span>
+        <span className="status-word">Owner unknown</span>
       </span>
     );
   }
@@ -35,7 +35,7 @@ export function OwnerChip({ owner }: { readonly owner: ProvenOwner | null }): JS
     return (
       <span className="owner-chip is-renounced">
         <Pictogram name="renounced" size={20} />
-        <span className="status-word">Nobody controls this now.</span>
+        <span className="status-word">Renounced. No owner.</span>
       </span>
     );
   }
@@ -43,7 +43,7 @@ export function OwnerChip({ owner }: { readonly owner: ProvenOwner | null }): JS
   return (
     <span className="owner-chip">
       <Pictogram name="owner" size={20} />
-      <span className="owner-control">Controlled by</span>{" "}
+      <span className="owner-control">Owner</span>{" "}
       {checksummed === null ? null : (
         <span className="addr-full">
           {groupAddressChunks(checksummed).map((chunk, index) => (

@@ -73,7 +73,7 @@ test("s100_stream_view_shows_analysis_before_deepening_status", async ({ page })
   await mockAnalyze(page);
   await page.goto(`/#/token/${ADDRESS}`);
   await page.locator("details.tech-details > summary", { hasText: "Analysis tools" }).click();
-  await page.getByRole("button", { name: "Stream analysis" }).click();
+  await page.getByRole("button", { name: "Stream", exact: true }).click();
   const analysis = page.getByTestId("stream-analysis");
   const deepening = page.getByTestId("stream-deepening");
   await expect(analysis).toContainText("score 84");
@@ -103,8 +103,8 @@ test("s101_explain_panel_shows_not_configured_without_key", async ({ page }) => 
   await page.goto(`/#/token/${ADDRESS}`);
   await page.getByRole("button", { name: "Explain this result" }).click();
   const output = page.getByTestId("muse-output");
-  await expect(output).toContainText("Muse is not available for this result.");
-  await expect(output.getByTestId("muse-advisory")).toContainText("AI explanation · doesn't change the score");
+  await expect(output).toContainText("Muse unavailable.");
+  await expect(output.getByTestId("muse-advisory")).toContainText("Muse does not change the score.");
 });
 
 test("s101_explain_panel_renders_checked_sentences_as_inert_text", async ({ page }) => {
@@ -136,7 +136,7 @@ test("s101_explain_panel_renders_checked_sentences_as_inert_text", async ({ page
   await expect(page.getByTestId("explain-dropped")).toBeHidden();
   await output.locator("details.muse-details summary").click();
   await expect(page.getByTestId("explain-dropped")).toContainText("2 sentences removed: they cited no evidence.");
-  await expect(output.getByTestId("muse-advisory")).toContainText("AI explanation · doesn't change the score");
+  await expect(output.getByTestId("muse-advisory")).toContainText("Muse does not change the score.");
   // Scores stand unchanged beside the console: the dial keeps the
   // number and the band word (W-9 removed the repeated score line).
   await expect(page.locator('section[aria-label="Combined score"] .score-dial .num')).toHaveText("84");

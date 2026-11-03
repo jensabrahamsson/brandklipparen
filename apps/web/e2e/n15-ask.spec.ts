@@ -58,7 +58,7 @@ function chatOkBody(): Record<string, unknown> {
     codeHash: "0xabc",
     chat: {
       kind: "ok",
-      answers: ["The owner can stop chosen wallets from sending tokens.", "Pause and blacklist are owner-only."],
+      answers: ["Owner can block wallets.", "Pause and blacklist are owner-only."],
       droppedClaims: 2,
       provider: "test-adapter",
       modelId: "test-explain-1",
@@ -132,18 +132,18 @@ test("n15_ask_renders_sentences_dropped_count_and_advisory", async ({ page }) =>
   const before = await hero.innerText();
   // The Ask field carries the one-line consent; the button always
   // looks enabled and the clear icon appears once there is text.
-  await expect(page.getByLabel("Ask about this token")).toBeVisible();
+  await expect(page.getByLabel("Ask Muse")).toBeVisible();
   await expect(page.getByTestId("ask-submit")).not.toHaveAttribute("aria-disabled", "true");
   await expect(page.getByTestId("ask-hint")).toHaveCount(0);
-  await page.getByLabel("Ask about this token").fill("Can the owner stop me selling?");
+  await page.getByLabel("Ask Muse").fill("Can the owner stop me selling?");
   await expect(page.getByTestId("ask-clear")).toBeVisible();
   await page.getByTestId("ask-submit").click();
   const output = page.getByTestId("muse-output");
-  await expect(output.getByText("The owner can stop chosen wallets from sending tokens.").first()).toBeVisible();
+  await expect(output.getByText("Owner can block wallets.").first()).toBeVisible();
   await expect(output.getByTestId("explain-dropped")).toBeHidden();
   await output.locator("details.muse-details summary").click();
   await expect(output.getByTestId("explain-dropped")).toContainText("2 sentences removed: they cited no evidence.");
-  await expect(output.getByTestId("muse-advisory")).toContainText("AI explanation · doesn't change the score");
+  await expect(output.getByTestId("muse-advisory")).toContainText("Muse does not change the score.");
   // The fulfilled answer proves the route ran, so the count is settled.
   expect(chatPosts.count).toBe(1);
   // Scores, gauges and hero text are byte-identical before and after Ask.
@@ -160,7 +160,7 @@ test("n15_ask_not_configured_hides_the_form", async ({ page }) => {
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Explain this result" })).toBeVisible();
-  await expect(page.getByLabel("Ask about this token")).toHaveCount(0);
+  await expect(page.getByLabel("Ask Muse")).toHaveCount(0);
   await expect(page.getByTestId("ask-submit")).toHaveCount(0);
   // The deterministic score stands untouched beside the console: the
   // dial keeps the number and the band word (W-9 removed the repeated
@@ -175,7 +175,7 @@ test("n15_ask_failure_offers_retry_without_moving_score", async ({ page }) => {
   const hero = page.locator('section[aria-label="Combined score"]');
   await expect(page.locator(".score-dial .num")).toHaveText("84");
   const before = await hero.innerText();
-  await page.getByLabel("Ask about this token").fill("Can the owner stop me selling?");
+  await page.getByLabel("Ask Muse").fill("Can the owner stop me selling?");
   await page.getByTestId("ask-submit").click();
   const output = page.getByTestId("muse-output");
   await expect(output).toContainText("The answer failed to load.");
@@ -188,7 +188,7 @@ test("n15_example_chip_fills_the_field_without_sending", async ({ page }) => {
   await mockRest(page, "ok", chatPosts);
   await page.goto(`/#/token/${ADDRESS}`);
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
-  const ask = page.getByLabel("Ask about this token");
+  const ask = page.getByLabel("Ask Muse");
   await expect(ask).toBeVisible();
   await expect(ask).toHaveValue("");
   const chip = page.getByTestId("ask-example").first();

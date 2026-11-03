@@ -9,7 +9,7 @@ import { renderToString } from "react-dom/server";
 import { ExplainFallback, ExplainSentences } from "./ExplainPanel.tsx";
 import type { Signal } from "../types.ts";
 
-const VERDICT = "Low risk. No owner power found in the code we could read. That is not the same as safe.";
+const VERDICT = "Low risk. No owner powers found. Low ≠ safe.";
 
 const CLAIMS = [
   { text: "No owner powers were found in the bytecode.", signalLinks: [], temporality: { kind: "can-change-unknown" } },
@@ -29,7 +29,7 @@ describe("explain fallback", () => {
     );
     expect(html).toContain('type="button"');
     expect(html).toContain("Try again");
-    expect(html).not.toContain("Every model sentence failed the evidence check.");
+    expect(html).not.toContain("No sentence had proof. Hidden.");
   });
 
   test("all_dropped_without_claims_renders_the_verdict_with_retry", () => {
@@ -81,7 +81,7 @@ describe("explain fallback", () => {
     expect(html).toContain('data-evidence="signal:pausable"');
     expect(html).toContain("Blacklist");
     expect(html).toContain("Pause");
-    expect(html).toContain("Evidence: Blacklist. Open the Why this score row.");
+    expect(html).toContain("Evidence Blacklist. Go to reason.");
     expect(html).not.toContain("[E:signal:");
   });
 
@@ -107,6 +107,6 @@ describe("explain fallback", () => {
       <ExplainFallback verdict="Low risk. The owner controls pause." claims={[]} onRetry={() => undefined} />,
     );
     expect(html).toContain("Low risk. The owner controls pause.");
-    expect(html).toContain("No owner power found in the code we could read. That is not the same as safe.");
+    expect(html).toContain("No owner powers found. Low ≠ safe.");
   });
 });

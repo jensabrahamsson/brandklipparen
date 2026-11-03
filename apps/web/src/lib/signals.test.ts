@@ -73,58 +73,58 @@ describe("signal descriptions (K-021)", () => {
   test("design_review_plain_reason_maps_known_and_empty_gauge", () => {
     expect(plainReason(SIGNALS[0] as Signal)).toBe("The owner can stop you from selling.");
     expect(plainReason(SIGNALS[1] as Signal)).toBe("The owner can create new tokens and dilute you.");
-    expect(emptyGaugeReason()).toBe("Usual rate for new tokens.");
+    expect(emptyGaugeReason()).toBe("Typical for new tokens.");
   });
 
   test("w9_base_rate_wording_only_when_no_signal_at_all", () => {
-    expect(emptyGaugeReason(false)).toBe("Usual rate for new tokens.");
-    expect(emptyGaugeReason(true)).toBe("No pattern found for this risk.");
+    expect(emptyGaugeReason(false)).toBe("Typical for new tokens.");
+    expect(emptyGaugeReason(true)).toBe("None found.");
     expect(emptyGaugeReason(true)).not.toContain("Base rate");
   });
 
   test("w9_powers_summary_found_extended_and_cant_tell", () => {
     expect(powersSummaryCopy({ found: 2, extended: 0, cantTell: 0 })).toBe("2 found.");
     expect(powersSummaryCopy({ found: 2, extended: 2, cantTell: 0 })).toBe(
-      "2 found. 2 more the score doesn't count yet.",
+      "2 found. Not yet scored: 2.",
     );
     expect(powersSummaryCopy({ found: 1, extended: 1, cantTell: 1 })).toBe(
-      "1 found. 1 more the score doesn't count yet. 1 can't tell.",
+      "1 found. Not yet scored: 1. 1 unreadable.",
     );
   });
 
   test("w9_powers_summary_no_scored_pattern_names_extended", () => {
     expect(powersSummaryCopy({ found: 0, extended: 1, cantTell: 0 })).toBe(
-      "No scored pattern. 1 owner power the score doesn't count yet.",
+      "1 owner power, not yet scored.",
     );
     expect(powersSummaryCopy({ found: 0, extended: 2, cantTell: 0 })).toBe(
-      "No scored pattern. 2 owner powers the score doesn't count yet.",
+      "2 owner powers, not yet scored.",
     );
     expect(powersSummaryCopy({ found: 0, extended: 2, cantTell: 1 })).toBe(
-      "No scored pattern. 2 owner powers the score doesn't count yet. 1 check could not be fully read.",
+      "2 owner powers, not yet scored. 1 unreadable.",
     );
     expect(powersSummaryCopy({ found: 0, extended: 0, cantTell: 2 })).toBe(
-      "No scored pattern. 2 checks could not be fully read.",
+      "2 checks unreadable.",
     );
     expect(powersSummaryCopy({ found: 0, extended: 0, cantTell: 0 })).toBe(
-      "No owner powers found in the code we could read.",
+      "No owner powers found.",
     );
   });
 
   test("score4_powers_summary_counts_floor_as_found_and_renounced_as_neither", () => {
     expect(powersSummaryCopy({ found: 1, extended: 0, cantTell: 0, floor: 1 })).toBe(
-      "1 found. 1 sets the minimum score.",
+      "1 found. Sets score floor: 1.",
     );
     expect(powersSummaryCopy({ found: 0, extended: 0, cantTell: 0, renounced: 1 })).toBe(
-      "No scored pattern. 1 owner power found but owner renounced.",
+      "Owner renounced. 1 power lifted.",
     );
     expect(powersSummaryCopy({ found: 2, extended: 1, cantTell: 0, floor: 1, renounced: 1 })).toBe(
-      "2 found. 1 sets the minimum score. 1 more the score doesn't count yet. 1 owner renounced.",
+      "2 found. Sets score floor: 1. Not yet scored: 1. Owner renounced: 1 lifted.",
     );
   });
 
-  test("design_review_combined_line_relates_score_to_max_probability", () => {
+  test("design_review_combined_line_names_the_top_risk", () => {
     expect(combinedScoreLine(84, { "rug-pull": 0.62, honeypot: 0.91, "bot-pump": 0.34 })).toBe(
-      "Combined 84 follows the strongest single risk: Honeypot at 91%.",
+      "Honeypot 91% is the top risk.",
     );
   });
 });

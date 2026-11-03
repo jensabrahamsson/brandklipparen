@@ -1940,6 +1940,18 @@ a.chip {
   text-transform: none;
 }
 
+/* Hero gauge title "Rug · Honeypot · Bot pump": the label is one
+   unbreakable run (see TokenPage), so it must fit the column. At 20 px
+   the mono label is ~301 px wide, wider than the ~230 px column at 320 px
+   (measured), so the size scales with the viewport and caps at 20 px. */
+.hero-gauges-title {
+  font-size: min(20px, 4.5vw);
+}
+
+.hero-gauges-label {
+  white-space: nowrap;
+}
+
 .gauges {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4527,6 +4539,7 @@ a.button-ghost {
 
 .tile-status {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-top: 8px;
@@ -4583,6 +4596,7 @@ a.button-ghost {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.5;
+  white-space: nowrap;
 }
 
 .tile-question {
@@ -6295,6 +6309,12 @@ ol.code:focus-visible {
   flex: none;
   width: 28px;
   align-self: stretch;
+}
+
+@media (max-width: 639px) {
+  .code-line { gap: 4px; }
+  .code-no { width: 3ch; }
+  .code-lamp-slot { width: 24px; }
 }
 
 .code-text {

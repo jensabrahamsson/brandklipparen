@@ -55,7 +55,7 @@ export function CoverageChip({
         type="button"
         className="muse-chip"
         data-evidence={id}
-        aria-label={`Evidence: ${target.label}. Open the Why this score row.`}
+        aria-label={`Evidence ${target.label}. Go to reason.`}
         onClick={() => onSignalLink(target.signalKey)}
       >
         {lamp}
@@ -69,7 +69,7 @@ export function CoverageChip({
         type="button"
         className="muse-chip muse-chip-cant-tell"
         data-evidence={id}
-        aria-label={`Evidence: ${target.label}. Open what the code can't tell you.`}
+        aria-label={`Evidence ${target.label}. Go to unknowns.`}
         onClick={jumpToCantTell}
       >
         {lamp}
@@ -78,13 +78,13 @@ export function CoverageChip({
     );
   }
   const detailHint =
-    target.label === "What we checked" ? "Open what we checked." : "Open the check detail.";
+    target.label === "Checks" ? "Go to checks." : "Go to detail.";
   return (
     <a
       className="muse-chip"
       data-evidence={id}
       href={target.href}
-      aria-label={`Evidence: ${target.label}. ${detailHint}`}
+      aria-label={`Evidence ${target.label}. ${detailHint}`}
     >
       {lamp}
       <span>{target.label}</span>
@@ -173,7 +173,7 @@ export function ExplainSentences({
 }
 
 const NOTHING_FOUND_LINE =
-  "No owner power found in the code we could read. That is not the same as safe.";
+  "No owner powers found. Low ≠ safe.";
 
 // User-facing fallback when no model sentence survived: with claims,
 // the deterministic template claims stand in; without claims, the
@@ -202,7 +202,7 @@ export function ExplainFallback({
       ) : (
         <>
           <p style={{ margin: 0 }}>{verdict}</p>
-          {verdict.includes("No owner power found") ? null : (
+          {verdict.includes("No owner powers found") ? null : (
             <p style={{ margin: "8px 0 0" }}>{NOTHING_FOUND_LINE}</p>
           )}
         </>
@@ -225,7 +225,6 @@ export function ExplainPanel({
   claims,
   allIds,
   verdict,
-  checkCount,
   onSignalLink,
   onRetry,
 }: {
@@ -237,7 +236,6 @@ export function ExplainPanel({
   readonly claims: readonly ExplanationClaim[];
   readonly allIds: readonly string[];
   readonly verdict: string;
-  readonly checkCount: number;
   readonly onSignalLink: (key: string) => void;
   readonly onRetry: () => void;
 }): JSX.Element {
@@ -264,14 +262,10 @@ export function ExplainPanel({
   }, [address, apiKey, source, block]);
 
   if (state === null) {
-    return (
-      <ScanStatus
-        text={checkCount > 0 ? `Muse is reading ${checkCount} check results…` : "Muse is reading the check results…"}
-      />
-    );
+    return <ScanStatus text="Muse is reading…" />;
   }
   if (state.status === "not-configured") {
-    return <p style={{ margin: 0 }}>Muse is not available for this result.</p>;
+    return <p style={{ margin: 0 }}>Muse unavailable.</p>;
   }
   if (state.status === "ready") {
     const dropped = droppedLine(state.droppedClaims);
@@ -306,7 +300,7 @@ export function ExplainPanel({
     );
   }
   if (state.status === "fallback") {
-    return <p style={{ margin: 0 }}>Muse had nothing to add.</p>;
+    return <p style={{ margin: 0 }}>Nothing to add.</p>;
   }
   return (
     <div>

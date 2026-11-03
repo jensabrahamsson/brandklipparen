@@ -1,7 +1,6 @@
 // S-118: verdict-first token header. The token page leads with a header
 // card (h1, score ring, truthful headline, probability mini row) and the
-// toolbar row above it holds Search and the Expert switch (W-8: the
-// Customize view is gone).
+// toolbar row above it holds Search (W-8: the Customize view is gone).
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -77,7 +76,6 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     // Round-trip through the start page so the token page always mounts
     // fresh (a same-URL goto would keep the previous React tree alive).
     await page.goto("/");
-    await page.evaluate(() => localStorage.removeItem("brandklipparen-ui-mode"));
     await page.goto(`/#/token/${ADDRESS}`);
     const header = page.locator('section[aria-label="Combined score"]');
     await expect(header).toBeVisible();
@@ -125,12 +123,11 @@ test("s118_verdict_header_first_paint_and_customize", async ({ page }) => {
     }
 
     // The Customize view is gone: no details.customize anywhere. The
-    // toolbar holds one Search button and one Expert switch, and the Ask
-    // field lives in the Muse console under the hero.
+    // toolbar holds one Search button, and the Ask field lives in the
+    // Muse console under the hero.
     await expect(page.locator("details.customize")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "← Search" })).toBeVisible();
-    await expect(page.getByTestId("expert-switch")).toHaveCount(0);
-    await expect(page.getByLabel("Ask about this token")).toBeVisible();
+    await expect(page.getByLabel("Ask Muse")).toBeVisible();
 
     // S-132: verdict copy sits near the top under the token meta with
     // the dial beside it, never vertically centred in a tall box.
@@ -280,18 +277,18 @@ test("s118_pepe_like_quiet_signals_with_extended_strip", async ({ page }) => {
   }
   await expect(header.locator(".score-dial .num")).toHaveText("19");
   await expect(header.locator(".score-dial .bandtag")).toHaveText("LOW");
-  await expect(header.locator(".risk-meaning")).toContainText("Low risk.");
+  await expect(header.locator(".risk-meaning")).toContainText("Low.");
   // R3 D-10: the verdict names the extended finding in plain words,
   // never as "more (not in score)".
   const verdict = header.locator(".risk-meaning");
-  await expect(verdict).toContainText("Extended analysis found 1 owner power the score doesn't count yet");
+  await expect(verdict).toContainText("Low. Owner can mint. Not yet scored.");
   await expect(verdict).not.toContainText("more (not");
 
   // The strip names the unscored pattern with its not-in-score label,
   // and the chip is a 44 px link to the mint detail view.
   const strip = page.getByTestId("powers-strip");
-  await expect(strip).toContainText("No scored pattern. 1 owner power the score doesn't count yet.");
-  await expect(strip).toContainText("Not in score");
+  await expect(strip).toContainText("1 owner power, not yet scored.");
+  await expect(strip).toContainText("Not yet scored");
   const chip = page.getByTestId("power-chip-mint");
   await expect(chip).toBeVisible();
   expect(await chip.getAttribute("href")).toContain("/plugins/mint");
@@ -306,7 +303,7 @@ test("s118_pepe_like_quiet_signals_with_extended_strip", async ({ page }) => {
 
   // The strip "?" explains when an extended finding sets the floor.
   await page.getByTestId("explain-powers:extended").focus();
-  await expect(page.getByRole("tooltip")).toContainText("sets a minimum score");
+  await expect(page.getByRole("tooltip")).toContainText("set the score to at least 60");
 });
 
 test("score4_floor_blacklist_chip_agrees_with_high_score", async ({ page }) => {
@@ -359,8 +356,8 @@ test("score4_floor_blacklist_chip_agrees_with_high_score", async ({ page }) => {
   await page.goto("/");
   await page.goto(`/#/token/${ADDRESS}`);
   const strip = page.getByTestId("powers-strip");
-  await expect(strip).toContainText("Sets minimum score");
-  await expect(strip).not.toContainText("Not in score");
+  await expect(strip).toContainText("Sets score floor");
+  await expect(strip).not.toContainText("Not yet scored");
   await expect(page.getByTestId("power-chip-blacklist")).toBeVisible();
   const cards = page.locator(".gauges-hero > section");
   await expect(cards.first()).toHaveAttribute("data-testid", "floor-card");
@@ -368,14 +365,14 @@ test("score4_floor_blacklist_chip_agrees_with_high_score", async ({ page }) => {
   await expect(cards.first()).toContainText("Owner can block holders: blacklist");
   await expect(page.getByText("Pattern model · history-based estimate")).toBeVisible();
   await expect(page.locator('section[aria-label="Why this score"]')).toContainText(
-    "Owner can block holders (blacklist) — that sets the minimum score of 60.",
+    "Owner can block holders (blacklist). Sets score floor: 60.",
   );
   for (const width of [1440, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     const bot = page.locator('section[aria-label="Bot pump: 12 percent"]');
     await expect(bot).toHaveClass(/\bfloor-muted\b/);
     const title = bot.getByText("Bot pump", { exact: true });
-    const prior = bot.getByText("Prior · uncalibrated", { exact: true });
+    const prior = bot.getByText("Weak estimate", { exact: true });
     const geometry = await title.evaluate((element) => {
       const range = document.createRange();
       range.selectNodeContents(element);

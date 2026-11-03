@@ -64,7 +64,7 @@ describe("merged score card (R2-6, D-5)", () => {
     // The sentence never repeats the severity note: the tag owns it.
     expect(html).not.toContain("(severity");
     // The tag names the risk and the strength; the rail keeps the colour.
-    expect(html).toContain("Honeypot · strong signal");
+    expect(html).toContain("Honeypot · strong");
     expect(html).toContain("why-row sev-high");
     // No prototype strings and no raw backticks anywhere on the card.
     expect(html).not.toContain("Template");
@@ -153,7 +153,7 @@ describe("merged score card (R2-6, D-5)", () => {
       />,
     );
     expect(html).toContain('aria-label="Why this score"');
-    expect(html).toContain("No pattern raised the score.");
+    expect(html).toContain("Nothing raised the score.");
     expect(html).not.toContain("Extended analysis");
     expect(html).not.toContain("extended analysis");
     expect(html).not.toContain("plugins/blacklist");
@@ -236,9 +236,9 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
     expect(html).toContain("Scored patterns · v1.0.0");
     expect(html).toContain("The owner can stop you from selling.");
     expect(html).toContain("Launch mechanics were fair at deployment.");
-    expect(html).toContain("Owner can change this");
+    expect(html).toContain("Owner can change it");
     expect(html).not.toContain("Owner can turn this on later");
-    expect(html).toContain("Applies now");
+    expect(html).toContain("Active");
     // The signal id may travel in the Expert copy payload attribute, but
     // it never renders as visible copy.
     expect(html).not.toContain(">owner-blacklist<");
@@ -283,7 +283,7 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
         names={NAMES}
       />,
     );
-    expect(html).toContain("Owner-controlled · owner not read yet");
+    expect(html).toContain("Owner not read");
     expect(html).not.toContain("Owner can turn this on later");
     expect(html).not.toContain("claim-account-full");
   });
@@ -316,7 +316,7 @@ describe("merged card keeps readable claims (S-120, S-131, P-1)", () => {
     expect(html).not.toContain(`>${account}<`);
     expect(html).toContain('aria-label="Copy account address"');
     expect(html).toContain(`data-copy-value="${checksummed}"`);
-    expect(html).toContain("can change this");
+    expect(html).toContain("can change it");
     expect(html).not.toContain("Owner can turn this on later");
   });
 });
@@ -354,7 +354,7 @@ describe("why this score rows (R3 D-11)", () => {
     expect(html).not.toMatch(/pattern \(/);
     expect(html).not.toContain("(severity");
     // The tag names the risk and the strength, outlined below High band.
-    expect(html).toContain("Honeypot · strong signal");
+    expect(html).toContain("Honeypot · strong");
     expect(html).toContain("sev high ghost");
     // The evidence disclosure shows a chevron glyph.
     expect(html).toContain("<svg");
@@ -398,11 +398,11 @@ describe("why this score rows (R3 D-11)", () => {
       />,
     );
     expect(html).toContain('aria-label="Why this score"');
-    const lead = "Owner can block holders (blacklist) — that sets the minimum score of 60.";
+    const lead = "Owner can block holders (blacklist). Sets score floor: 60.";
     expect(html).toContain(lead);
-    expect(html).toContain("No pattern raised the score.");
+    expect(html).toContain("Nothing raised the score.");
     // The floor leads: the pattern-model line follows it.
-    expect(html.indexOf(lead)).toBeLessThan(html.indexOf("No pattern raised the score."));
+    expect(html.indexOf(lead)).toBeLessThan(html.indexOf("Nothing raised the score."));
   });
 
   test("score6_floor_leads_above_scored_patterns", () => {
@@ -430,7 +430,7 @@ describe("why this score rows (R3 D-11)", () => {
         }}
       />,
     );
-    const lead = "Owner can block holders (blacklist) — that sets the minimum score of 60.";
+    const lead = "Owner can block holders (blacklist). Sets score floor: 60.";
     expect(html).toContain(lead);
     expect(html.indexOf(lead)).toBeLessThan(html.indexOf("1 scored pattern"));
   });

@@ -58,7 +58,7 @@ describe("market list rows", () => {
     expect(text).not.toContain("1 not in score");
     // SCORE-5: the feed carries no floor data, so the tooltip names
     // the extended count without claiming it is outside the score.
-    expect(html).toContain("1 additional finding");
+    expect(html).toContain("1 more found");
     expect(html).not.toContain("not in score");
     expect(html).not.toContain('data-testid="risk-badge"');
     expect(text).toContain(item().tokenAddress);
@@ -88,9 +88,9 @@ describe("market list rows", () => {
   test("dx1_missing_market_data_reads_cant_tell", () => {
     // U-12: line 2 carries DEX, liquidity and volume only; the price
     // move is dropped as newborn-pair noise. Missing money reads as
-    // "can't tell", never a dash or a zero.
+    // "unknown", never a dash or a zero.
     const html = rows([item({ liquidityUsd: null, volume1hUsd: null, volume24hUsd: null, priceChange24hPct: null })]);
-    expect(stripped(html)).toContain("can't tell");
+    expect(stripped(html)).toContain("unknown");
     expect(stripped(html)).not.toContain("—");
   });
 
@@ -103,7 +103,7 @@ describe("market list rows", () => {
         liveTokens={new Set([entry.tokenAddress])}
       />,
     );
-    expect(stripped(html)).toContain("Also in New pairs");
+    expect(stripped(html)).toContain("In New pairs");
   });
 
   test("dx1_volume_switches_to_24h_for_day_old_pairs", () => {
@@ -138,8 +138,8 @@ describe("market list rows", () => {
   test("dx1_market_staleness_reads_stale_after_five_minutes", () => {
     expect(marketAgeSeconds(BASE, BASE + 60_000)).toBe(60);
     expect(marketAgeSeconds(-1, BASE)).toBeNull();
-    expect(marketStatusLabel(BASE, BASE + 3_000)).toBe("Updated just now");
+    expect(marketStatusLabel(BASE, BASE + 3_000)).toBe("Just now");
     expect(marketStatusLabel(BASE, BASE + 60_000)).toBe("Updated 1 min ago");
-    expect(marketStatusLabel(BASE, BASE + 360_000)).toBe("Stale · updated 6 min ago");
+    expect(marketStatusLabel(BASE, BASE + 360_000)).toBe("Stale · 6 min ago");
   });
 });

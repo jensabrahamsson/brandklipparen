@@ -31,7 +31,7 @@ export function FloorCard({
     return (
       <section
         className={`card gauge floor-card ${bandClass}`}
-        aria-label={`Owner powers: ${word}. ${facts}. Sets the minimum score of ${scoreFloor.minimum}.`}
+        aria-label={`Owner powers: ${word}. ${facts}. Sets score floor: ${scoreFloor.minimum}.`}
         data-testid="floor-card"
       >
         <div className="gauge-top">
@@ -44,7 +44,7 @@ export function FloorCard({
           {word}
         </div>
         <p className="floor-line">{facts}</p>
-        <p className="floor-line floor-sub">Sets the minimum score of {scoreFloor.minimum} — that is what drives the score.</p>
+        <p className="floor-line floor-sub">{`Sets score floor: ${scoreFloor.minimum}.`}</p>
       </section>
     );
   }

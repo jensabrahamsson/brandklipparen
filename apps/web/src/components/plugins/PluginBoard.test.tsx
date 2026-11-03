@@ -92,9 +92,9 @@ describe("plugin board (UI v2 §5.1)", () => {
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={RESULTS} />);
     const tiles = html.match(/data-testid="plugin-tile-/g) ?? [];
     expect(tiles).toHaveLength(13);
-    expect(html).toContain("What we checked");
+    expect(html).toContain("Checks");
     expect(html).toContain("Owner powers");
-    expect(html).toContain("Analysis tools");
+    expect(html).toContain("Tools");
     for (const word of ["Found · High", "Found", "Can&#x27;t tell", "Not found"]) {
       expect(html).toContain(word);
     }
@@ -133,7 +133,7 @@ describe("plugin board (UI v2 §5.1)", () => {
   test("summary names the owner-power counts", () => {
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={RESULTS} />);
     expect(html).toContain("owner powers checked");
-    expect(html).toContain("not in score");
+    expect(html).toContain("not yet scored");
     // R3 D-10: the summary reads as a lamp legend, one lamp plus word
     // per state, with no "extended analysis" wording.
     expect(html).toContain("board-legend-part");
@@ -151,8 +151,8 @@ describe("plugin board (UI v2 §5.1)", () => {
     );
     const mint = html.indexOf('data-testid="plugin-tile-mint"');
     expect(mint).toBeGreaterThan(-1);
-    expect(html.slice(mint, html.indexOf("</a>", mint))).toContain("Sets minimum score");
-    expect(html).toContain("sets the minimum score");
+    expect(html.slice(mint, html.indexOf("</a>", mint))).toContain("Sets floor");
+    expect(html).toContain("sets score floor");
   });
 
   test("tiles link to the plugin detail route", () => {
@@ -200,7 +200,7 @@ describe("plugin board (UI v2 §5.1)", () => {
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={RESULTS} />);
     // The "Extended analysis" pill is gone; the status line carries it.
     expect(html).not.toContain("tile-extended-tag");
-    expect(html).toContain("Found · Not in score");
+    expect(html).toContain("Found · Not yet scored");
     // A failed check and an unavailable input both leave a power uncertain.
     expect(html).toContain("2 can&#x27;t tell");
   });
@@ -263,8 +263,8 @@ describe("plugin board (UI v2 §5.1)", () => {
         : result,
     );
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={hard} />);
-    expect(html).toContain("We found no switch in the code that freezes transfers.");
-    expect(html).toContain("We found no limit value in the code that caps wallets or transfers.");
+    expect(html).toContain("No freeze found.");
+    expect(html).toContain("No limits found.");
     expect(html).not.toContain("The code that matters here could not be fully read.");
   });
 

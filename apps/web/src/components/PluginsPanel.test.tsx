@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { renderToString } from "react-dom/server";
 import { PluginsPanel } from "./PluginsPanel.tsx";
 
-// Generic Plugins panel (S-046, K-031, K-507): the panel renders from the
+// Generic Checks panel (S-046, K-031, K-507): the panel renders from the
 // registry list and the analysis pluginResults with no per-plugin UI code,
 // and every plugin string renders as escaped text under the strict CSP.
 const PLUGINS = [
@@ -32,7 +32,7 @@ const RESULTS = [
 describe("generic plugins panel (S-046)", () => {
   test("lists registered plugins with their findings and no per-plugin code", () => {
     const html = renderToString(<PluginsPanel plugins={[...PLUGINS]} results={[...RESULTS]} />);
-    expect(html).toContain("Plugins");
+    expect(html).toContain("Checks");
     expect(html).toContain("Capability detector");
     expect(html).toContain("Contract can self-destruct");
     expect(html).toContain("0xff000000");
@@ -95,7 +95,7 @@ describe("generic plugins panel (S-046)", () => {
             findings: [
               {
                 id: "dev.brandklipparen.pause:pause-extended",
-                title: "A privileged account can freeze transfers. Found by extended analysis; not counted in the score.",
+                title: "Owner can freeze transfers. Found by extended analysis; not counted in the score.",
                 payload: { fact: "pause", slot: 0, mode: "pause", proof: "extended" },
                 evidence: [{ selector: "0x0a9c6c1e", offset: 123 }],
               },
@@ -104,11 +104,11 @@ describe("generic plugins panel (S-046)", () => {
         ]}
       />,
     );
-    expect(html).toContain("Extended analysis · not in score");
-    expect(html).toContain("A privileged account can freeze transfers.");
+    expect(html).toContain("Not yet scored");
+    expect(html).toContain("Owner can freeze transfers.");
     // The badge renders once: the scored capability finding above carries
     // a `feature`-less capability payload, so it stays unbadged.
-    const badges = html.match(/Extended analysis · not in score/g) ?? [];
+    const badges = html.match(/Not yet scored/g) ?? [];
     expect(badges).toHaveLength(1);
   });
 
@@ -123,7 +123,7 @@ describe("generic plugins panel (S-046)", () => {
         results={[...RESULTS]}
       />,
     );
-    expect(html).toContain("2 detectors found nothing");
+    expect(html).toContain("2 checks found nothing");
     expect(html).toContain("Mint, Pause");
     expect(html).not.toContain("Mint detector");
     const triggers = html.match(/explain-trigger/g) ?? [];
@@ -136,12 +136,12 @@ describe("generic plugins panel (S-046)", () => {
 describe("personalized order source (P2-18)", () => {
   const order = ["dev.brandklipparen.capability"] as const;
 
-  test("deterministic order names what matters to the visitor", () => {
+  test("deterministic order says the checks were sorted for the visitor", () => {
     const html = renderToString(
       <PluginsPanel plugins={[...PLUGINS]} results={[...RESULTS]} order={[...order]} personalized source="deterministic" />,
     );
-    expect(html).toContain("Ordered by what matters to you.");
-    expect(html).not.toContain("Ordered by AI");
+    expect(html).toContain("Sorted for you.");
+    expect(html).not.toContain("Sorted for you by AI");
   });
 
   test("ai order names the model and the visitor priorities", () => {
@@ -155,26 +155,26 @@ describe("personalized order source (P2-18)", () => {
         aiModelId="example-model-1"
       />,
     );
-    expect(html).toContain("Ordered by AI (example-model-1) from your priorities.");
+    expect(html).toContain("Sorted for you by AI (example-model-1).");
   });
 
   test("ai order without a model id omits the parenthesis", () => {
     const html = renderToString(
       <PluginsPanel plugins={[...PLUGINS]} results={[...RESULTS]} order={[...order]} personalized source="ai" />,
     );
-    expect(html).toContain("Ordered by AI from your priorities.");
-    expect(html).not.toContain("Ordered by AI (");
+    expect(html).toContain("Sorted for you by AI.");
+    expect(html).not.toContain("Sorted for you by AI (");
   });
 
   test("missing source keeps the deterministic notice", () => {
     const html = renderToString(
       <PluginsPanel plugins={[...PLUGINS]} results={[...RESULTS]} order={[...order]} personalized />,
     );
-    expect(html).toContain("Ordered by what matters to you.");
+    expect(html).toContain("Sorted for you.");
   });
 });
 
-describe("top-ranked detectors copy (N-14)", () => {
+describe("top-ranked checks copy (N-14)", () => {
   const plugins = [
     { id: "a.sell-block", version: "1.0.0", displayName: "Sell-block", description: "Quiet." },
     { id: "a.ownership", version: "1.0.0", displayName: "Ownership", description: "Quiet." },
@@ -191,7 +191,7 @@ describe("top-ranked detectors copy (N-14)", () => {
     },
   ] as const;
 
-  test("names up to three top-ranked detectors that found nothing", () => {
+  test("names up to three top-ranked checks that found nothing", () => {
     const html = renderToString(
       <PluginsPanel
         plugins={[...plugins]}
@@ -202,7 +202,7 @@ describe("top-ranked detectors copy (N-14)", () => {
         aiModelId="example-model-1"
       />,
     );
-    expect(html).toContain("Your top-ranked detectors found nothing: Sell-block, Ownership, Pause.");
+    expect(html).toContain("Nothing in Sell-block, Ownership, Pause.");
     expect(html).not.toContain("Checked first for you");
   });
 
@@ -217,7 +217,7 @@ describe("top-ranked detectors copy (N-14)", () => {
         aiModelId="example-model-1"
       />,
     );
-    expect(html).toContain("Your top-ranked detectors found nothing: Sell-block, Ownership, Pause.");
+    expect(html).toContain("Nothing in Sell-block, Ownership, Pause.");
     expect(html).not.toContain("Sell-block, Ownership, Pause, Mint");
   });
 });

@@ -25,7 +25,7 @@ export function SettingsPage({
             type="password"
             className="input"
             autoComplete="off"
-            placeholder="Demo key"
+            placeholder="API key"
             value={apiKey}
             onChange={(event) => onApiKeyChange(event.target.value)}
           />

@@ -1,7 +1,7 @@
 // Proof trace ("How we checked", UI v2 §5.5). A terminal checklist of
 // the ordered proof steps from GET /v1/proof: passed steps read with a
 // check, the first failing step reads with a cross plus "← stopped
-// here", later steps read "not checked". The plain sentence comes from
+// here", later steps read "skipped". The plain sentence comes from
 // the step map; the server detail string shows in Expert only. Motion
 // is opacity and glow one-shots (M-7); reduced motion is static.
 // Every contract string renders as React text only.
@@ -46,7 +46,7 @@ function Mark({ status }: { readonly status: "passed" | "failed" | "not-checked"
 const SR_WORD: Record<"passed" | "failed" | "not-checked", string> = {
   passed: "passed",
   failed: "failed",
-  "not-checked": "not checked",
+  "not-checked": "skipped",
 };
 
 export function ProofTrace({
@@ -61,8 +61,8 @@ export function ProofTrace({
   }
   const firstFailed = steps.findIndex((entry) => !entry.ok);
   return (
-    <section className="card detail-proof" aria-label="How we checked">
-      <h2>How we checked</h2>
+    <section className="card detail-proof" aria-label="Proof">
+      <h2>Proof</h2>
       <p className="proof-headline">{proofHeadline(steps)}</p>
       <ol className="proof-steps">
         {steps.map((entry, index) => {
@@ -81,13 +81,13 @@ export function ProofTrace({
                   <span className="proof-label">{copy.label}</span>
                   {status === "failed" ? (
                     <span className="proof-stopped">
-                      <span aria-hidden="true">← stopped here</span>
+                      <span aria-hidden="true">← failed here</span>
                       <span className="sr-only">stopped here</span>
                     </span>
                   ) : null}
                 </p>
                 {status === "failed" ? <p className="proof-failure">{copy.failure}</p> : null}
-                {status === "not-checked" ? <p className="proof-skipped">not checked</p> : null}
+                {status === "not-checked" ? <p className="proof-skipped">skipped</p> : null}
                 {expert ? <p className="proof-detail">{entry.detail}</p> : null}
               </div>
             </li>

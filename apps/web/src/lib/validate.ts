@@ -15,13 +15,13 @@ export function isValidAddress(raw: string): boolean {
 export function validationMessage(raw: string): string {
   const normalized = normalizeAddress(raw);
   if (normalized.length === 0) {
-    return "Enter a contract address starting with 0x.";
+    return "Address must start with 0x.";
   }
   if (!normalized.startsWith("0x")) {
-    return "Invalid address: expected 0x followed by 40 hex characters.";
+    return "Use 0x + 40 hex characters.";
   }
   if (normalized.length !== 42) {
-    return `Invalid address: expected 40 hex characters after 0x, found ${normalized.length - 2}.`;
+    return `Need 40 hex characters, got ${normalized.length - 2}.`;
   }
-  return "Invalid address: expected 0x followed by 40 hex characters.";
+  return "Use 0x + 40 hex characters.";
 }

@@ -6,7 +6,7 @@ tags: [mint, supply, owner-powers]
 audience: [holder]
 severity: { min: medium, max: high }
 ---
-# PLUGIN.md: Mint detector (`dev.brandklipparen.mint`)
+# PLUGIN.md: Mint (`dev.brandklipparen.mint`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 

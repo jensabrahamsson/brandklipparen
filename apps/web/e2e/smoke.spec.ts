@@ -69,7 +69,7 @@ const EXPLAIN_OK = {
   codeHash: "0xabc",
   explain: {
     kind: "ok",
-    narrative: ["The owner can stop chosen wallets from sending tokens.", "Pause and blacklist are owner-only."],
+    narrative: ["Owner can block wallets.", "Pause and blacklist are owner-only."],
     droppedClaims: 2,
     provider: "test-adapter",
     modelId: "test-explain-1",
@@ -122,7 +122,7 @@ test("k020_start_page_loads_and_search_validates", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Scan before you swap." })).toBeVisible();
   await page.getByLabel("Contract address").fill("not-an-address");
   await page.getByRole("button", { name: "Analyze" }).click();
-  await expect(page.getByRole("alert")).toContainText("Invalid address");
+  await expect(page.getByRole("alert")).toContainText("Use 0x + 40 hex characters.");
   expect(new URL(page.url()).hash).toBe("");
 });
 
@@ -195,20 +195,19 @@ test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await expect(page.locator('section[aria-label="Combined score"] .score-dial .bandtag')).toHaveText("HIGH");
   await expect(page.getByText("Honeypot", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("91%", { exact: true })).toBeVisible();
-  await expect(page.getByText(/What we can't tell/)).toBeVisible();
+  await expect(page.locator("#cant-tell > summary")).toContainText("Can't tell");
   // U-3 hero diet: gauge reasons hide at >=1100, so the claim sentence is
   // asserted inside "Why this score" where it always renders.
   const whyCard = page.locator('section[aria-label="Why this score"]');
   await expect(whyCard.getByText("The owner can stop you from selling.").first()).toBeVisible();
   await expect(whyCard).not.toContainText("v1.0.0");
-  await expect(page.getByTestId("expert-switch")).toHaveCount(0);
 });
 
 test("k305_console_shows_not_connected_when_nothing_configured", async ({ page }) => {
   await mockNothing(page);
   await page.goto(`/#/token/${ADDRESS}`);
   const consoleCard = page.locator('section[aria-label="Muse console"]');
-  await expect(consoleCard.getByTestId("muse-unavailable")).toContainText("Muse is not connected on this server.");
+  await expect(consoleCard.getByTestId("muse-unavailable")).toContainText("Muse is off. Score is unaffected.");
   // No buttons at all in the one-line state, enabled or disabled.
   await expect(consoleCard.locator("button")).toHaveCount(0);
   await expect(consoleCard.locator("button[disabled]")).toHaveCount(0);
@@ -245,12 +244,12 @@ test("w3_explain_renders_sentences_dropped_count_and_advisory", async ({ page })
   await page.getByRole("button", { name: "Explain this result" }).click();
   const output = page.getByTestId("muse-output");
   await expect(output.getByTestId("explain-sentences")).toContainText(
-    "The owner can stop chosen wallets from sending tokens.",
+    "Owner can block wallets.",
   );
   await expect(output.getByTestId("explain-dropped")).toBeHidden();
   await output.locator("details.muse-details summary").click();
   await expect(output.getByTestId("explain-dropped")).toContainText("2 sentences removed: they cited no evidence.");
-  await expect(output.getByTestId("muse-advisory")).toContainText("AI explanation · doesn't change the score");
+  await expect(output.getByTestId("muse-advisory")).toContainText("Muse does not change the score.");
   // Scores, gauges and hero text are byte-identical before and after Explain.
   expect(await hero.innerText()).toBe(before);
 });

@@ -31,7 +31,7 @@ function renderAsk(question: string, pending = false, examples?: readonly string
 describe("ask field (R2-8)", () => {
   test("empty_question_shows_no_hint_and_no_clear_with_enabled_ask", () => {
     const html = renderAsk("");
-    expect(html).toContain("Ask about this token");
+    expect(html).toContain("Ask Muse");
     expect(html).toContain('data-testid="ask-field"');
     expect(html).toContain('maxLength="500"');
     expect(html).toContain('data-testid="ask-submit"');
@@ -43,7 +43,7 @@ describe("ask field (R2-8)", () => {
     expect(html).not.toContain("<button disabled");
     expect(html).not.toContain('data-testid="ask-clear"');
     expect(html).not.toContain('data-testid="ask-hint"');
-    expect(html).not.toContain("Type your question above to enable.");
+    expect(html).not.toContain("Ask anything above to enable.");
   });
 
   test("filled_question_shows_clear_and_keeps_ask_enabled", () => {
@@ -64,8 +64,8 @@ describe("ask field (R2-8)", () => {
 
   test("placeholder_stays_short_with_tappable_examples_below", () => {
     const html = renderAsk("");
-    expect(html).toContain('placeholder="Type your question"');
-    expect(html).not.toContain('placeholder="Ask about this token"');
+    expect(html).toContain('placeholder="Ask anything"');
+    expect(html).not.toContain('placeholder="Ask Muse"');
     expect(html).toContain('aria-label="Example questions"');
     expect(html).toContain("Who controls this token?");
   });

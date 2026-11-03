@@ -200,10 +200,10 @@ function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.E
     parts.push({ state: "found-scored", text: `${countedFound} found` });
   }
   if (floor > 0) {
-    parts.push({ state: "found-scored", text: `${floor} sets the minimum score` });
+    parts.push({ state: "found-scored", text: `${floor} sets score floor` });
   }
   if (extended > 0) {
-    parts.push({ state: "extended", text: `${countedExtended} not in score` });
+    parts.push({ state: "extended", text: `${countedExtended} not yet scored` });
   }
   if (renounced > 0) {
     parts.push({ state: "extended", text: `${renounced} owner renounced` });
@@ -359,9 +359,9 @@ export function PluginBoard({
   const openOwner = model.ownerTiles.filter((tile) => tile.powerStatus !== "cant-tell");
   const grouped = cantTellOwner.length >= CANT_TELL_GROUP_AT;
   return (
-    <section aria-label="What we checked" data-testid="plugin-board" className="plugin-board card">
+    <section aria-label="Checks" data-testid="plugin-board" className="plugin-board card">
       <h2 id="plugin-board" tabIndex={-1}>
-        What we checked
+        Checks
       </h2>
       <SummaryLine tiles={model.ownerTiles} />
       <h3 className="board-group">Owner powers</h3>
@@ -378,7 +378,7 @@ export function PluginBoard({
       ) : null}
       {model.toolTiles.length === 0 ? null : (
         <details className="board-tools">
-          <summary>Analysis tools</summary>
+          <summary>Tools</summary>
           <div className="plugin-grid">{renderTiles(model.toolTiles, model.ownerTiles.length)}</div>
         </details>
       )}

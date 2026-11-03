@@ -51,12 +51,6 @@ export function tokenPageTitle(symbol: string, score: number): string {
 // the 1px top border and the headline caret, passed as --verdict-band
 // so the stylesheet owns the edge. Same riskBand source as RiskBadge,
 // so caret, border and badge can never disagree.
-export function calibrationNote(modelVersion: string): string | null {
-  return modelVersion === "1.0.1"
-    ? "Proven owner powers set the minimum score. Low means no proven owner power and no strong pattern; still not a guarantee."
-    : null;
-}
-
 export function verdictBandColor(score: number): string {
   const word = riskBand(score).word;
   return word === "Low" ? "var(--low)" : word === "Elevated" ? "var(--elevated)" : "var(--high)";
@@ -334,10 +328,10 @@ export function TokenPage({
     return (
       <div className="page">
         <p role="alert" className="field-error">
-          Invalid address: expected 0x followed by 40 hex characters.
+          Not an address. Use 0x + 40 hex characters.
         </p>
         <button type="button" className="button-ghost" onClick={onHome}>
-          Back to search
+          Search
         </button>
       </div>
     );
@@ -357,7 +351,7 @@ export function TokenPage({
         <LoadingNotice />
       ) : loadError !== null ? null : (
         <p className="muted numeric" style={{ margin: "0 0 12px" }}>
-          {`Analysis complete${elapsed === null ? "" : ` in ${elapsed.toFixed(1)} s`}.`}
+          {`Done${elapsed === null ? "" : ` in ${elapsed.toFixed(1)} s`}.`}
         </p>
       )}
       {loadError !== null ? (
@@ -366,10 +360,10 @@ export function TokenPage({
       {result !== null && result.kind === "no-contract" ? (
         <div className="card" role="status">
           <p style={{ marginTop: 0 }}>
-            <strong>No contract at {result.target}.</strong>
+            <strong>No contract here.</strong>
           </p>
           <p className="muted" style={{ marginBottom: 0 }}>
-            Block {result.block}: the address holds no bytecode, so there is nothing to score.
+            Nothing to score at block {result.block}.
           </p>
         </div>
       ) : null}
@@ -597,14 +591,14 @@ function AssessedView({
               ownerState={result.ownerState}
               scoreFloor={result.scoreFloor}
             />
-            {calibrationNote(result.modelVersion) !== null ? (
-              <p className="quiet" style={{ margin: "4px 0 0" }}>
-                {calibrationNote(result.modelVersion)}
-              </p>
-            ) : null}
             <div className="hero-gauges">
-              <h2 style={{ margin: "12px 0 10px", fontSize: 20 }}>
-                <span>Risk breakdown</span> <Explain explainKey="score:gauges" label="Risk breakdown" />
+              <h2 className="hero-gauges-title" style={{ margin: "12px 0 10px" }}>
+                {/* The label is one unbreakable line: every break point in
+                    it sits next to a middot, which would leave a visual line
+                    starting or ending with a separator. The Explain trigger
+                    is the only piece allowed to wrap. */}
+                <span className="hero-gauges-label">Rug · Honeypot · Bot pump</span>{" "}
+                <Explain explainKey="score:gauges" label="Rug · Honeypot · Bot pump" />
               </h2>
               {hasOwnerCard ? (
                 <p className="gauges-caption">Pattern model · history-based estimate</p>
@@ -889,34 +883,36 @@ export function errorCopy(reason: unknown): TokenLoadError {
   if (reason instanceof ApiError) {
     if (reason.status === 401) {
       return {
-        title: "Analysis needs an API key.",
-        detail: "Add the API key and try again.",
+        title: "API key needed.",
+        detail: "Add it in Settings.",
         retryable: false,
       };
     }
+    // The card's countdown line already says "Retrying automatically",
+    // so retryable details stay empty.
     if (reason.status === 429) {
       return {
-        title: "Too many requests.",
-        detail: "The service is busy. Retrying automatically.",
+        title: "Busy.",
+        detail: "",
         retryable: true,
       };
     }
     if (reason.status >= 500) {
       return {
-        title: "The analysis service is down.",
-        detail: "Please wait a moment. Retrying automatically.",
+        title: "Service down.",
+        detail: "",
         retryable: true,
       };
     }
     return {
-      title: "Analysis failed.",
-      detail: "Something went wrong. Retrying automatically.",
+      title: "Scan failed.",
+      detail: "",
       retryable: true,
     };
   }
   return {
-    title: "Analysis failed.",
-    detail: "Something went wrong. Retrying automatically.",
+    title: "Scan failed.",
+    detail: "",
     retryable: true,
   };
 }
@@ -966,9 +962,9 @@ function topRisk(result: Extract<AnalyzeResult, { kind: "assessed" }>): RiskKind
 // Verdict sentence (UI v2 §1.1, D-4): the band word always comes from
 // the score, never from a probability or a signal title. The
 // clause names owner powers from the board's owner tiles in board
-// order, never a signal: found-scored powers first, then extended
-// findings, then the honest nothing-found line. No percent anywhere;
-// the gauges own percents.
+// order, never a signal: found powers first, then powers not yet
+// scored, then the nothing-found line. No percent anywhere; the
+// gauges own percents.
 export function meaningSentence(
   result: Extract<AnalyzeResult, { kind: "assessed" }>,
   ownerTiles: readonly BoardTile[] = [],
@@ -986,50 +982,27 @@ export function meaningSentence(
   // not-in-score clause can only ever name non-floor facts.
   const extended = ownerTiles.filter((tile) => statusOf(tile) === "extended");
   if (found.length > 0) {
-    const named = found.filter((tile) => tile.copy.slug !== "ownership");
-    const source = named.length > 0 ? named : found;
-    const names = source.slice(0, 2).map((tile) => tile.copy.title.toLowerCase());
-    const including = names.length === 2 ? `${names[0]} and ${names[1]}` : `${names[0]}`;
-    const count = privilegedFunctionCount(found);
-    const base =
-      count !== null
-        ? `${word} risk. The owner controls ${count} ${count === 1 ? "function" : "functions"}, including ${including}.`
-        : `${word} risk. The owner controls ${including}.`;
+    // Ownership alone names no power, so it reads as "Has an owner."
+    const powers = found
+      .filter((tile) => tile.copy.slug !== "ownership")
+      .slice(0, 2)
+      .map((tile) => tile.copy.title.toLowerCase());
+    const lead = powers.length > 0 ? `${word}. Owner can ${powers.join(", ")}.` : `${word}. Has an owner.`;
     if (extended.length === 0) {
-      return base;
+      return lead;
     }
     const extraNames = extended.map((tile) => tile.copy.title.toLowerCase()).join(", ");
-    const extraNoun = extended.length === 1 ? "owner power" : "owner powers";
-    return `${base} Extended analysis also found ${extended.length} ${extraNoun} not in the score: ${extraNames}.`;
+    return `${lead} Not yet scored: ${extraNames}.`;
   }
   if (extended.length > 0) {
     const names = extended.map((tile) => tile.copy.title.toLowerCase()).join(", ");
-    const noun = extended.length === 1 ? "owner power" : "owner powers";
-    return `${word} risk. Extended analysis found ${extended.length} ${noun} the score doesn't count yet: ${names}.`;
+    return `${word}. Owner can ${names}. Not yet scored.`;
   }
   const renounced = ownerTiles.filter((tile) => statusOf(tile) === "renounced");
   if (renounced.length > 0) {
     const names = renounced.map((tile) => tile.copy.title.toLowerCase()).join(", ");
-    return `${word} risk. Owner renounced, so ${names} no longer applies.`;
+    return `${word}. Owner renounced. ${names.charAt(0).toUpperCase()}${names.slice(1)} lifted.`;
   }
-  return `${word} risk. No owner power found in the code we could read. That is not the same as safe.`;
-}
-
-// Privileged-function count for the found clause (UI v2 §1.1 example
-// "controls 11 functions"): the ownership detector reports it as
-// `privilegedFunctions` in a found payload. Unknown when no found
-// payload carries a finite number.
-function privilegedFunctionCount(tiles: readonly BoardTile[]): number | null {
-  for (const tile of tiles) {
-    for (const payload of tile.payloads) {
-      if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
-        continue;
-      }
-      const value = (payload as Record<string, unknown>)["privilegedFunctions"];
-      if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-        return Math.trunc(value);
-      }
-    }
-  }
-  return null;
+  // "Low ≠ safe" is the one caveat, and it belongs to the Low band only.
+  return word === "Low" ? `${word}. No owner powers found. Low ≠ safe.` : `${word}. No owner powers found.`;
 }

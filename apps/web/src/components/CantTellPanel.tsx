@@ -10,11 +10,14 @@ export function CantTellPanel({ entries }: { readonly entries: readonly CantTell
     <details className="cant-tell" id="cant-tell" tabIndex={-1}>
       <summary className="cant-tell-summary">
         <Pictogram name="canttell" size={20} />
-        <span>What we can&apos;t tell ({entries.length})</span>
+        <span>Can&apos;t tell ({entries.length})</span>
       </summary>
+      <p className="muted" style={{ margin: "0 0 12px" }}>
+        Not in the score.
+      </p>
       {entries.length === 0 ? (
         <p className="muted" style={{ margin: 0 }}>
-          Nothing is currently marked as unknowable for this token.
+          Nothing flagged.
         </p>
       ) : (
         <ul className="cant">

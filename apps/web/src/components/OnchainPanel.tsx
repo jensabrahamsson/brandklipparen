@@ -18,11 +18,10 @@ function shareText(share: unknown): string {
 function statusText(feature: unknown): string {
   const record = asOnchainRecord(feature);
   if (record === null) {
-    return "can't tell: missing feature";
+    return "unknown";
   }
   if (record["status"] === "cant-tell" || record["kind"] === "cant-tell") {
-    const reason = typeof record["reason"] === "string" ? record["reason"] : "unknown reason";
-    return `can't tell: ${reason}`;
+    return "unknown";
   }
   return "ok";
 }
@@ -82,10 +81,10 @@ export function describeLiquidity(feature: unknown): string {
 export function describeVariantHead(variant: unknown): string {
   const record = asOnchainRecord(variant);
   if (record === null) {
-    return "missing variant";
+    return "unknown";
   }
   const window = typeof record["window"] === "number" ? record["window"] : null;
   const block = typeof record["analysisBlock"] === "number" ? record["analysisBlock"] : null;
-  const age = typeof record["tokenAgeBlocks"] === "number" ? `${record["tokenAgeBlocks"]} blocks old` : "age can't tell";
+  const age = typeof record["tokenAgeBlocks"] === "number" ? `${record["tokenAgeBlocks"]} blocks old` : "age unknown";
   return `W+${window === null ? "?" : window} · block ${block === null ? "n/a" : block} · ${age}`;
 }

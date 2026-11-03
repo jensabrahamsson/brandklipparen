@@ -186,7 +186,7 @@ test("w1_breakdown_tooltip_uses_the_new_copy", async ({ page }) => {
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto(`/#/token/${TOKEN_A}`);
   // R2-5 (D-17): the three per-gauge triggers are gone. The single
-  // "Risk breakdown" trigger carries the same help for all three gauges.
+  // "Rug · Honeypot · Bot pump" trigger carries the same help for all three gauges.
   const trigger = page.getByTestId("explain-score:gauges");
   await expect(trigger).toBeVisible();
   await trigger.focus();
@@ -194,9 +194,9 @@ test("w1_breakdown_tooltip_uses_the_new_copy", async ({ page }) => {
   await expect(tooltip).toBeVisible();
   await expect(tooltip).toContainText("Risk breakdown");
   for (const sentence of [
-    "take the money and leave",
-    "buy this token but not sell it",
-    "favours bots or insiders",
+    "owner can take the money",
+    "buy but not sell",
+    "bots dump on late buyers",
   ]) {
     await expect(tooltip).toContainText(sentence);
   }

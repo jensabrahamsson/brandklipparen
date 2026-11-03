@@ -59,7 +59,7 @@ export function AskMuse({
       className="muse-ask"
       onSubmit={submit}
     >
-      <label htmlFor="muse-ask-input">Ask about this token</label>
+      <label htmlFor="muse-ask-input">Ask Muse</label>
       <div className="muse-ask-row">
         <div className={empty ? "muse-ask-field" : "muse-ask-field has-value"}>
           <input
@@ -69,7 +69,7 @@ export function AskMuse({
             type="text"
             value={question}
             maxLength={500}
-            placeholder="Type your question"
+            placeholder="Ask anything"
             autoComplete="off"
             aria-invalid={showError && empty ? true : undefined}
             aria-describedby={showError && empty ? "ask-hint ask-consent" : "ask-consent"}
@@ -127,7 +127,7 @@ export function AskMuse({
           data-testid="ask-hint"
           role="alert"
         >
-          Type a question first, then press Ask.
+          Type a question.
         </p>
       ) : null}
       <p id="ask-consent" className="quiet muse-ask-consent" style={{ margin: "4px 0 0" }}>

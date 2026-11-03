@@ -16,18 +16,36 @@ import { OwnerChip, type ProvenOwner } from "./OwnerChip.tsx";
 import { ProofTrace } from "./ProofTrace.tsx";
 import { fetchOnchainFeatures, fetchProof, type OnchainFeaturesState, type ProofStep } from "../../lib/api.ts";
 import type { BoardTile } from "./PluginBoard.tsx";
-import { severityWord } from "./PluginTile.tsx";
+import { checkStatusWord, severityWord } from "./PluginTile.tsx";
 import type { ExplainEvidenceEntry } from "../code/CodeView.tsx";
 import type { AiFeatureAvailability, Availability } from "../../lib/capabilities.ts";
 import type { PluginFindingView, PluginListEntry } from "../PluginsPanel.tsx";
-import { PLUGIN_STATE_WORD } from "../../lib/pluginState.ts";
 import { powerStatusFor } from "../../lib/floorPowers.ts";
 import type { PowerStatus } from "../../lib/floorPowers.ts";
 import { codeHref, type CodePaneView } from "../../lib/route.ts";
-import { ranStatusWord, temporalityLine } from "../../lib/pluginCopy.ts";
+import { temporalityLine } from "../../lib/pluginCopy.ts";
 import type { SelectorName } from "../../lib/selectorNames.ts";
 import { selectorDisplayName, selectorShortName } from "../../lib/selectorNames.ts";
 import { useTypewriter } from "../../lib/typewriter.ts";
+
+const CHECK_EXPLANATIONS: Readonly<Record<string, readonly [string, string]>> = {
+  ownership: ["An owner and the functions it controls.", "The owner may change token rules."],
+  pause: ["A switch that can freeze transfers.", "A freeze can stop you selling."],
+  blacklist: ["A way to block chosen wallets.", "Blocked wallets may be unable to sell."],
+  mint: ["A way to create tokens.", "New tokens can dilute your holdings."],
+  "transfer-fee": ["A fee the owner can change.", "A high fee can consume your sale."],
+  "transfer-limits": ["Limits on wallets or transfers.", "Limits can restrict holding or selling."],
+  "sell-block": ["A way to block transfers to a pool.", "You may be able to buy but not sell."],
+  "transfer-hooks": ["Calls to another contract during transfers.", "That contract can affect transfers."],
+  "proxy-upgrade": ["A way to swap the code.", "Token rules can change after you buy."],
+  capability: ["Operations the code can perform.", "Some operations can change rules or move funds."],
+  decompiler: ["Functions rebuilt from bytecode.", "Readable code helps you inspect the contract."],
+  "clone-match": ["A match to a known template.", "Scam templates can be reused."],
+  "hard-to-analyze": [
+    "Code built to be hard to read (junk jumps, packed logic).",
+    "Scams hide owner powers this way; we may miss things.",
+  ],
+};
 
 function pluginsHref(address: string): string {
   return `#/token/${encodeURIComponent(address)}/plugins`;
@@ -43,30 +61,30 @@ function tileHref(address: string, tile: BoardTile): string {
 export function detailProvenance(
   state: BoardTile["state"],
   weight: number | undefined,
-  modelVersion: string,
+  _modelVersion: string,
   status?: BoardTile["powerStatus"] | BoardTile["floorMark"],
 ): string {
   // Analysis tools never move the score (R3 D-8); their provenance says
   // so plainly instead of borrowing the scored wording.
   if (state === "ran") {
-    return "In score: no (analysis tool)";
+    return "Not scored";
   }
   // SCORE-6: the provenance agrees with the tile and the hero chip for
   // the same power: a floor status sets the minimum score, a renounced
   // one is out because the owner is gone.
   if (status === "renounced") {
-    return "In score: no (owner renounced)";
+    return "Owner renounced";
   }
   if (status === "floor") {
-    return "In score: yes (sets the minimum score)";
+    return "Sets score floor";
   }
   if (state === "extended") {
-    return "In score: no (extended analysis)";
+    return "Not yet scored";
   }
   if (weight !== undefined && weight <= 0) {
-    return `In score: no (weight 0 in model ${modelVersion})`;
+    return "Not scored";
   }
-  return `In score: yes (model ${modelVersion})`;
+  return "Scored";
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -115,7 +133,7 @@ function provenOwnerFromFeatures(features: unknown): ProvenOwner | null {
 // tools have no owner, so they render no row at all. Before the live read
 // the row says the owner was not read yet; the button fetches the same
 // on-chain features as the facts card and fills the owner chip, tagged
-// "Live read · not in score" because the read never moves the score.
+// "Live · not scored" because the read never moves the score.
 function DetailOwnerRow({
   address,
   apiKey,
@@ -152,13 +170,13 @@ function DetailOwnerRow({
       <p className="detail-owner">
         {owner === null ? (
           <>
-            <span className="owner-control">Controlled by:</span> <span>not read yet</span>{" "}
+            <span className="owner-control">Owner:</span> <span>not read</span>{" "}
             {notConfigured ? (
-              <span className="quiet">On-chain reads are not configured on this server.</span>
+              <span className="quiet">On-chain reads are off.</span>
             ) : (
               <>
                 {onchain !== null ? (
-                  <span className="quiet">The on-chain read did not name an owner. </span>
+                  <span className="quiet">No owner on chain. </span>
                 ) : null}
                 <button
                   type="button"
@@ -173,7 +191,7 @@ function DetailOwnerRow({
           </>
         ) : (
           <>
-            <OwnerChip owner={owner} /> <span className="live-tag">Live read · not in score</span>
+            <OwnerChip owner={owner} /> <span className="live-tag">Live · not scored</span>
           </>
         )}
       </p>
@@ -186,7 +204,7 @@ const EVIDENCE_LIMIT = 5;
 
 // Slugs with an extended-proof report (UI v2 §5.5): only these five
 // detectors walk the proof steps, so only their detail views fetch
-// GET /v1/proof and render "How we checked".
+// GET /v1/proof and render "Proof".
 const PROOF_SLUGS: ReadonlySet<string> = new Set([
   "pause",
   "blacklist",
@@ -245,8 +263,8 @@ function ProofSection({
   }
   if (report === undefined) {
     return (
-      <section className="card detail-proof" aria-label="How we checked">
-        <h2>How we checked</h2>
+      <section className="card detail-proof" aria-label="Proof">
+        <h2>Proof</h2>
         <ScanStatus text="Loading proof trace…" />
       </section>
     );
@@ -281,8 +299,8 @@ function EvidenceSection({
   }
   const visible = showAll ? rows : rows.slice(0, EVIDENCE_LIMIT);
   return (
-    <section className="card detail-evidence" aria-label="Where we saw it">
-      <h2>Where we saw it</h2>
+    <section className="card detail-evidence" aria-label="Evidence">
+      <h2>Evidence</h2>
       <ol className="evidence-list">
         {visible.map((row, index) => {
           const display = selectorDisplayName(row.selector, names);
@@ -410,7 +428,7 @@ export function PluginDetailView({
       <nav className="detail-crumb" aria-label="Breadcrumb">
         <a href={`#/token/${encodeURIComponent(address)}`}>{symbol}</a>
         <span aria-hidden="true"> › </span>
-        <a href={pluginsHref(address)}>What we checked</a>
+        <a href={pluginsHref(address)}>Checks</a>
         <span aria-hidden="true"> › </span>
         <span aria-current="page">{title}</span>
       </nav>
@@ -440,6 +458,12 @@ export function PluginDetailView({
             {tile.copy.title}
           </h1>
           <p className="detail-question">{tile.copy.question}</p>
+          {CHECK_EXPLANATIONS[tile.copy.slug] === undefined ? null : (
+            <div className="detail-explanation">
+              <p>Looks for: {CHECK_EXPLANATIONS[tile.copy.slug]?.[0]}</p>
+              <p>Why it matters: {CHECK_EXPLANATIONS[tile.copy.slug]?.[1]}</p>
+            </div>
+          )}
           <p className="detail-status">
             <span className="lamp" aria-hidden="true">
               <Pictogram name={tile.state === "ran" ? tile.copy.pictogram : powerStatus === "floor" || powerStatus === "found" ? "found" : powerStatus === "extended" || powerStatus === "renounced" ? "extended" : tile.state === "error" ? "error" : tile.state === "not-run" ? "notrun" : tile.state === "cant-tell" ? "canttell" : "notfound"} size={20} />
@@ -449,40 +473,31 @@ export function PluginDetailView({
                 ? "Owner renounced"
                 : powerStatus === "floor" || powerStatus === "found"
                   ? `Found · ${severityWord(tile.severity)}`
-                  : tile.state === "ran"
-                    ? ranStatusWord(tile.copy, tile.payloads.length)
-                    : PLUGIN_STATE_WORD[tile.state]}
+                  : checkStatusWord(tile.copy, tile.state, tile.payloads)}
             </span>
-            {powerStatus === "renounced" ? (
-              <>
-                {" "}
-                <span className="extended-chip" data-testid="detail-owner-renounced" data-nowrap={true}>
-                  Owner renounced
-                </span>
-              </>
-            ) : powerStatus === "floor" ? (
+            {powerStatus === "floor" ? (
               <>
                 {" "}
                 <span className="extended-chip" data-testid="detail-sets-minimum-score" data-nowrap={true}>
-                  Sets minimum score
+                  Sets score floor
                 </span>
               </>
             ) : tile.state === "extended" && powerStatus === "extended" ? (
               <>
                 {" "}
                 <span className="extended-chip" data-testid="detail-not-in-score" data-nowrap={true}>
-                  Not in score
+                  Not yet scored
                 </span>
               </>
             ) : null}
           </p>
-          <p className="detail-sentence">
+          {tile.state === "not-found" || powerStatus === "renounced" ? null : <p className="detail-sentence">
             <span aria-hidden="true">
               {typed.shown}
               {typed.done ? null : <b className="cursor" aria-hidden="true" />}
             </span>
             <span className="sr-only">{sentence}</span>
-          </p>
+          </p>}
           {detailFound ? (
             <DetailOwnerRow
               address={address}
@@ -499,8 +514,7 @@ export function PluginDetailView({
                 {` · v${entry?.version ?? "0.0.0"} · `}
               </>
             ) : null}
-            {detailProvenance(tile.state, entry?.weight, modelVersion, powerStatus)}
-            {expert ? null : ` · Check v${entry?.version ?? "0.0.0"}`}
+            {tile.state === "extended" && powerStatus === "extended" ? null : detailProvenance(tile.state, entry?.weight, modelVersion, powerStatus)}
           </p>
         </section>
       )}
@@ -535,15 +549,15 @@ export function PluginDetailView({
                 block={block}
                 codeHash={codeHash}
               />
-              <section className="card detail-limits" aria-label="What this check can't tell you">
-                <h2>What this check can&apos;t tell you</h2>
+              <section className="card detail-limits" aria-label="Limits">
+                <h2>Limits</h2>
                 <p className="detail-limits-text">{tile.copy.limits}</p>
               </section>
               {(
                 <details className="card detail-raw" aria-label="Raw signals" data-testid="detail-expert-raw">
                   <summary>Raw signals</summary>
                   {findings.length === 0 ? (
-                    <p className="muted">No findings: no payload to show.</p>
+                    <p className="muted">Nothing to show.</p>
                   ) : (
                     findings.map((finding) => (
                       <article key={finding.id} className="detail-raw-finding">
@@ -561,10 +575,12 @@ export function PluginDetailView({
           </div>
           <aside className="detail-aside" aria-label="About this check">
             <section className="card detail-about">
-              <h2>About this check</h2>
-              <p className="quiet numeric detail-about-version">
-                Check v{entry?.version ?? "0.0.0"} · Model {modelVersion}
-              </p>
+              <details>
+                <summary>Technical details</summary>
+                <p className="quiet numeric detail-about-version">
+                  Check v{entry?.version ?? "0.0.0"} · Model {modelVersion} · Weight {entry?.weight ?? "unknown"}
+                </p>
+              </details>
             </section>
             {prev === null && next === null ? null : (
               <nav className="detail-prevnext detail-prevnext--aside" aria-label="More checks">
@@ -593,13 +609,13 @@ export function PluginDetailView({
 
 function tileQuietBody(copy: BoardTile["copy"], state: BoardTile["state"]): string {
   if (state === "error") {
-    return "This check could not finish. Other results are not affected.";
+    return "Could not finish.";
   }
   if (state === "not-run") {
-    return "Needs a tool this server does not have.";
+    return "Tool missing on server.";
   }
   if (state === "cant-tell") {
     return copy.cantTellLine;
   }
-  return "Not found in the code we could read.";
+  return "Not found.";
 }

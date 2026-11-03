@@ -6,7 +6,7 @@ tags: [honeypot, owner-powers]
 audience: [holder, auditor]
 severity: { min: low, max: high }
 ---
-# PLUGIN.md: Hard-to-analyze detector (`dev.brandklipparen.hard-to-analyze`)
+# PLUGIN.md: Obfuscated code (`dev.brandklipparen.hard-to-analyze`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-044).
 

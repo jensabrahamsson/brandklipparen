@@ -33,7 +33,7 @@ describe("about page copy (UI-4)", () => {
 
   test("about_states_score_rules_and_advice_disclaimer", () => {
     const page = html();
-    expect(page).toContain("Low never means safe");
+    expect(page).toContain("Low ≠ safe");
     expect(page).toContain("never changes the score or the evidence");
     expect(page).toContain("Not financial advice");
     expect(page).toContain("never flinched at fire");

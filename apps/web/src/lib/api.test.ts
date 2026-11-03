@@ -99,7 +99,7 @@ describe("REST API client (K-021, K-305)", () => {
         jsonResponse(400, {
           status: 400,
           code: "validation-error",
-          message: "Invalid address: expected 0x followed by 40 hex characters.",
+          message: "Not an address. Use 0x + 40 hex characters.",
           requestId: "123e4567-e89b-12d3-a456-426614174000",
         }),
       ),

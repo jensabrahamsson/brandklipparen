@@ -123,7 +123,7 @@ describe("decompiler list", () => {
   test("Expert raw lists the raw fields including the cause", () => {
     const html = listHtml(thirtyTwo(), true, "0x0ecb93c0");
     expect(html).toContain("unexpected-control-flow");
-    expect(html).toContain("Unresolved jumps");
+    expect(html).toContain("Unresolved</dt>");
   });
 
   test("the route selector starts expanded", () => {
@@ -135,8 +135,8 @@ describe("decompiler list", () => {
 
   test("filter and segmented control render with a live count", () => {
     const html = listHtml(thirtyTwo(false));
-    expect(html).toContain("Filter functions");
-    expect(html).toContain('placeholder="Name or 0x selector"');
+    expect(html).toContain("Filter</label>");
+    expect(html).toContain('placeholder="Name or selector"');
     expect(html).toContain('aria-pressed="true"');
     expect(textOf(html)).toContain("32 of 32");
     for (const label of ["All", "Owner-only", "Named"]) {
@@ -154,7 +154,8 @@ describe("decompiler list", () => {
       finding(selector, payload(selector, { name: `function_${selector.slice(2)}`, signature: "" })),
     ]);
     expect(html.match(/data-testid="decompiler-row-/g) ?? []).toHaveLength(2);
-    expect(textOf(html)).toContain(`Unnamed ${selector}`);
+    expect(textOf(html)).toContain(selector);
+    expect(textOf(html)).not.toContain(`Unnamed ${selector}`);
   });
 
   test("c22_deep_link_row_15_rendered_expanded", () => {

@@ -220,7 +220,7 @@ function DecompilerRow({
               {expert ? (
                 <dl className="decompiler-raw" data-testid={`decompiler-raw-${fn.selector}`}>
                   <div>
-                    <dt>Annotations</dt>
+                    <dt>Notes</dt>
                     <dd>{fn.annotations.length > 0 ? fn.annotations.join(", ") : "None"}</dd>
                   </div>
                   <div>
@@ -228,15 +228,15 @@ function DecompilerRow({
                     <dd>{fn.cause ?? "None"}</dd>
                   </div>
                   <div>
-                    <dt>Entry pc</dt>
+                    <dt>Entry</dt>
                     <dd>{fn.entryPc === null ? "Unknown" : `0x${fn.entryPc.toString(16)}`}</dd>
                   </div>
                   <div>
-                    <dt>Start pc</dt>
+                    <dt>Start</dt>
                     <dd>{fn.startPc === null ? "Unknown" : `0x${fn.startPc.toString(16)}`}</dd>
                   </div>
                   <div>
-                    <dt>End pc</dt>
+                    <dt>End</dt>
                     <dd>{fn.endPc === null ? "Unknown" : `0x${fn.endPc.toString(16)}`}</dd>
                   </div>
                   <div>
@@ -252,7 +252,7 @@ function DecompilerRow({
                     <dd>{fn.signature ?? "None"}</dd>
                   </div>
                   <div>
-                    <dt>Unresolved jumps</dt>
+                    <dt>Unresolved</dt>
                     <dd>{fn.unresolvedJumps}</dd>
                   </div>
                 </dl>
@@ -503,17 +503,16 @@ export function DecompilerList({
         })}
       </p>
       <p className="muted decompiler-explain">
-        Partly read means some internal jumps could not be followed yet. The functions still exist; only their insides
-        are incomplete.
+        Partly read: some jumps unresolved.
       </p>
       <div className="decompiler-filter">
-        <label htmlFor={filterId}>Filter functions</label>
+        <label htmlFor={filterId}>Filter</label>
         <input
           id={filterId}
           className="input"
           type="search"
           autoComplete="off"
-          placeholder="Name or 0x selector"
+          placeholder="Name or selector"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -539,7 +538,7 @@ export function DecompilerList({
         <span aria-hidden="true">●</span> fully read
       </p>
       {visible.length === 0 ? (
-        <p className="muted">No functions match this filter.</p>
+        <p className="muted">No matches.</p>
       ) : (
         <ol className="decompiler-list" aria-label="Decompiled functions">
           {shown.map((fn, index) => {

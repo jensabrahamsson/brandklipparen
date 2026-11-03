@@ -31,15 +31,12 @@ export function StreamView({
   }
 
   return (
-    <section className="card" aria-label="Stream view" style={{ marginBottom: 20 }}>
-      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Stream view</h2>
-      <p className="quiet" style={{ margin: "0 0 8px" }}>
-        Fetches the streamed analysis once, then shows the deepening status below it.
-      </p>
+    <section className="card" aria-label="Stream" style={{ marginBottom: 20 }}>
+      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Stream</h2>
       <button type="button" className="button-ghost" onClick={() => void onStream()} disabled={pending}>
-        {pending ? "Streaming…" : "Stream analysis"}
+        {pending ? "Streaming…" : "Stream"}
       </button>
-      {failed ? <p role="alert">The stream failed; the page result above stands.</p> : null}
+      {failed ? <p role="alert">Stream failed.</p> : null}
       {stream === null ? null : (
         <div data-testid="stream-analysis" style={{ marginTop: 12 }}>
           <p className="quiet numeric" style={{ margin: 0 }}>

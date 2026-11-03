@@ -40,7 +40,7 @@ async function readyCode(page: Page): Promise<void> {
 // The Ask field needs a question before its submit can fire the mocked
 // chat endpoint during the sweep.
 async function prefillAsk(page: Page): Promise<void> {
-  const ask = page.getByLabel("Ask about this token");
+  const ask = page.getByLabel("Ask Muse");
   if ((await ask.count()) > 0) {
     await ask.fill("Can the owner stop transfers?");
   }
@@ -157,7 +157,7 @@ async function boardHrefs(page: Page): Promise<string[]> {
   await page.goto(`/#/token/${ADDR_MANY}`);
   await readyToken(page, 29);
   const hrefs = await page
-    .locator("section[aria-label='What we checked'] a.tile")
+    .locator("section[aria-label='Checks'] a.tile")
     .evaluateAll((elements) => elements.map((element) => element.getAttribute("href") ?? ""));
   return [...new Set(hrefs.filter((href) => href.startsWith("#/token/")))];
 }

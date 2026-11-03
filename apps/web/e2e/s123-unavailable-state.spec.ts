@@ -115,7 +115,7 @@ test("s123_unavailable_state_blocks_all_ai_calls", async ({ page }) => {
   // collapses to one line and renders no request control at all, so no
   // action can invite a call that answers not-configured.
   const consoleCard = page.locator('section[aria-label="Muse console"]');
-  await expect(consoleCard.getByTestId("muse-unavailable")).toContainText("Muse is not connected on this server.");
+  await expect(consoleCard.getByTestId("muse-unavailable")).toContainText("Muse is off. Score is unaffected.");
   await expect(consoleCard.getByTestId("muse-unavailable")).not.toContainText(
     "Everything above is computed without it.",
   );

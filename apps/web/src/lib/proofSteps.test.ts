@@ -18,19 +18,19 @@ describe("proof step copy", () => {
 
   test("the failure sentences name the check in plain words", () => {
     expect(proofStepFailure("owner-slot")).toBe(
-      "We found no stored owner that the code compares with the caller.",
+      "No owner check found.",
     );
-    expect(proofStepFailure("transfer-gate")).toBe("transfer() never reads that setting.");
-    expect(proofStepFailure("reverting-jumpi")).toBe("A failed check does not stop the transfer.");
-    expect(proofStepFailure("supply-write")).toBe("No owner-only function raises the total supply.");
+    expect(proofStepFailure("transfer-gate")).toBe("Transfer never reads it.");
+    expect(proofStepFailure("reverting-jumpi")).toBe("Failed check does not block.");
+    expect(proofStepFailure("supply-write")).toBe("No owner-only supply increase.");
   });
 
   test("same-slot shapes share one label and sentence", () => {
-    expect(proofStepLabel("same-slot-and-bit")).toBe("Check it is the same setting");
-    expect(proofStepLabel("same-slot")).toBe("Check it is the same setting");
-    expect(proofStepLabel("same-base")).toBe("Check it is the same setting");
+    expect(proofStepLabel("same-slot-and-bit")).toBe("Same setting?");
+    expect(proofStepLabel("same-slot")).toBe("Same setting?");
+    expect(proofStepLabel("same-base")).toBe("Same setting?");
     expect(proofStepFailure("same-slot")).toBe(
-      "The owner's setting and the transfer check are different ones.",
+      "Owner setting is not the one transfer checks.",
     );
   });
 

@@ -58,7 +58,7 @@ export function Gauge({
       cancelAnimationFrame(inner);
     };
   }, [reduce]);
-  const signalWord = signalCount === 1 ? "signal" : "signals";
+  const signalWord = signalCount === 1 ? "finding" : "findings";
   return (
     <section
       className={`card gauge ${bandClass}${mutedBand ? " floor-muted" : ""}`}
@@ -67,7 +67,7 @@ export function Gauge({
       <div className="gauge-top">
         <h3 className="lab" style={{ margin: "0 0 4px" }}>
           <span className="t">{TITLES[kind]}</span>
-          {uncalibrated ? <span className="gauge-prior">Prior · uncalibrated</span> : null}
+          {uncalibrated ? <span className="gauge-prior">Weak estimate</span> : null}
         </h3>
         <span className="band">{band.word.toUpperCase()}</span>
       </div>

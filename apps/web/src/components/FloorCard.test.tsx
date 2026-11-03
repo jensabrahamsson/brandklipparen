@@ -28,7 +28,7 @@ describe("owner powers breakdown card (SCORE-6)", () => {
     expect(html).toContain("Owner powers");
     expect(html).toContain("HIGH");
     expect(html).toContain("Owner can block holders: blacklist");
-    expect(html).toContain("Sets the minimum score of 60");
+    expect(html).toContain("Sets score floor: 60.");
     expect(html).toContain("gauge floor-card high");
     expect(html).toContain('aria-label="Owner powers: HIGH.');
   });

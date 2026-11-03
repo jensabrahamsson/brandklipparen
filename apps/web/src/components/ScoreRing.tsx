@@ -75,7 +75,7 @@ export function ScoreRing({ score }: { readonly score: number }): JSX.Element {
       <div className="core">
         <div className="halo" aria-hidden="true" />
         <div className="num numeric">{shown}</div>
-        <div className="of">/ 100 RISK</div>
+        <div className="of">/100</div>
         <div className="bandtag">{band.word.toUpperCase()}</div>
       </div>
     </div>

@@ -18,13 +18,13 @@ type ScoreFloor = NonNullable<AnalyzeSuccess["scoreFloor"]>;
 type OwnerState = NonNullable<AnalyzeSuccess["ownerState"]>;
 
 // SCORE-6: the floor leads Why-this-score in plain words, so the card
-// never reads "No pattern raised the score." on a floored HIGH token
+// never reads "Nothing raised the score." on a floored HIGH token
 // without saying what set the minimum.
 export function floorLeadSentence(floor: ScoreFloor): string {
   const facts = floor.facts.join(", ");
   const what =
     floor.rule === "owner-can-block-holders" ? `Owner can block holders (${facts})` : `Owner has risky capability (${facts})`;
-  return `${what} — that sets the minimum score of ${floor.minimum}.`;
+  return `${what}. Sets score floor: ${floor.minimum}.`;
 }
 
 // SCORE-6: renounced ownership names the getter, the address and the
@@ -87,7 +87,7 @@ export function ExplanationList({
           <span>Why this score</span> <Explain explainKey="explanation:claim" label="Why this score" />
         </h2>
         <p className="muted" style={{ margin: "0 0 12px" }}>
-          No pattern raised the score.
+          Nothing raised the score.
         </p>
         <p className="muted score-floor" style={{ margin: 0 }}>
           {scoreFloorLabel}
@@ -103,7 +103,7 @@ export function ExplanationList({
         </h2>
         {lead === null && renounced === null ? (
           <p className="muted" style={{ margin: "0 0 12px" }}>
-            No pattern raised the score.
+            Nothing raised the score.
           </p>
         ) : (
           <p className="muted score-floor" style={{ margin: "0 0 12px" }}>
@@ -118,7 +118,7 @@ export function ExplanationList({
         )}
         {lead === null && renounced === null ? null : (
           <p className="muted" style={{ margin: 0 }}>
-            No pattern raised the score.
+            Nothing raised the score.
           </p>
         )}
       </section>
@@ -173,7 +173,7 @@ function EmptyWhyScore(): JSX.Element {
         <span>Why this score</span> <Explain explainKey="explanation:claim" label="Why this score" />
       </h2>
       <p className="muted" style={{ margin: 0 }}>
-        No pattern raised the score.
+        Nothing raised the score.
       </p>
     </section>
   );

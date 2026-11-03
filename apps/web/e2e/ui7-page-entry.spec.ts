@@ -166,7 +166,7 @@ test("ui7_promoted_row_lands_at_the_top_with_the_heading_focused", async ({ page
   await mockRest(page, HEALTH_WITH_MARKET, liveItems(8), marketItems(6));
   await page.setViewportSize({ width: 1440, height: 700 });
   await page.goto("/#/");
-  const promoted = page.locator('section[aria-label="Promoted on DexScreener"]');
+  const promoted = page.locator('section[aria-label="Paid promotions"]');
   const row = promoted.locator("a[href^='#/token/']").first();
   await expect(row).toBeVisible();
   await scrollToBottom(page);

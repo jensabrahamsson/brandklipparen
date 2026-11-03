@@ -136,22 +136,24 @@ export function generateExplanationsModule(repoRoot: string): string {
 
   const effects = capabilityEffects(explain);
   const leads = hardLeads(explain);
-  const claimSentence = requireSentence(
+  // Source sentences the help copy below was reviewed against. Each call
+  // fails the build loudly when its sentence leaves the source file.
+  requireSentence(
     explain,
     EXPLAIN_SOURCE,
     "every claim links to the signal it renders and carries that signal's evidence pointers as quoted data",
   );
-  const offsetSentence = requireSentence(
+  requireSentence(
     evidenceSource,
     EVIDENCE_SOURCE,
     "the PC offset travels beside the selector in every case where the offset is derived from the bytecode",
   );
-  const snippetSentence = requireSentence(
+  requireSentence(
     evidenceSource,
     EVIDENCE_SOURCE,
     "A decompiled snippet joins the entry after the deepening",
   );
-  const citationSentence = requireSentence(
+  requireSentence(
     investigationSource,
     INVESTIGATION_SOURCE,
     "A sentence survives only when it cites at least one collected id and cites no uncollected id",
@@ -174,11 +176,11 @@ export function generateExplanationsModule(repoRoot: string): string {
   for (const risk of RISKS) {
     entries[`template:capability:${risk}`] = {
       title: `Template wording for ${risk}`,
-      body: `The template says the contract code lets an account ${effects[risk] ?? ""}. This sentence names the capability, never intent: ${claimSentence}.`,
+      body: `The contract code lets an account ${effects[risk] ?? ""}. Names the capability, not intent.`,
     };
     entries[`template:clone-match:${risk}`] = {
       title: `Template wording for a ${risk} template match`,
-      body: `Trap templates get reused. A bytecode match against a known template means someone has run this exact trap before. This names the matched group with its similarity share, never a verdict.`,
+      body: `Matches a known trap template. Trap templates get reused, so it is a warning, not a verdict.`,
     };
   }
   // The clone-match reuse sentence above is checked verbatim against the
@@ -189,25 +191,25 @@ export function generateExplanationsModule(repoRoot: string): string {
   for (const cause of CAUSES) {
     entries[`template:hard-to-analyze:${cause}`] = {
       title: `Template wording for ${cause}`,
-      body: `${leads[cause] ?? ""} The finding marks a coverage gap, not a risk.`,
+      body: `${leads[cause] ?? ""} Owner powers in unread code may be missed.`,
     };
   }
 
   entries["evidence:selector"] = {
     title: "Where in the code",
-    body: "The function in the contract where we saw this. Copy it to check on a block explorer.",
+    body: "Function where this appears.",
   };
   entries["evidence:offset"] = {
-    title: "Bytecode offset",
-    body: `PC offset: ${offsetSentence}. Offsets are counted in bytes from the start of the deployed code.`,
+    title: "Byte position",
+    body: "Byte position in the deployed code.",
   };
   entries["evidence:snippet"] = {
     title: "Decompiled snippet",
-    body: `${snippetSentence}. The text is quoted readout data, never the original source.`,
+    body: "Rebuilt from bytes, not original source.",
   };
   entries["evidence:payload"] = {
     title: "Finding details",
-    body: "The payload carries the finding fields the detector reported, such as the capability key or the matched group with its similarity share.",
+    body: "Raw fields the check reported.",
   };
   // UI v2 §6.2 help rewrites: sentence 1 says what the finding means
   // for the holder, sentence 2 what to do about it, optional sentence 3
@@ -215,52 +217,53 @@ export function generateExplanationsModule(repoRoot: string): string {
   // described, no jargon, at most 3 sentences and 260 characters.
   entries["score:combined"] = {
     title: "Risk score",
-    body: "How worried to be, from 0 to 100, based on what this contract lets its owner do. Under 30 is low, 30-59 elevated, 60 and up high. It is an estimate from the code, not a safety guarantee: read the findings below before you buy.",
+    body: "0–100. Under 30 low, 30–59 elevated, 60+ high. Based on what the owner can do.",
   };
   entries["score:gauge:rug-pull"] = {
     title: "Rug pull",
-    body: "The chance that the people behind this token can take the money and leave, for example by creating new tokens or draining the pool. Each owner power below is one way to do it. With nothing found, this is the usual rate for new tokens.",
+    body: "Chance the owner can take the money and leave. Estimate from past tokens.",
   };
   entries["score:gauge:honeypot"] = {
     title: "Honeypot",
-    body: "The chance that you can buy this token but not sell it, for example because the owner can block wallets or freeze transfers. Check Pause, Blacklist and Sell block below, and try a small sell before a large buy.",
+    body: "Chance you can buy but not sell.",
   };
   entries["score:gauge:bot-pump"] = {
     title: "Bot pump",
-    body: "The chance that the launch favours bots or insiders: code that lets some wallets trade first, pay lower fees or skip limits, so early buyers can dump on late ones. Be careful in the first hours, and check Fee and Limits below.",
+    body: "Chance bots or insiders dump on late buyers.",
   };
   entries["score:band"] = {
     title: "Risk band",
-    body: "Low means no strong owner power was found, which is not the same as safe. Elevated means some risky powers exist. High means the owner can hurt holders: look before any transfer.",
+    body: "Low: no strong owner power found. Elevated: risky powers. High: owner can block holders.",
   };
   entries["score:strip"] = {
     title: "Result summary",
-    body: "Pinned summary of the score and the strongest single risk, shown once the score ring scrolls out of view and always on the assessment tab.",
+    body: "Score and top risk, pinned.",
   };
-  // Owner-powers strip help (R3 D-10, SCORE-4): what the extended
-  // finding is and when it sets the minimum score. Plain words.
+  // Owner-powers strip help (R3 D-10, SCORE-4): which proven powers set
+  // the score floor (block powers 60, risky powers 30) and what a renounced
+  // owner lifts. Plain words; the floor facts mirror src/domain/scoreFloor.ts.
   entries["powers:extended"] = {
-    title: "Extended analysis",
-    body: "Extended analysis is newer and not yet calibrated. A proven owner power sets a minimum score: High if it can block holders, Elevated for other risky powers. Other findings do not move the score, but the finding is still real: open it to see the proof.",
+    title: "Owner powers",
+    body: "Block powers set the score to at least 60. Mint, fee, limits and upgrade set it to at least 30. Renounced owner: no floor.",
   };
   // User-facing claim copy (S-128, S-132): plain wording only. The
   // template version stays in the code (ExplanationList heading, API
   // result) and never leaks into the tooltip text.
   entries["explanation:claim"] = {
     title: "About these claims",
-    body: `${claimSentence.charAt(0).toUpperCase()}${claimSentence.slice(1)}. Temporality says whether the pattern holds now or can change later.`,
+    body: "Each line links to its proof.",
   };
   entries["cant-tell"] = {
     title: "What code can't tell",
-    body: "Questions the code alone can't answer, such as who holds the supply or whether the pool is locked. Check these on a block explorer before you buy.",
+    body: "Things bytecode can't show. Check them yourself.",
   };
   entries["investigation:step"] = {
     title: "Investigation step",
-    body: "One check Muse chose to run on the frozen result. It can add context, never change the score.",
+    body: "A check Muse ran.",
   };
   entries["investigation:narrative"] = {
-    title: "Checked narrative",
-    body: `${citationSentence}; every surviving sentence quotes its evidence. The narrative never moves the score, signals or evidence.`,
+    title: "Summary",
+    body: "Only sentences with proof are shown.",
   };
 
   const from = [...pluginDocs(repoRoot), EXPLAIN_SOURCE, EVIDENCE_SOURCE, INVESTIGATION_SOURCE];

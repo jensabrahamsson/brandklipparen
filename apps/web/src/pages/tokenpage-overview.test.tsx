@@ -205,21 +205,21 @@ describe("deterministic section order (W-8 option A)", () => {
 describe("local question match highlights tiles (K-035)", () => {
   test("matching question tags the plugin tiles and orders the fallback", () => {
     const html = renderOverview("Can the owner stop me selling?");
-    expect(html).toContain("Matches your question");
+    expect(html).toContain("Matches question");
     expect(html).toContain('data-testid="matched-dev.brandklipparen.clone-match"');
-    expect(html).toContain("Ordered by what matters to you.");
-    expect(html).toContain("Show standard order");
+    expect(html).toContain("Sorted for you.");
+    expect(html).toContain("Default order");
   });
 
   test("unrelated question leaves tiles and order untouched", () => {
     const html = renderOverview("What a nice day for a walk");
-    expect(html).not.toContain("Matches your question");
+    expect(html).not.toContain("Matches question");
     expect(html).not.toContain("matched-dev.brandklipparen.clone-match");
     expect(html).not.toContain("Ordered by what matters to you.");
   });
 
   test("clearing the question removes every tag", () => {
-    expect(renderOverview("")).not.toContain("Matches your question");
+    expect(renderOverview("")).not.toContain("Matches question");
   });
 });
 
@@ -251,13 +251,9 @@ describe("technical details disclosure", () => {
     const html = renderOverview("");
     expect(html).toContain("Technical details");
     expect(html).toContain('data-testid="expert-detail"');
-    expect(html).toContain("Raw response data as inert text.");
-    expect(html).not.toContain("Expert view");
+    expect(html).toContain("Raw response.");
   });
 
-  test("no expert mode switch renders", () => {
-    expect(renderOverview("")).not.toContain("expert-switch");
-  });
 });
 
 describe("desktop grid balance (R3 D-13)", () => {

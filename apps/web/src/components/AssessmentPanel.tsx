@@ -3,7 +3,7 @@ import type { AssessmentState, ProviderInfo } from "../types.ts";
 import { modelDisplayLabel, providerDisplayName } from "../lib/providers.ts";
 import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
 
-// Contract assessment in its own tab: free-text assessment through the
+// Muse assessment in its own tab: free-text assessment through the
 // selected assessment provider, on explicit request only. The panel never
 // receives score, probability or evidence setters, so assessment text
 // cannot move the deterministic result. The provider label always comes
@@ -26,18 +26,18 @@ export function AssessmentPanel({
   // No card of its own (UI v2 §1.2): the Muse console owns the frame and
   // this block renders inside its output area.
   return (
-    <section aria-label="Contract assessment">
-      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Contract assessment</h2>
+    <section aria-label="Muse assessment">
+      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Muse assessment</h2>
       {provider.status === "loading" ? (
         <p className="assessment-label">
           <span className="assessment-dot" aria-hidden="true" />
-          <span>Checking assessment provider…</span>
+          <span>Checking…</span>
         </p>
       ) : null}
       {provider.status === "disabled" ? (
         <p className="assessment-label">
           <span className="assessment-dot" aria-hidden="true" />
-          <span>Assessment is not configured: no assessment provider is set up on this server.</span>
+          <span>Assessment is off on this server.</span>
         </p>
       ) : null}
       {provider.status === "ready" && state.status !== "ready" ? (
@@ -51,31 +51,31 @@ export function AssessmentPanel({
       {state.status === "idle" ? (
         provider.status === "disabled" ? (
           <FeatureUnavailable
-            title="Contract assessment"
-            reason="Contract assessment is not configured on this server."
-            actionLabel="Request assessment"
+            title="Muse assessment"
+            reason="Assessment is off on this server."
+            actionLabel="Assess"
           />
         ) : (
           <div>
-            <p className="muted">A plain-language read of the findings above.</p>
+            <p className="muted">Muse&apos;s take on the evidence.</p>
             <button type="button" className="button" onClick={onRequest}>
-              Request assessment
+              Assess
             </button>
           </div>
         )
       ) : null}
-      {state.status === "loading" ? <p className="muted">Requesting assessment from the configured provider…</p> : null}
+      {state.status === "loading" ? <p className="muted">Asking Muse…</p> : null}
       {state.status === "not-configured" ? (
         <FeatureUnavailable
-          title="Contract assessment"
-          reason="Contract assessment is not configured on this server."
-          actionLabel="Request assessment"
+          title="Muse assessment"
+          reason="Assessment is off on this server."
+          actionLabel="Assess"
         />
       ) : null}
       {state.status === "error" ? (
         <div>
           <p style={{ marginBottom: 4 }}>
-            <strong>Assessment unavailable.</strong>
+            <strong>Unavailable.</strong>
           </p>
           <p className="muted" style={{ marginTop: 0 }}>
             {state.message}

@@ -22,15 +22,15 @@ function pauseSteps(): ProofStep[] {
 describe("proof trace", () => {
   test("a failing transfer gate names the stopped step", () => {
     const html = renderToString(<ProofTrace steps={pauseSteps()} expert={false} />);
-    expect(html).toContain("How we checked");
+    expect(html).toContain("<h2>Proof</h2>");
     expect(html).toContain("We stopped at step 4 of 7");
-    expect(html).toContain("← stopped here");
+    expect(html).toContain("← failed here");
   });
 
-  test("the screen reader text names failed and not checked steps", () => {
+  test("the screen reader text names failed and skipped steps", () => {
     const html = renderToString(<ProofTrace steps={pauseSteps()} expert={false} />);
     expect(html).toContain("failed");
-    expect(html).toContain("not checked");
+    expect(html).toContain("skipped");
     expect(html).not.toContain("owner slot 0 proven beside a caller guard");
   });
 
@@ -49,6 +49,6 @@ describe("proof trace", () => {
 
   test("the failed row carries the plain failure sentence", () => {
     const html = renderToString(<ProofTrace steps={pauseSteps()} expert={false} />);
-    expect(html).toContain("transfer() never reads that setting.");
+    expect(html).toContain("Transfer never reads it.");
   });
 });

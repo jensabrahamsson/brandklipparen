@@ -6,7 +6,7 @@ tags: [external-calls, honeypot, owner-powers]
 audience: [holder, auditor]
 severity: { min: low, max: high }
 ---
-# PLUGIN.md: Transfer-hooks detector (`dev.brandklipparen.transfer-hooks`)
+# PLUGIN.md: Transfer-hooks (`dev.brandklipparen.transfer-hooks`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 

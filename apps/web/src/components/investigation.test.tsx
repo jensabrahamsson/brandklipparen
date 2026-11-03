@@ -28,7 +28,7 @@ describe("investigation panel provider badge", () => {
     expect(html).toContain("Muse Spark 1.3 · Meta");
     expect(html).not.toContain("Meta Model API");
     expect(html).toContain("The frozen evidence shows the transfer guard.");
-    expect(html).not.toContain("Muse concluded at the step limit.");
+    expect(html).not.toContain("Step limit reached.");
   });
 
   test("forced_conclusion_shows_one_step_limit_line", () => {
@@ -51,7 +51,7 @@ describe("investigation panel provider badge", () => {
         onRequest={() => undefined}
       />,
     );
-    expect(html).toContain("Muse concluded at the step limit.");
+    expect(html).toContain("Step limit reached.");
   });
 
   test("empty_narrative_names_the_missing_citation_with_reason_counts", () => {

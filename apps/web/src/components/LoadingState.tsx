@@ -45,13 +45,13 @@ export function LoadingStatusLine(): JSX.Element {
   return (
     <p className="muted numeric loading-status" data-testid="loading-status" style={{ margin: "0 0 12px" }}>
       <span aria-hidden="true">
-        Reading the contract from Ethereum mainnet… {seconds} s
-        {slow ? " First scans can take up to ~15 s. Repeat visits are instant." : null}
+        Reading the contract… {seconds} s
+        {slow ? " Still reading. First scan takes ~15 s." : null}
       </span>
       <span className="sr-only" role="status">
         {slow
-          ? "Still reading. First scans can take up to about 15 seconds. Repeat visits are instant."
-          : "Reading the contract from Ethereum mainnet."}
+          ? "Still reading. First scan takes ~15 s."
+          : "Reading the contract…"}
       </span>
     </p>
   );

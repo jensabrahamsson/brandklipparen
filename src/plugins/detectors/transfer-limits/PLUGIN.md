@@ -6,7 +6,7 @@ tags: [transfer-limits, honeypot, owner-powers]
 audience: [holder]
 severity: { min: low, max: high }
 ---
-# PLUGIN.md: Transfer-limits detector (`dev.brandklipparen.transfer-limits`)
+# PLUGIN.md: Transfer-limits (`dev.brandklipparen.transfer-limits`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 

@@ -252,6 +252,12 @@ async function genericScan(page: Page, scopes: string[]): Promise<ScanResult> {
           if (parent.closest(".sr-only") !== null) {
             return NodeFilter.FILTER_REJECT;
           }
+          // Explain triggers are 44 px controls, not separator text: a
+          // heading that wraps its trigger onto a second line is not a
+          // separator wrap, so their glyphs stay out of the line map.
+          if (parent.closest(".explain") !== null) {
+            return NodeFilter.FILTER_REJECT;
+          }
           return NodeFilter.FILTER_ACCEPT;
         },
       });
@@ -638,7 +644,8 @@ test("brief40_desktop_separators_stay_visible_between_items", async ({ page }) =
   await expect(page.locator(".feed-row").getByText("Uniswap V3 · 1%").first()).toBeVisible();
   // The feed header keeps separators between its items on desktop.
   const feedItems = await itemCount(page, ".feedhead .feed-count", 0);
-  expect(feedItems).toBeGreaterThanOrEqual(3);
+  // Terse header: "newest first" and "Live", so two items and one separator.
+  expect(feedItems).toBeGreaterThanOrEqual(2);
   let feedPainted = 0;
   for (let k = 1; k < feedItems; k += 1) {
     const sep = await sepStatus(page, ".feedhead .feed-count", 0, k);

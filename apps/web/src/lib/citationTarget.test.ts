@@ -110,7 +110,7 @@ describe("citationTarget", () => {
   test("analysis summary maps to what we checked on the plugin board", () => {
     expect(target("analysis:summary")).toEqual({
       kind: "plugin",
-      label: "What we checked",
+      label: "Checks",
       lamp: "check",
       href: `#/token/${ADDRESS}/plugins`,
     });

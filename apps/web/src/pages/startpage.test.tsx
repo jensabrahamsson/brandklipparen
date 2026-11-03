@@ -42,7 +42,7 @@ describe("start page first 30 seconds (D-14)", () => {
       expect(page).toContain(`href="#/token/${example.address}"`);
       expect(page).toContain(`>${example.name}</a>`);
     }
-    expect(page).toContain("See what its owner can do to you, in plain English.");
+    expect(page).toContain("See what the owner can do to you. Paste a token address. Answer in seconds.");
   });
 
   test("paste button and coloured legend render", () => {
@@ -51,7 +51,7 @@ describe("start page first 30 seconds (D-14)", () => {
     expect(page).toContain("band-low");
     expect(page).toContain("band-elevated");
     expect(page).toContain("band-high");
-    expect(page).toContain("no proven owner power");
+    expect(page).toContain("few owner powers");
     expect(page).toContain("Low ≠ safe.");
     expect(page).not.toContain("Low does not mean safe.");
   });

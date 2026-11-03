@@ -94,7 +94,7 @@ describe("live tokens list", () => {
     expect(html).toContain("0.3%");
     expect(html).toContain(">1h ago<");
     expect(html).toContain("analyzing…");
-    expect(html).toContain("can&#x27;t tell");
+    expect(html).toContain("unknown");
   });
 
   test("u12_rows_carry_no_market_dash_or_block_number", () => {
@@ -140,7 +140,7 @@ describe("live tokens list", () => {
 
   test("s124_filters_name_both_bands_and_count_uses_grammar", () => {
     const html = renderToString(<LiveTokensList snapshot={snapshot([NEW, PENDING])} lastPollAt={1700000006000} marketByToken={NO_MARKET} />);
-    expect(html).toContain("Elevated &amp; high");
+    expect(html).toContain("Elevated+");
     expect(html).toContain(">Low<");
     expect(html).not.toContain("High risk");
     expect(html).not.toContain("Low risk");
@@ -154,7 +154,7 @@ describe("live tokens list", () => {
     const high: LiveTokenEntry = { ...NEW, riskBand: "High", pairAddress: syntheticAddress(20) };
     const low: LiveTokenEntry = { ...NEW, riskBand: "Low", pairAddress: syntheticAddress(21) };
     const items = [elevated, high, low];
-    expect(filterLiveEntries(items, "Elevated & high").map((entry) => entry.pairAddress)).toEqual([
+    expect(filterLiveEntries(items, "Elevated+").map((entry) => entry.pairAddress)).toEqual([
       elevated.pairAddress,
       high.pairAddress,
     ]);
@@ -258,14 +258,14 @@ describe("live tokens list", () => {
   });
 
   test("empty and not-configured states read plainly", () => {
-    expect(renderToString(<LiveTokensList snapshot={snapshot([])} marketByToken={NO_MARKET} />)).toContain("Waiting for new pairs…");
+    expect(renderToString(<LiveTokensList snapshot={snapshot([])} marketByToken={NO_MARKET} />)).toContain("Waiting…");
     const off = renderToString(
       <LiveTokensList
         snapshot={{ source: "none", status: "not-configured", updatedAt: 0, items: [] }}
         marketByToken={NO_MARKET}
       />,
     );
-    expect(off).toContain("New tokens are unavailable");
+    expect(off).toContain("New tokens feed is off.");
     expect(off).not.toContain("ETHERSCAN_API_KEY");
     expect(off).not.toContain(".env");
   });
@@ -292,19 +292,19 @@ describe("live tokens client", () => {
 
   test("s132_updated_label_reads_plainly_and_flags_a_stale_feed", () => {
     const base = 1700000000000;
-    expect(updatedAgoLabel(base, base + 3_000)).toBe("Updated just now");
+    expect(updatedAgoLabel(base, base + 3_000)).toBe("Just now");
     expect(updatedAgoLabel(base, base + 12_000)).toBe("Updated 12 s ago");
     expect(updatedAgoLabel(base, base + 180_000)).toBe("Updated 3 min ago");
-    expect(updatedAgoLabel(base, base - 5_000)).toBe("Updated just now");
+    expect(updatedAgoLabel(base, base - 5_000)).toBe("Just now");
     expect(isFeedStale(base, base + 60_000)).toBe(false);
     expect(isFeedStale(base, base + 119_000)).toBe(false);
     expect(isFeedStale(base, base + 121_000)).toBe(true);
     expect(feedStatusLabel(base, base + 12_000)).toBe("Updated 12 s ago");
-    expect(feedStatusLabel(base, base + 240_000)).toBe("Feed paused, last update 4 min ago");
+    expect(feedStatusLabel(base, base + 240_000)).toBe("Paused. Updated 4 min ago.");
     const staleHtml = renderToString(
       <LiveTokensList snapshot={snapshot([NEW])} lastPollAt={base + 300_000} marketByToken={NO_MARKET} />,
     );
-    expect(staleHtml).toContain("Feed paused, last update 5 min ago");
+    expect(staleHtml).toContain("Paused. Updated 5 min ago.");
     const freshHtml = renderToString(<LiveTokensList snapshot={snapshot([NEW])} lastPollAt={base + 12_000} marketByToken={NO_MARKET} />);
     expect(freshHtml).toContain("Updated 12 s ago");
   });

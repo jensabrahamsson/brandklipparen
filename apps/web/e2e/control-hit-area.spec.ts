@@ -1,5 +1,5 @@
-// Switch and ask-button hit-area pattern (R2-8): the Expert switch
-// keeps a 44x44 box with a visible keyboard ring and a themed on-state
+// Switch and ask-button hit-area pattern (R2-8): the Technical details
+// summary keeps a 44x44 box with a visible keyboard ring and a themed on-state
 // (there is no motion switch), and the Ask button always looks enabled:
 // an empty submit focuses the field with an error hint and sends nothing.
 import { expect, test } from "@playwright/test";
@@ -48,8 +48,7 @@ test("control_hit_area_visual_boundary_and_states", async ({ page }) => {
   await page.goto("/#/token/" + ADDRESS);
   await expect(page.getByRole("img", { name: /Combined score 10 of 100/ })).toBeVisible();
 
-  // No Expert switch; the Technical details summary keeps a 44 px box.
-  await expect(page.getByTestId("expert-switch")).toHaveCount(0);
+  // The Technical details summary keeps a 44 px box.
   const tech = page.locator("details.tech-details > summary", { hasText: "Technical details" });
   await expect(tech).toBeVisible();
   const box = await tech.boundingBox();
@@ -69,7 +68,7 @@ test("control_hit_area_visual_boundary_and_states", async ({ page }) => {
   await expect(page.getByTestId("ask-hint")).toHaveCount(0);
   await ask.dispatchEvent("click");
   await expect(page.getByTestId("muse-output")).toHaveCount(0);
-  await expect(page.getByTestId("ask-hint")).toContainText("Type a question first, then press Ask.");
+  await expect(page.getByTestId("ask-hint")).toContainText("Type a question.");
 });
 
 test("control_no_motion_switch_in_settings", async ({ page }) => {

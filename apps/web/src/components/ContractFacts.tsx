@@ -5,7 +5,7 @@
 // 4-character groups). Model and block carry no copy control; contract,
 // pair, implementation, proxy admin and the code hash copy the full values.
 // The "Load on-chain reads" action appends live Owner / LP lock / Top
-// holders rows, each tagged "Live read · not in score". Display text
+// holders rows, each tagged "Live · not scored". Display text
 // only: nothing here touches the score.
 import { Fragment, useState, type JSX, type ReactNode } from "react";
 import type { AnalyzeSuccess } from "../types.ts";
@@ -90,17 +90,16 @@ function proxyAdminInfo(proxy: AnalyzeSuccess["proxy"]): { address: string; kind
 
 function proxyWhy(proxy: AnalyzeSuccess["proxy"]): string {
   if (proxy.kind === "none") {
-    return "No proxy, so this code can't be swapped out.";
+    return "No proxy. Code is fixed.";
   }
   if (proxy.kind === "eip1967" || proxy.kind === "zos" || proxy.kind === "legacy-zos") {
     const info = proxyAdminInfo(proxy);
     if (info !== null) {
       const kindWord = info.kind === "eoa" ? "eoa" : info.kind;
-      return `Upgradeable proxy \u00b7 admin ${toChecksumAddress(info.address)} (${kindWord}) can replace the code`;
+      return `Proxy. Admin ${toChecksumAddress(info.address)} (${kindWord}) can swap the code.`;
     }
-    return "Upgradeable proxy can replace the code";
   }
-  return "A proxy. Whoever controls it can swap the code.";
+  return "Proxy. Admin not read. Can swap the code.";
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
@@ -223,7 +222,7 @@ function toProvenOwner(feature: unknown): ProvenOwner | null {
 function LiveWhy({ children }: { readonly children: ReactNode }): JSX.Element {
   return (
     <>
-      {children} <span className="live-tag">Live read · not in score</span>
+      {children} <span className="live-tag">Live · not scored</span>
     </>
   );
 }
@@ -238,7 +237,7 @@ function restOrigin(): string {
 export function BotTools({ target }: { readonly target: string }): JSX.Element {
   return (
     <details className="card bot-details">
-      <summary style={{ cursor: "pointer", fontSize: 17, fontWeight: 600 }}>Use this result in your bot</summary>
+      <summary style={{ cursor: "pointer", fontSize: 17, fontWeight: 600 }}>Use in your bot</summary>
       <div className="quiet" style={{ marginTop: 12 }}>API request</div>
       <pre className="code">{`curl -H "x-api-key: $KEY" "${restOrigin()}/v1/analyze?address=${target}"`}</pre>
       <div className="quiet">Analyze tool</div>
@@ -453,7 +452,7 @@ export function ContractFacts({
               nowrap={false}
               value={<OwnerChip owner={toProvenOwner(variant["owner"])} />}
               why={
-                <LiveWhy>Who controls the token now, read live from the chain.</LiveWhy>
+                <LiveWhy>Current owner, read live.</LiveWhy>
               }
             />
           )}
@@ -463,7 +462,7 @@ export function ContractFacts({
               label="LP lock"
               nowrap={false}
               value={describeLp(variant["lp"])}
-              why={<LiveWhy>Where the pool tokens sit: burned, locked, or held.</LiveWhy>}
+              why={<LiveWhy>Burned, locked, or held.</LiveWhy>}
             />
           )}
           {variant === null ? null : (
@@ -472,20 +471,20 @@ export function ContractFacts({
               label="Top holders"
               nowrap={false}
               value={describeConcentration(variant["concentration"])}
-              why={<LiveWhy>How much of the supply the largest wallets hold.</LiveWhy>}
+              why={<LiveWhy>Share held by top wallets.</LiveWhy>}
             />
           )}
         </dl>
         {availability === "unavailable" && onchain === null ? (
           <p className="quiet" style={{ margin: "12px 0 0" }}>
-            On-chain reads are not configured on this server.
+            On-chain reads are off.
           </p>
         ) : null}
         {availability === "available" && (onchain === null || onchain.status === "failed") ? (
           <div className="facts-action">
             {onchain === null ? null : (
               <p className="quiet" style={{ margin: "0 0 8px" }}>
-                On-chain reads could not be loaded.
+                On-chain reads failed.
               </p>
             )}
             <button type="button" className="button-ghost" onClick={() => void onLoadReads()} disabled={pending}>
@@ -495,13 +494,13 @@ export function ContractFacts({
         ) : null}
         {onchain !== null && onchain.status === "not-configured" ? (
           <p className="quiet" style={{ margin: "12px 0 0" }}>
-            On-chain reads are not configured on this server.
+            On-chain reads are off.
           </p>
         ) : null}
         {onchain !== null && onchain.status === "ready" && !liveRows ? (
           <div className="facts-action">
             <p className="quiet" style={{ margin: "0 0 8px" }}>
-              On-chain reads could not be loaded.
+              On-chain reads failed.
             </p>
             <button type="button" className="button-ghost" onClick={() => void onLoadReads()} disabled={pending}>
               {pending ? "Loading…" : "Retry"}

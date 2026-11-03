@@ -6,7 +6,7 @@ tags: [pausing, honeypot, owner-powers]
 audience: [holder]
 severity: { min: medium, max: high }
 ---
-# PLUGIN.md: Pause detector (`dev.brandklipparen.pause`)
+# PLUGIN.md: Pause (`dev.brandklipparen.pause`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 

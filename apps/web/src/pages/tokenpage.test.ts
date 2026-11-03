@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { ApiError } from "../lib/api.ts";
-import { calibrationNote, errorCopy, meaningSentence, tokenPageTitle, verdictBandColor } from "./TokenPage.tsx";
+import { errorCopy, meaningSentence, tokenPageTitle, verdictBandColor } from "./TokenPage.tsx";
 import type { BoardTile } from "../components/plugins/PluginBoard.tsx";
 import type { AnalyzeResult, Signal } from "../types.ts";
 
@@ -92,7 +92,7 @@ describe("verdict sentence (UI v2 §1.1, W-9)", () => {
       if (result.kind !== "assessed") {
         throw new Error("fixture must assess");
       }
-      expect(meaningSentence(result).startsWith(`${word} risk.`)).toBe(true);
+      expect(meaningSentence(result).startsWith(`${word}.`)).toBe(true);
     }
   });
 
@@ -106,7 +106,7 @@ describe("verdict sentence (UI v2 §1.1, W-9)", () => {
       throw new Error("fixture must assess");
     }
     const tiles = [ownerTile("blacklist", "Blacklist", "found-scored")];
-    expect(meaningSentence(result, tiles)).toBe("High risk. The owner controls blacklist.");
+    expect(meaningSentence(result, tiles)).toBe("High. Owner can blacklist.");
   });
 
   test("w9_verdict_names_two_powers_in_board_order", () => {
@@ -122,7 +122,7 @@ describe("verdict sentence (UI v2 §1.1, W-9)", () => {
       ownerTile("blacklist", "Blacklist", "found-scored"),
       ownerTile("transfer-hooks", "Transfer hooks", "found-scored"),
     ];
-    expect(meaningSentence(result, tiles)).toBe("Elevated risk. The owner controls blacklist and transfer hooks.");
+    expect(meaningSentence(result, tiles)).toBe("Elevated. Owner can blacklist, transfer hooks.");
   });
 
   test("w9_verdict_names_no_pattern_when_quiet", () => {
@@ -135,7 +135,7 @@ describe("verdict sentence (UI v2 §1.1, W-9)", () => {
       throw new Error("fixture must assess");
     }
     expect(meaningSentence(result)).toBe(
-      "Low risk. No owner power found in the code we could read. That is not the same as safe.",
+      "Low. No owner powers found. Low ≠ safe.",
     );
   });
 
@@ -204,10 +204,8 @@ describe("honest verdict sentence (R2-3, D-4)", () => {
       ownerTile("transfer-limits", "Transfer limits", "extended", [{ fact: "limits", proof: "extended" }]),
     ];
     const sentence = meaningSentence(result, tiles);
-    expect(sentence).toContain("Extended analysis found 2");
-    expect(sentence).toBe(
-      "Low risk. Extended analysis found 2 owner powers the score doesn't count yet: blacklist, transfer limits.",
-    );
+    expect(sentence).toContain("Owner can blacklist, transfer limits.");
+    expect(sentence).toBe("Low. Owner can blacklist, transfer limits. Not yet scored.");
     expect(sentence).not.toContain("more (not");
     expect(sentence).not.toContain("%");
   });
@@ -247,7 +245,7 @@ describe("score-floor verdict agreement (SCORE-4)", () => {
       throw new Error("fixture must assess");
     }
     const tiles = [ownerTile("blacklist", "Blacklist", "extended", [{ fact: "blacklist", proof: "extended" }])];
-    expect(meaningSentence(result, tiles)).toBe("High risk. The owner controls blacklist.");
+    expect(meaningSentence(result, tiles)).toBe("High. Owner can blacklist.");
   });
 
   test("score5_floor_facts_blacklist_and_limits_both_name_owner_controls", () => {
@@ -272,7 +270,7 @@ describe("score-floor verdict agreement (SCORE-4)", () => {
       ownerTile("transfer-limits", "Transfer limits", "extended", [{ fact: "transfer-limits", proof: "extended" }]),
     ];
     const sentence = meaningSentence(result, tiles);
-    expect(sentence).toBe("High risk. The owner controls blacklist and transfer limits.");
+    expect(sentence).toBe("High. Owner can blacklist, transfer limits.");
     expect(sentence).not.toContain("doesn't count");
     expect(sentence).not.toContain("not in the score");
   });
@@ -299,7 +297,7 @@ describe("score-floor verdict agreement (SCORE-4)", () => {
       ownerTile("transfer-limits", "Transfer limits", "extended", [{ fact: "transfer-limits", proof: "extended" }]),
     ];
     expect(meaningSentence(result, tiles)).toBe(
-      "High risk. The owner controls blacklist. Extended analysis also found 1 owner power not in the score: transfer limits.",
+      "High. Owner can blacklist. Not yet scored: transfer limits.",
     );
   });
 
@@ -319,7 +317,7 @@ describe("score-floor verdict agreement (SCORE-4)", () => {
       throw new Error("fixture must assess");
     }
     const tiles = [ownerTile("blacklist", "Blacklist", "extended", [{ fact: "blacklist", proof: "extended" }])];
-    expect(meaningSentence(result, tiles)).toBe("Low risk. Owner renounced, so blacklist no longer applies.");
+    expect(meaningSentence(result, tiles)).toBe("Low. Owner renounced. Blacklist lifted.");
   });
 });
 
@@ -336,25 +334,13 @@ describe("verdict caret takes the risk colour (S-132)", () => {
   });
 });
 
-describe("calibration note", () => {
-  test("model 1.0.1 states the floor and that Low is not a guarantee", () => {
-    // SCORE-5: proven owner powers lift the score through the floor,
-    // so the old cluster wording is gone; Low only means nothing was
-    // proven, never that the token is safe.
-    expect(calibrationNote("1.0.1")).toBe(
-      "Proven owner powers set the minimum score. Low means no proven owner power and no strong pattern; still not a guarantee.",
-    );
-    expect(calibrationNote("1.0.2")).toBeNull();
-  });
-});
-
 describe("error copy (design review P1-14)", () => {
   test("design_review_maps_401_429_5xx_to_useful_text", () => {
     expect(errorCopy(new ApiError("auth", 401, "Unauthorized")).title).toContain("API key");
-    expect(errorCopy(new ApiError("rate", 429, "Too many")).title).toContain("Too many requests.");
+    expect(errorCopy(new ApiError("rate", 429, "Too many")).title).toContain("Busy.");
     expect(errorCopy(new ApiError("boom", 503, "Down")).title).toContain("down");
     expect(errorCopy(new ApiError("validation-error", 400, "Invalid address: nope."))).toMatchObject({
-      title: "Analysis failed.",
+      title: "Scan failed.",
     });
   });
 

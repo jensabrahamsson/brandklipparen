@@ -1,6 +1,6 @@
 // S-131 user-facing copy pass: Simple mode never shows implementation
 // strings (REST, v1, contract gap, .env, env var names, "set its key"),
-// Stream view and the bot/API blocks are Expert-only, can't-tell entries
+// Stream view and the bot/API blocks sit under Analysis tools, can't-tell entries
 // read as plain questions, and recent rows show a symbol or short title
 // with labelled bars plus the full address in the row meta (S-134).
 import { expect, test, type Page } from "@playwright/test";
@@ -148,8 +148,8 @@ test("s131_simple_mode_copy_has_no_dev_strings", async ({ page }) => {
 
   // The offline feed notice is plain: no variable names, no file paths.
   const feedNotice = page.locator("section[aria-label='New tokens']");
-  await expect(feedNotice).toContainText("unavailable");
-  expect(bannedIn(await feedNotice.innerText())).toEqual([]);
+  await expect(feedNotice).toContainText("New tokens feed is off.");
+  expect(bannedIn(await feedNotice.innerHTML())).toEqual([]);
 
   // Recent rows show a symbol or short title with labelled bars, and
   // the full address rides in the row meta (S-134).
@@ -178,7 +178,7 @@ test("s131_simple_mode_copy_has_no_dev_strings", async ({ page }) => {
     expect(question).not.toContain("-locks");
     expect(question).not.toContain("-identity");
   }
-  await expect(cantTell).toContainText("Needs a liquidity-lock registry");
+  await expect(cantTell).toContainText("Needs lock data");
 
   // R2-6 (D-5): the merged score card shows the claim with its
   // evidence disclosure and no prototype strings.
@@ -190,9 +190,9 @@ test("s131_simple_mode_copy_has_no_dev_strings", async ({ page }) => {
   await expect(whyScore).not.toContainText("Open in bytecode");
   expect(bannedIn(await page.locator("body").innerText())).toEqual([]);
 
-  // Stream view and the bot/API blocks stay Expert-only.
-  await expect(page.locator("section[aria-label='Stream view']")).toBeHidden();
-  await expect(page.getByText("Use this result in your bot")).toBeHidden();
+  // Stream view and the bot/API blocks stay closed under Analysis tools.
+  await expect(page.locator("section[aria-label='Stream']")).toBeHidden();
+  await expect(page.getByText("Use in your bot")).toBeHidden();
   await expect(page.getByText("Calibration report")).toBeHidden();
 });
 
@@ -201,8 +201,7 @@ test("s131_technical_details_keep_relocated_detail", async ({ page }) => {
   // Note: hash URLs build by concatenation (see token-symbol-heading).
   await page.goto("/#/token/" + ADDRESS);
   await expect(page.locator("details.customize")).toHaveCount(0);
-  await expect(page.getByTestId("expert-switch")).toHaveCount(0);
   await page.locator("details.tech-details > summary", { hasText: "Analysis tools" }).click();
-  await expect(page.locator("section[aria-label='Stream view']")).toBeVisible();
-  await expect(page.getByText("Use this result in your bot")).toBeVisible();
+  await expect(page.locator("section[aria-label='Stream']")).toBeVisible();
+  await expect(page.getByText("Use in your bot")).toBeVisible();
 });

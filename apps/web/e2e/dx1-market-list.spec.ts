@@ -115,13 +115,26 @@ async function mockFeeds(
   });
 }
 
+test("opening a feed token returns to the top", async ({ page }) => {
+  await mockFeeds(page);
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await page.goto("/#/");
+  const row = page.locator('section[aria-label="New tokens"] a[href^="#/token/"]').first();
+  await expect(row).toBeVisible();
+  await row.scrollIntoViewIfNeeded();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await row.click();
+  await expect(page).toHaveURL(/#\/token\//);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+});
+
 test("dx1_two_columns_with_equal_tops_and_no_tablist_at_1280", async ({ page }) => {
   await mockFeeds(page);
   for (const width of [1280, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/#/");
     const live = page.locator('section[aria-label="New tokens"]');
-    const market = page.locator('section[aria-label="Promoted on DexScreener"]');
+    const market = page.locator('section[aria-label="Paid promotions"]');
     await expect(live.getByText("2 new tokens")).toBeVisible();
     await expect(market.getByText("2 new tokens")).toBeVisible();
     expect(await page.getByRole("tablist").count()).toBe(0);
@@ -141,7 +154,7 @@ test("dx1_tabs_below_1280_switch_with_arrows_and_persist", async ({ page }) => {
   await expect(tabs).toHaveCount(2);
   await expect(page.getByRole("tab", { name: /New pairs/ })).toHaveAttribute("aria-selected", "true");
   const live = page.locator('section[aria-label="New tokens"]');
-  const market = page.locator('section[aria-label="Promoted on DexScreener"]');
+  const market = page.locator('section[aria-label="Paid promotions"]');
   await expect(live).toBeVisible();
   await expect(market).toBeHidden();
 
@@ -155,7 +168,7 @@ test("dx1_tabs_below_1280_switch_with_arrows_and_persist", async ({ page }) => {
   // The choice survives a reload.
   await page.reload();
   await expect(page.getByRole("tab", { name: /DexScreener/ })).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator('section[aria-label="Promoted on DexScreener"]')).toBeVisible();
+  await expect(page.locator('section[aria-label="Paid promotions"]')).toBeVisible();
   await expect(page.locator('section[aria-label="New tokens"]')).toBeHidden();
 });
 
@@ -167,7 +180,7 @@ test("dx1_no_market_feed_means_no_tabs_and_full_width_pairs", async ({ page }) =
   expect(await page.getByRole("tab").count()).toBe(0);
   const live = page.locator('section[aria-label="New tokens"]');
   await expect(live.getByText("2 new tokens")).toBeVisible();
-  expect(await page.locator('section[aria-label="Promoted on DexScreener"]').count()).toBe(0);
+  expect(await page.locator('section[aria-label="Paid promotions"]').count()).toBe(0);
   // New pairs takes the full content width.
   const box = await live.boundingBox();
   expect(box).not.toBeNull();
@@ -178,7 +191,7 @@ test("dx1_market_error_shows_retry_while_pairs_still_render", async ({ page }) =
   await mockFeeds(page, { marketStatus: 502 });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/#/");
-  const market = page.locator('section[aria-label="Promoted on DexScreener"]');
+  const market = page.locator('section[aria-label="Paid promotions"]');
   await expect(market.getByText("DexScreener didn't answer. On-chain pairs still work.")).toBeVisible();
   await expect(market.getByRole("button", { name: "Retry" })).toBeVisible();
   await expect(page.locator('section[aria-label="New tokens"]').getByText("2 new tokens")).toBeVisible();
@@ -199,10 +212,9 @@ test("dx1_market_copy_and_labelling", async ({ page }) => {
   await mockFeeds(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/#/");
-  const market = page.locator('section[aria-label="Promoted on DexScreener"]');
+  const market = page.locator('section[aria-label="Paid promotions"]');
   // W-13 labelling: promoted line plus the DexScreener disclaimer.
-  await expect(market.getByText("Tokens someone paid to promote. Market data from DexScreener. Not part of the score.")).toBeVisible();
-  await expect(market.getByText("Market data from DexScreener. Not part of the score.")).toBeVisible();
+  await expect(market.getByText("Tokens that paid DexScreener for visibility — scan before you swap.")).toBeVisible();
   // Owner-power chip follows the attached analysis; unscanned otherwise.
   // U-12 (P9): the short chip replaces the score, with the extended
   // meaning in its tooltip.
@@ -258,7 +270,7 @@ test("dx1_market_buffered_inserts_move_nothing_until_shown", async ({ page }) =>
         : first,
   });
   await page.goto("/#/");
-  const market = page.locator('section[aria-label="Promoted on DexScreener"]');
+  const market = page.locator('section[aria-label="Paid promotions"]');
   await expect(market.getByText("2 new tokens")).toBeVisible();
 
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -348,10 +360,10 @@ test("u12_feed_tabs_and_rows", async ({ page }) => {
   await page.getByRole("tab", { name: /New pairs/ }).click();
   await expectRows('section[aria-label="New tokens"]', 130);
   await page.getByRole("tab", { name: /DexScreener/ }).click();
-  await expectRows('section[aria-label="Promoted on DexScreener"]', 130);
+  await expectRows('section[aria-label="Paid promotions"]', 130);
   await page.setViewportSize({ width: 1440, height: 900 });
   await expectRows('section[aria-label="New tokens"]', 92);
-  await expectRows('section[aria-label="Promoted on DexScreener"]', 92);
+  await expectRows('section[aria-label="Paid promotions"]', 92);
 
   // No "Market —", no "block N", no baseline "." separators in rows.
   await page.setViewportSize({ width: 390, height: 844 });
@@ -387,7 +399,7 @@ test("dx1_start_page_layout_contract_and_height_budget", async ({ page }) => {
   // Paged at 10 rows each with the total in the label. The market column
   // mounts after /health resolves, so wait for its rows too: a bare count
   // would race the second fetch and see only the 10 live rows.
-  const market = page.locator('section[aria-label="Promoted on DexScreener"]');
+  const market = page.locator('section[aria-label="Paid promotions"]');
   await expect(market.getByText("10 of 30 new tokens")).toBeVisible();
   await expect(page.locator(".feed-row")).toHaveCount(20);
   // U-12: feed symbol links stretch over their rows, so the row box is

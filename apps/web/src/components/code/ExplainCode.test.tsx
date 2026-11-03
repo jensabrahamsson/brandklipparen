@@ -110,7 +110,7 @@ describe("explain code panel", () => {
     expect(html).toContain("What this function does");
     expect(html).toContain("Muse Spark 1.3 · Meta");
     expect(html).toContain('title="muse-spark-1.3"');
-    expect(html).toContain("AI explanation · doesn&#x27;t change the score");
+    expect(html).toContain("AI note. Score unchanged.");
     expect(html).toContain("Ask again");
   });
 
@@ -139,9 +139,9 @@ describe("explain code panel", () => {
     const html = renderToString(
       <ExplainViewResults {...viewProps({ status: "invalid-output", staticEntries: [], readyMessage: null })} />,
     );
-    expect(html).toContain("cited code that isn&#x27;t here");
+    expect(html).toContain("Answer cited missing code. Hidden.");
     expect(html).toContain("Try again");
-    expect(html).toContain("AI explanation · doesn&#x27;t change the score");
+    expect(html).toContain("AI note. Score unchanged.");
     expect(html).not.toContain("muse-note");
   });
 
@@ -149,7 +149,7 @@ describe("explain code panel", () => {
     const capped = renderToString(
       <ExplainViewResults {...viewProps({ status: "capped", staticEntries: [], readyMessage: null })} />,
     );
-    expect(capped).toContain("Daily Muse limit reached. Try again tomorrow.");
+    expect(capped).toContain("Daily limit reached.");
     const failed = renderToString(
       <ExplainViewResults {...viewProps({ status: "failed", staticEntries: [], readyMessage: null })} />,
     );
@@ -237,7 +237,7 @@ describe("explain code panel", () => {
       <ExplainViewResults {...viewProps({ status: "pending", staticEntries: [], readyMessage: null })} />,
     );
     expect(html).toContain('role="status"');
-    expect(html).toContain("Muse is reading");
+    expect(html).toContain("Reading ");
     expect(html).toContain("addBlackList(address)");
   });
 });

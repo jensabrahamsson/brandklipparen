@@ -30,9 +30,9 @@ export function personalizeProviderLabel(
   provider: { readonly provider: string; readonly modelId: string } | null,
 ): string {
   if (provider === null) {
-    return "Mapping provider not configured on this server.";
+    return "Not set up on this server.";
   }
-  return `Maps with ${personalizeProviderName(provider)}.`;
+  return `Uses ${personalizeProviderName(provider)}.`;
 }
 
 // Closed read: exactly `on` opts in; everything else stays off.
@@ -111,8 +111,8 @@ export function normalizeAiSectionId(sectionId: string): string | null {
 const AI_SECTION_LABELS: Readonly<Record<string, string>> = Object.freeze({
   score: "Score",
   explanation: "Why this score",
-  signals: "Signals",
-  "plugin-findings": "Plugins",
+  signals: "Risks",
+  "plugin-findings": "Checks",
   "cant-tell": "Can't-tell",
 });
 
@@ -159,11 +159,11 @@ export function aiOrderNotice(planIds: readonly string[], appliedIds: readonly s
   if (lowered.length > 0) {
     parts.push(`${lowered.join(" and ")} lowered`);
   }
-  const suffix = "Scores, evidence and text are unchanged.";
+  const suffix = "Score unchanged.";
   if (parts.length === 0) {
-    return `AI order applied. ${suffix}`;
+    return `Sorted by AI. ${suffix}`;
   }
-  return `AI order applied: ${parts.join("; ")}. ${suffix}`;
+  return `Sorted by AI: ${parts.join("; ")}. ${suffix}`;
 }
 
 export type PersonalizePlacement = {
@@ -245,13 +245,13 @@ export function parseAiPersonalizeSpec(value: unknown, context: PersonalizeConte
     return null;
   }
   const ranking = shaped.data.pluginRanking;
-  const presentPlugins = new Set(context.pluginIds);
-  const seenPlugins = new Set<string>();
+  const presentChecks = new Set(context.pluginIds);
+  const seenChecks = new Set<string>();
   for (const entry of ranking) {
-    if (!presentPlugins.has(entry) || seenPlugins.has(entry)) {
+    if (!presentChecks.has(entry) || seenChecks.has(entry)) {
       return null;
     }
-    seenPlugins.add(entry);
+    seenChecks.add(entry);
   }
   const presentSections = new Set(context.sectionIds);
   const flooredRendered = new Set<string>();
@@ -284,7 +284,7 @@ export function parseAiPersonalizeSpec(value: unknown, context: PersonalizeConte
     return null;
   }
   return {
-    pluginRanking: Object.freeze([...seenPlugins]),
+    pluginRanking: Object.freeze([...seenChecks]),
     placements: Object.freeze(parsed),
   };
 }

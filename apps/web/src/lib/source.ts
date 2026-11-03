@@ -149,11 +149,11 @@ async function loadSource(address: string, apiKey: string | null, block?: number
   const blockQuery = block !== undefined && Number.isSafeInteger(block) && block >= 0 ? `&block=${block}` : "";
   const response = await fetch(`/v1/source?address=${encodeURIComponent(address)}${blockQuery}`, { headers });
   if (!response.ok) {
-    throw new Error(`Request failed with status ${response.status}.`);
+    throw new Error(`Request failed (${response.status}).`);
   }
   const parsed = toSourceResult(await response.json());
   if (parsed === null) {
-    throw new Error("Verified source is not available for this token.");
+    throw new Error("No verified source.");
   }
   return parsed;
 }

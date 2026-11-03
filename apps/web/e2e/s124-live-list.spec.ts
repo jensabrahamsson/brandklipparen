@@ -93,10 +93,10 @@ test("s124_live_list_buffers_inserts_and_labels", async ({ page, browser }) => {
   await expect(live.getByText("2 new tokens")).toBeVisible();
   // The mocked feed timestamp is long past, so the header honestly reads
   // as paused instead of ticking up seconds (S-132).
-  await expect(live.getByText(/Feed paused, last update .* ago/)).toBeVisible();
+  await expect(live.getByText(/Paused\. Updated .* ago\./)).toBeVisible();
 
   // Honest labels: the middle filter names both bands it includes.
-  await expect(page.getByRole("button", { name: "Elevated & high" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Elevated+" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Low" })).toBeVisible();
   expect(await page.getByRole("button", { name: "High risk" }).count()).toBe(0);
   expect(await page.getByRole("button", { name: "Low risk" }).count()).toBe(0);
@@ -166,7 +166,7 @@ test("s124_live_list_buffers_inserts_and_labels", async ({ page, browser }) => {
   await page.reload();
   await expect(live.getByText("1 new token")).toBeVisible();
   await page.getByRole("button", { name: "Low", exact: true }).click();
-  await expect(page.getByText("No tokens match this filter.")).toBeVisible();
+  await expect(page.getByText("No matches.")).toBeVisible();
   await page.getByRole("button", { name: "Show all" }).click();
   await expect(live.getByText("1 new token")).toBeVisible();
   await expect(live.locator(".feed-row")).toHaveCount(1);

@@ -8,11 +8,11 @@ import { FeatureUnavailable } from "./FeatureUnavailable.tsx";
 describe("feature unavailable", () => {
   test("s123_unavailable_pill_reason_and_disabled_button", () => {
     const html = renderToString(
-      <FeatureUnavailable title="Contract assessment" reason="Contract assessment is not configured on this server." actionLabel="Request assessment" />,
+      <FeatureUnavailable title="Muse assessment" reason="Muse assessment is not configured on this server." actionLabel="Request assessment" />,
     );
     expect(html).toContain("Unavailable");
     expect(html).not.toContain("assessment-dot");
-    expect(html).toContain("Contract assessment is not configured on this server.");
+    expect(html).toContain("Muse assessment is not configured on this server.");
     expect(html).toContain("disabled");
     expect(html).toContain('aria-disabled="true"');
     const describedBy = html.match(/aria-describedby="([^"]+)"/)?.[1] ?? "";

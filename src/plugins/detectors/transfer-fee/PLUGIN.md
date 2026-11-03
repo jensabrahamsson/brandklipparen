@@ -6,7 +6,7 @@ tags: [fees, honeypot, owner-powers]
 audience: [holder]
 severity: { min: low, max: high }
 ---
-# PLUGIN.md: Transfer-fee detector (`dev.brandklipparen.transfer-fee`)
+# PLUGIN.md: Transfer-fee (`dev.brandklipparen.transfer-fee`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 

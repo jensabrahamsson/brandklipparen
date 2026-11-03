@@ -5,7 +5,7 @@
 // contract proves determinism, schema agreement, evidence presence and
 // unchanged inputs; the tests below prove the D-07 consumption (the same
 // functions, offsets and unresolved-jump count flow through the shared
-// service into `pluginResults`, which REST, MCP and the Expert view render
+// service into `pluginResults`, which REST, MCP and the Expert render
 // generically) and the D-08 score neutrality (bit-identical score,
 // probabilities and signals with the plugin enabled, disabled and absent,
 // weight 0 until the artifact names it).
@@ -122,7 +122,7 @@ describe("d07_decompiler_output_consumed_identically_in_rest_mcp_and_expert_ui",
       expect(payload["cause"] ?? null).toBe(fn.cause);
       expect(payload["unresolvedJumps"]).toBe(direct.unresolvedJumps.length);
     }
-    // REST and MCP serialize the same canonical entry the Expert view
+    // REST and MCP serialize the same canonical entry the Expert
     // renders: one canonical shape feeds all three consumers.
     const canonical = entry === undefined ? null : pluginResultToCanonical(entry);
     expect(canonical).not.toBe(null);

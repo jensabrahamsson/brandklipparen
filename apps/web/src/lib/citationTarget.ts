@@ -136,7 +136,7 @@ export function citationTarget(id: string, ctx: CitationContext): CitationTarget
   if (id === "analysis:summary") {
     return {
       kind: "plugin",
-      label: "What we checked",
+      label: "Checks",
       lamp: "check",
       href: `#/token/${encodeURIComponent(ctx.address)}/plugins`,
     };

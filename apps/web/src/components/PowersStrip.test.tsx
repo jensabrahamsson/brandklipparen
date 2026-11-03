@@ -57,7 +57,7 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     const ownerState = { status: "renounced" as const, getter: "owner()" as const, address: "0x0000000000000000000000000000000000000000", block: 24000000, reason: "owner renounced" };
     const proven = [...quietResults().filter((result) => result.pluginId !== "dev.brandklipparen.blacklist"), ok("dev.brandklipparen.blacklist", [{ id: "blacklist", title: "Blacklist", payload: { fact: "blacklist", proof: "extended" }, evidence: [] }])];
     for (const scenario of [
-      { results: quietResults(), scoreFloor: floor, ownerState: undefined, chip: "Blacklist: found, high, sets the minimum score", tile: "Blacklist: found, high, sets the minimum score" },
+      { results: quietResults(), scoreFloor: floor, ownerState: undefined, chip: "Blacklist: found, high, sets score floor", tile: "Blacklist: found, high, sets score floor" },
       { results: proven, scoreFloor: undefined, ownerState, chip: "Blacklist: owner renounced", tile: "Blacklist: owner renounced" },
       { results: quietResults(), scoreFloor: undefined, ownerState: undefined, chip: null, tile: "Blacklist: not found" },
     ]) {
@@ -99,8 +99,8 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     expect(html).toContain("/plugins/mint");
     expect(html).toContain("Blacklist: found, high. Can the owner block wallets? Open details.");
     // The extended chip carries its label, and so does the summary count.
-    expect(html).toContain("Not in score");
-    expect(html).toContain("1 found. 1 more the score doesn&#x27;t count yet.");
+    expect(html).toContain("Not yet scored");
+    expect(html).toContain("1 found. Not yet scored: 1.");
     // Quiet detectors get no chip.
     expect(html).not.toContain("power-chip-pause");
   });
@@ -108,7 +108,7 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
   test("none_found_names_no_pattern", () => {
     const html = htmlFor(quietResults());
     expect(html).not.toContain("power-chip-");
-    expect(html).toContain("No owner powers found in the code we could read.");
+    expect(html).toContain("No owner powers found.");
   });
 
   test("cant_tell_names_unread_checks_with_chips", () => {
@@ -128,7 +128,7 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     const board = buildBoardModel(PLUGINS, [...quietResults(), hard]);
     const ids = PLUGINS.map((plugin) => plugin.id);
     const html = renderToString(<PowersStrip address={ADDRESS} allIds={ids} tiles={board.ownerTiles} />);
-    expect(html).toContain("No scored pattern. 9 checks could not be fully read.");
+    expect(html).toContain("9 checks unreadable.");
     expect(html).toContain("power-chip-blacklist");
     expect(html).toContain("can&#x27;t tell");
     // With no found or extended finding there is nothing to collapse
@@ -194,7 +194,7 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
 
   test("null_plugins_renders_loading_line", () => {
     const html = renderToString(<PowersStrip address={ADDRESS} allIds={[]} tiles={[]} plugins={null} />);
-    expect(html).toContain("Owner powers are loading…");
+    expect(html).toContain("Loading…");
     expect(html).not.toContain("power-chip-");
   });
 
@@ -241,9 +241,9 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
   test("strip_help_trigger_explains_extended_analysis", () => {
     const html = htmlFor(quietResults());
     expect(html).toContain('data-testid="explain-powers:extended"');
-    expect(explanationFor("powers:extended").body).toContain("sets a minimum score");
-    const open = renderToString(<Explain explainKey="powers:extended" label="Extended analysis" defaultOpen />);
-    expect(open).toContain("sets a minimum score");
+    expect(explanationFor("powers:extended").body).toContain("set the score to at least 60");
+    const open = renderToString(<Explain explainKey="powers:extended" label="Owner powers" defaultOpen />);
+    expect(open).toContain("set the score to at least 60");
   });
 
   test("score4_floor_fact_renders_found_with_sets_minimum_score", () => {
@@ -271,10 +271,10 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
       />,
     );
     expect(html).toContain("power-chip state-found-scored sev-high");
-    expect(html).toContain("Sets minimum score");
-    expect(html).not.toContain("Not in score");
-    expect(html).toContain("Blacklist: found, high, sets the minimum score. Can the owner block wallets? Open details.");
-    expect(html).toContain("1 found. 1 sets the minimum score.");
+    expect(html).toContain("Sets score floor");
+    expect(html).not.toContain("Not yet scored");
+    expect(html).toContain("Blacklist: found, high, sets score floor. Can the owner block wallets? Open details.");
+    expect(html).toContain("1 found. Sets score floor: 1.");
   });
 
   test("score4_renounced_lifted_fact_renders_owner_renounced_not_found", () => {
@@ -303,9 +303,9 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     );
     expect(html).toContain("state-renounced");
     expect(html).toContain("Owner renounced");
-    expect(html).not.toContain("Sets minimum score");
+    expect(html).not.toContain("Sets score floor");
     expect(html).toContain("Blacklist: owner renounced. Can the owner block wallets? Open details.");
-    expect(html).toContain("2 owner powers found but owner renounced.");
+    expect(html).toContain("Owner renounced. 2 powers lifted.");
   });
 
   test("renounced_owner_line_names_getter_address_and_block", () => {

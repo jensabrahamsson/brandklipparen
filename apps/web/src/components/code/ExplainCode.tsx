@@ -11,7 +11,7 @@
 // Reduced motion renders everything at rest with no animation and no
 // cursor. Scores, evidence and finding text are never
 // touched: this is a labelled advisory overlay with the standing
-// footer "AI explanation · doesn't change the score".
+// footer "AI note. Score unchanged.".
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type JSX, type ReactNode } from "react";
 import {
   fetchExplainCode,
@@ -575,28 +575,27 @@ export function ExplainViewResults({
   if (status === "pending") {
     return (
       <p role="status" className="scan-status explain-pending">
-        <span aria-hidden="true">✦ </span>Muse is reading {title} · {lineCount} {plural(lineCount, "line", "lines")}
+        <span aria-hidden="true">✦ </span>Reading {title} · {lineCount} {plural(lineCount, "line", "lines")}
         <b className="cursor" aria-hidden="true" />
-        <span className="sr-only">Muse is reading this function.</span>
       </p>
     );
   }
   if (status === "invalid-output") {
     return (
       <div className="muse-explain-status" role="alert">
-        <p className="muse-explain-message">The answer cited code that isn&apos;t here.</p>
+        <p className="muse-explain-message">Answer cited missing code. Hidden.</p>
         <button type="button" className="button-ghost" onClick={onRetry}>
           Try again
         </button>
-        <p className="quiet muse-advisory">AI explanation · doesn't change the score</p>
+        <p className="quiet muse-advisory">AI note. Score unchanged.</p>
       </div>
     );
   }
   if (status === "capped") {
     return (
       <div className="muse-explain-status" role="status">
-        <p className="muse-explain-message">Daily Muse limit reached. Try again tomorrow.</p>
-        <p className="quiet muse-advisory">AI explanation · doesn't change the score</p>
+        <p className="muse-explain-message">Daily limit reached.</p>
+        <p className="quiet muse-advisory">AI note. Score unchanged.</p>
       </div>
     );
   }
@@ -607,7 +606,7 @@ export function ExplainViewResults({
         <button type="button" className="button-ghost" onClick={onRetry}>
           Try again
         </button>
-        <p className="quiet muse-advisory">AI explanation · doesn't change the score</p>
+        <p className="quiet muse-advisory">AI note. Score unchanged.</p>
       </div>
     );
   }
@@ -627,7 +626,7 @@ export function ExplainViewResults({
         </h3>
         {modelId !== null ? <p className="quiet muse-model" title={modelId}>{modelDisplayLabel(modelId)}</p> : null}
         {summaryEntries.length === 0 ? (
-          <p className="muse-summary-empty">Every model sentence failed the evidence check.</p>
+          <p className="muse-summary-empty">No sentence had proof. Hidden.</p>
         ) : (
           <ul className="muse-summary-list">
             {summaryEntries.map(({ entry, index }) => {
@@ -657,7 +656,7 @@ export function ExplainViewResults({
         <button type="button" className="button-ghost muse-ask-again" onClick={onAskAgain}>
           Ask again
         </button>
-        <p className="quiet muse-advisory">AI explanation · doesn't change the score</p>
+        <p className="quiet muse-advisory">AI note. Score unchanged.</p>
       </div>
     </div>
   );

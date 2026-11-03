@@ -7,17 +7,17 @@ const QUESTIONS: Readonly<Record<string, string>> = {
   "owner-shares": "How much of the supply do insiders hold?",
   "wallet-clusters": "Are many wallets controlled by one owner?",
   "team-identity": "Who is behind this token?",
-  "code-intent": "What did the authors intend this code to do?",
+  "code-intent": "What was this code meant to do?",
   "external-contracts": "What do the linked contracts do?",
 };
 
 const NEEDS: Readonly<Record<string, string>> = {
-  "liquidity-lock-registry": "a liquidity-lock registry",
-  "holder-distribution-feed": "a holder-distribution feed",
-  "wallet-cluster-index": "a wallet-cluster index",
+  "liquidity-lock-registry": "lock data",
+  "holder-distribution-feed": "holder data",
+  "wallet-cluster-index": "wallet data",
   "team-disclosure": "a team disclosure",
   "code-audit-report": "a code audit report",
-  "contract-analysis-queue": "a contract-analysis queue",
+  "contract-analysis-queue": "more time",
 };
 
 function humanizeSlug(slug: string): string {
@@ -31,7 +31,7 @@ export function cantTellQuestionText(question: string): string {
   }
   const human = humanizeSlug(question);
   if (human.length === 0) {
-    return "What else can't the bytecode tell us?";
+    return "What else is unknown?";
   }
   if (human.endsWith("?")) {
     return human;

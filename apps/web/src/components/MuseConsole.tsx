@@ -72,7 +72,6 @@ export function MuseConsole({
   onQuestionClear,
   allIds,
   verdict,
-  checkCount,
   foundSlugs = [],
 }: {
   readonly address: string;
@@ -116,7 +115,7 @@ export function MuseConsole({
     return (
       <section className="card muse-console" aria-label="Muse console" data-testid="muse-console">
         <p data-testid="muse-unavailable" style={{ margin: 0 }}>
-          <span aria-hidden="true">✦ </span>Muse is not connected on this server.
+          <span aria-hidden="true">✦ </span>Muse is off. Score is unaffected.
         </p>
       </section>
     );
@@ -205,7 +204,6 @@ export function MuseConsole({
               claims={claims}
               allIds={allIds}
               verdict={verdict}
-              checkCount={checkCount}
               onSignalLink={onSignalLink}
               onRetry={onExplain}
             />
@@ -233,7 +231,7 @@ export function MuseConsole({
             />
           ) : null}
           <p className="quiet muse-advisory" data-testid="muse-advisory" style={{ margin: "12px 0 0" }}>
-            AI explanation · doesn&apos;t change the score
+            Muse does not change the score.
           </p>
         </div>
       )}
@@ -265,11 +263,11 @@ function ChatOutput({
     return <ScanStatus text="Asking Muse…" />;
   }
   if (chat.status === "not-configured") {
-    return <p style={{ margin: 0 }}>Muse is not available for this question.</p>;
+    return <p style={{ margin: 0 }}>Muse unavailable.</p>;
   }
   if (chat.status === "ready") {
     if (chat.answers.length === 0) {
-      return <p style={{ margin: 0 }}>Muse had nothing to add.</p>;
+      return <p style={{ margin: 0 }}>Nothing to add.</p>;
     }
     return (
       <div>
@@ -288,7 +286,7 @@ function ChatOutput({
     );
   }
   if (chat.status === "fallback") {
-    return <p style={{ margin: 0 }}>Muse had nothing to add.</p>;
+    return <p style={{ margin: 0 }}>Nothing to add.</p>;
   }
   return (
     <div>

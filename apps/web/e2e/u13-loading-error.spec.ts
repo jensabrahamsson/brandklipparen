@@ -245,8 +245,7 @@ test("u13_slow_scan_sets_expectations_after_eight_seconds", async ({ page }) => 
   await page.setViewportSize({ width: 390, height: 900 });
   await page.goto("/#/token/" + ADDRESS);
   await expect(page.getByTestId("loading-status")).toBeVisible();
-  await expect(page.getByTestId("loading-status")).toContainText("First scans can take up to ~15 s.", { timeout: 15000 });
-  await expect(page.getByTestId("loading-status")).toContainText("Repeat visits are instant.");
+  await expect(page.getByTestId("loading-status")).toContainText("Still reading. First scan takes ~15 s.", { timeout: 15000 });
   await expect(page.getByRole("img", { name: /Combined score 29 of 100/ })).toBeVisible({ timeout: 15000 });
 });
 
@@ -275,7 +274,7 @@ test("u13_error_card_retries_with_countdown_and_retry_now", async ({ page }) => 
   const card = page.getByTestId("token-error");
   await expect(card).toBeVisible();
   await expect(card).toHaveAttribute("role", "alert");
-  await expect(card).toContainText("Too many requests.");
+  await expect(card).toContainText("Busy.");
   await expect(card).toContainText("Retry now");
   // No status code and none of the raw backend message.
   await expect(card).not.toContainText("429");

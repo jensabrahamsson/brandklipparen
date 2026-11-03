@@ -85,7 +85,7 @@ describe("the experimental AI layout label names the configured provider honestl
   test("a configured provider names its provider and model id", () => {
     expect(
       personalizeProviderLabel({ provider: "meta-model-api", modelId: "test-model-1" }),
-    ).toBe("Maps with meta-model-api · test-model-1.");
+    ).toBe("Uses meta-model-api · test-model-1.");
     expect(personalizeProviderName({ provider: "meta-model-api", modelId: "test-model-1" })).toBe(
       "meta-model-api · test-model-1",
     );
@@ -93,7 +93,7 @@ describe("the experimental AI layout label names the configured provider honestl
 
   test("a meta-model-api provider names its own provider and model id", () => {
     expect(personalizeProviderLabel({ provider: "meta-model-api", modelId: "test-meta-1" })).toBe(
-      "Maps with meta-model-api · test-meta-1.",
+      "Uses meta-model-api · test-meta-1.",
     );
     expect(personalizeProviderName({ provider: "meta-model-api", modelId: "test-meta-1" })).toBe(
       "meta-model-api · test-meta-1",
@@ -101,7 +101,7 @@ describe("the experimental AI layout label names the configured provider honestl
   });
 
   test("an unconfigured server says so", () => {
-    expect(personalizeProviderLabel(null)).toBe("Mapping provider not configured on this server.");
+    expect(personalizeProviderLabel(null)).toBe("Not set up on this server.");
     expect(personalizeProviderName(null)).toBe("the mapping provider");
   });
 });
@@ -213,8 +213,8 @@ describe("zod AI spec validation against the component whitelist", () => {
   });
 
   test("oversize specs and missing summary or score fall back to null", () => {
-    const manyPlugins = Array.from({ length: 17 }, (_, index) => `dev.brandklipparen.p${index}`);
-    expect(parseAiPersonalizeSpec({ ...validSpecBody(), pluginRanking: manyPlugins }, CONTEXT)).toBe(null);
+    const manyChecks = Array.from({ length: 17 }, (_, index) => `dev.brandklipparen.p${index}`);
+    expect(parseAiPersonalizeSpec({ ...validSpecBody(), pluginRanking: manyChecks }, CONTEXT)).toBe(null);
     const manyPlacements = Array.from({ length: 17 }, () => ({ sectionId: "signals", emphasis: "high" }));
     expect(parseAiPersonalizeSpec({ ...validSpecBody(), placements: manyPlacements }, CONTEXT)).toBe(null);
     expect(
@@ -313,10 +313,10 @@ describe("legacy model ids normalize to rendered sections (P0-4)", () => {
   test("the diff notice names moved sections and keeps the trust suffix", () => {
     const plan = ["score", "signals", "cant-tell", "plugin-findings", "explanation"];
     const applied = ["score", "signals", "plugin-findings", "explanation", "cant-tell"];
-    expect(describeAiOrderChange(plan, applied).movedUp).toEqual(["Plugins", "Why this score"]);
+    expect(describeAiOrderChange(plan, applied).movedUp).toEqual(["Checks", "Why this score"]);
     expect(describeAiOrderChange(plan, applied).lowered).toEqual(["Can't-tell"]);
-    expect(aiOrderNotice(plan, applied)).toContain("AI order applied");
-    expect(aiOrderNotice(plan, applied)).toContain("Scores, evidence and text are unchanged.");
+    expect(aiOrderNotice(plan, applied)).toContain("Sorted by AI");
+    expect(aiOrderNotice(plan, applied)).toContain("Score unchanged.");
   });
 });
 

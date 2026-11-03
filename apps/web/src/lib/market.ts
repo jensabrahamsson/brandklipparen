@@ -70,10 +70,10 @@ function marketHumanDuration(totalSeconds: number): string {
 export function marketStatusLabel(updatedAt: number, nowMs: number): string {
   const seconds = Math.max(0, Math.round((nowMs - updatedAt) / 1000));
   if (nowMs - updatedAt > MARKET_STALE_AFTER_MS) {
-    return `Stale · updated ${marketHumanDuration(seconds)} ago`;
+    return `Stale · ${marketHumanDuration(seconds)} ago`;
   }
   if (seconds < 5) {
-    return "Updated just now";
+    return "Just now";
   }
   return `Updated ${marketHumanDuration(seconds)} ago`;
 }
@@ -196,7 +196,7 @@ export function parseMarketSnapshot(body: unknown): MarketSnapshot | null {
 }
 
 function readError(response: Response, fallbackCode: string): Promise<ApiError> {
-  const fallback = new ApiError(fallbackCode, response.status, `Request failed with status ${response.status}.`);
+  const fallback = new ApiError(fallbackCode, response.status, `Request failed (${response.status}).`);
   return response
     .json()
     .then((body) => {
@@ -205,7 +205,7 @@ function readError(response: Response, fallbackCode: string): Promise<ApiError> 
       const message =
         typeof record.message === "string" && record.message.length > 0
           ? record.message
-          : `Request failed with status ${response.status}.`;
+          : `Request failed (${response.status}).`;
       return new ApiError(code, response.status, message);
     })
     .catch(() => fallback);
@@ -223,7 +223,7 @@ export async function fetchMarketNew(apiKey: string | null): Promise<MarketSnaps
   }
   const parsed = parseMarketSnapshot(await response.json());
   if (parsed === null) {
-    throw new ApiError("request-failed", 200, "The market listing answered in an unknown shape.");
+    throw new ApiError("request-failed", 200, "Market data unreadable.");
   }
   return parsed;
 }

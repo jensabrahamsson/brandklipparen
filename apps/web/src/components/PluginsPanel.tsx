@@ -100,7 +100,7 @@ function ResultBlock({
           {finding.title}{" "}
           {isExtendedFinding(finding.payload) ? (
             <span className="chip" data-testid={`extended-badge-${finding.id}`}>
-              Extended analysis · not in score
+              Not yet scored
             </span>
           ) : null}{" "}
           <Explain explainKey="evidence:payload" label={`Finding ${finding.id}`} />
@@ -143,12 +143,12 @@ export function PluginsPanel({
   readonly onShowStandardOrder?: (() => void) | undefined;
 }): JSX.Element {
   if (results.length === 0) {
-    return <p className="muted">No plugin results.</p>;
+    return <p className="muted">No checks ran.</p>;
   }
   if (plugins === null) {
     return (
-      <section aria-label="Plugins">
-        <h2>Plugins</h2>
+      <section aria-label="Checks">
+        <h2>Checks</h2>
         {results.map((result) => (
           <article key={result.pluginId}>
             <h3 className="mono" style={{ fontSize: 14 }}>
@@ -186,20 +186,20 @@ export function PluginsPanel({
   const checkedFirstNames = checkedFirst.map((pluginId) => displayNameOf(pluginId));
   const remainingWithout = withoutFindings.filter((plugin) => !checkedFirst.includes(plugin.id));
   return (
-    <section aria-label="Plugins">
-      <h2>Plugins</h2>
+    <section aria-label="Checks">
+      <h2>Checks</h2>
       {active ? (
         <div className="plugins-personalized">
           <p className="quiet plugins-notice" data-testid="personalized-notice">
             {source === "ai"
               ? aiModelId === undefined || aiModelId.length === 0
-                ? "Ordered by AI from your priorities."
-                : `Ordered by AI (${aiModelId}) from your priorities.`
-              : "Ordered by what matters to you."}
+                ? "Sorted for you by AI."
+                : `Sorted for you by AI (${aiModelId}).`
+              : "Sorted for you."}
           </p>
           {onShowStandardOrder === undefined ? null : (
             <button type="button" className="button-ghost" data-testid="standard-order" onClick={onShowStandardOrder}>
-              Show standard order
+              Default order
             </button>
           )}
         </div>
@@ -232,12 +232,12 @@ export function PluginsPanel({
       })}
       {checkedFirstNames.length === 0 ? null : (
         <p className="quiet" data-testid="ai-checked-first" style={{ margin: "8px 0 0", fontSize: 13 }}>
-          {`Your top-ranked detectors found nothing: ${checkedFirstNames.join(", ")}.`}
+          {`Nothing in ${checkedFirstNames.join(", ")}.`}
         </p>
       )}
       {remainingWithout.length === 0 ? null : (
         <p className="quiet" style={{ margin: "8px 0 0", fontSize: 13 }}>
-          {remainingWithout.length === 1 ? "1 detector found nothing" : `${remainingWithout.length} detectors found nothing`}
+          {remainingWithout.length === 1 ? "1 check found nothing" : `${remainingWithout.length} checks found nothing`}
           : {remainingWithout.map((plugin) => plugin.displayName).join(", ")}
         </p>
       )}

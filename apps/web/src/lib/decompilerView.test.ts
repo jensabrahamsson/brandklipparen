@@ -52,11 +52,11 @@ describe("decompiler status", () => {
 });
 
 describe("decompiler names", () => {
-  test("the signature wins, then the short name, then Unnamed", () => {
+  test("the signature wins, then the short name, then the bare selector", () => {
     expect(parseDecompilerFunction(payload())?.displayName).toBe("addBlackList(address)");
     expect(parseDecompilerFunction(payload({ signature: "" }))?.displayName).toBe("addBlackList");
     expect(parseDecompilerFunction(payload({ signature: "", name: "function_0753c30c" }))?.displayName).toBe(
-      "Unnamed 0x0ecb93c0",
+      "0x0ecb93c0",
     );
   });
 
@@ -119,7 +119,7 @@ describe("decompiler sentence", () => {
   test("bytes are endPc minus startPc with no raw cause", () => {
     const fn = parseDecompilerFunction(payload()) as NonNullable<ReturnType<typeof parseDecompilerFunction>>;
     expect(decompilerFunctionSentence(fn)).toBe(
-      "Starts at 0x19b · 2 646 bytes · partly read: 55 jumps were not followed.",
+      "0x19b · 2 646 bytes · partly read: 55 jumps were not followed.",
     );
     expect(decompilerFunctionSentence(fn)).not.toContain("unexpected-control-flow");
   });
@@ -129,7 +129,7 @@ describe("decompiler sentence", () => {
       payload({ cause: "no-plain-return", unresolvedJumps: 0 }),
     ) as NonNullable<ReturnType<typeof parseDecompilerFunction>>;
     expect(fn.status).toBe("partly-read");
-    expect(decompilerFunctionSentence(fn)).toBe("Starts at 0x19b · 2 646 bytes · partly read: no plain return value.");
+    expect(decompilerFunctionSentence(fn)).toBe("0x19b · 2 646 bytes · partly read: no plain return value.");
     expect(decompilerFunctionSentence(fn)).not.toContain("no-plain-return");
   });
 });

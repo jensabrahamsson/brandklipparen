@@ -32,7 +32,7 @@ type ErrorBody = {
 
 async function readError(response: Response, fallbackCode: string): Promise<ApiError> {
   let code = fallbackCode;
-  let message = `Request failed with status ${response.status}.`;
+  let message = `Request failed (${response.status}).`;
   try {
     const body = (await response.json()) as ErrorBody;
     if (typeof body.code === "string" && body.code.length > 0) {

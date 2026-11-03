@@ -31,9 +31,9 @@ export function AboutPage(): JSX.Element {
       <section className="card about-card" aria-labelledby="about-score">
         <h2 id="about-score">How the score works</h2>
         <p>
-          Deterministic. Proven owner powers set a minimum (an active owner who can block holders
-          means High). If ownership is renounced on chain, those powers no longer count. A
-          calibrated pattern model adds a history-based estimate. Low never means safe.
+          Proven owner powers set a score floor. Can block holders: at least 60 (High). Mint, fee,
+          limits, upgrade: at least 30 (Elevated). Renounced owner: no floor. A pattern model adds a
+          history-based estimate. Low ≠ safe.
         </p>
       </section>
 

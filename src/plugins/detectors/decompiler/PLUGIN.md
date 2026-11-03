@@ -6,7 +6,7 @@ tags: [external-calls]
 audience: [holder, auditor]
 severity: { min: low, max: medium }
 ---
-# PLUGIN.md: Decompiler detector (`dev.brandklipparen.decompiler`)
+# PLUGIN.md: Decompiler (`dev.brandklipparen.decompiler`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-081).
 

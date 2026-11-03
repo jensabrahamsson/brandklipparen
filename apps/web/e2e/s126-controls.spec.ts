@@ -76,7 +76,7 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
 
   // The dark scheme is declared, so native controls match the theme.
   expect(await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme)).toBe("dark");
-  await expect(page.getByText("Waiting for new pairs…")).toBeVisible();
+  await expect(page.getByText("Waiting…")).toBeVisible();
 
   // Control edges measure at least 3:1 against their backgrounds.
   const boundaries = await page.evaluate(() => {
@@ -129,14 +129,14 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
 
   // Submitting "hello world" turns the field border red, with the message
   // linked through aria-describedby.
-  await page.getByPlaceholder("Paste contract address, 0x…").fill("hello world");
+  await page.getByPlaceholder("Token address, 0x…").fill("hello world");
   await page.getByRole("button", { name: "Analyze" }).click();
   const search = page.locator("#address-search");
   await expect(search).toHaveAttribute("aria-invalid", "true");
   expect(await search.evaluate((element) => getComputedStyle(element).borderColor)).toContain("255, 90, 82");
   const describedBy = await search.getAttribute("aria-describedby");
   expect(describedBy).toBe("address-error");
-  await expect(page.locator(`#${describedBy ?? ""}`)).toContainText("Invalid address");
+  await expect(page.locator(`#${describedBy ?? ""}`)).toContainText("Use 0x + 40 hex characters.");
 
   // Ghost buttons: the empty Clear control reads as off next to enabled ones.
   await page.goto(`/#/token/${ADDRESS}`);
@@ -144,8 +144,6 @@ test("s126_control_boundaries_and_invalid_state", async ({ page }) => {
   const back = page.getByRole("button", { name: "← Search" });
   expect(await back.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
   expect(await back.evaluate((element) => getComputedStyle(element).borderStyle)).toBe("solid");
-  // No Expert view switch anywhere.
-  await expect(page.getByTestId("expert-switch")).toHaveCount(0);
   // R2-8: the Ask button always looks enabled, and the clear icon
   // is absent while the field is empty.
   const ask = page.getByTestId("ask-submit");

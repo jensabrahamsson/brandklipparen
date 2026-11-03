@@ -6,7 +6,7 @@ tags: [blacklist, honeypot, owner-powers]
 audience: [holder]
 severity: { min: medium, max: high }
 ---
-# PLUGIN.md: Blacklist detector (`dev.brandklipparen.blacklist`)
+# PLUGIN.md: Blacklist (`dev.brandklipparen.blacklist`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 

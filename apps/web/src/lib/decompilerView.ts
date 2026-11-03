@@ -108,7 +108,7 @@ export function parseDecompilerFunction(payload: unknown): DecompilerFunction | 
   const ownerOnly = annotations.includes(OWNER_ONLY_ANNOTATION);
   const named = signature !== null;
   const displayName =
-    signature ?? (name !== null && !DEFAULT_NAME.test(name) ? name : `Unnamed ${selector}`);
+    signature ?? (name !== null && !DEFAULT_NAME.test(name) ? name : selector);
   return {
     selector,
     name,
@@ -217,7 +217,7 @@ function hexOf(pc: number | null): string {
 export function decompilerFunctionSentence(fn: DecompilerFunction): string {
   const bytes = fn.startPc !== null && fn.endPc !== null && fn.endPc >= fn.startPc ? fn.endPc - fn.startPc : null;
   const size = bytes === null ? "unknown size" : `${groupThousands(bytes)} bytes`;
-  const head = `Starts at ${hexOf(fn.startPc)} · ${size}`;
+  const head = `${hexOf(fn.startPc)} · ${size}`;
   if (fn.status === "partly-read") {
     if (fn.cause === "no-plain-return") {
       return `${head} · partly read: no plain return value.`;

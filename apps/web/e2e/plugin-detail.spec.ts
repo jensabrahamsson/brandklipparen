@@ -219,24 +219,24 @@ test("plugin_detail_focuses_heading_sets_title_and_states_provenance", async ({ 
   await expect(page.locator("p.sr-only")).toContainText("Blacklist details");
 
   // Scored weight from /v1/plugins: the check reads as in score.
-  await expect(page.getByText("In score: yes (model 1.0.1)")).toBeVisible();
+  await expect(page.getByText("Scored", { exact: true })).toBeVisible();
   // Owner honesty: no address is proven by the envelope until read live.
-  await expect(page.getByText("not read yet")).toBeVisible();
+  await expect(page.getByText("not read", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Read owner on-chain" })).toBeVisible();
-  await expect(page.getByText("Applies now")).toBeVisible();
+  await expect(page.getByText("Active")).toBeVisible();
   // Limits and evidence naming from the decompiler readout.
-  await expect(page.getByText("not which wallets are listed")).toBeVisible();
+  await expect(page.getByText("Proves blocking exists, not who is blocked.")).toBeVisible();
   await expect(page.getByText("addBlackList(address)").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Show all 7 places" })).toBeVisible();
 
   // The zero-weight extended finding reads as not in score.
   await page.goto(`/#/token/${ADDRESS}/plugins/mint`);
   await expect(page.getByRole("heading", { name: "Mint", level: 1 })).toBeFocused();
-  await expect(page.getByTestId("detail-not-in-score")).toContainText("Not in score");
-  await expect(page.getByText("In score: no (extended analysis)")).toBeVisible();
+  await expect(page.getByTestId("detail-not-in-score")).toContainText("Not yet scored");
+  await expect(page.getByText("Not yet scored").first()).toBeVisible();
 });
 
-test("plugin_detail_expert_shows_raw_payload", async ({ page }) => {
+test("plugin_detail_raw_signals_show_payload", async ({ page }) => {
   await mockRest(page, []);
   await page.goto(`/#/token/${ADDRESS}/plugins/blacklist`);
   const raw = page.getByTestId("detail-expert-raw");
@@ -285,7 +285,7 @@ test("plugin_detail_decompiler_row_expands_into_the_code_view", async ({ page })
   await expect(page.getByText("Decompiled from bytecode").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy decompiled addBlackList(address)" })).toBeVisible();
   // The mocked snippet carries no pcs, so the view links by function.
-  await expect(page.getByText("Linked by function. Line-level links need a newer server.").first()).toBeVisible();
+  await expect(page.getByText("Function-level links only.").first()).toBeVisible();
   // The source lookup reports none: the empty state names the provider.
   await expect(page.getByText("No verified source").first()).toBeVisible();
   await expect(page.locator("ol.code .code-line").first()).toBeVisible();

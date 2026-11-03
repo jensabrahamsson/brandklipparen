@@ -26,7 +26,7 @@ export function ExpertDetail({
     <section className="card" aria-label="Expert detail" data-testid="expert-detail" style={{ marginBottom: 20 }}>
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Expert detail</h2>
       <p className="quiet" style={{ margin: "0 0 12px", fontSize: 14 }}>
-        Raw response data as inert text. Scores and evidence are unchanged.
+        Raw response.
       </p>
       <h3 style={{ fontSize: 15 }}>Bytecode under analysis</h3>
       <dl className="mono" style={{ fontSize: 13 }}>
@@ -67,7 +67,7 @@ export function ExpertDetail({
       <h3 style={{ fontSize: 15 }}>Selectors with PC offsets</h3>
       {selectorRows.length === 0 ? (
         <p className="muted" style={{ fontSize: 14 }}>
-          No selectors in this analysis.
+          No selectors.
         </p>
       ) : (
         <ul className="mono" data-testid="expert-selectors" style={{ listStyle: "none", padding: 0, fontSize: 13 }}>
@@ -79,10 +79,10 @@ export function ExpertDetail({
           ))}
         </ul>
       )}
-      <h3 style={{ fontSize: 15 }}>Raw plugin payloads</h3>
+      <h3 style={{ fontSize: 15 }}>Raw check payloads</h3>
       {pluginViews.length === 0 ? (
         <p className="muted" style={{ fontSize: 14 }}>
-          No plugin results in this analysis.
+          No results.
         </p>
       ) : (
         <div data-testid="raw-plugin-payloads">
@@ -93,7 +93,7 @@ export function ExpertDetail({
               </h4>
               {view.findings.length === 0 ? (
                 <p className="muted" style={{ fontSize: 14 }}>
-                  No findings.
+                  None.
                 </p>
               ) : (
                 <ul className="mono" style={{ listStyle: "none", padding: 0, fontSize: 13 }}>

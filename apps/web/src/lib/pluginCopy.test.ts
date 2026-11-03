@@ -72,7 +72,7 @@ describe("decompiler tile, header and list summary (R3 D-8)", () => {
     const lines = Object.values(PLUGIN_COPY).map((entry) => entry.cantTellLine);
     expect(new Set(lines).size).toBe(lines.length);
     expect(PLUGIN_COPY["ownership"]?.cantTellLine).toBe(
-      "We found no stored owner the code compares with the caller.",
+      "No owner found in the code.",
     );
     for (const line of lines) {
       expect(line).not.toBe("The code that matters here could not be fully read.");

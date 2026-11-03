@@ -44,8 +44,8 @@ export function SourceEmpty({
         </span>{" "}
         No verified source
       </p>
-      <p className="code-empty-line">This token&apos;s author published no source code. Most new tokens never do.</p>
-      <p className="code-empty-line">Read the decompiled code: it is rebuilt from what actually runs.</p>
+      <p className="code-empty-line">No source published.</p>
+      <p className="code-empty-line">Read the decompiled code.</p>
       <p className="code-empty-line quiet">
         Checked {provider}
         {block === null ? "" : ` at block ${block}`}.

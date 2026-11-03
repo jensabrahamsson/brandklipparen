@@ -37,14 +37,14 @@ function chipStatus(status: PowerStatus, severity: TileSeverity): string {
   }
   if (status === "floor") {
     const level = severity === "high" ? "high" : severity === "medium" ? "medium" : "low";
-    return `found, ${level}, sets the minimum score`;
+    return `found, ${level}, sets score floor`;
   }
   if (status === "found") {
     const level = severity === "high" ? "high" : severity === "medium" ? "medium" : "low";
     return `found, ${level}`;
   }
   if (status === "extended") {
-    return "found, not in score";
+    return "found, not yet scored";
   }
   return "can't tell";
 }
@@ -75,7 +75,7 @@ export function PowersStrip({
       return (
         <div className="powers" data-testid="powers-strip">
           <p className="powers-kicker">Owner powers</p>
-          <p className="powers-loading">Owner powers are loading…</p>
+          <p className="powers-loading">Loading…</p>
         </div>
       );
     }
@@ -131,7 +131,7 @@ export function PowersStrip({
   return (
     <div className="powers" data-testid="powers-strip">
       <p className="powers-kicker">
-        <span>Owner powers</span> <Explain explainKey="powers:extended" label="Extended analysis" />
+        <span>Owner powers</span> <Explain explainKey="powers:extended" label="Owner powers" />
       </p>
       {ownerState?.status === "renounced" && ownerState.address !== null && ownerState.getter !== null ? (
         <p className="powers-renounced">
@@ -167,10 +167,10 @@ export function PowersStrip({
                 <span className="power-name">{tile.copy.title}</span>
                 {status === "renounced" ? <span className="power-tag">Owner renounced</span> : null}
                 {status === "floor" ? (
-                  <span className="power-tag">Sets minimum score</span>
+                  <span className="power-tag">Sets score floor</span>
                 ) : null}
                 {status === "extended" ? (
-                  <span className="power-tag">Not in score</span>
+                  <span className="power-tag">Not yet scored</span>
                 ) : null}
                 {status === "cant-tell" ? <span className="power-tag">Can&apos;t tell</span> : null}
                 {status === "found" ? (

@@ -380,7 +380,7 @@ test("phosphor_detail_status_sentence_is_in_the_accessibility_tree_at_once", asy
   await mockDetailRest(page);
   await page.goto(`/#/token/${ADDRESS}/plugins/blacklist`);
   await expect(page.getByRole("heading", { name: "Blacklist" })).toBeVisible();
-  const sentence = "The owner can stop chosen wallets from sending tokens.";
+  const sentence = "Owner can block wallets.";
   await expect(page.locator(".detail-sentence .sr-only", { hasText: sentence })).toBeAttached();
   await expect(page.getByText(sentence, { exact: true }).first()).toBeAttached();
 });

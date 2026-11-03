@@ -21,7 +21,7 @@ describe("assessment panel separation", () => {
     const html = renderToString(
       <AssessmentPanel state={{ status: "idle" }} score={84} provider={DISABLED_PROVIDER} onRequest={() => undefined} />,
     );
-    expect(html).toContain("not configured");
+    expect(html).toContain("Assessment is off on this server.");
     expect(html).not.toContain("Meta Model API");
   });
 
@@ -29,7 +29,7 @@ describe("assessment panel separation", () => {
     const html = renderToString(
       <AssessmentPanel state={{ status: "idle" }} score={84} provider={LOADING_PROVIDER} onRequest={() => undefined} />,
     );
-    expect(html).toContain("Checking assessment provider");
+    expect(html).toContain("Checking…");
   });
 
   test("design_review_ready_shows_response_label", () => {
@@ -67,7 +67,7 @@ describe("assessment panel separation", () => {
     const html = renderToString(
       <AssessmentPanel state={{ status: "not-configured" }} score={84} provider={DISABLED_PROVIDER} onRequest={() => undefined} />,
     );
-    expect(html).toContain("not configured");
+    expect(html).toContain("Assessment is off on this server.");
   });
 
   test("design_review_assessment_does_not_alter_score", () => {

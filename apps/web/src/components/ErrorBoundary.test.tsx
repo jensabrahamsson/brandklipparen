@@ -13,7 +13,7 @@ describe("app error boundary (D-2)", () => {
       </ErrorBoundary>,
     );
     expect(html).toContain("Token content");
-    expect(html).not.toContain("Something broke on this page.");
+    expect(html).not.toContain("This view failed.");
   });
 
   test("render_failure_derives_error_card_state", () => {

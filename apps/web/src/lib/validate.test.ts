@@ -12,7 +12,7 @@ describe("contract address validation (K-020)", () => {
       expect(isValidAddress(raw)).toBe(false);
       expect(validationMessage(raw).length).toBeGreaterThan(0);
     }
-    expect(validationMessage("")).toContain("Enter");
+    expect(validationMessage("")).toContain("Address must start with 0x");
   });
 
   test("k020_whitespace_is_trimmed_before_validation", () => {

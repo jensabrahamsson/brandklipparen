@@ -72,7 +72,7 @@ function consoleHtml(
       onQuestionChange={() => undefined}
       onQuestionClear={() => undefined}
       allIds={[]}
-      verdict="Low risk. No owner power found in the code we could read. That is not the same as safe."
+      verdict="Low risk. No owner powers in the code we could read. That is not the same as safe."
       checkCount={0}
     />,
   );
@@ -81,7 +81,7 @@ function consoleHtml(
 describe("muse console (W-3)", () => {
   test("nothing_configured_shows_one_line_with_no_buttons", () => {
     const html = consoleHtml(NOTHING_HEALTH, NOTHING);
-    expect(html).toContain("Muse is not connected on this server.");
+    expect(html).toContain("Muse is off. Score is unaffected.");
     expect(html).not.toContain("Everything above is computed without it.");
     expect(html).not.toContain("<button");
     expect(html).not.toContain("disabled");
@@ -91,7 +91,7 @@ describe("muse console (W-3)", () => {
     const html = consoleHtml(EXPLAIN_HEALTH, EXPLAIN_ONLY);
     expect(html).toContain("Explain this result");
     expect(html).not.toContain("Muse reads the evidence above. It never changes the score.");
-    expect(html).not.toContain("Ask about this token");
+    expect(html).not.toContain("Ask Muse");
     expect(html).not.toContain("Investigate");
     expect(html).not.toContain("disabled");
   });
@@ -107,7 +107,7 @@ describe("muse console (W-3)", () => {
       { ...NOTHING_HEALTH, chat: { provider: "meta-model-api", modelId: "muse-spark-1.3" } },
       { ...NOTHING, chat: "available" },
     );
-    expect(html).toContain('placeholder="Type your question"');
+    expect(html).toContain('placeholder="Ask anything"');
     expect(html).toContain('aria-label="Example questions"');
     expect(html).toContain("Who controls this token?");
     expect(html).not.toContain("Example: Can the owner stop me selling?");
@@ -134,7 +134,7 @@ describe("muse console (W-3)", () => {
           onQuestionChange={() => undefined}
           onQuestionClear={() => undefined}
           allIds={[]}
-          verdict="Low risk. No owner power found in the code we could read. That is not the same as safe."
+          verdict="Low risk. No owner powers in the code we could read. That is not the same as safe."
           checkCount={0}
           foundSlugs={foundSlugs}
         />,
@@ -184,7 +184,7 @@ describe("muse console (W-3)", () => {
         onQuestionClear={() => undefined}
       />,
     );
-    expect(html).toContain("Ask about this token");
+    expect(html).toContain("Ask Muse");
     expect(html).toContain("Sends your question to");
     expect(html).toContain("Muse Spark 1.3 · Meta");
     expect(html).toContain("Not the address.");
@@ -199,7 +199,7 @@ describe("muse console (W-3)", () => {
     );
     expect(empty).toContain('data-testid="ask-submit"');
     expect(empty).not.toContain("aria-disabled");
-    expect(empty).not.toContain("Type your question above to enable.");
+    expect(empty).not.toContain("Ask anything above to enable.");
     expect(empty).not.toContain('data-testid="ask-hint"');
     expect(empty).not.toContain('data-testid="ask-clear"');
     expect(empty).not.toContain("<button disabled");

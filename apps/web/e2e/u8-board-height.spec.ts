@@ -247,7 +247,7 @@ async function boardHeight(page: Page, target: string, pluginResults: unknown[])
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/#/token/${target}`);
   const board = page.getByTestId("plugin-board");
-  await expect(board.getByRole("heading", { name: "What we checked" })).toBeVisible();
+  await expect(board.getByRole("heading", { name: "Checks" })).toBeVisible();
   await expect(board.getByTestId("plugin-board-summary")).toContainText("owner powers checked");
   // Let one-shot tile and count-up motion settle so the box is final.
   await page.waitForTimeout(1500);

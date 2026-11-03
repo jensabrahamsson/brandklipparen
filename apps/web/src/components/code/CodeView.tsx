@@ -840,7 +840,7 @@ export function CodeView({
     <section className={`code-pane${explainAvailable ? " explainable" : ""}`} aria-label="Decompiled from bytecode">
       <div className="code-pane-head">
         <ProvenanceBadge kind="decompiled" />
-        {renamedFrom !== null ? <p className="code-names muted">Names: from verified source.</p> : null}
+        {renamedFrom !== null ? <p className="code-names muted">Names from source.</p> : null}
       </div>
       {explainAvailable ? (
         <ExplainViewResults
@@ -864,7 +864,7 @@ export function CodeView({
           {reduce ? null : <b className="cursor" aria-hidden="true" />}
         </p>
       ) : snippet.kind === "failed" || snippet.kind === "idle" ? (
-        <p className="muted">Readable code is not available for this function.</p>
+        <p className="muted">No readable code.</p>
       ) : (
         <>
           <CodeLines
@@ -894,7 +894,7 @@ export function CodeView({
             </button>
           ) : null}
           {!hasPcs ? (
-            <p className="muted code-link-note">Linked by function. Line-level links need a newer server.</p>
+            <p className="muted code-link-note">Function-level links only.</p>
           ) : null}
           {activeDecompiled !== null && (decompiledToSource.get(activeDecompiled) ?? []).length > 0 ? (
             <button
@@ -910,7 +910,7 @@ export function CodeView({
                 element?.scrollIntoView({ block: "center" });
               }}
             >
-              Show in verified source
+              Show in source
             </button>
           ) : null}
           <ol className="evidence-list decompiler-evidence">
@@ -937,12 +937,12 @@ export function CodeView({
     <section className={`code-pane${explainAvailable ? " explainable" : ""}`} aria-label="Verified source">
       <div className="code-pane-head">
         {verifiedKind === null ? (
-          <p className="code-badge muted">Checking verified source…</p>
+          <p className="code-badge muted">Loading source…</p>
         ) : (
           <ProvenanceBadge kind={verifiedKind} />
         )}
         {sourceFile !== null ? <p className="code-file muted">{sourceFile.path}</p> : null}
-        <p className="code-honesty muted">Verified means published, not safe. Names and comments are the author&apos;s claims.</p>
+        <p className="code-honesty muted">Verified ≠ safe.</p>
       </div>
       {explainAvailable && sourceHasCode ? (
         <ExplainViewResults
@@ -962,7 +962,7 @@ export function CodeView({
       {renderMarginNotes("source", paneId, srcRuntime)}
       {source.kind === "loading" || source.kind === "idle" ? (
         <p role="status" className="scan-status">
-          {reduce ? "Loading…" : "Looking for verified source…"}
+          {reduce ? "Loading…" : "Loading source…"}
           {reduce ? null : <b className="cursor" aria-hidden="true" />}
         </p>
       ) : sourceUnavailable ? (
@@ -991,7 +991,7 @@ export function CodeView({
       ) : mismatch || sourceFile === null || sourceFn === null ? (
         <div className="code-empty" role="status">
           <p className="code-empty-title">Not in the verified source</p>
-          <p className="code-empty-line">The dispatcher has this function, but the published source does not define it.</p>
+          <p className="code-empty-line">In the bytecode, not the source.</p>
         </div>
       ) : (
         <>
@@ -1065,7 +1065,7 @@ export function CodeView({
               Show in decompiled line
             </button>
           ) : null}
-          {!hasSourceMap ? <p className="muted code-link-note">Linked by function</p> : null}
+          {!hasSourceMap ? <p className="muted code-link-note">Function-level links only.</p> : null}
         </>
       )}
     </section>
@@ -1073,7 +1073,7 @@ export function CodeView({
 
   const bytes = startPc !== null && endPc !== null ? endPc - startPc : null;
   const tabLabelSource =
-    source.kind === "ready" && sourceResult?.status === "none" ? "Verified source · none" : "Verified source";
+    source.kind === "ready" && sourceResult?.status === "none" ? "No source" : "Verified source";
 
   return (
     <div className="code-view">
@@ -1082,7 +1082,7 @@ export function CodeView({
           {title} <span className="mono code-selector">{selector}</span>{" "}
           <span className="code-name-chip">
             {nameFrom === "verified"
-              ? "name from verified source"
+              ? "name from source"
               : nameFrom === "table"
                 ? "name from public selector table"
                 : "unnamed"}
@@ -1100,7 +1100,7 @@ export function CodeView({
           <CopyButton value={copyText} label={copyLabel} testId={`copy-function-${selector}`} />
           {expert && onCopyWholeContract !== undefined ? (
             <button type="button" className="button-ghost" onClick={() => void showWholeContract()}>
-              Copy whole decompiled contract
+              Copy all
             </button>
           ) : null}
           {explainAction}
@@ -1151,7 +1151,7 @@ export function CodeView({
           </p>
         ) : null}
       </div>
-      {wholeCopy !== null ? <span className="sr-only" role="status">Whole contract copied.</span> : null}
+      {wholeCopy !== null ? <span className="sr-only" role="status">Copied.</span> : null}
       {wide ? (
         <div className="code-panes">
           {renderDecompiledPane(`${baseId}-wide`)}

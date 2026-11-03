@@ -165,7 +165,7 @@ test("k036_investigation_shows_not_configured_limit_and_failure_states", async (
   });
   await page.goto(`/#/token/${ADDRESS}`);
   await page.getByRole("button", { name: "Investigate", exact: true }).click();
-  await expect(page.getByText("Investigation is not available on this server.")).toBeVisible();
+  await expect(page.getByText("Investigation is off.")).toBeVisible();
   // The deterministic score stands untouched beside the console.
   await expect(page.getByRole("img", { name: /Combined score 84 of 100, High risk/ })).toBeVisible();
 });
@@ -229,7 +229,7 @@ test("k036_investigation_forced_conclusion_names_the_step_limit", async ({ page 
   });
   await page.goto(`/#/token/${ADDRESS}`);
   await page.getByRole("button", { name: "Investigate", exact: true }).click();
-  await expect(page.getByText("Muse concluded at the step limit.")).toBeVisible();
+  await expect(page.getByText("Step limit reached.")).toBeVisible();
 });
 
 test("k036_investigation_post_fallback_renders_same_trace_without_events", async ({ page }) => {

@@ -243,7 +243,7 @@ test("code_view_panes_side_by_side_at_1440_and_tabs_below_1100", async ({ page }
   const decompiled = page.getByRole("tab", { name: "Decompiled" });
   const source = page.getByRole("tab", { name: "Verified source" });
   await expect(source).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByText("Verified means published, not safe.")).toBeVisible();
+  await expect(page.getByText("Verified ≠ safe.")).toBeVisible();
   await decompiled.click();
   await expect(decompiled).toHaveAttribute("aria-selected", "true");
   await expect(decompiled).toBeFocused();
@@ -252,10 +252,23 @@ test("code_view_panes_side_by_side_at_1440_and_tabs_below_1100", async ({ page }
   await expect(source).toBeFocused();
 });
 
+test("source context buttons expand the visible lines on mobile", async ({ page }) => {
+  await mockRest(page, { withPcs: true, sourceStatus: "verified", withMap: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/#/token/${ADDRESS}/plugins/decompiler/${SELECTOR}`);
+  const lines = page.locator(".code-pane .code-line");
+  await expect(lines).toHaveCount(5);
+  await page.getByRole("button", { name: "Show 10 lines above" }).click();
+  await expect(lines).toHaveCount(15);
+  await page.getByRole("button", { name: "Show 10 lines below" }).click();
+  await expect(lines).toHaveCount(19);
+  await expect(page.getByRole("button", { name: "Show 10 lines below" })).toHaveCount(0);
+});
+
 test("code_view_show_in_code_focuses_the_mapped_line", async ({ page }) => {
   await mockRest(page, { withPcs: true, sourceStatus: "verified", withMap: true });
   await page.goto(`/#/token/${ADDRESS}/plugins/blacklist`);
-  await page.getByRole("link", { name: "Show in code" }).click();
+  await page.getByRole("link", { name: "Show code" }).click();
   await expect(page).toHaveURL(new RegExp(`/plugins/decompiler/${SELECTOR}/decompiled/0xc8`));
   const target = page.locator(".code-line.is-target");
   await expect(target).toBeVisible();
@@ -265,7 +278,7 @@ test("code_view_show_in_code_focuses_the_mapped_line", async ({ page }) => {
 test("code_view_without_pcs_links_by_function_only", async ({ page }) => {
   await mockRest(page, { withPcs: false, sourceStatus: "verified", withMap: false });
   await page.goto(`/#/token/${ADDRESS}/plugins/decompiler/${SELECTOR}/decompiled/0xc8`);
-  await expect(page.getByText("Linked by function. Line-level links need a newer server.").first()).toBeVisible();
+  await expect(page.getByText("Function-level links only.").first()).toBeVisible();
   await expect(page.locator(".code-line.is-target")).toHaveCount(0);
 });
 
@@ -274,7 +287,7 @@ test("code_view_empty_states_for_none_and_unavailable", async ({ page }) => {
   await mockRest(page, scenario);
   await page.goto(`/#/token/${ADDRESS}/plugins/decompiler/${SELECTOR}/source`);
   await expect(page.getByText("No verified source").first()).toBeVisible();
-  await expect(page.getByText("Most new tokens never do.").first()).toBeVisible();
+  await expect(page.getByText("No source published.").first()).toBeVisible();
 
   // The same view with a failed lookup reads differently and offers a retry.
   scenario.sourceStatus = "unavailable";
@@ -318,7 +331,7 @@ test("code_view_correspondence_highlights_mapped_lines", async ({ page }) => {
   await page.reload();
   await page.locator(".code-pane").nth(0).locator(".code-line").nth(3).hover();
   await expect(page.locator(".code-line.is-match")).toHaveCount(0);
-  await expect(page.getByText("Linked by function").first()).toBeVisible();
+  await expect(page.getByText("Function-level links only.").first()).toBeVisible();
 });
 
 test("code_view_reduced_motion_is_static", async ({ page }) => {

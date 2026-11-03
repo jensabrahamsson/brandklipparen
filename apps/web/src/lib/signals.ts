@@ -11,8 +11,8 @@ export const CAPABILITY_TITLE: Readonly<Record<string, string>> = {
   pausable: "Owner can pause trading",
   "fee-on-transfer": "Sales carry an owner fee",
   "owner-withdraw": "Owner can withdraw funds",
-  "proxy-upgrade": "Owner can replace the contract logic",
-  "honeypot-transfer": "Sales may fail while buys succeed",
+  "proxy-upgrade": "Owner can swap the code",
+  "honeypot-transfer": "Buys work, sells may fail",
 };
 
 // Plain-language reason per known signal id (design review: gauges must
@@ -38,9 +38,9 @@ export function emptyGaugeReason(hasSignals = false): string {
   // When other risks fired but this one did not, the gauge says so
   // without invoking the population base rate.
   if (hasSignals) {
-    return "No pattern found for this risk.";
+    return "None found.";
   }
-  return "Usual rate for new tokens.";
+  return "Typical for new tokens.";
 }
 
 // Owner-powers strip summary (UI v2 §1.1, D9): counts per detector
@@ -63,37 +63,35 @@ export function powersSummaryCopy({ found, extended, cantTell, floor = 0, renoun
   if (found > 0) {
     const parts = [`${found} found`];
     if (floor > 0) {
-      parts.push(`${floor} ${floor === 1 ? "sets" : "set"} the minimum score`);
+      parts.push(`Sets score floor: ${floor}`);
     }
     if (extended > 0) {
-      parts.push(`${extended} more the score doesn't count yet`);
+      parts.push(`Not yet scored: ${extended}`);
     }
     if (renounced > 0) {
-      parts.push(`${renounced} owner renounced`);
+      parts.push(`Owner renounced: ${renounced} lifted`);
     }
     if (cantTell > 0) {
-      parts.push(`${cantTell} can't tell`);
+      parts.push(`${cantTell} unreadable`);
     }
     return `${parts.join(". ")}.`;
   }
   if (extended > 0) {
     const noun = extended === 1 ? "owner power" : "owner powers";
-    const checks = cantTell === 1 ? "1 check" : `${cantTell} checks`;
-    const cant = cantTell > 0 ? ` ${checks} could not be fully read.` : "";
-    const ren = renounced > 0 ? ` ${renounced} owner renounced.` : "";
-    return `No scored pattern. ${extended} ${noun} the score doesn't count yet.${ren}${cant}`;
+    const cant = cantTell > 0 ? ` ${cantTell} unreadable.` : "";
+    const ren = renounced > 0 ? ` Owner renounced: ${renounced} lifted.` : "";
+    return `${extended} ${noun}, not yet scored.${ren}${cant}`;
   }
   if (renounced > 0) {
-    const noun = renounced === 1 ? "owner power" : "owner powers";
     const checks = cantTell === 1 ? "1 check" : `${cantTell} checks`;
-    const cant = cantTell > 0 ? ` ${checks} could not be fully read.` : "";
-    return `No scored pattern. ${renounced} ${noun} found but owner renounced.${cant}`;
+    const cant = cantTell > 0 ? ` ${checks} unreadable.` : "";
+    return `Owner renounced. ${renounced} ${renounced === 1 ? "power" : "powers"} lifted.${cant}`;
   }
   if (cantTell > 0) {
     const checks = cantTell === 1 ? "1 check" : `${cantTell} checks`;
-    return `No scored pattern. ${checks} could not be fully read.`;
+    return `${checks} unreadable.`;
   }
-  return "No owner powers found in the code we could read.";
+  return "No owner powers found.";
 }
 
 // Impact order (design review: the "sorted by impact" claim must hold):
@@ -121,7 +119,7 @@ export function combinedScoreLine(score: number, probabilities: Probabilities): 
       topLabel = label;
     }
   }
-  return `Combined ${score} follows the strongest single risk: ${topLabel} at ${Math.round(topValue * 100)}%.`;
+  return `${topLabel} ${Math.round(topValue * 100)}% is the top risk.`;
 }
 
 export function strongestSignal(
@@ -176,7 +174,7 @@ export function signalTitle(signal: Signal): string {
     return `Matches ${group} (${Math.round((signal.similarity ?? 0) * 100)}% similar)`;
   }
   if (signal.kind === "hard-to-analyze") {
-    return `Hard to analyze: ${signal.cause ?? "decompilation limit reached"}`;
+    return signal.cause === "obfuscated-structure" ? "Obfuscated code" : "Code not fully read";
   }
   const mapped = CAPABILITY_TITLE[signal.id];
   if (mapped !== undefined) {

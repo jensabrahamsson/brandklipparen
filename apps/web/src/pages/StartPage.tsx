@@ -23,9 +23,9 @@ const LEGEND: readonly {
   readonly meaning: string;
   readonly bandClass: string;
 }[] = [
-  { min: LOW_BAND.min, max: LOW_BAND.max, word: "Low", meaning: "no proven owner power", bandClass: "band-low" },
-  { min: ELEVATED_BAND.min, max: ELEVATED_BAND.max, word: "Elevated", meaning: "some risky capabilities", bandClass: "band-elevated" },
-  { min: HIGH_BAND.min, max: HIGH_BAND.max, word: "High", meaning: "owner can hurt holders", bandClass: "band-high" },
+  { min: LOW_BAND.min, max: LOW_BAND.max, word: "Low", meaning: "few owner powers", bandClass: "band-low" },
+  { min: ELEVATED_BAND.min, max: ELEVATED_BAND.max, word: "Elevated", meaning: "owner can mint, set fees", bandClass: "band-elevated" },
+  { min: HIGH_BAND.min, max: HIGH_BAND.max, word: "High", meaning: "owner can block holders", bandClass: "band-high" },
 ];
 
 // Example tokens under the search (D-14): a judge rarely has a contract
@@ -228,13 +228,12 @@ export function StartPage({
       <section className="hero">
         <div className="fade-sec" style={{ "--sec-i": 0 } as CSSProperties}>
           <h1 className="hero-title" tabIndex={-1}>
-            Scan before
+            Scan before{" "}
             <br />
             <em>you swap.</em>
           </h1>
           <p className="hero-sub">
-            Paste a contract address. Rug pull, honeypot and bot-pump risk from bytecode, paired with live
-            on-chain context. See what its owner can do to you, in plain English.
+            See what the owner can do to you. Paste a token address. Answer in seconds.
           </p>
           <form onSubmit={submit} noValidate className="prompt">
             <div className="field">
@@ -251,7 +250,7 @@ export function StartPage({
                   type="text"
                   autoComplete="off"
                   spellCheck={false}
-                  placeholder="Paste contract address, 0x…"
+                  placeholder="Token address, 0x…"
                   value={raw}
                   onChange={(event) => setRaw(event.target.value)}
                   onPaste={onPasteField}
@@ -305,7 +304,7 @@ export function StartPage({
         <section aria-label="Recently analyzed" style={{ marginTop: 56 }}>
           <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Recently analyzed</h2>
           <p className="quiet" style={{ margin: "0 0 12px" }}>
-            From this browser only: addresses you analyzed here.
+            Only on this device.
           </p>
           <ul className="recent-list" style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 12 }}>
             {recent.map((entry) => {
@@ -335,7 +334,7 @@ export function StartPage({
                       </span>
                     ))}
                   </span>
-                  <span className="muted recent-top">{entry.topSignal ?? "No tracked risk patterns."}</span>
+                  <span className="muted recent-top">{entry.topSignal ?? "No risk pattern."}</span>
                 </button>
                 <div className="recent-meta">
                   <span className="addr-full mono numeric" data-testid="recent-address-full">

@@ -10,65 +10,65 @@ export type ProofStepCopy = {
 // Same-slot comparisons share one row (UI v2 §5.5): the owner's setting
 // and the transfer check are different ones, whatever the shape.
 const SAME_SETTING: ProofStepCopy = Object.freeze({
-  label: "Check it is the same setting",
-  failure: "The owner's setting and the transfer check are different ones.",
+  label: "Same setting?",
+  failure: "Owner setting is not the one transfer checks.",
 });
 
 const PROOF_STEP_COPY: Record<string, ProofStepCopy> = Object.freeze({
   "owner-slot": Object.freeze({
-    label: "Find the owner check",
-    failure: "We found no stored owner that the code compares with the caller.",
+    label: "Owner check?",
+    failure: "No owner check found.",
   }),
   "writer-regions": Object.freeze({
-    label: "Find owner-only functions",
-    failure: "No owner-only function changes a setting.",
+    label: "Owner-only functions?",
+    failure: "No owner-only setter.",
   }),
   "candidate-slots": Object.freeze({
-    label: "Find the setting they change",
-    failure: "Those functions change no single setting we could follow.",
+    label: "Setting changed?",
+    failure: "No traceable setting.",
   }),
   "candidate-bases": Object.freeze({
-    label: "Find the per-wallet list they change",
-    failure: "Those functions change no per-wallet list we could follow.",
+    label: "Wallet list changed?",
+    failure: "No traceable wallet list.",
   }),
   "packed-write-proof": Object.freeze({
-    label: "Prove the function writes it",
-    failure: "We could not prove the function really writes that setting.",
+    label: "Write proven?",
+    failure: "Write not proven.",
   }),
   "transfer-gate": Object.freeze({
-    label: "Find where transfer reads it",
-    failure: "transfer() never reads that setting.",
+    label: "Transfer reads it?",
+    failure: "Transfer never reads it.",
   }),
   "same-slot-and-bit": SAME_SETTING,
   "same-slot": SAME_SETTING,
   "same-base": SAME_SETTING,
   "reverting-jumpi": Object.freeze({
-    label: "Check a failed check stops the transfer",
-    failure: "A failed check does not stop the transfer.",
+    label: "Failed check stops transfer?",
+    failure: "Failed check does not block.",
   }),
   "transfer-use": Object.freeze({
-    label: "Check transfer uses the rate",
-    failure: "transfer() never uses that rate to compute an amount.",
+    label: "Transfer uses the rate?",
+    failure: "Rate unused in transfers.",
   }),
   subtraction: Object.freeze({
-    label: "Check the fee is taken off",
-    failure: "The fee is never taken off the amount.",
+    label: "Fee taken off?",
+    failure: "No fee deducted.",
   }),
   "supply-slot": Object.freeze({
-    label: "Find the total supply",
-    failure: "We could not find where the total supply is stored.",
+    label: "Total supply stored?",
+    failure: "Supply slot not found.",
   }),
   "supply-write": Object.freeze({
-    label: "Find an owner-only supply increase",
-    failure: "No owner-only function raises the total supply.",
+    label: "Owner-only supply increase?",
+    failure: "No owner-only supply increase.",
   }),
   "balance-credit": Object.freeze({
-    label: "Check new tokens land in a balance",
-    failure: "New supply is not added to any balance.",
+    label: "New tokens credited?",
+    failure: "New supply credits no balance.",
   }),
   "increase-proof": Object.freeze({
-    label: "Prove supply only goes up there",
-    failure: "We could not prove the supply goes up there.",
+    label: "Supply increase proven?",
+    failure: "Increase not proven.",
   }),
 });
 

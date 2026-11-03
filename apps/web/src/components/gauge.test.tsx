@@ -14,7 +14,7 @@ describe("gauge segments (phosphor console)", () => {
     expect(html).toContain('aria-label="Honeypot: 91 percent"');
     expect(html).toContain('aria-label="91 percent probability"');
     expect(html).toContain("plain reason");
-    expect(html).toContain("1 signal");
+    expect(html).toContain("1 finding");
     expect(html).toContain("HIGH");
     const segments = html.match(/<i /g) ?? [];
     expect(segments).toHaveLength(20);
@@ -33,7 +33,7 @@ describe("gauge segments (phosphor console)", () => {
       expect(zero).not.toContain('class="cnt"');
       const full = renderToString(<Gauge kind="rug-pull" probability={1} signalCount={2} reason="x" />);
       expect(full.match(/class="lit"/g) ?? []).toHaveLength(20);
-      expect(full).toContain("2 signals");
+      expect(full).toContain("2 findings");
       expect(full).toContain("HIGH");
       const partial = renderToString(<Gauge kind="bot-pump" probability={0.22} signalCount={0} reason="x" />);
       expect(partial.match(/class="lit"/g) ?? []).toHaveLength(4);
@@ -50,9 +50,9 @@ describe("gauge segments (phosphor console)", () => {
     const html = renderToString(
       <Gauge kind="bot-pump" probability={0.18} signalCount={0} reason="x" uncalibrated />,
     );
-    expect(html).toContain("Prior · uncalibrated");
+    expect(html).toContain("Weak estimate");
     const plain = renderToString(<Gauge kind="rug-pull" probability={0.18} signalCount={0} reason="x" />);
-    expect(plain).not.toContain("Prior · uncalibrated");
+    expect(plain).not.toContain("Weak estimate");
   });
 
   test("score6_bot_pump_stays_on_one_line_with_muted_band", () => {
@@ -64,7 +64,7 @@ describe("gauge segments (phosphor console)", () => {
     expect(html).toContain("Bot pump");
     expect(html).not.toContain("Bot-pump");
     expect(html).toContain('aria-label="Bot pump: 18 percent"');
-    expect(html.indexOf("Bot pump")).toBeLessThan(html.indexOf("Prior · uncalibrated"));
+    expect(html.indexOf("Bot pump")).toBeLessThan(html.indexOf("Weak estimate"));
   });
 
   test("score6_muted_band_reads_neutral_next_to_a_floor", () => {

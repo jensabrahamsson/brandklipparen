@@ -6,7 +6,7 @@ tags: [owner-powers, upgradeability]
 audience: [holder, auditor]
 severity: { min: low, max: high }
 ---
-# PLUGIN.md: Capability detector (`dev.brandklipparen.capability`)
+# PLUGIN.md: Capabilities (`dev.brandklipparen.capability`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-043).
 

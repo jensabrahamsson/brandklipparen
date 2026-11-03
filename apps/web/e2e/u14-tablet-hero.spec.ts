@@ -110,7 +110,7 @@ function analyzeBody(
       templateVersion: "1.0.0",
       claims: [
         {
-          text: "The owner can stop transfers.",
+          text: "Owner can stop transfers.",
           signalLinks: ["owner-pause"],
           temporality: { kind: "can-change" },
         },

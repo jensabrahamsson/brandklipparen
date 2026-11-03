@@ -37,7 +37,7 @@ describe("plugin tile compact row (R2-10)", () => {
     expect(html).toContain("Not found");
     expect(html).not.toContain("tile-question");
     expect(html).not.toContain("tile-body");
-    expect(html).toContain("Can the owner limit what you hold or send? Open details.");
+    expect(html).toContain("Can the owner cap what you hold or send? Open details.");
   });
 
   test("found tiles ignore the compact flag", () => {
@@ -61,7 +61,7 @@ describe("plugin tile compact row (R2-10)", () => {
       />,
     );
     expect(html).not.toContain("is-compact");
-    expect(html).toContain("Found · Not in score");
+    expect(html).toContain("Found · Not yet scored");
   });
 
   test("score4_floor_tile_reads_found_sets_minimum_score", () => {
@@ -85,9 +85,9 @@ describe("plugin tile compact row (R2-10)", () => {
       />,
     );
     expect(html).toContain("state-found-scored");
-    expect(html).toContain("Found · Sets minimum score");
-    expect(html).not.toContain("Not in score");
-    expect(html).toContain("found, high, sets the minimum score");
+    expect(html).toContain("Found · Sets floor");
+    expect(html).not.toContain("Not yet scored");
+    expect(html).toContain("found, high, sets score floor");
   });
 
   test("score4_renounced_tile_reads_owner_renounced", () => {
@@ -111,7 +111,55 @@ describe("plugin tile compact row (R2-10)", () => {
       />,
     );
     expect(html).toContain("Owner renounced");
-    expect(html).not.toContain("Sets minimum score");
+    expect(html).not.toContain("Sets score floor");
     expect(html).toContain("owner renounced");
+    expect(html).toContain("Mint no longer counts.");
+  });
+});
+
+describe("per-check status words (owner-facing)", () => {
+  function tileFor(slug: string, state: "not-found" | "ran", payloads: readonly unknown[]): string {
+    const copy = PLUGIN_COPY[slug];
+    if (copy === undefined) {
+      throw new Error(`${slug} copy is missing`);
+    }
+    return renderToString(
+      <PluginTile
+        address={ADDRESS}
+        pluginId={`dev.brandklipparen.${slug}`}
+        allIds={ALL_IDS}
+        copy={copy}
+        state={state}
+        severity="low"
+        payloads={payloads}
+        evidenceCount={payloads.length}
+        matched={false}
+        index={0}
+      />,
+    );
+  }
+
+  test("a clean obfuscation check reads Readable with no extra body line", () => {
+    const html = tileFor("hard-to-analyze", "not-found", []);
+    expect(html).toContain("Obfuscated code");
+    expect(html).toContain("Readable");
+    expect(html).not.toContain("Not found");
+    expect(html).not.toContain("tile-body");
+  });
+
+  test("an obfuscated read says Obfuscated and names the cause", () => {
+    const html = tileFor("hard-to-analyze", "ran", [{ cause: "obfuscated-structure" }]);
+    expect(html).toContain("Obfuscated</span>");
+    expect(html).toContain("tile-body");
+  });
+
+  test("a read cut short by a timeout says Read incomplete", () => {
+    const html = tileFor("hard-to-analyze", "ran", [{ cause: "timeout" }]);
+    expect(html).toContain("Read incomplete");
+  });
+
+  test("a clone check with no match reads No match, and one with a match reads Match found", () => {
+    expect(tileFor("clone-match", "not-found", [])).toContain("No match");
+    expect(tileFor("clone-match", "ran", [{ group: "trap-a" }])).toContain("Match found");
   });
 });

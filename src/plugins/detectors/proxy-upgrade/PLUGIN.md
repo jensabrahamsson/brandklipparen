@@ -6,7 +6,7 @@ tags: [upgradeability, proxy, owner-powers]
 audience: [holder, auditor]
 severity: { min: medium, max: high }
 ---
-# PLUGIN.md: Proxy-upgrade detector (`dev.brandklipparen.proxy-upgrade`)
+# PLUGIN.md: Proxy-upgrade (`dev.brandklipparen.proxy-upgrade`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 

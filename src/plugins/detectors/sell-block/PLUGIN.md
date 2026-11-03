@@ -6,7 +6,7 @@ tags: [honeypot, blacklist, owner-powers]
 audience: [holder]
 severity: { min: medium, max: high }
 ---
-# PLUGIN.md: Sell-block detector (`dev.brandklipparen.sell-block`)
+# PLUGIN.md: Sell-block (`dev.brandklipparen.sell-block`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-115).
 

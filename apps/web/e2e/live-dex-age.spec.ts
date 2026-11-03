@@ -112,13 +112,14 @@ test("live_list_dex_and_human_age", async ({ page }) => {
     await expect(feed.getByText("3m").first()).toBeVisible();
     await expect(feed.getByText("5m").first()).toBeVisible();
     await expect(feed.getByText("2h").first()).toBeVisible();
-    const unknownCell = feed.getByText("unknown");
+    // Scoped to the age stamp: liquidity cells also read "unknown".
+    const unknownCell = feed.locator(".feed-age", { hasText: "unknown" });
     await expect(unknownCell).toBeVisible();
     await expect(unknownCell).toHaveAttribute("title", /Pair creation time not reported/);
     // No bare dash anywhere in the list.
     expect(await feed.getByText("-", { exact: true }).count()).toBe(0);
     // Liquidity can't-tell carries its reason.
-    await expect(feed.getByTitle("No WETH liquidity seen in the pair's first logs").first()).toBeVisible();
+    await expect(feed.getByTitle("No liquidity seen").first()).toBeVisible();
     // The repeated symbol stays distinguishable: three fee variants with
     // the full token address in each row. The block number is tooltip
     // provenance on the age stamp now (U-12), never row text.

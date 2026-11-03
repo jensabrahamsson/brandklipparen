@@ -81,7 +81,7 @@ export function EvidenceRow({
   readonly expert: boolean;
   readonly index: number;
   // Line-link target (addendum §A1.4): when the expanded code view holds
-  // the offset's line, this id plus handler render a "Show in code"
+  // the offset's line, this id plus handler render a "Show code"
   // button that highlights and focuses it. Absent otherwise.
   readonly showInCodeId?: string | undefined;
   readonly onShowInCode?: (() => void) | null | undefined;
@@ -151,12 +151,12 @@ export function EvidenceRow({
       ) : null}
       {showInCodeId !== undefined && onShowInCode !== null && onShowInCode !== undefined ? (
         <button type="button" id={showInCodeId} className="button-ghost evidence-code-link" onClick={onShowInCode}>
-          Show in code
+          Show code
         </button>
       ) : null}
       {showInCodeHref !== undefined ? (
         <a className="button-ghost evidence-code-link" href={showInCodeHref}>
-          Show in code
+          Show code
         </a>
       ) : null}
       {expanded ? (
@@ -164,7 +164,7 @@ export function EvidenceRow({
           {snippet.kind === "loading" ? (
             <ScanStatus text={reduce ? "Loading…" : "Scanning…"} />
           ) : snippet.kind === "failed" ? (
-            <p className="muted">Readable code is not available for this function.</p>
+            <p className="muted">No readable code.</p>
           ) : snippet.kind === "ready" ? (
             <SnippetLines result={snippet.result} />
           ) : null}

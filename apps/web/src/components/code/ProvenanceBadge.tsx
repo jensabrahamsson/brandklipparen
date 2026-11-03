@@ -21,7 +21,7 @@ export function ProvenanceBadge({ kind }: { readonly kind: ProvenanceKind }): JS
           <Pictogram name="decompiler" size={20} />
         </span>{" "}
         <strong className="code-badge-word">Decompiled from bytecode</strong>
-        <span className="code-badge-line">Rebuilt by Brandklipparen from the code that runs. Names may be guesses; some parts may be missing.</span>
+        <span className="code-badge-line">Rebuilt from bytes. Names are guesses.</span>
       </p>
     );
   }
@@ -32,7 +32,7 @@ export function ProvenanceBadge({ kind }: { readonly kind: ProvenanceKind }): JS
           <Pictogram name="verified" size={20} />
         </span>{" "}
         <strong className="code-badge-word">Verified source · Sourcify full match</strong>
-        <span className="code-badge-line">The author published this code, and it compiles to exactly what runs.</span>
+        <span className="code-badge-line">Author's code. Matches what runs.</span>
       </p>
     );
   }
@@ -43,7 +43,7 @@ export function ProvenanceBadge({ kind }: { readonly kind: ProvenanceKind }): JS
           <Pictogram name="verified" size={20} />
         </span>{" "}
         <strong className="code-badge-word">Verified source · partial match</strong>
-        <span className="code-badge-line">The code compiles to what runs, but its metadata (comments, file names) may differ.</span>
+        <span className="code-badge-line">Matches what runs. Comments may differ.</span>
       </p>
     );
   }
@@ -54,7 +54,7 @@ export function ProvenanceBadge({ kind }: { readonly kind: ProvenanceKind }): JS
           <Pictogram name="verified" size={20} />
         </span>{" "}
         <strong className="code-badge-word">Verified source · Etherscan</strong>
-        <span className="code-badge-line">The author published this code on a block explorer, which checked it compiles to what runs.</span>
+        <span className="code-badge-line">Verified on Etherscan.</span>
       </p>
     );
   }
@@ -65,7 +65,7 @@ export function ProvenanceBadge({ kind }: { readonly kind: ProvenanceKind }): JS
           <Pictogram name="notrun" size={20} />
         </span>{" "}
         <strong className="code-badge-word">Verified source · unavailable</strong>
-        <span className="code-badge-line">The lookup did not answer, so this is not a statement about the source.</span>
+        <span className="code-badge-line">Lookup failed. Source status unknown.</span>
       </p>
     );
   }
@@ -75,7 +75,7 @@ export function ProvenanceBadge({ kind }: { readonly kind: ProvenanceKind }): JS
         <Pictogram name="notrun" size={20} />
       </span>{" "}
       <strong className="code-badge-word">Verified source · none</strong>
-      <span className="code-badge-line">This token&apos;s author published no source code. Most new tokens never do.</span>
+      <span className="code-badge-line">No source published.</span>
     </p>
   );
 }

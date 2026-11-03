@@ -131,10 +131,10 @@ describe("contract facts rendering", () => {
   test("eip1967 and zos proxy cards name the admin who can replace the code", () => {
     const admin = "0x3132333435363738393a3b3c3d3e3f4041424344";
     const eip = htmlOf({ kind: "eip1967", implementation: IMPL, admin: { kind: "contract", address: admin } });
-    expect(textOf(eip)).toContain(`Upgradeable proxy \u00b7 admin ${toChecksumAddress(admin)} (contract) can replace the code`);
+    expect(textOf(eip)).toContain(`Proxy. Admin ${toChecksumAddress(admin)} (contract) can swap the code.`);
     const zos = htmlOf({ kind: "zos", implementation: IMPL, admin: { kind: "contract", address: admin } });
     expect(zos).toContain("ZeppelinOS");
-    expect(textOf(zos)).toContain(`Upgradeable proxy \u00b7 admin ${toChecksumAddress(admin)} (contract) can replace the code`);
+    expect(textOf(zos)).toContain(`Proxy. Admin ${toChecksumAddress(admin)} (contract) can swap the code.`);
   });
 
   test("short values and explanations render verbatim without a deployed sentence", () => {
@@ -145,7 +145,7 @@ describe("contract facts rendering", () => {
     expect(html).toContain("The trading pool where it was first listed.");
     expect(html).toContain("Where the pool trades. 1% is the pool&#x27;s swap fee.");
     expect(html).toContain("What was put in the pool at launch. Small pools move fast.");
-    expect(html).toContain("No proxy, so this code can&#x27;t be swapped out.");
+    expect(html).toContain("No proxy. Code is fixed.");
     expect(html).toContain("Fingerprint of the code. Same hash, same code.");
     expect(html).toContain("Chain height we read the code at.");
     expect(html).toContain("Version of the scoring model.");
@@ -188,6 +188,6 @@ describe("contract facts rendering", () => {
   test("load on-chain reads action renders with its live tag contract", () => {
     const html = htmlOf({ kind: "none" });
     expect(html).toContain("Load on-chain reads");
-    expect(html).not.toContain("Live read · not in score");
+    expect(html).not.toContain("Live · not scored");
   });
 });

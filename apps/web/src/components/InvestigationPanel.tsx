@@ -140,7 +140,7 @@ function removedLine(
   dropReasons: { readonly uncited: number; readonly unknownId: number } | undefined,
 ): string {
   if (droppedClaims <= 0) {
-    return "Every cited claim matched collected evidence.";
+    return "All claims have proof.";
   }
   if (droppedClaims === 1) {
     return "1 sentence removed: it cited no evidence.";
@@ -184,25 +184,25 @@ export function InvestigationPanel({
   // explainer and no second button here.
   return (
     <section aria-label="Investigation">
-      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Investigate with Muse</h2>
-      {state.status === "idle" ? <ScanStatus text="Investigating… steps stream in below." /> : null}
+      <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>Investigate</h2>
+      {state.status === "idle" ? <ScanStatus text="Investigating…" /> : null}
       {state.status === "loading" ? (
         <div>
-          <ScanStatus text="Investigating… steps stream in below." />
+          <ScanStatus text="Investigating…" />
           <StepGraph steps={state.steps} signals={signals} address={address} allIds={allIds} onSignalLink={onSignalLink} />
         </div>
       ) : null}
       {state.status === "not-configured" ? (
         <FeatureUnavailable
           title="Investigation"
-          reason="Investigation is not available on this server."
+          reason="Investigation is off."
           actionLabel="Request investigation"
         />
       ) : null}
       {state.status === "limit" ? (
         <div>
           <p style={{ marginBottom: 4 }}>
-            <strong>Investigation stopped at its budget.</strong>
+            <strong>Stopped at its limit.</strong>
           </p>
           <p className="muted" style={{ marginTop: 0 }}>
             {state.message}
@@ -216,7 +216,7 @@ export function InvestigationPanel({
       {state.status === "failed" ? (
         <div>
           <p style={{ marginBottom: 4 }}>
-            <strong>Investigation failed.</strong>
+            <strong>Failed.</strong>
           </p>
           <p className="muted" style={{ marginTop: 0 }}>
             {state.message}
@@ -237,12 +237,12 @@ export function InvestigationPanel({
           </p>
           {state.forcedConclusion ? (
             <p className="quiet" style={{ margin: "4px 0 0" }}>
-              Muse concluded at the step limit.
+              Step limit reached.
             </p>
           ) : null}
           <StepGraph steps={state.steps} signals={signals} address={address} allIds={allIds} onSignalLink={onSignalLink} />
           <h3 style={{ fontSize: 16, margin: "12px 0 4px" }}>
-            <span>Checked narrative</span> <Explain explainKey="investigation:narrative" label="Checked narrative" />
+            <span>Summary</span> <Explain explainKey="investigation:narrative" label="Summary" />
           </h3>
           {state.narrative.length > 0 ? (
             <CheckedNarrative narrative={state.narrative} signals={signals} address={address} allIds={allIds} onSignalLink={onSignalLink} />

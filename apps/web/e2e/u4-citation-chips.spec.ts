@@ -111,7 +111,7 @@ const EXPLAIN_CHIPS = {
   explain: {
     kind: "ok",
     narrative: [
-      "The owner can stop chosen wallets from sending tokens. [E:signal:owner-blacklist]",
+      "Owner can block wallets. [E:signal:owner-blacklist]",
       "Pause found nothing to flag. [E:check:dev.brandklipparen.pause:not-found]",
       "Whether the liquidity is locked stays open. [E:cant-tell:liquidity-locks]",
       "The board below names every check we ran. [E:analysis:summary]",
@@ -207,7 +207,7 @@ test("u4_explain_coverage_chips_read_as_evidence", async ({ page }) => {
   expect(texts).toContain("Blacklist");
   expect(texts).toContain("Pause · not found");
   expect(texts).toContain("Liquidity lock · can't tell");
-  expect(texts).toContain("What we checked");
+  expect(texts).toContain("Checks");
   const chipWrap = await output
     .locator("a.muse-chip, button.muse-chip")
     .first()
@@ -221,7 +221,7 @@ test("u4_explain_coverage_chips_read_as_evidence", async ({ page }) => {
   await expectCleanConsole(page);
 
   // The signal chip moves focus to the Why this score row.
-  await output.getByRole("button", { name: /Evidence: Blacklist/ }).click();
+  await output.getByRole("button", { name: /Evidence Blacklist/ }).click();
   await expect(page.locator("#signal-0-capability-honeypot summary")).toBeFocused();
 
   await assertLayout(page, { widths: [390, 1440] });
@@ -233,7 +233,7 @@ test("u4_coverage_chip_navigates_to_the_plugin_detail", async ({ page }) => {
   await page.getByRole("button", { name: "Explain this result" }).click();
   const output = page.getByTestId("muse-output");
   await expect(output.getByText("Pause · not found")).toBeVisible();
-  await output.getByRole("link", { name: /Evidence: Pause/ }).click();
+  await output.getByRole("link", { name: /Evidence Pause/ }).click();
   await expect(page).toHaveURL(new RegExp(`#/token/${ADDRESS}/plugins/pause`));
   await expect(page.getByRole("heading", { name: "Pause" })).toBeVisible();
 });
@@ -255,10 +255,10 @@ test("u4_coverage_chip_navigates_to_the_plugin_board", async ({ page }) => {
   await page.goto(`/#/token/${ADDRESS}`);
   await page.getByRole("button", { name: "Explain this result" }).click();
   const output = page.getByTestId("muse-output");
-  await expect(output.getByText("What we checked")).toBeVisible();
-  await output.getByRole("link", { name: /What we checked/ }).click();
+  await expect(output.getByText("Checks")).toBeVisible();
+  await output.getByRole("link", { name: /Checks/ }).click();
   await expect(page).toHaveURL(new RegExp(`#/token/${ADDRESS}/plugins$`));
-  await expect(page.getByRole("heading", { name: "What we checked" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Checks" })).toBeVisible();
 });
 
 test("u4_empty_narrative_with_empty_claims_renders_the_verdict_fallback", async ({ page }) => {
@@ -267,7 +267,7 @@ test("u4_empty_narrative_with_empty_claims_renders_the_verdict_fallback", async 
   await page.getByRole("button", { name: "Explain this result" }).click();
   const output = page.getByTestId("muse-output");
   await expect(output.getByTestId("explain-fallback")).toContainText(
-    "Low risk. The owner controls blacklist.",
+    "Low. Owner can blacklist.",
   );
   const lines = (await output.innerText()).split("\n").map((line) => line.trim()).filter(Boolean);
   expect(lines.length).toBeGreaterThan(0);
@@ -282,7 +282,7 @@ test("u4_chat_answers_render_coverage_chips", async ({ page }) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(CHAT_CHIPS) });
   });
   await page.goto(`/#/token/${ADDRESS}`);
-  await page.getByLabel("Ask about this token").fill("Can the owner stop me selling?");
+  await page.getByLabel("Ask Muse").fill("Can the owner stop me selling?");
   await page.getByTestId("ask-submit").click();
   const output = page.getByTestId("muse-output");
   await expect(output.getByText("Pause · not found")).toBeVisible();

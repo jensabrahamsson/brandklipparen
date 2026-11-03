@@ -6,7 +6,7 @@ tags: [honeypot]
 audience: [holder, trader]
 severity: { min: medium, max: high }
 ---
-# PLUGIN.md: Clone-match detector (`dev.brandklipparen.clone-match`)
+# PLUGIN.md: Clone-match (`dev.brandklipparen.clone-match`)
 
 Version 1.0.0. First-party detector plugin for Brandklipparen (S-044).
 

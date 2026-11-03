@@ -215,10 +215,7 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
       await expectTapTargets(page);
     }
 
-    // Expert mode with every section on. The switch persists across
-    // reloads (W-8 keeps the K-034 key) and this loop reuses one
-    // context, so the second width may start checked: only press when
-    // it is off.
+    // Technical details with the full raw detail inside (no mode switch).
     await page.locator("details.tech-details > summary", { hasText: "Technical details" }).click();
     await expect(page.getByTestId("expert-detail")).toBeVisible();
     await expectFitsViewport(page);
@@ -247,7 +244,7 @@ test("s119_no_horizontal_scroll_at_390_and_320", async ({ page }) => {
     await expect(legend).toBeVisible();
     await expect(legend).toContainText("0–29");
     await expect(legend).toContainText("LOW");
-    await expect(legend).toContainText("no proven owner power");
+    await expect(legend).toContainText("few owner powers");
     await expect(legend).toContainText("Low ≠ safe.");
     const recentRow = page.locator(".recent-row").first();
     await expect(recentRow).toBeVisible();
@@ -288,7 +285,7 @@ test("s119_muse_controls_fit_at_phone_widths", async ({ page }) => {
   await page.goto(`/#/token/${ADDRESS}`);
   const explain = page.getByRole("button", { name: "Explain this result", exact: true });
   const investigate = page.getByRole("button", { name: "Investigate", exact: true });
-  const ask = page.getByLabel("Ask about this token");
+  const ask = page.getByLabel("Ask Muse");
   await expect(explain).toBeVisible();
   await expect(investigate).toBeVisible();
   await expect(ask).toBeVisible();
@@ -349,7 +346,7 @@ test("s119_muse_controls_fit_at_phone_widths", async ({ page }) => {
       const content = input.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
       return { placeholder: input.placeholder, text, content };
     });
-    expect(fit?.placeholder).toBe("Type your question");
+    expect(fit?.placeholder).toBe("Ask anything");
     expect(fit?.text ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(fit?.content ?? -1);
     // Every example chip is a 44 px target.
     for (const chip of await page.getByTestId("ask-example").all()) {

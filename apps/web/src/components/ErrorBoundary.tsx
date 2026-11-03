@@ -27,8 +27,7 @@ export class ErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <section className="card error-boundary" role="alert" aria-label="Page error">
-          <p className="error-boundary-title">Something broke on this page.</p>
-          <p className="quiet">The score and evidence below are unchanged; only this view failed to render.</p>
+          <p className="error-boundary-title">This view failed.</p>
           <p>
             <button type="button" className="button" onClick={this.retry}>
               Reload

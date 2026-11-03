@@ -31,12 +31,12 @@ export type LiveTokensSnapshot = {
   readonly items: readonly LiveTokenEntry[];
 };
 
-export type LiveFilter = "All" | "Elevated & high" | "Low";
+export type LiveFilter = "All" | "Elevated+" | "Low";
 
-// Risk filters with honest labels (S-124): the middle filter names both
-// bands it includes, so the label can never contradict the badge.
+// Risk filters with honest labels (S-124): "Elevated+" covers the Elevated
+// and High bands, so the label can never contradict the badge.
 export function filterLiveEntries(items: readonly LiveTokenEntry[], filter: LiveFilter): readonly LiveTokenEntry[] {
-  if (filter === "Elevated & high") {
+  if (filter === "Elevated+") {
     return items.filter((entry) => entry.riskBand === "High" || entry.riskBand === "Elevated");
   }
   if (filter === "Low") {
@@ -79,7 +79,7 @@ function humanDuration(totalSeconds: number): string {
 export function updatedAgoLabel(updatedAt: number, nowMs: number): string {
   const seconds = feedAgeSeconds(updatedAt, nowMs);
   if (seconds < 5) {
-    return "Updated just now";
+    return "Just now";
   }
   return `Updated ${humanDuration(seconds)} ago`;
 }
@@ -90,7 +90,7 @@ export function isFeedStale(updatedAt: number, nowMs: number): boolean {
 
 export function feedStatusLabel(updatedAt: number, nowMs: number): string {
   if (isFeedStale(updatedAt, nowMs)) {
-    return `Feed paused, last update ${humanDuration(feedAgeSeconds(updatedAt, nowMs))} ago`;
+    return `Paused. Updated ${humanDuration(feedAgeSeconds(updatedAt, nowMs))} ago.`;
   }
   return updatedAgoLabel(updatedAt, nowMs);
 }
@@ -169,7 +169,7 @@ export function mergeShown(
 }
 
 function readError(response: Response, fallbackCode: string): Promise<ApiError> {
-  const fallback = new ApiError(fallbackCode, response.status, `Request failed with status ${response.status}.`);
+  const fallback = new ApiError(fallbackCode, response.status, `Request failed (${response.status}).`);
   return response
     .json()
     .then((body) => {
@@ -178,7 +178,7 @@ function readError(response: Response, fallbackCode: string): Promise<ApiError> 
       const message =
         typeof record.message === "string" && record.message.length > 0
           ? record.message
-          : `Request failed with status ${response.status}.`;
+          : `Request failed (${response.status}).`;
       return new ApiError(code, response.status, message);
     })
     .catch(() => fallback);

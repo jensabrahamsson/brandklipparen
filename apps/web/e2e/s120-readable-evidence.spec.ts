@@ -1,7 +1,7 @@
 // S-120: readable evidence. Claims render as one short summary with the
 // raw detail on demand: a "Can change" chip, a truncated account chip
 // with copy, and the locations inside a keyboard-operable disclosure.
-// Plugins without findings collapse to a single line, with one Explain
+// Checks without findings collapse to a single line, with one Explain
 // trigger per finding group instead of one per PC row.
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
@@ -269,7 +269,7 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
 
   // "Can change" renders as a chip; the account shows in full with
   // copy (S-134, P-1).
-  await expect(explanation.getByText("can change this").first()).toBeVisible();
+  await expect(explanation.getByText("can change it").first()).toBeVisible();
   await expect(explanation).not.toContainText("Owner can turn this on later");
   await expect(explanation).toContainText(C_CHANGER);
 
@@ -288,7 +288,7 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   // The board shows one tile per detector with a status word; quiet
   // checks read as quiet tiles with a board summary, not a raw dump.
   const board = page.getByTestId("plugin-board");
-  await expect(board.getByRole("heading", { name: "What we checked" })).toBeVisible();
+  await expect(board.getByRole("heading", { name: "Checks" })).toBeVisible();
   await expect(board.getByTestId("plugin-board-summary")).toContainText("9 owner powers checked");
   await expect(board.locator("a[data-tile-slug]")).toHaveCount(13);
   await expect(board.getByText("Found · High", { exact: true })).toHaveCount(0);
@@ -297,10 +297,13 @@ test("s120_evidence_summaries_and_collapsed_plugins", async ({ page }) => {
   await expect(tools).not.toHaveAttribute("open", "");
   await tools.locator("summary").click();
   await expect(tools).toHaveAttribute("open", "");
-  // Analysis tools read neutrally (R3 D-8): ran, with no severity.
-  await expect(board.getByText("Ran", { exact: true })).toHaveCount(2);
+  // Tools read neutrally (R3 D-8): ran, with no severity.
+  // Capability ran with "Ran"; clone-match reads "Match found"; the
+  // readability check with no output reads "Readable"; the nine owner
+  // checks read "Not found".
+  await expect(board.getByText("Ran", { exact: true })).toHaveCount(1);
   await expect(board.getByText("Ran · 1 function")).toHaveCount(1);
-  await expect(board.getByText("Not found", { exact: true })).toHaveCount(10);
+  await expect(board.getByText("Not found", { exact: true })).toHaveCount(9);
 
   // Technical details show every structured offset.
   await expect(page.locator("details.customize")).toHaveCount(0);

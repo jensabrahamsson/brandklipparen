@@ -72,7 +72,7 @@ export const EXPLANATION_KEYS: readonly string[] = Object.freeze([
 
 const FALLBACK: ExplanationEntry = Object.freeze({
   title: "About this item",
-  body: "This item carries no dedicated explanation yet. The score, signals and evidence beside it are unchanged.",
+  body: "No help for this yet.",
 });
 
 // R2-5 (D-17): the hero gauges share one popover on the "Risk breakdown"
@@ -81,9 +81,37 @@ const FALLBACK: ExplanationEntry = Object.freeze({
 // help sentences so the heading popover carries the same meaning the
 // three removed triggers had.
 const LOCAL_ENTRIES: Readonly<Record<string, ExplanationEntry>> = Object.freeze({
+  "score:combined": { title: "Risk score", body: "0–100. Under 30 low, 30–59 elevated, 60+ high. Based on what the owner can do." },
+  "score:gauge:rug-pull": { title: "Rug pull", body: "Chance the owner can take the money and leave. Estimate from past tokens." },
+  "score:gauge:honeypot": { title: "Honeypot", body: "Chance you can buy but not sell." },
+  "score:gauge:bot-pump": { title: "Bot pump", body: "Chance bots or insiders dump on late buyers." },
+  "score:band": { title: "Risk band", body: "Low: no strong owner power found. Elevated: risky powers. High: owner can block holders." },
+  "score:strip": { title: "Result summary", body: "Score and top risk, pinned." },
+  "powers:extended": { title: "Owner powers", body: "Block powers set the score to at least 60. Mint, fee, limits and upgrade set it to at least 30. Renounced owner: no floor." },
+  "evidence:offset": { title: "Byte position", body: "Byte position in the deployed code." },
+  "evidence:snippet": { title: "Decompiled snippet", body: "Rebuilt from bytes, not original source." },
+  "evidence:payload": { title: "Finding details", body: "Raw fields the check reported." },
+  "explanation:claim": { title: "About these claims", body: "Each line links to its proof." },
+  "cant-tell": { title: "What code can't tell", body: "Things bytecode can't show. Check them yourself." },
+  "investigation:step": { title: "Investigation step", body: "A check Muse ran." },
+  "investigation:narrative": { title: "Summary", body: "Only sentences with proof are shown." },
+  "plugin:dev.brandklipparen.assessment.meta-model-api": { title: "Muse assessment", body: "Muse's second opinion. Score unchanged." },
+  "plugin:dev.brandklipparen.blacklist": { title: "Blacklist", body: "Owner can block chosen wallets. Sets score to at least 60. Not if renounced." },
+  "plugin:dev.brandklipparen.pause": { title: "Pause", body: "Owner can freeze transfers. Sets score to at least 60. Not if renounced." },
+  "plugin:dev.brandklipparen.sell-block": { title: "Sell block", body: "Owner can block sells. Sets score to at least 60. Not if renounced." },
+  "plugin:dev.brandklipparen.mint": { title: "Mint", body: "Owner can create tokens. Sets score to at least 30. Not if renounced." },
+  "plugin:dev.brandklipparen.transfer-fee": { title: "Transfer fee", body: "Owner can change fees. Sets score to at least 30. Not if renounced." },
+  "plugin:dev.brandklipparen.transfer-limits": { title: "Transfer limits", body: "Owner can limit transfers or holdings. Sets score to at least 30. Not if renounced." },
+  "plugin:dev.brandklipparen.ownership": { title: "Ownership", body: "Checks who can control the token." },
+  "plugin:dev.brandklipparen.proxy-upgrade": { title: "Proxy upgrade", body: "Checks whether the code can be swapped." },
+  "plugin:dev.brandklipparen.transfer-hooks": { title: "Transfer hooks", body: "Checks whether transfers call another contract." },
+  "plugin:dev.brandklipparen.capability": { title: "Capabilities", body: "Checks what the code can do." },
+  "plugin:dev.brandklipparen.clone-match": { title: "Clone match", body: "Checks for a known scam template. A match is not proof of a scam." },
+  "plugin:dev.brandklipparen.decompiler": { title: "Decompiler", body: "Rebuilds readable code from bytes." },
+  "plugin:dev.brandklipparen.hard-to-analyze": { title: "Obfuscated code", body: "Checks whether code could not be fully read. Hidden powers may be missed." },
   "score:gauges": {
     title: "Risk breakdown",
-    body: "Rug pull is the chance the people behind this token can take the money and leave, for example by creating new tokens or draining the pool. Honeypot is the chance you can buy this token but not sell it, for example because the owner can block wallets or freeze transfers. Bot pump is the chance the launch favours bots or insiders, so early buyers can dump on late ones. With nothing found, each shows the usual rate for new tokens.",
+    body: "Rug pull: owner can take the money. Honeypot: you can buy but not sell. Bot pump: bots dump on late buyers. Estimates from past tokens.",
   },
 });
 

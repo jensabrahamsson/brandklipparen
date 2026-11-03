@@ -83,7 +83,7 @@ function uniqueJoin(lines: readonly string[]): string {
 const CAPABILITY_LABELS: Record<string, string> = Object.freeze({
   call: "Calls other contracts",
   "storage-write": "Writes storage",
-  delegatecall: "Runs other code (delegatecall)",
+  delegatecall: "Runs outside code",
   selfdestruct: "Can self-destruct",
 });
 
@@ -97,7 +97,7 @@ function capabilityLine(payloads: readonly unknown[]): string {
     }
   }
   if (labels.length === 0) {
-    return "This code can do more than move balances.";
+    return "Code can do more than move tokens.";
   }
   return labels.join(" · ");
 }
@@ -109,20 +109,15 @@ function decompilerLine(payloads: readonly unknown[]): string {
   return decompilerSummaryLine(summarizeDecompilerFunctions(parseDecompilerFunctions(payloads)));
 }
 
-function cloneMatchLine(payloads: readonly unknown[]): string {
-  const record = firstPayloadWith(payloads, ["group"]);
-  const group = record === null ? null : textOf(record, "group");
-  if (group === null || group === "") {
-    return "This code looks like a known template.";
-  }
-  return `Matches known group ${group}.`;
+function cloneMatchLine(): string {
+  return "Matches a known template.";
 }
 
 const HARD_CAUSE_LINES: Record<string, string> = Object.freeze({
-  timeout: "Reading timed out.",
-  "resource-limit": "Hit a size limit.",
-  "decompiler-error": "Decompiler error.",
-  "obfuscated-structure": "Code looks deliberately tangled.",
+  timeout: "Timed out.",
+  "resource-limit": "Too large.",
+  "decompiler-error": "Decompiler failed.",
+  "obfuscated-structure": "Built to be hard to read.",
 });
 
 function hardToAnalyzeLine(payloads: readonly unknown[]): string {
@@ -131,7 +126,30 @@ function hardToAnalyzeLine(payloads: readonly unknown[]): string {
   if (cause !== null && HARD_CAUSE_LINES[cause] !== undefined) {
     return HARD_CAUSE_LINES[cause] as string;
   }
-  return "The code was hard to read.";
+  return "Code not fully read.";
+}
+
+// Status word for the readability check (hard-to-analyze). A quiet check
+// reads "Readable" (callers render that for the not-found state); a
+// finding reads "Obfuscated" when the cause is obfuscated code, and
+// "Read incomplete" for the other causes (timeout, size, decompiler).
+export function readabilityStatusWord(payloads: readonly unknown[]): "Obfuscated" | "Read incomplete" {
+  const record = firstPayloadWith(payloads, ["cause"]);
+  const cause = record === null ? null : textOf(record, "cause");
+  return cause === "obfuscated-structure" ? "Obfuscated" : "Read incomplete";
+}
+
+// Status word for a quiet check without a finding: the readability check
+// is "Readable", the clone match is "No match", every other check is
+// "Not found". Callers pass the check slug, never a generic phrase.
+export function quietStatusWord(slug: string): string {
+  if (slug === "hard-to-analyze") {
+    return "Readable";
+  }
+  if (slug === "clone-match") {
+    return "No match";
+  }
+  return "Not found";
 }
 
 function ownershipLine(payloads: readonly unknown[]): string {
@@ -142,17 +160,17 @@ function ownershipLine(payloads: readonly unknown[]): string {
       continue;
     }
     if (record["feature"] === "renounce" || record["fact"] === "renounce") {
-      lines.push("Renounce path found: the owner can give up control.");
+      lines.push("Owner can renounce.");
       continue;
     }
     const count = record["privilegedFunctions"];
     if (typeof count === "number" && Number.isFinite(count)) {
       const word = count === 1 ? "function" : "functions";
-      lines.push(`An owner account controls ${count} ${word}.`);
+      lines.push(`Owner controls ${count} ${word}.`);
     }
   }
   if (lines.length === 0) {
-    return "Someone owns this contract.";
+    return "Has an owner.";
   }
   return uniqueJoin(lines);
 }
@@ -161,75 +179,66 @@ function pauseLine(payloads: readonly unknown[]): string {
   const record = firstPayloadWith(payloads, ["mode"]);
   const mode = record === null ? null : textOf(record, "mode");
   if (mode === "pause") {
-    return "A privileged account can freeze transfers.";
+    return "Owner can freeze transfers.";
   }
   if (mode === "trading-toggle") {
-    return "The owner can switch trading on and off.";
+    return "Owner can pause trading.";
   }
-  return "The owner can stop transfers.";
+  return "Owner can stop transfers.";
 }
 
 function mintLine(payloads: readonly unknown[]): string {
-  const parts = ["The owner can create new tokens."];
   const record = firstPayloadWith(payloads, ["capped", "recipient"]);
   if (record !== null) {
     if (record["capped"] === true) {
-      parts.push("A cap is checked.");
-    } else if (record["capped"] === false) {
-      parts.push("No cap found.");
+      return "Owner can mint. Capped.";
     }
-    if (record["recipient"] === "stored") {
-      parts.push("New tokens go to a stored address.");
+    if (record["capped"] === false) {
+      return "Owner can mint. No cap found.";
     }
-  } else {
-    const cappedOnly = firstPayloadWith(payloads, ["capped"]);
-    if (cappedOnly !== null) {
-      parts.push(cappedOnly["capped"] === true ? "A cap is checked." : "No cap found.");
-    }
+    return "Owner can mint.";
   }
-  return parts.join(" ");
+  const cappedOnly = firstPayloadWith(payloads, ["capped"]);
+  if (cappedOnly !== null) {
+    return cappedOnly["capped"] === true ? "Owner can mint. Capped." : "Owner can mint. No cap found.";
+  }
+  return "Owner can mint.";
 }
 
 function feeLine(payloads: readonly unknown[]): string {
-  const parts = ["The owner can change the fee taken on each transfer."];
   const record = firstPayloadWith(payloads, ["capSlot"]);
   if (record !== null && record["capSlot"] !== null && record["capSlot"] !== undefined) {
-    parts.push("A cap is checked when it is set.");
+    return "Owner can set the transfer fee. Capped.";
   }
-  return parts.join(" ");
+  return "Owner can set the transfer fee.";
 }
 
 function limitsLine(payloads: readonly unknown[]): string {
   const record = firstPayloadWith(payloads, ["limitKind"]);
   const kind = record === null ? null : textOf(record, "limitKind");
   if (kind === "max-wallet") {
-    return "The owner can set a max per wallet.";
+    return "Owner can limit wallets.";
   }
   if (kind === "max-tx") {
-    return "The owner can set a max per transaction.";
+    return "Owner can limit sizes.";
   }
-  return "The owner can set a transfer limit.";
+  return "Owner can limit transfers.";
 }
 
-function sellBlockLine(payloads: readonly unknown[]): string {
-  const record = firstPayloadWith(payloads, ["condition"]);
-  const condition = record === null ? null : textOf(record, "condition");
-  if (condition === "pair-mapping") {
-    return "Sending to listed pools can be blocked.";
-  }
-  return "Sending to the trading pool can be blocked.";
+function sellBlockLine(): string {
+  return "Owner can block sells.";
 }
 
 function hooksLine(payloads: readonly unknown[]): string {
   const record = firstPayloadWith(payloads, ["target"]);
   const target = record === null ? null : textOf(record, "target");
   if (target === "storage") {
-    return "Each transfer can call a contract the owner sets.";
+    return "Transfers call an owner-set contract.";
   }
   if (target === "argument") {
-    return "Each transfer can call a contract the sender picks.";
+    return "Transfers call a contract the sender picks.";
   }
-  return "Each transfer can call another contract.";
+  return "Transfers call another contract.";
 }
 
 function proxyLine(payloads: readonly unknown[]): string {
@@ -237,45 +246,44 @@ function proxyLine(payloads: readonly unknown[]): string {
   const kind = record === null ? null : textOf(record, "proxyKind");
   if (record !== null && (kind === "eip1967" || kind === "zos" || kind === "legacy-zos")) {
     const admin = textOf(record, "admin");
-    const adminKind = textOf(record, "adminKind");
-    if (admin !== null && adminKind !== null) {
-      return `Upgradeable proxy \u00b7 admin ${toChecksumAddress(admin)} (${adminKind}) can replace the code`;
+    if (admin !== null && textOf(record, "adminKind") !== null) {
+      return `Proxy. Admin ${toChecksumAddress(admin)} can swap the code.`;
     }
-    return "Upgradeable proxy can replace the code";
+    return "Proxy. Can swap the code.";
   }
   if (kind === "uups") {
-    return "The code can be upgraded (UUPS proxy).";
+    return "Code can be swapped (UUPS).";
   }
   if (kind === "eip1967") {
-    return "The code can be upgraded (EIP-1967 proxy).";
+    return "Code can be swapped (EIP-1967).";
   }
-  return "The code can be upgraded.";
+  return "Code can be swapped.";
 }
 
 function blacklistLine(): string {
-  return "The owner can stop chosen wallets from sending tokens.";
+  return "Owner can block wallets.";
 }
 
 export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
   ownership: {
     slug: "ownership",
     title: "Ownership",
-    question: "Does someone own this contract?",
+    question: "Is there an owner?",
     pictogram: "owner",
     group: "owner",
     foundLine: ownershipLine,
-    limits: "The code proves a stored owner and the functions it guards. Who holds the seat right now is read separately, and only at a pinned block.",
-    cantTellLine: "We found no stored owner the code compares with the caller.",
+    limits: "Proves an owner exists. Who owns it is read live.",
+    cantTellLine: "No owner found in the code.",
   },
   pause: {
     slug: "pause",
     title: "Pause",
-    question: "Can the owner freeze all transfers?",
+    question: "Can the owner freeze transfers?",
     pictogram: "pause",
     group: "owner",
     foundLine: pauseLine,
-    limits: "The code proves the freeze mechanism, not whether the switch is on right now or still callable.",
-    cantTellLine: "We found no switch in the code that freezes transfers.",
+    limits: "Proves a freeze exists, not whether it is on.",
+    cantTellLine: "No freeze found.",
   },
   blacklist: {
     slug: "blacklist",
@@ -284,8 +292,8 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "blacklist",
     group: "owner",
     foundLine: () => blacklistLine(),
-    limits: "The code proves the blocking mechanism, not whether it is a block list or an allow list, and not which wallets are listed.",
-    cantTellLine: "We found no list in the code that blocks chosen wallets.",
+    limits: "Proves blocking exists, not who is blocked.",
+    cantTellLine: "No blocklist found.",
   },
   mint: {
     slug: "mint",
@@ -294,8 +302,8 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "mint",
     group: "owner",
     foundLine: mintLine,
-    limits: "The code proves new tokens can be created. Whether the function is still callable is not in the code.",
-    cantTellLine: "The creation path was only partly readable, so minting stays unclear.",
+    limits: "Proves minting exists, not that it is still usable.",
+    cantTellLine: "Minting unclear. Code partly unreadable.",
   },
   "transfer-fee": {
     slug: "transfer-fee",
@@ -304,88 +312,88 @@ export const PLUGIN_COPY: Record<string, PluginCopyEntry> = Object.freeze({
     pictogram: "fee",
     group: "owner",
     foundLine: feeLine,
-    limits: "The code proves the fee can change. The highest it can go is unknown when the setter has no cap.",
-    cantTellLine: "The fee path was only partly readable, so fee changes stay unclear.",
+    limits: "Fee can change. Max unknown without a cap.",
+    cantTellLine: "Fee unclear. Code partly unreadable.",
   },
   "transfer-limits": {
     slug: "transfer-limits",
     title: "Transfer limits",
-    question: "Can the owner limit what you hold or send?",
+    question: "Can the owner cap what you hold or send?",
     pictogram: "limits",
     group: "owner",
     foundLine: limitsLine,
-    limits: "The code proves limits can change, not the live numbers sitting in storage.",
-    cantTellLine: "We found no limit value in the code that caps wallets or transfers.",
+    limits: "Limits can change. Live values unknown.",
+    cantTellLine: "No limits found.",
   },
   "sell-block": {
     slug: "sell-block",
     title: "Sell block",
-    question: "Can selling to the pool be blocked?",
+    question: "Can the owner block selling?",
     pictogram: "sellblock",
     group: "owner",
     foundLine: sellBlockLine,
-    limits: "The code proves a recipient-based block, not which direction counts as the sell.",
-    cantTellLine: "The pool check was only partly readable, so selling may or may not block.",
+    limits: "Proves a pool block exists.",
+    cantTellLine: "Sell block unclear. Code partly unreadable.",
   },
   "transfer-hooks": {
     slug: "transfer-hooks",
     title: "Transfer hooks",
-    question: "Does each transfer call another contract?",
+    question: "Do transfers call another contract?",
     pictogram: "hooks",
     group: "owner",
     foundLine: hooksLine,
-    limits: "The code proves each transfer can call another contract, not what that contract does.",
-    cantTellLine: "The call out of each transfer was only partly readable.",
+    limits: "Not what it does.",
+    cantTellLine: "Transfer calls partly unreadable.",
   },
   "proxy-upgrade": {
     slug: "proxy-upgrade",
     title: "Proxy upgrade",
-    question: "Can the code be replaced?",
+    question: "Can the code be swapped?",
     pictogram: "upgrade",
     group: "owner",
     foundLine: proxyLine,
-    limits: "The code proves it can be replaced. Who can trigger the upgrade lives outside the code.",
-    cantTellLine: "The upgrade path was only partly readable, so replacement stays unclear.",
+    limits: "Proves it can. Who can is read live.",
+    cantTellLine: "Unclear. Code partly unreadable.",
   },
   capability: {
     slug: "capability",
     title: "Capability",
-    question: "What can this code do at all?",
+    question: "What can this code do?",
     pictogram: "capability",
     group: "tools",
     foundLine: capabilityLine,
-    limits: "Presence is not reachability: a listed power may sit in dead code the token never runs.",
-    cantTellLine: "The capability scan was only partly readable.",
+    limits: "A listed power may be dead code.",
+    cantTellLine: "Capabilities partly unreadable.",
   },
   decompiler: {
     slug: "decompiler",
     title: "Decompiler",
-    question: "Which functions does the code have?",
+    question: "What functions exist?",
     pictogram: "decompiler",
     group: "tools",
     foundLine: decompilerLine,
-    limits: "A readable reconstruction, not the original source. Names are display only.",
-    cantTellLine: "The function list was only partly readable.",
+    limits: "Rebuilt from bytes. Names may be guesses.",
+    cantTellLine: "Function list partly unreadable.",
   },
   "clone-match": {
     slug: "clone-match",
     title: "Clone match",
-    question: "Is this a copy of a known template?",
+    question: "Is this a known scam template?",
     pictogram: "clone",
     group: "tools",
     foundLine: cloneMatchLine,
-    limits: "A similar template is a warning, not a verdict: the details can still differ.",
-    cantTellLine: "The template comparison was only partly readable.",
+    limits: "Similar is a warning, not proof.",
+    cantTellLine: "Template comparison partly unreadable.",
   },
   "hard-to-analyze": {
     slug: "hard-to-analyze",
-    title: "Hard to read",
-    question: "Was the code hard to read?",
+    title: "Obfuscated code",
+    question: "Is the code hard to read?",
     pictogram: "tangle",
     group: "tools",
     foundLine: hardToAnalyzeLine,
-    limits: "Marks a coverage gap, not a risk. Treat it as a reason to be careful.",
-    cantTellLine: "The readability check itself was only partly readable.",
+    limits: "Code too tangled to read fully. Hidden powers may be missed.",
+    cantTellLine: "Code partly unreadable.",
   },
 });
 
@@ -399,10 +407,10 @@ export function temporalityLine(payloads: readonly unknown[]): string | null {
     }
     const record = payload as Record<string, unknown>;
     if (record["feature"] === "renounce" || record["fact"] === "renounce") {
-      return "No longer applies";
+      return "Lifted";
     }
   }
-  return "Applies now";
+  return "Active";
 }
 
 function lastSegment(id: string): string {

@@ -32,7 +32,7 @@ import type { LiveFilter, LiveTokenEntry, LiveTokensSnapshot } from "../lib/live
 // page stays under its height budget with both feeds full.
 export const LIVE_PAGE_SIZE = 10;
 
-const FILTERS = ["All", "Elevated & high", "Low"] as const;
+const FILTERS = ["All", "Elevated+", "Low"] as const;
 
 type Filter = (typeof FILTERS)[number];
 
@@ -130,8 +130,8 @@ function marketSegment(
       <span className="feed-pic" aria-hidden="true">
         <Pictogram name="market" size={16} />
       </span>{" "}
-      Market {liquidity === null ? "can't tell" : liquidity} · {volume.label}{" "}
-      {volumeText === null ? "can't tell" : volumeText} · {priceText}
+      Market {liquidity === null ? "unknown" : liquidity} · {volume.label}{" "}
+      {volumeText === null ? "unknown" : volumeText} · {priceText}
     </span>
   );
 }
@@ -197,7 +197,7 @@ export function LiveTokensList({
         <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>New tokens</h2>
         <div className="card" style={{ marginTop: 16 }}>
           <p className="muted" style={{ margin: 0 }}>
-            New tokens are unavailable: this server is not set up to watch for them.
+            New tokens feed is off.
           </p>
         </div>
       </section>
@@ -216,7 +216,6 @@ export function LiveTokensList({
       <div className="feedhead">
         <h2>New pairs</h2>
         <span className="count feed-count">
-          <span className="meta-item">live from chain</span>
           <span className="meta-item">newest first</span>
           <span className="meta-item">
             <span className="live" style={{ fontSize: 12 }}>
@@ -265,13 +264,13 @@ export function LiveTokensList({
         filter === "All" ? (
           <div className="card" style={{ marginTop: 16 }}>
             <p className="muted" style={{ margin: 0 }}>
-              Waiting for new pairs…
+              Waiting…
             </p>
           </div>
         ) : (
           <div className="card" style={{ marginTop: 16 }}>
             <p className="muted" style={{ margin: 0 }}>
-              No tokens match this filter.
+              No matches.
             </p>
             <p style={{ margin: "12px 0 0" }}>
               <button
@@ -320,8 +319,8 @@ export function LiveTokensList({
                           <Pictogram name="liquidity" size={16} />
                         </span>{" "}
                         {entry.initialLiquidityWeth === null ? (
-                          <span className="muted" title="No WETH liquidity seen in the pair's first logs">
-                            can&apos;t tell
+                          <span className="muted" title="No liquidity seen">
+                            unknown
                           </span>
                         ) : (
                           `${entry.initialLiquidityWeth} WETH`
@@ -430,7 +429,7 @@ export function LiveTokens({
         <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>New tokens</h2>
         <div className="card" style={{ marginTop: 16 }}>
           <p className="muted" style={{ margin: 0 }}>
-            Loading new tokens…
+            Loading…
           </p>
         </div>
       </section>
