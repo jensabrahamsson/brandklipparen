@@ -78,7 +78,7 @@ the result can be inspected and reproduced.
 - **Three interfaces.** A web UI, a REST API and an MCP server, all
   over the same services.
 
-All code was written during the hackathon window (from Oct 26, 12:00 ET).
+All code was written during the hackathon window (from Oct 26, 13:00 ET).
 
 ## Quick start
 
