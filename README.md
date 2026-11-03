@@ -4,6 +4,8 @@
 on Ethereum mainnet: paste a token address and see what the contract's
 owner can do to you, proven from the bytecode.
 
+Live demo: https://jensmannen--brandklipparen.us-east.modal.run. Judges: the access code and API key are in the submission form.
+
 *The name: Brandklipparen was the royal horse of Sweden's Charles XI and
 XII, a horse that never flinched at fire. The tool does the same: it
 stays calm and reads the contract while the market is on fire.*
@@ -60,7 +62,7 @@ the result can be inspected and reproduced.
   nine owner-power detectors (mint, pause, blacklist, transfer fee,
   transfer limits, sell block, transfer hooks, ownership, proxy upgrade)
   and four analysis plugins (capability, decompiler, clone match, hard
-  to analyze). Six on-chain plugins (age, concentration, deployer,
+  to analyze). The on-chain plugins (age, concentration, deployer,
   liquidity, LP, owner) are shown for context and carry weight 0 in the
   model score. The owner state the scanner reads live also feeds the
   evidence floor. One assessment plugin, `meta-model-api`, provides the
@@ -79,6 +81,7 @@ the result can be inspected and reproduced.
   over the same services.
 
 All code was written during the hackathon window (from Oct 26, 13:00 ET).
+Planning notes and design sketches were drafted before kickoff.
 
 ## Quick start
 
@@ -275,6 +278,12 @@ stdout). Point an MCP client at the command above as a stdio server; no
 port is opened. List tools first (`tools/list`), then call one per
 frame (`tools/call` with `name` and `arguments`).
 
+The deployed demo also serves this MCP server over HTTPS at `POST /mcp`
+on the demo origin (`https://jensmannen--brandklipparen.us-east.modal.run/mcp`).
+Send one JSON-RPC message, or a batch of up to 16, as the body, with your
+key in the `x-api-key` header or as `Authorization: Bearer <key>`; without
+a key the demo answers 401.
+
 Generic MCP client configuration (copy, then replace the `<...>`
 values). `npm --silent run start:mcp` applies the same safe defaults as
 `npm run demo` (the demo default helpers), so only the RPC URL and the
@@ -335,7 +344,9 @@ never put a key value in a client configuration file that is checked
 in or shared.
 
 Reading tools, one per REST feature, all read-only through the same
-services, guards, per-key caps and caches as the REST routes:
+services, guards, per-key caps and caches as the REST routes. The
+server registers 26 tools: the 13 named below plus one `plugin_*` tool
+for each of the 13 detector plugins:
 
 - `assess_token`, `request_assessment`, `investigate_token`,
   `onchain_features`
@@ -396,11 +407,6 @@ On 30 unseen mainnet tokens, never used during development, the blacklist detect
 
 Low does not mean safe. See [docs/calibration/](docs/calibration/) for the full reports.
 
-## Status
-
-Work in progress during the hackathon. Interfaces and behaviour may
-change as the project is built and evaluated.
-
 ## Documentation
 
 - [Requirements](docs/requirements.md)
@@ -408,7 +414,7 @@ change as the project is built and evaluated.
 - [Infrastructure](docs/infrastructure.md)
 - [Threat model](docs/threat-model.md)
 
-An independent source-level security audit found 0 confirmed vulnerabilities. Its three open leads (demo key in web bundles, shared rate budget, one-time chain id check) were fixed and covered by tests.
+A separate multi-agent, source-level security audit found 0 confirmed vulnerabilities. Its three open leads (demo key in web bundles, shared rate budget, one-time chain id check) were fixed and covered by tests.
 
 ## License
 
