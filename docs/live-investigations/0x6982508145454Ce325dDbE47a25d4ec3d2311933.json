@@ -1,0 +1,186 @@
+{
+  "address": "0x6982508145454Ce325dDbE47a25d4ec3d2311933",
+  "symbol": "PEPE",
+  "group": "well-known",
+  "startedAt": "2026-11-03T21:32:53.029Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 42045,
+  "investigationMs": 41387,
+  "score": {
+    "value": 24,
+    "band": "Low",
+    "withoutMuseSha256": "7c253400cfef89d15ad4e1ac26fea6622dfcd76f4e47076ae263f5e44457e03d",
+    "withMuseSha256": "7c253400cfef89d15ad4e1ac26fea6622dfcd76f4e47076ae263f5e44457e03d",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The code includes an owner-controlled setRule function which raises medium rug-pull risk, but no controlling account is proven and the code can activate this later. [E:signal:0x2792ebfbc6fae427772a1d1656fde4f9c59e02fc3f1cfc36e522ff8feebea945] The owner can stop chosen wallets from sending tokens, found by extended analysis and not counted because ownership is renounced. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract exposes setRule, blacklist and renounceOwnership functions consistent with renounced ownership. [E:dev.brandklipparen.decompiler:0x3aa633aa] [E:dev.brandklipparen.decompiler:0x404e5129] [E:dev.brandklipparen.decompiler:0x715018a6]",
+    "rationale": "Citable evidence covers owner signal, blacklist with renounced note, and relevant selectors; no further tool needed.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "List frozen evidence ids before further analysis",
+      "evidenceCount": 27,
+      "evidenceIds": [
+        "signal:0x2792ebfbc6fae427772a1d1656fde4f9c59e02fc3f1cfc36e522ff8feebea945",
+        "dev.brandklipparen.blacklist:blacklist-extended",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x16c02129",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x1ab99e12",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x39509351",
+        "dev.brandklipparen.decompiler:0x3aa633aa",
+        "dev.brandklipparen.decompiler:0x404e5129",
+        "dev.brandklipparen.decompiler:0x42966c68",
+        "dev.brandklipparen.decompiler:0x49bd5a5e",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x715018a6",
+        "dev.brandklipparen.decompiler:0x860a32ec",
+        "dev.brandklipparen.decompiler:0x89f9a1d3",
+        "dev.brandklipparen.decompiler:0x8da5cb5b",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa457c2d7",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xf2fde38b",
+        "dev.brandklipparen.ownership:owner-slot",
+        "dev.brandklipparen.pause:pause-extended",
+        "dev.brandklipparen.transfer-limits:transfer-limits-extended"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "analysis.summary",
+      "reason": "Need frozen score band and signal summary to interpret renounced ownership findings",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "signal:0x2792ebfbc6fae427772a1d1656fde4f9c59e02fc3f1cfc36e522ff8feebea945"
+      ]
+    },
+    {
+      "step": 3,
+      "tool": "detector.dev.brandklipparen.ownership",
+      "reason": "Confirm owner slot and renounce path to interpret blacklist and limits findings",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.ownership:owner-slot"
+      ]
+    },
+    {
+      "step": 4,
+      "tool": "detector.dev.brandklipparen.pause",
+      "reason": "Verify privileged freeze via setRule given owner signal and renounced ownership context",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.pause:pause-extended"
+      ]
+    },
+    {
+      "step": 5,
+      "tool": "detector.dev.brandklipparen.transfer-limits",
+      "reason": "Verify owner-controlled send/hold caps via setRule before concluding low-risk renounced ownership case",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.transfer-limits:transfer-limits-extended"
+      ]
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 4516,
+      "completionTokens": 689,
+      "totalTokens": 5205,
+      "ms": 5719,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "analysis.summary",
+      "promptTokens": 6213,
+      "completionTokens": 633,
+      "totalTokens": 6846,
+      "ms": 5535,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.ownership",
+      "promptTokens": 6287,
+      "completionTokens": 533,
+      "totalTokens": 6820,
+      "ms": 4870,
+      "narrativeDraft": null
+    },
+    {
+      "index": 4,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.pause",
+      "promptTokens": 6335,
+      "completionTokens": 733,
+      "totalTokens": 7068,
+      "ms": 6962,
+      "narrativeDraft": null
+    },
+    {
+      "index": 5,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.transfer-limits",
+      "promptTokens": 6383,
+      "completionTokens": 910,
+      "totalTokens": 7293,
+      "ms": 8573,
+      "narrativeDraft": null
+    },
+    {
+      "index": 6,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 6441,
+      "completionTokens": 1437,
+      "totalTokens": 7878,
+      "ms": 9720,
+      "narrativeDraft": "The code includes an owner-controlled setRule function which raises medium rug-pull risk, but no controlling account is proven and the code can activate this later. [E:signal:0x2792ebfbc6fae427772a1d1656fde4f9c59e02fc3f1cfc36e522ff8feebea945] The owner can stop chosen wallets from sending tokens, found by extended analysis and not counted because ownership is renounced. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract exposes setRule, blacklist and renounceOwnership functions consistent with renounced ownership. [E:dev.brandklipparen.decompiler:0x3aa633aa] [E:dev.brandklipparen.decompiler:0x404e5129] [E:dev.brandklipparen.decompiler:0x715018a6]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The code includes an owner-controlled setRule function which raises medium rug-pull risk, but no controlling account is proven and the code can activate this later. [E:signal:0x2792ebfbc6fae427772a1d1656fde4f9c59e02fc3f1cfc36e522ff8feebea945]",
+      "The owner can stop chosen wallets from sending tokens, found by extended analysis and not counted because ownership is renounced. [E:dev.brandklipparen.blacklist:blacklist-extended]",
+      "The contract exposes setRule, blacklist and renounceOwnership functions consistent with renounced ownership. [E:dev.brandklipparen.decompiler:0x3aa633aa] [E:dev.brandklipparen.decompiler:0x404e5129] [E:dev.brandklipparen.decompiler:0x715018a6]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 41110,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 1127,
+  "reused": false,
+  "error": null
+}

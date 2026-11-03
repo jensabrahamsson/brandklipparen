@@ -1,0 +1,102 @@
+{
+  "address": "0x6bd4c81b1633b6b2d7bf500214b6cfad256c8bdd",
+  "symbol": "NEW03",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:35:12.559Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 11530,
+  "investigationMs": 10950,
+  "score": {
+    "value": 60,
+    "band": "High",
+    "withoutMuseSha256": "a33accaef14faf4acc61d9de3dee3308b0634d2df92e651184dd31ac60b0a7c5",
+    "withMuseSha256": "a33accaef14faf4acc61d9de3dee3308b0634d2df92e651184dd31ac60b0a7c5",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] The blacklist gate was found in the transferFrom and burn paths. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract can write storage to enforce this restriction. [E:dev.brandklipparen.capability:storage-write] The code exposes burn and transferFrom functions consistent with this control. [E:dev.brandklipparen.decompiler:0x42966c68] [E:dev.brandklipparen.decompiler:0x23b872dd]",
+    "rationale": "Blacklist finding sets High score and answers risk question, no further tools needed.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "List frozen evidence ids to expand citable findings before concluding",
+      "evidenceCount": 26,
+      "evidenceIds": [
+        "signal:0xa5ce1d6ea8fccfda9c1c5c2e95a04ab9c32d04874f3af22062747c2f2ca94300",
+        "dev.brandklipparen.blacklist:blacklist-extended",
+        "dev.brandklipparen.capability:storage-write",
+        "dev.brandklipparen.decompiler:0x00000000",
+        "dev.brandklipparen.decompiler:0x00000001",
+        "dev.brandklipparen.decompiler:0x02d05d3f",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x16f0115b",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x1c5e01be",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x2f4237c0",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x42966c68",
+        "dev.brandklipparen.decompiler:0x476343ee",
+        "dev.brandklipparen.decompiler:0x4bde38c8",
+        "dev.brandklipparen.decompiler:0x6694ba61",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x74580e2f",
+        "dev.brandklipparen.decompiler:0x79cc6790",
+        "dev.brandklipparen.decompiler:0x8da5cb5b",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xb6efaa75",
+        "dev.brandklipparen.decompiler:0xdd62ed3e"
+      ]
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 4192,
+      "completionTokens": 574,
+      "totalTokens": 4766,
+      "ms": 5267,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 5868,
+      "completionTokens": 744,
+      "totalTokens": 6612,
+      "ms": 5682,
+      "narrativeDraft": "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] The blacklist gate was found in the transferFrom and burn paths. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract can write storage to enforce this restriction. [E:dev.brandklipparen.capability:storage-write] The code exposes burn and transferFrom functions consistent with this control. [E:dev.brandklipparen.decompiler:0x42966c68] [E:dev.brandklipparen.decompiler:0x23b872dd]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended]",
+      "The blacklist gate was found in the transferFrom and burn paths. [E:dev.brandklipparen.blacklist:blacklist-extended]",
+      "The contract can write storage to enforce this restriction. [E:dev.brandklipparen.capability:storage-write]",
+      "The code exposes burn and transferFrom functions consistent with this control. [E:dev.brandklipparen.decompiler:0x42966c68] [E:dev.brandklipparen.decompiler:0x23b872dd]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 11378,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 589,
+  "reused": false,
+  "error": null
+}

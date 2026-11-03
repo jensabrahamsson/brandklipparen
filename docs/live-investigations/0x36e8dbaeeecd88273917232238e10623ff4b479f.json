@@ -1,0 +1,115 @@
+{
+  "address": "0x36e8dbaeeecd88273917232238e10623ff4b479f",
+  "symbol": "NEW08",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:38:05.240Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 25206,
+  "investigationMs": 24723,
+  "score": {
+    "value": 60,
+    "band": "High",
+    "withoutMuseSha256": "cf3022da77e6c0b4673429d0dded701570ef2b1421d2b2b1835bca528e5553b8",
+    "withMuseSha256": "cf3022da77e6c0b4673429d0dded701570ef2b1421d2b2b1835bca528e5553b8",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The owner can stop chosen wallets from sending tokens affecting transferFrom and burn. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract exposes burn(uint256) that can write storage. [E:dev.brandklipparen.decompiler:0x42966c68] [E:dev.brandklipparen.capability:storage-write] The code can activate burn capability later but no controlling account is proven. [E:signal:0x370ba27d48d3c6daaec273042c8511dfa88754ab71668f54caeef50aa94db26e] Standard ERC-20 transfer, transferFrom, approve, balanceOf and allowance functions are present. [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e]",
+    "rationale": "Blacklist finding sets High score and answers risk; further tools add no value.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "Need complete frozen evidence ids before assessing high-risk blacklist and burn capabilities",
+      "evidenceCount": 20,
+      "evidenceIds": [
+        "signal:0x370ba27d48d3c6daaec273042c8511dfa88754ab71668f54caeef50aa94db26e",
+        "dev.brandklipparen.blacklist:blacklist-extended",
+        "dev.brandklipparen.capability:storage-write",
+        "dev.brandklipparen.decompiler:0x00000001",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x392f37e9",
+        "dev.brandklipparen.decompiler:0x42966c68",
+        "dev.brandklipparen.decompiler:0x609d3334",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x7284e416",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xbeb0a416",
+        "dev.brandklipparen.decompiler:0xc5a1d7f0",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xf3ccaac0"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "docs.plugin",
+      "reason": "Need validated blacklist details before concluding high-risk finding",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 3576,
+      "completionTokens": 803,
+      "totalTokens": 4379,
+      "ms": 5563,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "docs.plugin",
+      "promptTokens": 5126,
+      "completionTokens": 449,
+      "totalTokens": 5575,
+      "ms": 4700,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 5152,
+      "completionTokens": 970,
+      "totalTokens": 6122,
+      "ms": 14458,
+      "narrativeDraft": "The owner can stop chosen wallets from sending tokens affecting transferFrom and burn. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract exposes burn(uint256) that can write storage. [E:dev.brandklipparen.decompiler:0x42966c68] [E:dev.brandklipparen.capability:storage-write] The code can activate burn capability later but no controlling account is proven. [E:signal:0x370ba27d48d3c6daaec273042c8511dfa88754ab71668f54caeef50aa94db26e] Standard ERC-20 transfer, transferFrom, approve, balanceOf and allowance functions are present. [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The owner can stop chosen wallets from sending tokens affecting transferFrom and burn. [E:dev.brandklipparen.blacklist:blacklist-extended]",
+      "The contract exposes burn(uint256) that can write storage. [E:dev.brandklipparen.decompiler:0x42966c68] [E:dev.brandklipparen.capability:storage-write]",
+      "The code can activate burn capability later but no controlling account is proven. [E:signal:0x370ba27d48d3c6daaec273042c8511dfa88754ab71668f54caeef50aa94db26e]",
+      "Standard ERC-20 transfer, transferFrom, approve, balanceOf and allowance functions are present. [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 16076,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 961,
+  "reused": false,
+  "error": null
+}

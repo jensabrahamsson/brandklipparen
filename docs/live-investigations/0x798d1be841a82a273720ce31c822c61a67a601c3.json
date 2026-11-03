@@ -1,0 +1,153 @@
+{
+  "address": "0x798d1be841a82a273720ce31c822c61a67a601c3",
+  "symbol": "NEW11",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:39:52.889Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 31766,
+  "investigationMs": 30772,
+  "score": {
+    "value": 29,
+    "band": "Low",
+    "withoutMuseSha256": "8640fc4c587819ec84a7e7d93c3d85a0dd2fb16780aab8462e51ab9268fed4b9",
+    "withMuseSha256": "8640fc4c587819ec84a7e7d93c3d85a0dd2fb16780aab8462e51ab9268fed4b9",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "An owner account controls privileged functions, which raises rug-pull risk at medium severity and can change later with no controlling account proven. [E:signal:0xbcdef1d254205526ebd4f7247aae9eaaf414c5f2f8684d505d39e3a3ccd5c4aa] Standard token functions including approve, transferFrom and totalSupply were decompiled with storage writes observed in allowance paths. [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.capability:storage-write] A low-severity structural capability covering approve and decreaseAllowance was found and can activate later with no controlling account proven. [E:signal:0xf8588a4082ec5d19130cddb34b777f979f259f1874ea898b6c60b547eb4b0646] The code structure resists direct reading so not all of it could be mapped and rug-pull risk cannot be ruled out, which can change later with no controlling account proven. [E:signal:0xa94079abd960dedcca9e9be77eb2317320ae040ed173ac0356a78ad98b23c3a8]",
+    "rationale": "Evidence answers question: owner risk, low capability, and hard-to-analyze limits; no further tool adds score-relevant findings.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "docs.plugin",
+      "reason": "Proxy upgrade finding suggests admin can replace code; need validated summary before concluding",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 2,
+      "tool": "docs.plugin",
+      "reason": "Need validated proxy-upgrade summary to assess admin upgrade risk before concluding",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 3,
+      "tool": "evidence.list",
+      "reason": "Need full frozen evidence list to cite ownership and proxy findings before concluding",
+      "evidenceCount": 39,
+      "evidenceIds": [
+        "signal:0xbcdef1d254205526ebd4f7247aae9eaaf414c5f2f8684d505d39e3a3ccd5c4aa",
+        "signal:0xf8588a4082ec5d19130cddb34b777f979f259f1874ea898b6c60b547eb4b0646",
+        "signal:0xa94079abd960dedcca9e9be77eb2317320ae040ed173ac0356a78ad98b23c3a8",
+        "dev.brandklipparen.capability:storage-write",
+        "dev.brandklipparen.decompiler:0x01681a62",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x13ca42e8",
+        "dev.brandklipparen.decompiler:0x1624f6c6",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x39509351",
+        "dev.brandklipparen.decompiler:0x3a98ef39",
+        "dev.brandklipparen.decompiler:0x5d2dde1d",
+        "dev.brandklipparen.decompiler:0x6f97854c",
+        "dev.brandklipparen.decompiler:0x6fafb236",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x715018a6",
+        "dev.brandklipparen.decompiler:0x786ffeb8",
+        "dev.brandklipparen.decompiler:0x7a43e23f",
+        "dev.brandklipparen.decompiler:0x8b5a6a08",
+        "dev.brandklipparen.decompiler:0x8da5cb5b",
+        "dev.brandklipparen.decompiler:0x8e27d7d7",
+        "dev.brandklipparen.decompiler:0x8f32d59b",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa457c2d7",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xb8fd8e73",
+        "dev.brandklipparen.decompiler:0xbc02f3f7",
+        "dev.brandklipparen.decompiler:0xc4d66de8",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xf2301efa",
+        "dev.brandklipparen.decompiler:0xf2fde38b",
+        "dev.brandklipparen.decompiler:0xf5eb42dc",
+        "dev.brandklipparen.decompiler:0xfb334b55",
+        "dev.brandklipparen.hard-to-analyze:obfuscated-structure",
+        "dev.brandklipparen.ownership:owner-slot",
+        "dev.brandklipparen.proxy-upgrade:proxy-upgrade-extended"
+      ]
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "docs.plugin",
+      "promptTokens": 5421,
+      "completionTokens": 609,
+      "totalTokens": 6030,
+      "ms": 7401,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "docs.plugin",
+      "promptTokens": 5454,
+      "completionTokens": 791,
+      "totalTokens": 6245,
+      "ms": 5597,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 5485,
+      "completionTokens": 715,
+      "totalTokens": 6200,
+      "ms": 6314,
+      "narrativeDraft": null
+    },
+    {
+      "index": 4,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 7276,
+      "completionTokens": 1747,
+      "totalTokens": 9023,
+      "ms": 11454,
+      "narrativeDraft": "An owner account controls privileged functions, which raises rug-pull risk at medium severity and can change later with no controlling account proven. [E:signal:0xbcdef1d254205526ebd4f7247aae9eaaf414c5f2f8684d505d39e3a3ccd5c4aa] Standard token functions including approve, transferFrom and totalSupply were decompiled with storage writes observed in allowance paths. [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.capability:storage-write] A low-severity structural capability covering approve and decreaseAllowance was found and can activate later with no controlling account proven. [E:signal:0xf8588a4082ec5d19130cddb34b777f979f259f1874ea898b6c60b547eb4b0646] The code structure resists direct reading so not all of it could be mapped and rug-pull risk cannot be ruled out, which can change later with no controlling account proven. [E:signal:0xa94079abd960dedcca9e9be77eb2317320ae040ed173ac0356a78ad98b23c3a8]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "An owner account controls privileged functions, which raises rug-pull risk at medium severity and can change later with no controlling account proven. [E:signal:0xbcdef1d254205526ebd4f7247aae9eaaf414c5f2f8684d505d39e3a3ccd5c4aa]",
+      "Standard token functions including approve, transferFrom and totalSupply were decompiled with storage writes observed in allowance paths. [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.capability:storage-write]",
+      "A low-severity structural capability covering approve and decreaseAllowance was found and can activate later with no controlling account proven. [E:signal:0xf8588a4082ec5d19130cddb34b777f979f259f1874ea898b6c60b547eb4b0646]",
+      "The code structure resists direct reading so not all of it could be mapped and rug-pull risk cannot be ruled out, which can change later with no controlling account proven. [E:signal:0xa94079abd960dedcca9e9be77eb2317320ae040ed173ac0356a78ad98b23c3a8]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 27498,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 1326,
+  "reused": false,
+  "error": null
+}

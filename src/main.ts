@@ -90,7 +90,7 @@ function allowlistFlag(argv: readonly string[]): string | null {
 
 // One `eth_chainId` check per process start (S-108, K-001): the endpoint
 // must answer mainnet before the process builds or serves anything.
-async function startupPorts(config: AppConfig): Promise<AnalyzeTokenPorts> {
+export async function startupPorts(config: AppConfig): Promise<AnalyzeTokenPorts> {
   const rpc = createRpcAdapterFromConfig({
     rpcUrls: config.rpcUrls,
     rpcDeadlineMs: config.rpcDeadlineMs,

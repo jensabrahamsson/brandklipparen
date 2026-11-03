@@ -1,0 +1,91 @@
+{
+  "address": "0x514910771AF9Ca656af840dff83E8264EcF986CA",
+  "symbol": "LINK",
+  "group": "well-known",
+  "startedAt": "2026-11-03T21:31:30.136Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 15140,
+  "investigationMs": 14676,
+  "score": {
+    "value": 60,
+    "band": "High",
+    "withoutMuseSha256": "5d1c1b57ceb192e2bccdb72853385c765dbf429f7a9a94c7b41efaff9086b476",
+    "withMuseSha256": "5d1c1b57ceb192e2bccdb72853385c765dbf429f7a9a94c7b41efaff9086b476",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The contract exposes standard ERC-20 transfer and transferFrom functions. [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd] The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] This restriction gates the transferFrom path and is configured via function_4000aea0. [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x4000aea0] The contract can write storage supporting this control. [E:dev.brandklipparen.capability:storage-write]",
+    "rationale": "Blacklist finding explains High score, no further tools needed.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "Need full frozen evidence list to explain High score before concluding",
+      "evidenceCount": 15,
+      "evidenceIds": [
+        "signal:0xfb304770df5dac8265d36ffbd43025bd8e05946e4cf37524860e5770e036b1de",
+        "dev.brandklipparen.blacklist:blacklist-extended",
+        "dev.brandklipparen.capability:storage-write",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x4000aea0",
+        "dev.brandklipparen.decompiler:0x66188463",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xd73dd623",
+        "dev.brandklipparen.decompiler:0xdd62ed3e"
+      ]
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 3179,
+      "completionTokens": 689,
+      "totalTokens": 3868,
+      "ms": 6211,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 4513,
+      "completionTokens": 1122,
+      "totalTokens": 5635,
+      "ms": 8459,
+      "narrativeDraft": "The contract exposes standard ERC-20 transfer and transferFrom functions. [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd] The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] This restriction gates the transferFrom path and is configured via function_4000aea0. [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x4000aea0] The contract can write storage supporting this control. [E:dev.brandklipparen.capability:storage-write]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The contract exposes standard ERC-20 transfer and transferFrom functions. [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd]",
+      "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended]",
+      "This restriction gates the transferFrom path and is configured via function_4000aea0. [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x4000aea0]",
+      "The contract can write storage supporting this control. [E:dev.brandklipparen.capability:storage-write]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 9503,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 640,
+  "reused": false,
+  "error": null
+}

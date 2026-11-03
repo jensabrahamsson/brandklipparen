@@ -1,0 +1,112 @@
+{
+  "address": "0xc96aa65f31e41b4ca6924b86d93e25686019e59c",
+  "symbol": "NEW09",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:38:35.450Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 19894,
+  "investigationMs": 19404,
+  "score": {
+    "value": 19,
+    "band": "Low",
+    "withoutMuseSha256": "b56fb8af134a5e73ff1f16928992d6aedcd10339e94ceab1a7cb8fbe964db49a",
+    "withMuseSha256": "b56fb8af134a5e73ff1f16928992d6aedcd10339e94ceab1a7cb8fbe964db49a",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The contract exposes a standard ERC-20 interface with name, symbol, decimals, totalSupply, balanceOf, allowance, transfer, approve and transferFrom [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x23b872dd] Ownership management is present via owner, transferOwnership and renounceOwnership [E:dev.brandklipparen.decompiler:0x8da5cb5b] [E:dev.brandklipparen.decompiler:0xf2fde38b] [E:dev.brandklipparen.decompiler:0x715018a6] Supply control entry points are present via mint and burn [E:dev.brandklipparen.decompiler:0x40c10f19] [E:dev.brandklipparen.decompiler:0x9dc29fac] No privileged trap detector findings are listed in the frozen evidence, consistent with a low-risk standard token interface [E:dev.brandklipparen.decompiler:0x40c10f19] [E:dev.brandklipparen.decompiler:0x8da5cb5b]",
+    "rationale": "Only decompiler findings present, all trap detectors report no findings and score is Low, so conclude",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "List frozen evidence ids to ground further investigation",
+      "evidenceCount": 14,
+      "evidenceIds": [
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x40c10f19",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x715018a6",
+        "dev.brandklipparen.decompiler:0x8da5cb5b",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0x9dc29fac",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xf2fde38b"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "analysis.summary",
+      "reason": "Need frozen score and signal summary to assess overall risk before concluding",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.decompiler:0x06fdde03"
+      ]
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 2690,
+      "completionTokens": 345,
+      "totalTokens": 3035,
+      "ms": 3047,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "analysis.summary",
+      "promptTokens": 4023,
+      "completionTokens": 599,
+      "totalTokens": 4622,
+      "ms": 5088,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 4067,
+      "completionTokens": 1541,
+      "totalTokens": 5608,
+      "ms": 11266,
+      "narrativeDraft": "The contract exposes a standard ERC-20 interface with name, symbol, decimals, totalSupply, balanceOf, allowance, transfer, approve and transferFrom [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x23b872dd]\nOwnership management is present via owner, transferOwnership and renounceOwnership [E:dev.brandklipparen.decompiler:0x8da5cb5b] [E:dev.brandklipparen.decompiler:0xf2fde38b] [E:dev.brandklipparen.decompiler:0x715018a6]\nSupply control entry points are present via mint and burn [E:dev.brandklipparen.decompiler:0x40c10f19] [E:dev.brandklipparen.decompiler:0x9dc29fac]\nNo privileged trap detector findings are listed in the frozen evidence, consistent with a low-risk standard token interface [E:dev.brandklipparen.decompiler:0x40c10f19] [E:dev.brandklipparen.decompiler:0x8da5cb5b]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The contract exposes a standard ERC-20 interface with name, symbol, decimals, totalSupply, balanceOf, allowance, transfer, approve and transferFrom [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x095ea7b3]",
+      "[E:dev.brandklipparen.decompiler:0x23b872dd]",
+      "Ownership management is present via owner, transferOwnership and renounceOwnership [E:dev.brandklipparen.decompiler:0x8da5cb5b] [E:dev.brandklipparen.decompiler:0xf2fde38b] [E:dev.brandklipparen.decompiler:0x715018a6]",
+      "Supply control entry points are present via mint and burn [E:dev.brandklipparen.decompiler:0x40c10f19] [E:dev.brandklipparen.decompiler:0x9dc29fac]",
+      "No privileged trap detector findings are listed in the frozen evidence, consistent with a low-risk standard token interface [E:dev.brandklipparen.decompiler:0x40c10f19] [E:dev.brandklipparen.decompiler:0x8da5cb5b]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 13265,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 1295,
+  "reused": false,
+  "error": null
+}

@@ -1,0 +1,213 @@
+{
+  "address": "0xc3dfa2d7e82e3416a85a5542a229d9bedb6d04f2",
+  "symbol": "NEW05",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:35:45.873Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 45306,
+  "investigationMs": 44738,
+  "score": {
+    "value": 20,
+    "band": "Low",
+    "withoutMuseSha256": "7d6721aeafe1f251bd507f387dfe64494734f1e7f646900bd97dd28ada53ecf0",
+    "withMuseSha256": "7d6721aeafe1f251bd507f387dfe64494734f1e7f646900bd97dd28ada53ecf0",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The bytecode exposes standard token entry points including name, approve, totalSupply, transferFrom, decimals and balanceOf. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x70a08231] The contract can write storage via functions 0x072e2e38, 0x48f2c286 and 0x9c57005c. [E:dev.brandklipparen.capability:storage-write] [E:dev.brandklipparen.decompiler:0x072e2e38] [E:dev.brandklipparen.decompiler:0x48f2c286] Only one low-severity capability signal was found which can change later but proves no controlling account. [E:signal:0xc32d2a3b65fcffed4569ce79862994f438f870f41abdc40b30a5367d91f2740d]",
+    "rationale": "Low score with only low capability signal and standard ERC20 functions supports concluding",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "analysis.summary",
+      "reason": "Check frozen score and summary before concluding low-risk case",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "signal:0xc32d2a3b65fcffed4569ce79862994f438f870f41abdc40b30a5367d91f2740d"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "evidence.list",
+      "reason": "List all frozen evidence ids to support low-risk conclusion",
+      "evidenceCount": 22,
+      "evidenceIds": [
+        "signal:0xc32d2a3b65fcffed4569ce79862994f438f870f41abdc40b30a5367d91f2740d",
+        "dev.brandklipparen.capability:storage-write",
+        "dev.brandklipparen.decompiler:0x00000001",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x072e2e38",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x34e35208",
+        "dev.brandklipparen.decompiler:0x44636c72",
+        "dev.brandklipparen.decompiler:0x48f2c286",
+        "dev.brandklipparen.decompiler:0x6f630ef2",
+        "dev.brandklipparen.decompiler:0x6f85ee8c",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x7a8aaee6",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0x9c57005c",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xc276762b",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xe786ce5e"
+      ]
+    },
+    {
+      "step": 3,
+      "tool": "detector.dev.brandklipparen.ownership",
+      "reason": "Check for owner-controlled privileged functions before concluding low-risk case",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 4,
+      "tool": "detector.dev.brandklipparen.mint",
+      "reason": "Rule out privileged mint before low-risk conclusion",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 5,
+      "tool": "detector.dev.brandklipparen.pause",
+      "reason": "Rule out privileged pause gate before low-risk conclusion",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 6,
+      "tool": "detector.dev.brandklipparen.blacklist",
+      "reason": "Rule out privileged blacklist gate before low-risk conclusion",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 7,
+      "tool": "detector.dev.brandklipparen.transfer-fee",
+      "reason": "Rule out fee-in-transfer before low-risk conclusion",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "analysis.summary",
+      "promptTokens": 3777,
+      "completionTokens": 627,
+      "totalTokens": 4404,
+      "ms": 6124,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 3847,
+      "completionTokens": 496,
+      "totalTokens": 4343,
+      "ms": 4367,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.ownership",
+      "promptTokens": 5455,
+      "completionTokens": 988,
+      "totalTokens": 6443,
+      "ms": 8517,
+      "narrativeDraft": null
+    },
+    {
+      "index": 4,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.mint",
+      "promptTokens": 5490,
+      "completionTokens": 581,
+      "totalTokens": 6071,
+      "ms": 4692,
+      "narrativeDraft": null
+    },
+    {
+      "index": 5,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.pause",
+      "promptTokens": 5523,
+      "completionTokens": 1167,
+      "totalTokens": 6690,
+      "ms": 7901,
+      "narrativeDraft": null
+    },
+    {
+      "index": 6,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.blacklist",
+      "promptTokens": 5556,
+      "completionTokens": 298,
+      "totalTokens": 5854,
+      "ms": 3056,
+      "narrativeDraft": null
+    },
+    {
+      "index": 7,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.transfer-fee",
+      "promptTokens": 5590,
+      "completionTokens": 409,
+      "totalTokens": 5999,
+      "ms": 3463,
+      "narrativeDraft": null
+    },
+    {
+      "index": 8,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 4625,
+      "completionTokens": 1184,
+      "totalTokens": 5809,
+      "ms": 6609,
+      "narrativeDraft": "The bytecode exposes standard token entry points including name, approve, totalSupply, transferFrom, decimals and balanceOf. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x70a08231] The contract can write storage via functions 0x072e2e38, 0x48f2c286 and 0x9c57005c. [E:dev.brandklipparen.capability:storage-write] [E:dev.brandklipparen.decompiler:0x072e2e38] [E:dev.brandklipparen.decompiler:0x48f2c286] Only one low-severity capability signal was found which can change later but proves no controlling account. [E:signal:0xc32d2a3b65fcffed4569ce79862994f438f870f41abdc40b30a5367d91f2740d]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The bytecode exposes standard token entry points including name, approve, totalSupply, transferFrom, decimals and balanceOf. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x70a08231]",
+      "The contract can write storage via functions 0x072e2e38, 0x48f2c286 and 0x9c57005c. [E:dev.brandklipparen.capability:storage-write] [E:dev.brandklipparen.decompiler:0x072e2e38] [E:dev.brandklipparen.decompiler:0x48f2c286]",
+      "Only one low-severity capability signal was found which can change later but proves no controlling account. [E:signal:0xc32d2a3b65fcffed4569ce79862994f438f870f41abdc40b30a5367d91f2740d]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 45613,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 1302,
+  "reused": false,
+  "error": null
+}

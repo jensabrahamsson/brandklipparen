@@ -1,0 +1,114 @@
+{
+  "address": "0xeb1c9afe0c5d4237f4bb148a81faed2e4fabfbe3",
+  "symbol": "NEW02",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:34:50.398Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 17160,
+  "investigationMs": 16697,
+  "score": {
+    "value": 60,
+    "band": "High",
+    "withoutMuseSha256": "cddb01b10b46ece78d59bbc90b0996265972a435016907ea4e4341575e1d7b40",
+    "withMuseSha256": "cddb01b10b46ece78d59bbc90b0996265972a435016907ea4e4341575e1d7b40",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] The transfer function was decompiled in the bytecode. [E:dev.brandklipparen.decompiler:0xa9059cbb]",
+    "rationale": "Blacklist finding already answers High risk, no further steps needed.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "Need evidence ids before concluding; list frozen findings first.",
+      "evidenceCount": 21,
+      "evidenceIds": [
+        "dev.brandklipparen.blacklist:blacklist-extended",
+        "dev.brandklipparen.decompiler:0x00000001",
+        "dev.brandklipparen.decompiler:0x02669b52",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x16eebd1e",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x1c4695f4",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x2cb7f1f0",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x42966c68",
+        "dev.brandklipparen.decompiler:0x4b5979aa",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x7284e416",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xe8a3d485",
+        "dev.brandklipparen.decompiler:0xf3ccaac0",
+        "dev.brandklipparen.transfer-limits:transfer-limits-extended"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "docs.plugin",
+      "reason": "Need validated transfer-limits details to support High score before concluding",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 3428,
+      "completionTokens": 263,
+      "totalTokens": 3691,
+      "ms": 2337,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "docs.plugin",
+      "promptTokens": 5092,
+      "completionTokens": 743,
+      "totalTokens": 5835,
+      "ms": 6786,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 5121,
+      "completionTokens": 922,
+      "totalTokens": 6043,
+      "ms": 7572,
+      "narrativeDraft": "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] The transfer function was decompiled in the bytecode. [E:dev.brandklipparen.decompiler:0xa9059cbb]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended]",
+      "The transfer function was decompiled in the bytecode. [E:dev.brandklipparen.decompiler:0xa9059cbb]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 15569,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 377,
+  "reused": false,
+  "error": null
+}

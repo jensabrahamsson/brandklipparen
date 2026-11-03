@@ -11,6 +11,7 @@
     "evaluate-metrics": "node --experimental-strip-types scripts/evaluate-metrics.ts",
     "generate:explanations": "node --experimental-strip-types scripts/generate-web-explanations.ts",
     "smoke:real": "node --experimental-strip-types scripts/smoke-real-tokens.ts",
+    "investigate:live": "node --experimental-strip-types scripts/investigate-live.ts",
     "audit:plugins": "node --experimental-strip-types scripts/plugin-audit.ts --all",
     "feed:once": "node --experimental-strip-types scripts/feed-once.ts",
     "check": "npm run lint && npm run gate && npm run check:vendors && npm run check:english && npm run typecheck && npm test",

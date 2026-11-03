@@ -1,0 +1,200 @@
+{
+  "address": "0x8bb6aa42be6551d9843ce3f4ec5297b6c0d9179c",
+  "symbol": "NEW07",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:37:18.687Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 41548,
+  "investigationMs": 41171,
+  "score": {
+    "value": 19,
+    "band": "Low",
+    "withoutMuseSha256": "01b8e1048c32fa33b2f465ffbc6bb753becf1929465389510a3d6fa2211d1980",
+    "withMuseSha256": "01b8e1048c32fa33b2f465ffbc6bb753becf1929465389510a3d6fa2211d1980",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The contract exposes ERC20 metadata functions name, symbol and decimals. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] It exposes view functions totalSupply, balanceOf and allowance. [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] It exposes state-changing functions approve, transfer and transferFrom. [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd]",
+    "rationale": "Evidence shows standard ERC20 interface only, supporting low-risk conclusion",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "List evidence ids to enable cited conclusion",
+      "evidenceCount": 9,
+      "evidenceIds": [
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xdd62ed3e"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "analysis.summary",
+      "reason": "Need frozen score band and signal summary before concluding",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.decompiler:0x06fdde03"
+      ]
+    },
+    {
+      "step": 3,
+      "tool": "detector.dev.brandklipparen.mint",
+      "reason": "Check mint risk before concluding standard ERC20",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 4,
+      "tool": "detector.dev.brandklipparen.blacklist",
+      "reason": "Check blacklist gate before concluding low-risk ERC20",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 5,
+      "tool": "detector.dev.brandklipparen.pause",
+      "reason": "Check pause gate before concluding low-risk ERC20",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 6,
+      "tool": "detector.dev.brandklipparen.transfer-fee",
+      "reason": "Check fee-on-transfer risk before concluding low-risk ERC20",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 7,
+      "tool": "detector.dev.brandklipparen.ownership",
+      "reason": "Check ownership risk before concluding low-risk ERC20",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 2242,
+      "completionTokens": 315,
+      "totalTokens": 2557,
+      "ms": 2739,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "analysis.summary",
+      "promptTokens": 3101,
+      "completionTokens": 999,
+      "totalTokens": 4100,
+      "ms": 8043,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.mint",
+      "promptTokens": 3142,
+      "completionTokens": 675,
+      "totalTokens": 3817,
+      "ms": 6615,
+      "narrativeDraft": null
+    },
+    {
+      "index": 4,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.blacklist",
+      "promptTokens": 3174,
+      "completionTokens": 510,
+      "totalTokens": 3684,
+      "ms": 5049,
+      "narrativeDraft": null
+    },
+    {
+      "index": 5,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.pause",
+      "promptTokens": 3208,
+      "completionTokens": 750,
+      "totalTokens": 3958,
+      "ms": 6830,
+      "narrativeDraft": null
+    },
+    {
+      "index": 6,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.transfer-fee",
+      "promptTokens": 3241,
+      "completionTokens": 433,
+      "totalTokens": 3674,
+      "ms": 4047,
+      "narrativeDraft": null
+    },
+    {
+      "index": 7,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.ownership",
+      "promptTokens": 3278,
+      "completionTokens": 394,
+      "totalTokens": 3672,
+      "ms": 3278,
+      "narrativeDraft": null
+    },
+    {
+      "index": 8,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 2398,
+      "completionTokens": 737,
+      "totalTokens": 3135,
+      "ms": 4566,
+      "narrativeDraft": "The contract exposes ERC20 metadata functions name, symbol and decimals. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] It exposes view functions totalSupply, balanceOf and allowance. [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] It exposes state-changing functions approve, transfer and transferFrom. [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The contract exposes ERC20 metadata functions name, symbol and decimals. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567]",
+      "It exposes view functions totalSupply, balanceOf and allowance. [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e]",
+      "It exposes state-changing functions approve, transfer and transferFrom. [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 28597,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 1058,
+  "reused": false,
+  "error": null
+}

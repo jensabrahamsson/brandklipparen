@@ -1,0 +1,91 @@
+{
+  "address": "0x2de7ad079d532e92a2083280e5b24ac3629b076a",
+  "symbol": "NEW04",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:35:29.094Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 11775,
+  "investigationMs": 11384,
+  "score": {
+    "value": 19,
+    "band": "Low",
+    "withoutMuseSha256": "9864ece40e0525fd9b0483b8db179a76bf5b4cb4be4aa0e311df24361b061c91",
+    "withMuseSha256": "9864ece40e0525fd9b0483b8db179a76bf5b4cb4be4aa0e311df24361b061c91",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The bytecode exposes standard ERC-20 views name, symbol, decimals, totalSupply, balanceOf and allowance. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] It also exposes approve, transfer and transferFrom. [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd] Additional unknown selectors were decompiled with no malicious meaning assigned in the frozen analysis. [E:dev.brandklipparen.decompiler:0x00000001] [E:dev.brandklipparen.decompiler:0x02d05d3f] [E:dev.brandklipparen.decompiler:0x77a4d559] [E:dev.brandklipparen.decompiler:0x902d55a5] [E:dev.brandklipparen.decompiler:0xbfe10928] [E:dev.brandklipparen.decompiler:0xc45a0155] [E:dev.brandklipparen.decompiler:0xf1ae8856]",
+    "rationale": "Evidence shows only standard ERC20 and unknown selectors with no malicious detector findings, supporting low-risk conclusion.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "List frozen evidence ids before concluding.",
+      "evidenceCount": 16,
+      "evidenceIds": [
+        "dev.brandklipparen.decompiler:0x00000001",
+        "dev.brandklipparen.decompiler:0x02d05d3f",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x77a4d559",
+        "dev.brandklipparen.decompiler:0x902d55a5",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xbfe10928",
+        "dev.brandklipparen.decompiler:0xc45a0155",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xf1ae8856"
+      ]
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 2870,
+      "completionTokens": 411,
+      "totalTokens": 3281,
+      "ms": 3019,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 4376,
+      "completionTokens": 1187,
+      "totalTokens": 5563,
+      "ms": 8362,
+      "narrativeDraft": "The bytecode exposes standard ERC-20 views name, symbol, decimals, totalSupply, balanceOf and allowance. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] It also exposes approve, transfer and transferFrom. [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd] Additional unknown selectors were decompiled with no malicious meaning assigned in the frozen analysis. [E:dev.brandklipparen.decompiler:0x00000001] [E:dev.brandklipparen.decompiler:0x02d05d3f] [E:dev.brandklipparen.decompiler:0x77a4d559] [E:dev.brandklipparen.decompiler:0x902d55a5] [E:dev.brandklipparen.decompiler:0xbfe10928] [E:dev.brandklipparen.decompiler:0xc45a0155] [E:dev.brandklipparen.decompiler:0xf1ae8856]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The bytecode exposes standard ERC-20 views name, symbol, decimals, totalSupply, balanceOf and allowance. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e]",
+      "It also exposes approve, transfer and transferFrom. [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd]",
+      "Additional unknown selectors were decompiled with no malicious meaning assigned in the frozen analysis. [E:dev.brandklipparen.decompiler:0x00000001] [E:dev.brandklipparen.decompiler:0x02d05d3f] [E:dev.brandklipparen.decompiler:0x77a4d559] [E:dev.brandklipparen.decompiler:0x902d55a5] [E:dev.brandklipparen.decompiler:0xbfe10928] [E:dev.brandklipparen.decompiler:0xc45a0155] [E:dev.brandklipparen.decompiler:0xf1ae8856]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 8844,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 1043,
+  "reused": false,
+  "error": null
+}

@@ -368,6 +368,22 @@ The response carries one text content block with the same body the
 matching REST route returns; replace the synthetic address with any
 ERC-20 contract address on Ethereum mainnet.
 
+## Live agent runs
+
+The investigation agent (Muse) was run live on 20 Ethereum mainnet tokens,
+one after another. Every run finished with a cited conclusion. The full
+table, per-token logs and method are in
+[`docs/live-investigations/SUMMARY.md`](docs/live-investigations/SUMMARY.md).
+
+- 20 of 20 runs finished. No sentence was dropped by the citation check.
+- The risk score was identical with and without Muse in all 20 runs.
+- 84 model calls used 510,112 provider tokens, about 25,500 per token.
+
+The 8000 investigation limit is not a token count. It counts the text length
+of the agent's decisions plus 10 per decision. Prompt and reasoning tokens
+are not counted against it, so a run can use far more provider tokens than
+8000. The limits used for these runs were 8 steps, 8000 units and 60 s.
+
 ## Tests and gates
 
 ```sh

@@ -1,0 +1,185 @@
+{
+  "address": "0x27c1ba4f85b8dc1c150157816623a6ce80b7f187",
+  "symbol": "NEW06",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:36:36.182Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 37500,
+  "investigationMs": 36595,
+  "score": {
+    "value": 60,
+    "band": "High",
+    "withoutMuseSha256": "633d535defea4417e4a9abacd5d0d5c6c3934563d58361e5e662f745eb2e2902",
+    "withMuseSha256": "633d535defea4417e4a9abacd5d0d5c6c3934563d58361e5e662f745eb2e2902",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "An owner account controls privileged functions which raises rug-pull risk. [E:signal:0x8cdfe2bb9abffe04465ccc3f859b4f423b09af4af1d5a2ecb603a5014bdc7d2c] The bytecode contains a mint function with pause-related controls. [E:dev.brandklipparen.decompiler:0x40c10f19] [E:dev.brandklipparen.decompiler:0x5c975abb] [E:dev.brandklipparen.decompiler:0x3f4ba83a] The code structure resists direct reading so hidden risks cannot be ruled out. [E:signal:0x77170e82003fea94b47484a2b4833dfae48fde6346019b4be4a9da184b260114] Standard approval capability with storage writes is present. [E:signal:0xc7b31cc844496f8830a2bb10082752ed8fdf2e2bacca7648d1a8daf1049d67b8] [E:dev.brandklipparen.capability:storage-write]",
+    "rationale": "Owner, mint/pause functions and hard-to-analyze evidence support High risk conclusion",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "List frozen evidence ids to ground further investigation",
+      "evidenceCount": 46,
+      "evidenceIds": [
+        "signal:0x8cdfe2bb9abffe04465ccc3f859b4f423b09af4af1d5a2ecb603a5014bdc7d2c",
+        "signal:0xc7b31cc844496f8830a2bb10082752ed8fdf2e2bacca7648d1a8daf1049d67b8",
+        "signal:0x77170e82003fea94b47484a2b4833dfae48fde6346019b4be4a9da184b260114",
+        "dev.brandklipparen.capability:storage-write",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x17ffc320",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x2c86d98e",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x39509351",
+        "dev.brandklipparen.decompiler:0x3af32abf",
+        "dev.brandklipparen.decompiler:0x3f4ba83a",
+        "dev.brandklipparen.decompiler:0x40c10f19",
+        "dev.brandklipparen.decompiler:0x42966c68",
+        "dev.brandklipparen.decompiler:0x4334614a",
+        "dev.brandklipparen.decompiler:0x46fbf68e",
+        "dev.brandklipparen.decompiler:0x5c975abb",
+        "dev.brandklipparen.decompiler:0x6165e774",
+        "dev.brandklipparen.decompiler:0x6ef8d66d",
+        "dev.brandklipparen.decompiler:0x6f307dc3",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x715018a6",
+        "dev.brandklipparen.decompiler:0x79cc6790",
+        "dev.brandklipparen.decompiler:0x82dc1ec4",
+        "dev.brandklipparen.decompiler:0x8456cb59",
+        "dev.brandklipparen.decompiler:0x854cff2f",
+        "dev.brandklipparen.decompiler:0x8da5cb5b",
+        "dev.brandklipparen.decompiler:0x8f32d59b",
+        "dev.brandklipparen.decompiler:0x93e59dc1",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0x983b2d56",
+        "dev.brandklipparen.decompiler:0x98650275",
+        "dev.brandklipparen.decompiler:0x9f727c27",
+        "dev.brandklipparen.decompiler:0xa457c2d7",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xaa271e1a",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xe9ec9e8b",
+        "dev.brandklipparen.decompiler:0xf2fde38b",
+        "dev.brandklipparen.decompiler:0xf44637ba",
+        "dev.brandklipparen.hard-to-analyze:obfuscated-structure",
+        "dev.brandklipparen.mint:mint-extended",
+        "dev.brandklipparen.ownership:owner-slot",
+        "dev.brandklipparen.pause:pause-extended"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "detector.dev.brandklipparen.mint",
+      "reason": "Confirm owner-gated mint details to support High risk assessment",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.mint:mint-extended"
+      ]
+    },
+    {
+      "step": 3,
+      "tool": "detector.dev.brandklipparen.pause",
+      "reason": "Confirm privileged freeze capability to support High risk assessment alongside mint and ownership evidence",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.pause:pause-extended"
+      ]
+    },
+    {
+      "step": 4,
+      "tool": "detector.dev.brandklipparen.ownership",
+      "reason": "Confirm owner slot and privileged functions to ground High risk narrative",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.ownership:owner-slot"
+      ]
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 5507,
+      "completionTokens": 549,
+      "totalTokens": 6056,
+      "ms": 4731,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.mint",
+      "promptTokens": 7355,
+      "completionTokens": 353,
+      "totalTokens": 7708,
+      "ms": 3318,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.pause",
+      "promptTokens": 7402,
+      "completionTokens": 1212,
+      "totalTokens": 8614,
+      "ms": 9970,
+      "narrativeDraft": null
+    },
+    {
+      "index": 4,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.ownership",
+      "promptTokens": 7450,
+      "completionTokens": 810,
+      "totalTokens": 8260,
+      "ms": 6769,
+      "narrativeDraft": null
+    },
+    {
+      "index": 5,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 7496,
+      "completionTokens": 1859,
+      "totalTokens": 9355,
+      "ms": 11800,
+      "narrativeDraft": "An owner account controls privileged functions which raises rug-pull risk. [E:signal:0x8cdfe2bb9abffe04465ccc3f859b4f423b09af4af1d5a2ecb603a5014bdc7d2c] The bytecode contains a mint function with pause-related controls. [E:dev.brandklipparen.decompiler:0x40c10f19] [E:dev.brandklipparen.decompiler:0x5c975abb] [E:dev.brandklipparen.decompiler:0x3f4ba83a] The code structure resists direct reading so hidden risks cannot be ruled out. [E:signal:0x77170e82003fea94b47484a2b4833dfae48fde6346019b4be4a9da184b260114] Standard approval capability with storage writes is present. [E:signal:0xc7b31cc844496f8830a2bb10082752ed8fdf2e2bacca7648d1a8daf1049d67b8] [E:dev.brandklipparen.capability:storage-write]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "An owner account controls privileged functions which raises rug-pull risk. [E:signal:0x8cdfe2bb9abffe04465ccc3f859b4f423b09af4af1d5a2ecb603a5014bdc7d2c]",
+      "The bytecode contains a mint function with pause-related controls. [E:dev.brandklipparen.decompiler:0x40c10f19] [E:dev.brandklipparen.decompiler:0x5c975abb] [E:dev.brandklipparen.decompiler:0x3f4ba83a]",
+      "The code structure resists direct reading so hidden risks cannot be ruled out. [E:signal:0x77170e82003fea94b47484a2b4833dfae48fde6346019b4be4a9da184b260114]",
+      "Standard approval capability with storage writes is present. [E:signal:0xc7b31cc844496f8830a2bb10082752ed8fdf2e2bacca7648d1a8daf1049d67b8] [E:dev.brandklipparen.capability:storage-write]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 39993,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 1047,
+  "reused": false,
+  "error": null
+}

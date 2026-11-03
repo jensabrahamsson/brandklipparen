@@ -1,0 +1,84 @@
+{
+  "address": "0xb8587843e247c9ede533edec32e64354eebb5470",
+  "symbol": "NEW01",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:34:33.398Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 11997,
+  "investigationMs": 11619,
+  "score": {
+    "value": 19,
+    "band": "Low",
+    "withoutMuseSha256": "0a6ae4e1a6a941148c4851126d02dd004e4b552890753d0e5aca083c7791f79b",
+    "withMuseSha256": "0a6ae4e1a6a941148c4851126d02dd004e4b552890753d0e5aca083c7791f79b",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The contract implements standard ERC-20 metadata getters for name, symbol and decimals. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] It implements balanceOf and allowance views with transfer, approve and transferFrom for token movement. [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x23b872dd] It exposes totalSupply tracking. [E:dev.brandklipparen.decompiler:0x18160ddd]",
+    "rationale": "Evidence shows only standard ERC-20 functions with no malicious detectors firing, matching Low score, so conclude.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "List frozen evidence ids to ground next steps",
+      "evidenceCount": 9,
+      "evidenceIds": [
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xdd62ed3e"
+      ]
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 2239,
+      "completionTokens": 383,
+      "totalTokens": 2622,
+      "ms": 3456,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 3099,
+      "completionTokens": 1074,
+      "totalTokens": 4173,
+      "ms": 8162,
+      "narrativeDraft": "The contract implements standard ERC-20 metadata getters for name, symbol and decimals. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] It implements balanceOf and allowance views with transfer, approve and transferFrom for token movement. [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x23b872dd] It exposes totalSupply tracking. [E:dev.brandklipparen.decompiler:0x18160ddd]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The contract implements standard ERC-20 metadata getters for name, symbol and decimals. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567]",
+      "It implements balanceOf and allowance views with transfer, approve and transferFrom for token movement. [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0x23b872dd]",
+      "It exposes totalSupply tracking. [E:dev.brandklipparen.decompiler:0x18160ddd]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 6795,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 694,
+  "reused": false,
+  "error": null
+}

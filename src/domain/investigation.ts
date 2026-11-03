@@ -187,7 +187,7 @@ function citedIds(sentence: string): string[] {
 // instead of letting an uncited blob ride on a trailing marker.
 const MAX_SENTENCE_CHARS = 500;
 
-function splitSentences(draft: string): string[] {
+export function splitSentences(draft: string): string[] {
   const raw: string[] = [];
   let current = "";
   // Square-bracket depth: terminators inside a citation marker never

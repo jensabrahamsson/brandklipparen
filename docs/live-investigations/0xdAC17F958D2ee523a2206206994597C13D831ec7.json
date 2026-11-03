@@ -1,0 +1,200 @@
+{
+  "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+  "symbol": "USDT",
+  "group": "well-known",
+  "startedAt": "2026-11-03T20:58:22.268Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 48584,
+  "investigationMs": 47651,
+  "score": {
+    "value": 60,
+    "band": "High",
+    "withoutMuseSha256": "cc9a7168efaad017aa71894410f5aca04dbee69b94550d4ceae5cdf6ff359e45",
+    "withMuseSha256": "cc9a7168efaad017aa71894410f5aca04dbee69b94550d4ceae5cdf6ff359e45",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] An owner account controls privileged functions including addBlackList. [E:signal:0x3df3321a4310baf873c2def23695e01b0b9013fab5b315b7ab227ebc52d958de] The addBlackList function is present in the bytecode. [E:dev.brandklipparen.decompiler:0x0ecb93c0] The contract can write storage and can call other contracts. [E:dev.brandklipparen.capability:storage-write] [E:dev.brandklipparen.capability:call]",
+    "rationale": "Blacklist gate plus owner control answers High risk, no further tool needed.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "detector.dev.brandklipparen.blacklist",
+      "reason": "Confirm owner blacklist gate to support High score before concluding.",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.blacklist:blacklist-extended"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "evidence.list",
+      "reason": "Expand collected evidence ids beyond blacklist before concluding High risk.",
+      "evidenceCount": 42,
+      "evidenceIds": [
+        "signal:0x2d5df349c83632e6a73b347946c28a1b171ca0ddb108e427610de61e65b48f2f",
+        "signal:0x3df3321a4310baf873c2def23695e01b0b9013fab5b315b7ab227ebc52d958de",
+        "signal:0x575f201378d97a0eea37fb4fee340c366c5a3a85469c23bf14d8ee9b40b21ed9",
+        "dev.brandklipparen.blacklist:blacklist-extended",
+        "dev.brandklipparen.capability:call",
+        "dev.brandklipparen.capability:storage-write",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x0753c30c",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x0e136b19",
+        "dev.brandklipparen.decompiler:0x0ecb93c0",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x26976e3f",
+        "dev.brandklipparen.decompiler:0x27e235e3",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x35390714",
+        "dev.brandklipparen.decompiler:0x3eaaf86b",
+        "dev.brandklipparen.decompiler:0x3f4ba83a",
+        "dev.brandklipparen.decompiler:0x59bf1abe",
+        "dev.brandklipparen.decompiler:0x5c658165",
+        "dev.brandklipparen.decompiler:0x5c975abb",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x8456cb59",
+        "dev.brandklipparen.decompiler:0x893d20e8",
+        "dev.brandklipparen.decompiler:0x8da5cb5b",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xc0324c77",
+        "dev.brandklipparen.decompiler:0xcc872b66",
+        "dev.brandklipparen.decompiler:0xdb006a75",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xdd644f72",
+        "dev.brandklipparen.decompiler:0xe47d6060",
+        "dev.brandklipparen.decompiler:0xe4997dc5",
+        "dev.brandklipparen.decompiler:0xe5b5019a",
+        "dev.brandklipparen.decompiler:0xf2fde38b",
+        "dev.brandklipparen.decompiler:0xf3bdc228",
+        "dev.brandklipparen.mint:mint-extended",
+        "dev.brandklipparen.ownership:owner-slot",
+        "dev.brandklipparen.pause:pause-extended",
+        "dev.brandklipparen.transfer-fee:transfer-fee-extended"
+      ]
+    },
+    {
+      "step": 3,
+      "tool": "detector.dev.brandklipparen.mint",
+      "reason": "Confirm owner mint capability to strengthen High-risk evidence.",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.mint:mint-extended"
+      ]
+    },
+    {
+      "step": 4,
+      "tool": "detector.dev.brandklipparen.pause",
+      "reason": "Confirm privileged pause freeze to strengthen High-risk evidence.",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.pause:pause-extended"
+      ]
+    },
+    {
+      "step": 5,
+      "tool": "detector.dev.brandklipparen.transfer-fee",
+      "reason": "Confirm owner-controlled transfer fee to complete High-risk evidence set.",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.transfer-fee:transfer-fee-extended"
+      ]
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.blacklist",
+      "promptTokens": 6186,
+      "completionTokens": 698,
+      "totalTokens": 6884,
+      "ms": 7021,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 5743,
+      "completionTokens": 884,
+      "totalTokens": 6627,
+      "ms": 7443,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.mint",
+      "promptTokens": 8050,
+      "completionTokens": 1148,
+      "totalTokens": 9198,
+      "ms": 10953,
+      "narrativeDraft": null
+    },
+    {
+      "index": 4,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.pause",
+      "promptTokens": 8095,
+      "completionTokens": 643,
+      "totalTokens": 8738,
+      "ms": 6941,
+      "narrativeDraft": null
+    },
+    {
+      "index": 5,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.transfer-fee",
+      "promptTokens": 8138,
+      "completionTokens": 575,
+      "totalTokens": 8713,
+      "ms": 6076,
+      "narrativeDraft": null
+    },
+    {
+      "index": 6,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 8189,
+      "completionTokens": 1197,
+      "totalTokens": 9386,
+      "ms": 9207,
+      "narrativeDraft": "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] An owner account controls privileged functions including addBlackList. [E:signal:0x3df3321a4310baf873c2def23695e01b0b9013fab5b315b7ab227ebc52d958de] The addBlackList function is present in the bytecode. [E:dev.brandklipparen.decompiler:0x0ecb93c0] The contract can write storage and can call other contracts. [E:dev.brandklipparen.capability:storage-write] [E:dev.brandklipparen.capability:call]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended]",
+      "An owner account controls privileged functions including addBlackList. [E:signal:0x3df3321a4310baf873c2def23695e01b0b9013fab5b315b7ab227ebc52d958de]",
+      "The addBlackList function is present in the bytecode. [E:dev.brandklipparen.decompiler:0x0ecb93c0]",
+      "The contract can write storage and can call other contracts. [E:dev.brandklipparen.capability:storage-write] [E:dev.brandklipparen.capability:call]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 49546,
+    "source": "provider-usage"
+  },
+  "error": null
+}

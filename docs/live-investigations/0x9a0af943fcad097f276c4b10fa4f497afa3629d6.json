@@ -1,0 +1,220 @@
+{
+  "address": "0x9a0af943fcad097f276c4b10fa4f497afa3629d6",
+  "symbol": "NEW10",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:39:00.349Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 47536,
+  "investigationMs": 46934,
+  "score": {
+    "value": 23,
+    "band": "Low",
+    "withoutMuseSha256": "12c6581f09fa5f2f79b18233a949e71078f434f437d7404bad015c293d337eaa",
+    "withMuseSha256": "12c6581f09fa5f2f79b18233a949e71078f434f437d7404bad015c293d337eaa",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The code includes a burn capability via burn(uint256) and function 0x79ba5097 that can change state later with no controlling account proven. [E:signal:0x21aafd38c857cfffea0e3a60528024fdffe2027d2806c761872a02a134eb2ca9] Storage writes are reachable through burn(uint256) and function 0x79ba5097. [E:dev.brandklipparen.capability:storage-write] The code structure resists direct reading via selector 0x00000001 so not all logic could be mapped and rug-pull risk cannot be ruled out. [E:signal:0x1faf6ae0d21054d69ee8391e39bd32d60e485a9a35fb2bfac4188ecc29382253] Standard token views including name, totalSupply, balanceOf, decimals and symbol were decompiled. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231]",
+    "rationale": "Evidence shows low-severity burn storage-write plus unmapped structure; concluding with citable ids only.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "analysis.summary",
+      "reason": "Need frozen score and signal summary to guide further detector checks.",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "signal:0x21aafd38c857cfffea0e3a60528024fdffe2027d2806c761872a02a134eb2ca9"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "evidence.list",
+      "reason": "List all frozen evidence ids to expand citable findings before concluding.",
+      "evidenceCount": 26,
+      "evidenceIds": [
+        "signal:0x21aafd38c857cfffea0e3a60528024fdffe2027d2806c761872a02a134eb2ca9",
+        "signal:0x1faf6ae0d21054d69ee8391e39bd32d60e485a9a35fb2bfac4188ecc29382253",
+        "dev.brandklipparen.capability:storage-write",
+        "dev.brandklipparen.decompiler:0x00000001",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x2f50bdb3",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x3c130d90",
+        "dev.brandklipparen.decompiler:0x3d37c66e",
+        "dev.brandklipparen.decompiler:0x42966c68",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x715018a6",
+        "dev.brandklipparen.decompiler:0x79ba5097",
+        "dev.brandklipparen.decompiler:0x8da5cb5b",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xbb636112",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xe30c3978",
+        "dev.brandklipparen.decompiler:0xf2fde38b",
+        "dev.brandklipparen.decompiler:0xffa1ad74",
+        "dev.brandklipparen.hard-to-analyze:obfuscated-structure",
+        "dev.brandklipparen.proxy-upgrade:proxy-upgrade-extended"
+      ]
+    },
+    {
+      "step": 3,
+      "tool": "detector.dev.brandklipparen.proxy-upgrade",
+      "reason": "Verify upgradeable proxy finding that dominates risk before checking other gates.",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.proxy-upgrade:proxy-upgrade-extended"
+      ]
+    },
+    {
+      "step": 4,
+      "tool": "detector.dev.brandklipparen.ownership",
+      "reason": "Check owner controls given owner and transferOwnership selectors present",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 5,
+      "tool": "detector.dev.brandklipparen.mint",
+      "reason": "Check for privileged mint that could increase supply",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 6,
+      "tool": "detector.dev.brandklipparen.pause",
+      "reason": "Check for privileged pause gate before concluding low-risk burn-only view.",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    },
+    {
+      "step": 7,
+      "tool": "detector.dev.brandklipparen.transfer-fee",
+      "reason": "Rule out privileged fee in transfer path before concluding low-score burn-only view.",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "analysis.summary",
+      "promptTokens": 4467,
+      "completionTokens": 517,
+      "totalTokens": 4984,
+      "ms": 4398,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 4379,
+      "completionTokens": 734,
+      "totalTokens": 5113,
+      "ms": 5913,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.proxy-upgrade",
+      "promptTokens": 6135,
+      "completionTokens": 625,
+      "totalTokens": 6760,
+      "ms": 5665,
+      "narrativeDraft": null
+    },
+    {
+      "index": 4,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.ownership",
+      "promptTokens": 6187,
+      "completionTokens": 804,
+      "totalTokens": 6991,
+      "ms": 7189,
+      "narrativeDraft": null
+    },
+    {
+      "index": 5,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.mint",
+      "promptTokens": 6221,
+      "completionTokens": 727,
+      "totalTokens": 6948,
+      "ms": 5893,
+      "narrativeDraft": null
+    },
+    {
+      "index": 6,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.pause",
+      "promptTokens": 6254,
+      "completionTokens": 535,
+      "totalTokens": 6789,
+      "ms": 4854,
+      "narrativeDraft": null
+    },
+    {
+      "index": 7,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "detector.dev.brandklipparen.transfer-fee",
+      "promptTokens": 6290,
+      "completionTokens": 933,
+      "totalTokens": 7223,
+      "ms": 8202,
+      "narrativeDraft": null
+    },
+    {
+      "index": 8,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 5201,
+      "completionTokens": 714,
+      "totalTokens": 5915,
+      "ms": 4810,
+      "narrativeDraft": "The code includes a burn capability via burn(uint256) and function 0x79ba5097 that can change state later with no controlling account proven. [E:signal:0x21aafd38c857cfffea0e3a60528024fdffe2027d2806c761872a02a134eb2ca9] Storage writes are reachable through burn(uint256) and function 0x79ba5097. [E:dev.brandklipparen.capability:storage-write] The code structure resists direct reading via selector 0x00000001 so not all logic could be mapped and rug-pull risk cannot be ruled out. [E:signal:0x1faf6ae0d21054d69ee8391e39bd32d60e485a9a35fb2bfac4188ecc29382253] Standard token views including name, totalSupply, balanceOf, decimals and symbol were decompiled. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The code includes a burn capability via burn(uint256) and function 0x79ba5097 that can change state later with no controlling account proven. [E:signal:0x21aafd38c857cfffea0e3a60528024fdffe2027d2806c761872a02a134eb2ca9]",
+      "Storage writes are reachable through burn(uint256) and function 0x79ba5097. [E:dev.brandklipparen.capability:storage-write]",
+      "The code structure resists direct reading via selector 0x00000001 so not all logic could be mapped and rug-pull risk cannot be ruled out. [E:signal:0x1faf6ae0d21054d69ee8391e39bd32d60e485a9a35fb2bfac4188ecc29382253]",
+      "Standard token views including name, totalSupply, balanceOf, decimals and symbol were decompiled. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x18160ddd] [E:dev.brandklipparen.decompiler:0x70a08231]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 50723,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 1379,
+  "reused": false,
+  "error": null
+}

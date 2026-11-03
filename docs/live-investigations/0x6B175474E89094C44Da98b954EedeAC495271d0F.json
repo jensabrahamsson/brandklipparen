@@ -1,0 +1,120 @@
+{
+  "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+  "symbol": "DAI",
+  "group": "well-known",
+  "startedAt": "2026-11-03T21:30:36.159Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 24076,
+  "investigationMs": 23628,
+  "score": {
+    "value": 60,
+    "band": "High",
+    "withoutMuseSha256": "6e43798b2f9cceaff7c314cb5bdd2627216af03a2447e394be5b9067fa942311",
+    "withMuseSha256": "6e43798b2f9cceaff7c314cb5bdd2627216af03a2447e394be5b9067fa942311",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract can write storage through privileged functions. [E:dev.brandklipparen.capability:storage-write] Transfer and mint logic is present in the bytecode. [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x40c10f19]",
+    "rationale": "Blacklist finding already explains High score, no further tool needed.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "Need full evidence id list before concluding High score case",
+      "evidenceCount": 26,
+      "evidenceIds": [
+        "signal:0x0e1965f968f9dc1221356720f7030aa38550aa4f99319bdb8ade41b3b835fa77",
+        "dev.brandklipparen.blacklist:blacklist-extended",
+        "dev.brandklipparen.capability:storage-write",
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x30adf81f",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x3644e515",
+        "dev.brandklipparen.decompiler:0x40c10f19",
+        "dev.brandklipparen.decompiler:0x54fd4d50",
+        "dev.brandklipparen.decompiler:0x65fae35e",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x7ecebe00",
+        "dev.brandklipparen.decompiler:0x8fcbaf0c",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0x9c52a7f1",
+        "dev.brandklipparen.decompiler:0x9dc29fac",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xb753a98c",
+        "dev.brandklipparen.decompiler:0xbb35783b",
+        "dev.brandklipparen.decompiler:0xbf353dbb",
+        "dev.brandklipparen.decompiler:0xdd62ed3e",
+        "dev.brandklipparen.decompiler:0xf2d5d56b",
+        "dev.brandklipparen.mint:mint-extended"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "docs.plugin",
+      "reason": "Need validated mint summary to support High score narrative before concluding.",
+      "evidenceCount": 0,
+      "evidenceIds": []
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 4264,
+      "completionTokens": 595,
+      "totalTokens": 4859,
+      "ms": 4902,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "docs.plugin",
+      "promptTokens": 5957,
+      "completionTokens": 989,
+      "totalTokens": 6946,
+      "ms": 9565,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 5985,
+      "completionTokens": 1212,
+      "totalTokens": 7197,
+      "ms": 9157,
+      "narrativeDraft": "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract can write storage through privileged functions. [E:dev.brandklipparen.capability:storage-write] Transfer and mint logic is present in the bytecode. [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x40c10f19]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended]",
+      "The contract can write storage through privileged functions. [E:dev.brandklipparen.capability:storage-write]",
+      "Transfer and mint logic is present in the bytecode. [E:dev.brandklipparen.decompiler:0x23b872dd] [E:dev.brandklipparen.decompiler:0x40c10f19]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 19002,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 525,
+  "reused": false,
+  "error": null
+}

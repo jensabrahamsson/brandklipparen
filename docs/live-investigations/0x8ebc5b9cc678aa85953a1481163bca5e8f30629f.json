@@ -1,0 +1,104 @@
+{
+  "address": "0x8ebc5b9cc678aa85953a1481163bca5e8f30629f",
+  "symbol": "NEW12",
+  "group": "new-listing",
+  "startedAt": "2026-11-03T21:40:29.659Z",
+  "status": "done",
+  "failure": null,
+  "durationMs": 12514,
+  "investigationMs": 12055,
+  "score": {
+    "value": 19,
+    "band": "Low",
+    "withoutMuseSha256": "60c2dbdb1a4712aaa77cdf37b160e9ba3da0bf76544cab1665eabc76c2a1a61a",
+    "withMuseSha256": "60c2dbdb1a4712aaa77cdf37b160e9ba3da0bf76544cab1665eabc76c2a1a61a",
+    "identical": true
+  },
+  "verdict": {
+    "narrative": "The bytecode exposes standard ERC-20 metadata and supply views for name, symbol, decimals and totalSupply. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x18160ddd] It implements balance and allowance views with approve, transfer and transferFrom logic. [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd]",
+    "rationale": "Evidence shows only standard ERC-20 functions with Low score and no malicious patterns, sufficient to conclude.",
+    "forcedConclusion": false,
+    "verifiedInput": true
+  },
+  "steps": [
+    {
+      "step": 1,
+      "tool": "evidence.list",
+      "reason": "Need to collect frozen evidence ids before concluding.",
+      "evidenceCount": 9,
+      "evidenceIds": [
+        "dev.brandklipparen.decompiler:0x06fdde03",
+        "dev.brandklipparen.decompiler:0x095ea7b3",
+        "dev.brandklipparen.decompiler:0x18160ddd",
+        "dev.brandklipparen.decompiler:0x23b872dd",
+        "dev.brandklipparen.decompiler:0x313ce567",
+        "dev.brandklipparen.decompiler:0x70a08231",
+        "dev.brandklipparen.decompiler:0x95d89b41",
+        "dev.brandklipparen.decompiler:0xa9059cbb",
+        "dev.brandklipparen.decompiler:0xdd62ed3e"
+      ]
+    },
+    {
+      "step": 2,
+      "tool": "analysis.summary",
+      "reason": "Need frozen score and signal summary to support conclusion",
+      "evidenceCount": 1,
+      "evidenceIds": [
+        "dev.brandklipparen.decompiler:0x06fdde03"
+      ]
+    }
+  ],
+  "modelCalls": [
+    {
+      "index": 1,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "evidence.list",
+      "promptTokens": 2235,
+      "completionTokens": 276,
+      "totalTokens": 2511,
+      "ms": 2289,
+      "narrativeDraft": null
+    },
+    {
+      "index": 2,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "run-tool",
+      "toolId": "analysis.summary",
+      "promptTokens": 3095,
+      "completionTokens": 413,
+      "totalTokens": 3508,
+      "ms": 4168,
+      "narrativeDraft": null
+    },
+    {
+      "index": 3,
+      "httpStatus": 200,
+      "outcome": "decided",
+      "decision": "conclude",
+      "toolId": null,
+      "promptTokens": 3136,
+      "completionTokens": 764,
+      "totalTokens": 3900,
+      "ms": 5595,
+      "narrativeDraft": "The bytecode exposes standard ERC-20 metadata and supply views for name, symbol, decimals and totalSupply. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x18160ddd] It implements balance and allowance views with approve, transfer and transferFrom logic. [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd]"
+    }
+  ],
+  "citations": {
+    "kept": [
+      "The bytecode exposes standard ERC-20 metadata and supply views for name, symbol, decimals and totalSupply. [E:dev.brandklipparen.decompiler:0x06fdde03] [E:dev.brandklipparen.decompiler:0x95d89b41] [E:dev.brandklipparen.decompiler:0x313ce567] [E:dev.brandklipparen.decompiler:0x18160ddd]",
+      "It implements balance and allowance views with approve, transfer and transferFrom logic. [E:dev.brandklipparen.decompiler:0x70a08231] [E:dev.brandklipparen.decompiler:0xdd62ed3e] [E:dev.brandklipparen.decompiler:0x095ea7b3] [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklipparen.decompiler:0x23b872dd]"
+    ],
+    "dropped": [],
+    "reproducedNarrative": true
+  },
+  "tokens": {
+    "total": 9919,
+    "source": "provider-usage"
+  },
+  "budgetUnits": 742,
+  "reused": false,
+  "error": null
+}
