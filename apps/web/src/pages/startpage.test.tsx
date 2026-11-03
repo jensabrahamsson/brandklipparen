@@ -42,7 +42,7 @@ describe("start page first 30 seconds (D-14)", () => {
       expect(page).toContain(`href="#/token/${example.address}"`);
       expect(page).toContain(`>${example.name}</a>`);
     }
-    expect(page).toContain("See what the owner can do to you. Paste a token address. Answer in seconds.");
+    expect(page).toContain("Paste a token address. See what the owner can do to you.");
   });
 
   test("paste button and coloured legend render", () => {

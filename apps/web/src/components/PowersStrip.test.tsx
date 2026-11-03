@@ -187,6 +187,22 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
     expect(html).toContain("Blacklist: found, high. Can the owner block wallets? Open details.");
   });
 
+  test("unreadable counts agree across the strip, summary and group", () => {
+    const results = [
+      ...quietResults().filter((result) => result.pluginId !== "dev.brandklipparen.blacklist"),
+      ok("dev.brandklipparen.blacklist", [{ id: "blacklist", title: "Blocked wallets", payload: { feature: "blacklist" }, evidence: [] }]),
+      ok("dev.brandklipparen.hard-to-analyze", [{ id: "timeout", title: "Slow read", payload: { cause: "timeout" }, evidence: [] }]),
+    ];
+    const board = buildBoardModel(PLUGINS, results);
+    const count = board.ownerTiles.filter((tile) => tile.powerStatus === "cant-tell").length;
+    expect(count).toBeGreaterThanOrEqual(3);
+    const strip = renderToString(<PowersStrip address={ADDRESS} allIds={PLUGINS.map((plugin) => plugin.id)} tiles={board.ownerTiles} />);
+    const grid = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={results} />);
+    expect(strip).toContain(`+${count} can&#x27;t tell`);
+    expect(grid).toContain(`${count} can&#x27;t tell`);
+    expect(grid).toContain(`Can&#x27;t tell (${count})`);
+  });
+
   test("empty_board_renders_nothing", () => {
     const html = renderToString(<PowersStrip address={ADDRESS} allIds={[]} tiles={[]} />);
     expect(html).toBe("");
@@ -302,10 +318,9 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
       <PowersStrip address={ADDRESS} allIds={ids} tiles={board.ownerTiles} ownerState={ownerState} />,
     );
     expect(html).toContain("state-renounced");
-    expect(html).toContain("Owner renounced");
     expect(html).not.toContain("Sets score floor");
     expect(html).toContain("Blacklist: owner renounced. Can the owner block wallets? Open details.");
-    expect(html).toContain("Owner renounced. 2 powers lifted.");
+    expect(html).not.toContain("2 powers lifted");
   });
 
   test("renounced_owner_line_names_getter_address_and_block", () => {
@@ -325,12 +340,8 @@ describe("owner-powers strip (UI v2 §1.1)", () => {
         }}
       />,
     );
-    expect(html).toContain("Owner renounced");
-    expect(html).toContain("owner()");
-    expect(html).toContain("0x0000000000000000000000000000000000000000");
-    expect(html).toContain("24000000");
-    expect(html).toContain("so these setters can no longer be called.");
-    expect(html).toContain('aria-label="Copy owner address"');
+    expect(html).not.toContain("0x0000000000000000000000000000000000000000");
+    expect(html).not.toContain("24000000");
   });
 
   test("empty_then_populated_rerender_does_not_throw", () => {

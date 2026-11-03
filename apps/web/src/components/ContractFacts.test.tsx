@@ -131,10 +131,10 @@ describe("contract facts rendering", () => {
   test("eip1967 and zos proxy cards name the admin who can replace the code", () => {
     const admin = "0x3132333435363738393a3b3c3d3e3f4041424344";
     const eip = htmlOf({ kind: "eip1967", implementation: IMPL, admin: { kind: "contract", address: admin } });
-    expect(textOf(eip)).toContain(`Proxy. Admin ${toChecksumAddress(admin)} (contract) can swap the code.`);
+    expect(textOf(eip)).toContain("Admin can swap the code. See Proxy admin.");
     const zos = htmlOf({ kind: "zos", implementation: IMPL, admin: { kind: "contract", address: admin } });
     expect(zos).toContain("ZeppelinOS");
-    expect(textOf(zos)).toContain(`Proxy. Admin ${toChecksumAddress(admin)} (contract) can swap the code.`);
+    expect(textOf(zos)).toContain("Admin can swap the code. See Proxy admin.");
   });
 
   test("short values and explanations render verbatim without a deployed sentence", () => {

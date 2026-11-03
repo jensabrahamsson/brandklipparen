@@ -10,7 +10,6 @@ import type { SelectorName } from "../lib/selectorNames.ts";
 import type { AnalyzeSuccess } from "../types.ts";
 import type { ExplanationClaim, Signal } from "../types.ts";
 import { toChecksumAddress } from "../lib/checksumAddress.ts";
-import { CopyButton } from "./CopyButton.tsx";
 import { Explain } from "./Explain.tsx";
 import { SignalRows } from "./SignalList.tsx";
 
@@ -75,7 +74,7 @@ export function ExplanationList({
   readonly ownerState?: OwnerState | undefined;
 }): JSX.Element {
   const lead = scoreFloor === undefined ? null : floorLeadSentence(scoreFloor);
-  const renounced = scoreFloor === undefined ? renouncedLeadSentence(ownerState) : null;
+  const renounced = null;
   const showLabel = scoreFloorLabel !== undefined && lead === null;
   if (signals.length === 0 && claims.length === 0 && lead === null && renounced === null) {
     if (!showLabel) {
@@ -108,12 +107,6 @@ export function ExplanationList({
         ) : (
           <p className="muted score-floor" style={{ margin: "0 0 12px" }}>
             {lead ?? renounced}
-            {renounced !== null && ownerState !== undefined && ownerState.address !== null ? (
-              <>
-                {" "}
-                <CopyButton value={toChecksumAddress(ownerState.address)} label="Copy owner address" />
-              </>
-            ) : null}
           </p>
         )}
         {lead === null && renounced === null ? null : (
@@ -135,12 +128,6 @@ export function ExplanationList({
       {lead === null && renounced === null ? null : (
         <p className="muted score-floor" style={{ margin: "0 0 12px" }}>
           {lead ?? renounced}
-          {renounced !== null && ownerState !== undefined && ownerState.address !== null ? (
-            <>
-              {" "}
-              <CopyButton value={toChecksumAddress(ownerState.address)} label="Copy owner address" />
-            </>
-          ) : null}
         </p>
       )}
       <p className="quiet numeric" style={{ margin: "0 0 12px" }}>
@@ -160,6 +147,7 @@ export function ExplanationList({
         apiKey={apiKey}
         names={names}
         bandHigh={bandHigh}
+        ownerRenounced={ownerState?.status === "renounced"}
         block={block}
       />
     </section>

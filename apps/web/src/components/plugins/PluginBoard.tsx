@@ -181,7 +181,6 @@ function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.E
   // tile state, so the summary agrees with the hero chips.
   const found = tiles.filter((tile) => tile.powerStatus === "found" || tile.powerStatus === "floor").length;
   const floor = tiles.filter((tile) => tile.powerStatus === "floor").length;
-  const renounced = tiles.filter((tile) => tile.powerStatus === "renounced").length;
   const extended = tiles.filter((tile) => tile.powerStatus === "extended").length;
   const notFound = tiles.filter((tile) => tile.powerStatus === "not-found").length;
   const cantTell = tiles.filter((tile) => tile.powerStatus === "cant-tell").length;
@@ -204,9 +203,6 @@ function SummaryLine({ tiles }: { readonly tiles: readonly BoardTile[] }): JSX.E
   }
   if (extended > 0) {
     parts.push({ state: "extended", text: `${countedExtended} not yet scored` });
-  }
-  if (renounced > 0) {
-    parts.push({ state: "extended", text: `${renounced} owner renounced` });
   }
   if (cantTell > 0) {
     parts.push({ state: "cant-tell", text: `${cantTell} can't tell` });
@@ -280,7 +276,7 @@ function CantTellGroup({
         <span className="lamp" aria-hidden="true">
           <Pictogram name="canttell" size={20} />
         </span>
-        <span className="canttell-label">Can&apos;t tell ({tiles.length})</span>
+        <span className="canttell-label">{`Can't tell (${tiles.length})`}</span>
         <span className="canttell-chev" aria-hidden="true">
           <Pictogram name={open ? "chevron-down" : "chevron-right"} size={20} />
         </span>
@@ -376,12 +372,7 @@ export function PluginBoard({
           narrow={narrow}
         />
       ) : null}
-      {model.toolTiles.length === 0 ? null : (
-        <details className="board-tools">
-          <summary>Tools</summary>
-          <div className="plugin-grid">{renderTiles(model.toolTiles, model.ownerTiles.length)}</div>
-        </details>
-      )}
+      {model.toolTiles.length === 0 ? null : <div className="plugin-grid">{renderTiles(model.toolTiles, model.ownerTiles.length)}</div>}
     </section>
   );
 }

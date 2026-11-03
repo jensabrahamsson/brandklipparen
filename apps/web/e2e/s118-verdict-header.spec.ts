@@ -363,7 +363,7 @@ test("score4_floor_blacklist_chip_agrees_with_high_score", async ({ page }) => {
   await expect(cards.first()).toHaveAttribute("data-testid", "floor-card");
   await expect(cards.first()).toHaveClass(/\bhigh\b/);
   await expect(cards.first()).toContainText("Owner can block holders: blacklist");
-  await expect(page.getByText("Pattern model · history-based estimate")).toBeVisible();
+  await expect(page.getByText("Estimate", { exact: true })).toBeVisible();
   await expect(page.locator('section[aria-label="Why this score"]')).toContainText(
     "Owner can block holders (blacklist). Sets score floor: 60.",
   );

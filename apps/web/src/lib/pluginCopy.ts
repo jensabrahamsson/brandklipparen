@@ -3,7 +3,6 @@
 // otherwise the full id, URL-encoded. Never scored, never evidence:
 // display strings only.
 import type { PictogramName } from "./pictograms.ts";
-import { toChecksumAddress } from "./checksumAddress.ts";
 import {
   decompilerSummaryLine,
   parseDecompilerFunctions,
@@ -247,7 +246,7 @@ function proxyLine(payloads: readonly unknown[]): string {
   if (record !== null && (kind === "eip1967" || kind === "zos" || kind === "legacy-zos")) {
     const admin = textOf(record, "admin");
     if (admin !== null && textOf(record, "adminKind") !== null) {
-      return `Proxy. Admin ${toChecksumAddress(admin)} can swap the code.`;
+      return "Admin can swap the code. See Contract facts.";
     }
     return "Proxy. Can swap the code.";
   }

@@ -94,7 +94,8 @@ describe("plugin board (UI v2 §5.1)", () => {
     expect(tiles).toHaveLength(13);
     expect(html).toContain("Checks");
     expect(html).toContain("Owner powers");
-    expect(html).toContain("Tools");
+    expect(html).not.toMatch(/<h[1-6][^>]*>Tools<\/h[1-6]>/);
+    expect(html).not.toContain("<summary>Tools</summary>");
     for (const word of ["Found · High", "Found", "Can&#x27;t tell", "Not found"]) {
       expect(html).toContain(word);
     }
@@ -228,7 +229,8 @@ describe("plugin board (UI v2 §5.1)", () => {
         : result,
     );
     const html = renderToString(<PluginBoard address={ADDRESS} plugins={PLUGINS} results={hard} />);
-    expect(html).toContain("Can&#x27;t tell (<!-- -->7<!-- -->)");
+    expect(html).toContain("Can&#x27;t tell (7)");
+    expect(html).toContain("7 can&#x27;t tell");
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('aria-controls="cant-tell-tiles"');
     // Grouped tiles stay in the DOM inside the collapsed body.

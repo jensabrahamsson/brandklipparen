@@ -130,7 +130,7 @@ export function PluginTile({
   const counted = useCountUp(evidenceCount, 600);
   // A quiet tile drops its body when the status word already says it.
   const body: string | null = status === "renounced"
-    ? `${copy.title} no longer counts.`
+    ? null
     : found ? copy.foundLine(payloads) : tileQuietBody(copy, state);
   const displayState: PluginState = isRanTool
     ? "ran"

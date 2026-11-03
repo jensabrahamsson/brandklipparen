@@ -7,7 +7,7 @@ import type { ExplanationClaim, Signal } from "../types.ts";
 
 const SUMMARY_MAX = 200;
 
-const CUT_MARKERS: readonly string[] = ["Can change:", "Evidence:"];
+const CUT_MARKERS: readonly string[] = ["Can change:", "Holds now:", "Evidence:"];
 
 // First visible text of a claim: the sentences before the change marker
 // and the evidence list, capped so a summary never fills the screen.
@@ -19,7 +19,7 @@ export function claimSummary(text: string): string {
       summary = summary.slice(0, at);
     }
   }
-  summary = summary.replace(/\s+/g, " ").trim();
+  summary = summary.replace(/\s*\(in\s+`?0x[0-9a-f]+`?\)/gi, "").replace(/0x[0-9a-f]+/gi, "not set").replace(/\s+/g, " ").trim();
   if (summary.length > SUMMARY_MAX) {
     summary = `${summary.slice(0, SUMMARY_MAX - 1).trimEnd()}…`;
   }

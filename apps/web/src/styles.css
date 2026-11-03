@@ -902,7 +902,7 @@ a.chip {
    is a stretched link; the copy button sits above it (z-index on
    .copy-btn) so a copy click never navigates. */
 .feed-section {
-  margin-top: 56px;
+  margin-top: 24px;
   min-width: 0;
 }
 
@@ -1178,12 +1178,13 @@ a.chip {
 .feed-score {
   display: inline-flex;
   align-items: center;
+  flex-basis: 100%;
 }
 
 /* U-12 (P9): the owner-power chip replaces the score bar in feed rows.
    The bar never paints here; rows keep the compact "19 · Low" text. */
 .feed-score .segs {
-  display: none;
+  display: inline-flex;
 }
 
 .feed-go {
@@ -2133,11 +2134,11 @@ a.chip {
    neutral: a green LOW beside a red Owner powers card would read as
    all-clear. Numbers and bars keep their values. */
 .gauge.floor-muted .band {
-  color: var(--dim);
+  color: #b7c2bb;
 }
 
 .gauge.low.floor-muted {
-  color: var(--dim);
+  color: #a6b1aa;
 }
 
 .gauge.low.floor-muted .bar20 i.lit {
@@ -2423,6 +2424,7 @@ a.chip {
 
 .power-chip {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   max-width: 100%;
@@ -2509,10 +2511,9 @@ a.chip {
 .power-chip .power-name {
   font-size: 14px;
   font-weight: 600;
-  white-space: nowrap;
+  white-space: normal;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .power-chip .power-tag {
@@ -2605,8 +2606,8 @@ a.chip {
 
   .power-chip .power-name {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow: visible;
+    text-overflow: clip;
   }
 
   .power-chip .power-tag {

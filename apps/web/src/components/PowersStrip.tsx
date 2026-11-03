@@ -7,8 +7,6 @@
 // count. The summary never uses a "·" row, so the meta-separator scan
 // keeps owning middots.
 import type { JSX } from "react";
-import { CopyButton } from "./CopyButton.tsx";
-import { toChecksumAddress } from "../lib/checksumAddress.ts";
 import type { AnalyzeSuccess } from "../types.ts";
 import { Explain } from "./Explain.tsx";
 import { Pictogram } from "./Pictogram.tsx";
@@ -127,23 +125,13 @@ export function PowersStrip({
   // D-4: the summary goes away exactly when the chips plus the link
   // already carry every count. The counts stay in the chips'
   // accessible names.
-  const summary = collapseCantTell ? null : powersSummaryCopy({ found, extended, cantTell, floor, renounced });
+  const summary = collapseCantTell || renounced > 0 ? null : powersSummaryCopy({ found, extended, cantTell, floor, renounced });
   return (
     <div className="powers" data-testid="powers-strip">
       <p className="powers-kicker">
         <span>Owner powers</span> <Explain explainKey="powers:extended" label="Owner powers" />
       </p>
-      {ownerState?.status === "renounced" && ownerState.address !== null && ownerState.getter !== null ? (
-        <p className="powers-renounced">
-          Owner renounced — {ownerState.getter} returns {toChecksumAddress(ownerState.address)} at block{" "}
-          {ownerState.block}, so these setters can no longer be called.{" "}
-          <CopyButton
-            value={toChecksumAddress(ownerState.address)}
-            label="Copy owner address"
-            testId="copy-renounced-owner-address"
-          />
-        </p>
-      ) : ownerState?.status === "unknown" && ownerState.reason.includes("could not be read") ? (
+      {ownerState?.status === "unknown" && ownerState.reason.includes("could not be read") ? (
         <p className="powers-renounced">
           Owner could not be read at block {ownerState.block}, so the score floor still applies.
         </p>
@@ -165,7 +153,6 @@ export function PowersStrip({
                   />
                 </span>
                 <span className="power-name">{tile.copy.title}</span>
-                {status === "renounced" ? <span className="power-tag">Owner renounced</span> : null}
                 {status === "floor" ? (
                   <span className="power-tag">Sets score floor</span>
                 ) : null}

@@ -166,7 +166,8 @@ export function StartPage({
   // label stays in each list's own count line.
   const liveCountLabel = liveCount === null ? null : `${liveCount.total}`;
   const marketCountLabel = marketCount === null ? null : `${marketCount.total}`;
-  const showTabs = marketAvailable && !wide;
+  const hasMarketItems = marketCount !== null && marketCount.total > 0;
+  const showTabs = marketAvailable && hasMarketItems && !wide;
 
   const submit = (event: { preventDefault: () => void }): void => {
     event.preventDefault();
@@ -233,7 +234,7 @@ export function StartPage({
             <em>you swap.</em>
           </h1>
           <p className="hero-sub">
-            See what the owner can do to you. Paste a token address. Answer in seconds.
+            Paste a token address. See what the owner can do to you.
           </p>
           <form onSubmit={submit} noValidate className="prompt">
             <div className="field">
@@ -348,32 +349,10 @@ export function StartPage({
           </ul>
         </section>
       ) : null}
-      {wide && marketAvailable ? (
-        <div className="feed-cols">
-          <LiveTokens
-            apiKey={apiKey}
-            marketByToken={marketByToken}
-            tabbed={false}
-            hidden={false}
-            onCount={onLiveCount}
-            onTokens={onLiveTokens}
-          />
-          <MarketList
-            apiKey={apiKey}
-            recentByToken={recentByToken}
-            liveTokens={liveTokens}
-            tabbed={false}
-            hidden={false}
-            onCount={onMarketCount}
-            onMarket={onMarket}
-            onUnavailable={onMarketUnavailable}
-          />
-        </div>
-      ) : (
-        <>
-          {showTabs ? (
-            <FeedTabs active={feedTab} onSelect={onSelectTab} liveCount={liveCountLabel} marketCount={marketCountLabel} />
-          ) : null}
+      {showTabs ? (
+        <FeedTabs active={feedTab} onSelect={onSelectTab} liveCount={liveCountLabel} marketCount={marketCountLabel} />
+      ) : null}
+      <div className={wide && marketAvailable && hasMarketItems ? "feed-cols" : undefined}>
           <LiveTokens
             apiKey={apiKey}
             marketByToken={marketByToken}
@@ -382,20 +361,17 @@ export function StartPage({
             onCount={onLiveCount}
             onTokens={onLiveTokens}
           />
-          {marketAvailable ? (
-            <MarketList
-              apiKey={apiKey}
-              recentByToken={recentByToken}
-              liveTokens={liveTokens}
-              tabbed={showTabs}
-              hidden={showTabs && feedTab !== "market"}
-              onCount={onMarketCount}
-              onMarket={onMarket}
-              onUnavailable={onMarketUnavailable}
-            />
-          ) : null}
-        </>
-      )}
+          {marketAvailable ? <MarketList
+            apiKey={apiKey}
+            recentByToken={recentByToken}
+            liveTokens={liveTokens}
+            tabbed={showTabs}
+            hidden={showTabs && feedTab !== "market"}
+            onCount={onMarketCount}
+            onMarket={onMarket}
+            onUnavailable={onMarketUnavailable}
+          /> : null}
+      </div>
       <PageFooter />
     </div>
   );

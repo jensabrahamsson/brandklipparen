@@ -119,7 +119,7 @@ test("opening a feed token returns to the top", async ({ page }) => {
   await mockFeeds(page);
   await page.setViewportSize({ width: 1280, height: 600 });
   await page.goto("/#/");
-  const row = page.locator('section[aria-label="New tokens"] a[href^="#/token/"]').first();
+  const row = page.locator(`section[aria-label="New tokens"] a[href="#/token/${LIVE_A}"]`);
   await expect(row).toBeVisible();
   await row.scrollIntoViewIfNeeded();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);

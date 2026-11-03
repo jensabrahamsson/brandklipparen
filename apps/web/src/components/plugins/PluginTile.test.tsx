@@ -113,7 +113,7 @@ describe("plugin tile compact row (R2-10)", () => {
     expect(html).toContain("Owner renounced");
     expect(html).not.toContain("Sets score floor");
     expect(html).toContain("owner renounced");
-    expect(html).toContain("Mint no longer counts.");
+    expect(html).not.toContain("Mint no longer counts.");
   });
 });
 

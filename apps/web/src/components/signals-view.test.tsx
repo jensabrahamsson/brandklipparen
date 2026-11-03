@@ -21,7 +21,7 @@ vi.mock("./plugins/EvidenceRow.tsx", async () => {
   };
 });
 
-const ADDRESS = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+const ADDRESS = "0x5ab1e0000000000000000000000000000000a001";
 
 const SIGNALS: readonly Signal[] = [
   {
@@ -39,6 +39,31 @@ const NAMES = new Map([
 ]);
 
 describe("merged score card (R2-6, D-5)", () => {
+  test("linked findings keep their titles and renounced owner copy is neutral", () => {
+    const signals: Signal[] = [
+      { kind: "hard-to-analyze", id: "obscured", risk: "rug-pull", cause: "obfuscated-structure", evidence: [] },
+      { kind: "capability", id: "owner", risk: "rug-pull", evidence: [] },
+    ];
+    const claims = [
+      { text: "An owner account controls the functions below. This raises the rug-pull risk.", signalLinks: ["owner"], temporality: { kind: "can-change-unknown" as const } },
+      { text: "The code structure resists direct reading. Holds now: the stored value is 0x00000000, read at block 1.", signalLinks: ["obscured"], temporality: { kind: "applies-now" as const } },
+    ];
+    const html = renderToString(<SignalRows signals={signals} claims={claims} ownerRenounced expert={false} address={ADDRESS} codeHash="" apiKey="" names={NAMES} />);
+    expect(html).toContain("Obfuscated code</p><p class=\"claim-text\">The code structure resists direct reading.");
+    expect(html).toContain("Owner renounced. These functions can no longer be called.");
+    expect(html).not.toContain("owner account controls");
+    expect(html).not.toContain("0x00000000");
+    expect(html).toContain(">Info</span>");
+  });
+  test("an unmatched signal cannot consume a later linked claim", () => {
+    const signals: Signal[] = [
+      { kind: "capability", id: "other", risk: "rug-pull", evidence: [] },
+      { kind: "hard-to-analyze", id: "obscured", risk: "rug-pull", cause: "obfuscated-structure", evidence: [] },
+    ];
+    const claims = [{ text: "The code structure resists direct reading.", signalLinks: ["obscured"], temporality: { kind: "can-change-unknown" as const } }];
+    const html = renderToString(<SignalRows signals={signals} claims={claims} expert={false} address={ADDRESS} codeHash="" apiKey="" names={NAMES} />);
+    expect(html).toContain('Obfuscated code</p><p class="claim-text">The code structure resists direct reading.');
+  });
   test("r26_single_card_merges_claim_and_signal_with_severity_rail", () => {
     const html = renderToString(
       <ExplanationList
@@ -455,11 +480,8 @@ describe("why this score rows (R3 D-11)", () => {
         }}
       />,
     );
-    expect(html).toContain("Owner powers may exist in code, but the owner is renounced");
-    expect(html).toContain("owner()");
-    expect(html).toContain("0x0000000000000000000000000000000000000000");
-    expect(html).toContain("24000000");
-    expect(html).toContain('aria-label="Copy owner address"');
+    expect(html).not.toContain("0x0000000000000000000000000000000000000000");
+    expect(html).toContain("Nothing raised the score.");
   });
 
   test("r3_d11_high_band_keeps_filled_tags_and_expert_copies", () => {

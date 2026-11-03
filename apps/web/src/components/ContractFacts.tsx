@@ -95,8 +95,7 @@ function proxyWhy(proxy: AnalyzeSuccess["proxy"]): string {
   if (proxy.kind === "eip1967" || proxy.kind === "zos" || proxy.kind === "legacy-zos") {
     const info = proxyAdminInfo(proxy);
     if (info !== null) {
-      const kindWord = info.kind === "eoa" ? "eoa" : info.kind;
-      return `Proxy. Admin ${toChecksumAddress(info.address)} (${kindWord}) can swap the code.`;
+      return "Admin can swap the code. See Proxy admin.";
     }
   }
   return "Proxy. Admin not read. Can swap the code.";
@@ -375,6 +374,19 @@ export function ContractFacts({
             value={proxyDisplay(result.proxy.kind)}
             why={proxyWhy(result.proxy)}
           />
+          {result.ownerState?.status === "renounced" && result.ownerState.address !== null ? (
+            <AddressFact
+              icon="owner"
+              label="Owner"
+              value={toChecksumAddress(result.ownerState.address)}
+              copyLabel="Copy owner address"
+              copyTestId="copy-facts-owner"
+              valueTestId="fact-owner-address"
+              why={`${result.ownerState.getter ?? "Owner"} read at block ${result.ownerState.block}. These owner powers are inactive.`}
+            >
+              <AddressValue value={toChecksumAddress(result.ownerState.address)} testId="fact-owner-address-value" />
+            </AddressFact>
+          ) : null}
           {proxyAdmin === null ? null : (
             <AddressFact
               icon="contract"
@@ -445,7 +457,7 @@ export function ContractFacts({
             value={result.modelVersion}
             why="Version of the scoring model."
           />
-          {variant === null ? null : (
+          {variant === null || result.ownerState?.status === "renounced" ? null : (
             <ShortFact
               icon="owner"
               label="Owner"

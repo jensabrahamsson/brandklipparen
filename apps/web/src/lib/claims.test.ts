@@ -23,6 +23,9 @@ function testClaim(text: string, signalLinks: readonly string[]): ExplanationCla
 }
 
 describe("claim summaries (S-116)", () => {
+  test("removes raw values and selector fragments from visible findings", () => {
+    expect(claimSummary("Calls other contracts (in `0x00000000`). Holds now: the stored value is 0x00000000.")).toBe("Calls other contracts.");
+  });
   test("s116_claim_summary_keeps_sentences_before_can_change", () => {
     const text =
       "The contract code lets an account move funds out of the contract. " +

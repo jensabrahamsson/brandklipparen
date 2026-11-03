@@ -195,7 +195,7 @@ test("k103_token_page_shows_score_as_number_and_word", async ({ page }) => {
   await expect(page.locator('section[aria-label="Combined score"] .score-dial .bandtag')).toHaveText("HIGH");
   await expect(page.getByText("Honeypot", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("91%", { exact: true })).toBeVisible();
-  await expect(page.locator("#cant-tell > summary")).toContainText("Can't tell");
+  await expect(page.locator("#cant-tell > summary")).toContainText("Beyond the code");
   // U-3 hero diet: gauge reasons hide at >=1100, so the claim sentence is
   // asserted inside "Why this score" where it always renders.
   const whyCard = page.locator('section[aria-label="Why this score"]');

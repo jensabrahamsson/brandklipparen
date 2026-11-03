@@ -10,7 +10,7 @@ export function CantTellPanel({ entries }: { readonly entries: readonly CantTell
     <details className="cant-tell" id="cant-tell" tabIndex={-1}>
       <summary className="cant-tell-summary">
         <Pictogram name="canttell" size={20} />
-        <span>Can&apos;t tell ({entries.length})</span>
+        <span>Beyond the code ({entries.length})</span>
       </summary>
       <p className="muted" style={{ margin: "0 0 12px" }}>
         Not in the score.

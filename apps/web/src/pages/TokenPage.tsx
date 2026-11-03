@@ -489,7 +489,7 @@ function AssessedView({
   // deterministic floor drives the score — or when the owner is
   // renounced — so a HIGH score never sits beside green model cards
   // with no explanation.
-  const hasOwnerCard = result.scoreFloor !== undefined || result.ownerState?.status === "renounced";
+  const hasOwnerCard = result.scoreFloor !== undefined;
   // R2-5 (D-17): glue the verdict "?" to the last headline word, so the
   // trigger never wraps onto its own line. The head keeps a normal
   // space so the line can still break before the final word.
@@ -601,7 +601,7 @@ function AssessedView({
                 <Explain explainKey="score:gauges" label="Rug · Honeypot · Bot pump" />
               </h2>
               {hasOwnerCard ? (
-                <p className="gauges-caption">Pattern model · history-based estimate</p>
+                <p className="gauges-caption">Estimate</p>
               ) : null}
               <div className={`gauges gauges-hero${hasOwnerCard ? " has-floor" : ""}`}>
                 {hasOwnerCard ? (
@@ -613,7 +613,9 @@ function AssessedView({
                   // A quiet analysis prints the usual-rate line on the
                   // first gauge only, never three times (R3 D-11).
                   const reason =
-                    top === undefined
+                    result.ownerState?.status === "renounced" && risk === "rug-pull"
+                      ? "History-based estimate."
+                      : top === undefined
                       ? !heroHasSignals && riskIndex > 0
                         ? ""
                         : emptyGaugeReason(heroHasSignals)
@@ -626,7 +628,7 @@ function AssessedView({
                       signalCount={count}
                       reason={reason}
                       uncalibrated={risk === "bot-pump"}
-                      mutedBand={result.scoreFloor !== undefined}
+                      mutedBand={riskBand(result.score).word === "High"}
                     />
                   );
                 })}
@@ -970,6 +972,9 @@ export function meaningSentence(
   ownerTiles: readonly BoardTile[] = [],
 ): string {
   const word = riskWord(result.score);
+  if (result.ownerState?.status === "renounced") {
+    return `${word}. Owner renounced.`;
+  }
   // SCORE-6: every clause reads the single power status, so the hero
   // sentence agrees with the hero chips and the grid for the same
   // token. A floored tile counts as controlled; a renounced-lifted

@@ -71,24 +71,23 @@ type RowPair = {
   readonly claim: ExplanationClaim | null;
 };
 
-// Pair each signal with its claim by risk, then by position (S-116):
-// duplicate signal ids can never misattribute evidence because ids are
-// never the lookup key. Claims left over after pairing render as extra
-// rows with the severity their own text names.
+// Explicit links take precedence. Unlinked legacy claims may match by risk
+// or position, but a claim linked to another signal must never be borrowed.
+// Each claim is used once, including when signal ids repeat.
 function pairRows(signals: readonly Signal[], claims: readonly ExplanationClaim[]): readonly RowPair[] {
   const used = new Array<boolean>(claims.length).fill(false);
   const rows: RowPair[] = signals.map((signal, signalIndex) => {
     const needle = signal.risk.toLowerCase();
-    let pick = -1;
+    let pick = claims.findIndex((claim, index) => !used[index] && claim.signalLinks.includes(signal.id));
     for (let index = 0; index < claims.length; index += 1) {
-      if (!used[index] && (claims[index] as ExplanationClaim).text.toLowerCase().includes(needle)) {
+      if (pick < 0 && !used[index] && (claims[index] as ExplanationClaim).signalLinks.length === 0 && (claims[index] as ExplanationClaim).text.toLowerCase().includes(needle)) {
         pick = index;
         break;
       }
     }
     if (pick < 0) {
       for (let index = 0; index < claims.length; index += 1) {
-        if (!used[index]) {
+        if (!used[index] && (claims[index] as ExplanationClaim).signalLinks.length === 0) {
           pick = index;
           break;
         }
@@ -171,6 +170,7 @@ export function SignalRows({
   apiKey,
   names,
   bandHigh,
+  ownerRenounced,
   block,
 }: {
   readonly signals: readonly Signal[];
@@ -185,6 +185,7 @@ export function SignalRows({
   // own alarm, so filled severity tags render only on High tokens;
   // Low and Elevated tokens get outline tags (round-3 review D-11).
   readonly bandHigh?: boolean | undefined;
+  readonly ownerRenounced?: boolean | undefined;
 }): JSX.Element {
   const filled = bandHigh === true;
   const rows = pairRows(signals, claims);
@@ -195,12 +196,13 @@ export function SignalRows({
         {rows.map((row, index) => {
           const signal = row.signal;
           const claim = row.claim;
+          const inactive = ownerRenounced === true && claim !== null && /An owner account controls the functions below/i.test(claim.text);
           const severity = signal?.severity ?? (claim === null ? "medium" : severityFromClaim(claim.text));
           const sevClass = severityClass(severity);
           const strength = signalStrengthWord(severity);
           const key = signal === null ? `claim-${index}` : signalKey(signal, row.signalIndex);
           const title = signal === null ? null : signalTitle(signal);
-          const sentence =
+          const sentence = inactive ? "Owner renounced. These functions can no longer be called." :
             claim === null
               ? signal === null
                 ? ""
@@ -210,15 +212,15 @@ export function SignalRows({
           // (round-3 review D-11), so the body renders only when it says
           // more than the title.
           const body = sentence === "" || sentence === title ? null : sentence;
-          const tag = signal === null ? strength : `${riskLabel(signal.risk)} · ${strength.toLowerCase()}`;
+          const tag = inactive ? "Info" : signal === null ? strength : `${riskLabel(signal.risk)} · ${strength.toLowerCase()}`;
           const entries = signal?.evidence ?? [];
           return (
-            <li key={key} className={`why-row sev-${sevClass}`}>
+            <li key={key} className={`why-row sev-${inactive ? "low" : sevClass}`}>
               <article id={`signal-${key}`} className="why-article">
-                <span className={`sev ${sevClass}${filled ? "" : " ghost"}`}>{tag}</span>
+                <span className={inactive ? "sev ghost" : `sev ${sevClass}${filled ? "" : " ghost"}`}>{tag}</span>
                 {title === null ? null : <p className="why-title">{title}</p>}
                 {body === null ? null : <p className="claim-text">{renderInlineCode(body)}</p>}
-                {claim === null ? null : <Temporality claim={claim} />}
+                {claim === null || inactive ? null : <Temporality claim={claim} />}
                 {entries.length === 0 ? null : (
                   <details className="why-evidence">
                     <summary>

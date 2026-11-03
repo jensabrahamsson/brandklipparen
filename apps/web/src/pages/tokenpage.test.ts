@@ -317,7 +317,7 @@ describe("score-floor verdict agreement (SCORE-4)", () => {
       throw new Error("fixture must assess");
     }
     const tiles = [ownerTile("blacklist", "Blacklist", "extended", [{ fact: "blacklist", proof: "extended" }])];
-    expect(meaningSentence(result, tiles)).toBe("Low. Owner renounced. Blacklist lifted.");
+    expect(meaningSentence(result, tiles)).toBe("Low. Owner renounced.");
   });
 });
 
