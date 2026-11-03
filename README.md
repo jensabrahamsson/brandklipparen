@@ -408,6 +408,8 @@ change as the project is built and evaluated.
 - [Infrastructure](docs/infrastructure.md)
 - [Threat model](docs/threat-model.md)
 
+An independent source-level security audit found 0 confirmed vulnerabilities. Its three open leads (demo key in web bundles, shared rate budget, one-time chain id check) were fixed and covered by tests.
+
 ## License
 
 Licensed under Apache-2.0. See LICENSE and NOTICE.

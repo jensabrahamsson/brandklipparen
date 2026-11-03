@@ -9,9 +9,7 @@ was delegated and checked, and where the first approach failed.
 - One person, the owner, set the goals and the boundaries.
 - The owner made every product decision.
 - AI agents did the implementation and the review.
-- About 95 percent of the code was written by Meta's Muse
-  models: `muse-spark-1.3` for most units, and larger Muse
-  models for hard units.
+- In the final build phase, Meta's Muse models wrote 76 of the 82 logged work units: `muse-spark-1.3` for most units, and larger Muse models for hard units.
 - When the weekly Muse quota ran out on the final evening,
   other models finished the last units: merges, the copy pass
   and the docs.
