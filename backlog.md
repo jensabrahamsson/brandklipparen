@@ -37,7 +37,7 @@ code them now.
 - [ ] Read the official hackathon rules when published and accept them.
 - [ ] Create new API keys in Jens Abrahamsson's name for this project (RPC and any other provider keys; least privilege, per environment).
 - [ ] Create the private repo under jensabrahamsson; make it public on 4/11 ahead of submission (K-403, K-406).
-- [x] Knowledge note on bytecode scanning is done (`kunskap/bytecode-forskning.md`, `kunskap/relaterat-arbete.md`).
+- [x] Knowledge note on bytecode scanning is done (owner's private research notes, not published).
 - [x] Design sketches and identity are done (25/10, DEXTools-inspired but better, horse identity; see `design/README.md`).
 - [x] Architecture and MVP plan are done through `docs/requirements.md`, `docs/architecture.md`, `docs/infrastructure.md` and `docs/threat-model.md`.
 - [x] No code before kickoff; 25–26/10 is documents and design only (K-404).

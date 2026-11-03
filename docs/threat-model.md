@@ -493,7 +493,7 @@ engine or the fast path's extraction consume a disproportionate
 amount of CPU, memory, time or output: huge contracts up to
 the operational limit for `Bytecode` as per A-10 and A-17,
 pathological jump tables and control flows, deeply nested or
-obfuscated structures as per `kunskap/bytecode-forskning.md` and
+obfuscated structures and
 output that grows far beyond the input size. A successful exhaustion
 binds the deepening and, with shared resources, parallel analyses
 during the assessment period.
@@ -2371,8 +2371,7 @@ section 1:
   well-formed responses rests on the assumption below.
 - Obfuscation that decompiles with valid form and changed
   semantics gives missed signals. The response carries an uncertainty flag and
-  the hard-to-analyze code signal where the structure deviates, as per
-  `kunskap/bytecode-forskning.md`.
+  the hard-to-analyze code signal where the structure deviates.
 - Muse phrases with a wrong nuance within a valid schema from
   the provider. Signal links as per K-304, provider and model
   marking per K-305 and the template text as a comparison keep every claim

@@ -8,8 +8,7 @@ requirements (K-IDs). Architecture rules (A-xx) live in
 in `docs/infrastructure.md`, and threats with countermeasures (H-xx,
 M-xx) in `docs/threat-model.md`. Every story in `backlog.md` points to
 at least one K-ID here. Background lives in `ide.md`,
-`kunskap/bytecode-forskning.md`, `kunskap/relaterat-arbete.md` and
-`design/README.md`.
+the owner's private research notes (not published), and `design/README.md`.
 
 Format per requirement: the heading gives the ID, name and priority.
 The project sentence describes the behaviour positively. Each acceptance
@@ -1367,7 +1366,7 @@ version, measures and known limitations.
   and the measures from K-205 and K-206. Verification: review test
   `k208_model_card_has_period_data_splits_metrics`.
 - The card lists known limitations, for example coverage against the
-  taxonomy in `kunskap/bytecode-forskning.md`. Verification: review
+  taxonomy in the owner's private research notes (not published). Verification: review
   `k208_model_card_lists_known_limitations`.
 - The card is linked from the token page's calibration line and from
   the API response. Verification: e2e test

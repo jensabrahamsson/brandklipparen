@@ -4,7 +4,7 @@
 |---|---|
 | 2026-10-24 | The project is scoped as "how far you get with bytecode alone". |
 | 2026-10-24 | Context folder `~/kod/hackathon` created. |
-| 2026-10-24 | Niche: broad, explainable risk scoring for ERC-20 at deploy from bytecode alone (see kunskap/relaterat-arbete.md). |
+| 2026-10-24 | Niche: broad, explainable risk scoring for ERC-20 at deploy from bytecode alone (see the owner's private research notes, not published). |
 | 2026-10-24 | Two focuses: a strong bytecode model and fantastic UX/UI. |
 | 2026-10-24 | UI: DEXTools-inspired but better; prototype with mock data built 25/10. |
 | 2026-10-24 | Prompt for the UI prototype in prompter/ui-prototyp.md; runs 25/10 10:00 if the quota lasts. |
