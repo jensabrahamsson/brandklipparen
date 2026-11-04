@@ -4,9 +4,9 @@ Generated 2026-11-03T21:40:42.177Z against Ethereum mainnet, 20 tokens run one a
 
 | Token | Status | Steps used | Model calls | Verdict | Sentences kept / dropped | Score | Score identical with and without Muse | Provider tokens | 8000-limit units | Time | Log |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| USDT (reused) | done | 5 | 6 | The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] An owner account controls priv... | 4 / 0 | 60 | yes | 49546 | 907 | 48.6 s | [json](0xdAC17F958D2ee523a2206206994597C13D831ec7.json) |
-| USDC (reused) | done | 1 | 2 | An owner account controls privileged functions. [E:signal:0xcc0a6bf4ceb3aa391e1bd2ec001ea8dfb16e4e76a75fb910f8c61f2aba790da3] The owner c... | 4 / 0 | 60 | yes | 16269 | 608 | 21.1 s | [json](0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48.json) |
-| DAI (reused) | done | 2 | 3 | The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract can write storage... | 3 / 0 | 60 | yes | 19002 | 525 | 24.1 s | [json](0x6B175474E89094C44Da98b954EedeAC495271d0F.json) |
+| USDT (earlier run) | done | 5 | 6 | The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] An owner account controls priv... | 4 / 0 | 60 | yes | 49546 | 907 | 48.6 s | [json](0xdAC17F958D2ee523a2206206994597C13D831ec7.json) |
+| USDC (earlier run) | done | 1 | 2 | An owner account controls privileged functions. [E:signal:0xcc0a6bf4ceb3aa391e1bd2ec001ea8dfb16e4e76a75fb910f8c61f2aba790da3] The owner c... | 4 / 0 | 60 | yes | 16269 | 608 | 21.1 s | [json](0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48.json) |
+| DAI (earlier run) | done | 2 | 3 | The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract can write storage... | 3 / 0 | 60 | yes | 19002 | 525 | 24.1 s | [json](0x6B175474E89094C44Da98b954EedeAC495271d0F.json) |
 | LINK | done | 1 | 2 | The contract exposes standard ERC-20 transfer and transferFrom functions. [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklippa... | 4 / 0 | 60 | yes | 9503 | 640 | 15.1 s | [json](0x514910771AF9Ca656af840dff83E8264EcF986CA.json) |
 | UNI | done | 7 | 8 | A function matching the mint selector was found in the bytecode. [E:dev.brandklipparen.decompiler:0x40c10f19] Standard token functions fo... | 3 / 0 | 30 | yes | 58273 | 1072 | 57.7 s | [json](0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984.json) |
 | PEPE | done | 5 | 6 | The code includes an owner-controlled setRule function which raises medium rug-pull risk, but no controlling account is proven and the co... | 3 / 0 | 24 | yes | 41110 | 1127 | 42.0 s | [json](0x6982508145454Ce325dDbE47a25d4ec3d2311933.json) |
@@ -24,6 +24,8 @@ Generated 2026-11-03T21:40:42.177Z against Ethereum mainnet, 20 tokens run one a
 | NEW10 | done | 7 | 8 | The code includes a burn capability via burn(uint256) and function 0x79ba5097 that can change state later with no controlling account pro... | 4 / 0 | 23 | yes | 50723 | 1379 | 47.5 s | [json](0x9a0af943fcad097f276c4b10fa4f497afa3629d6.json) |
 | NEW11 | done | 3 | 4 | An owner account controls privileged functions, which raises rug-pull risk at medium severity and can change later with no controlling ac... | 4 / 0 | 29 | yes | 27498 | 1326 | 31.8 s | [json](0x798d1be841a82a273720ce31c822c61a67a601c3.json) |
 | NEW12 | done | 2 | 3 | The bytecode exposes standard ERC-20 metadata and supply views for name, symbol, decimals and totalSupply. [E:dev.brandklipparen.decompil... | 2 / 0 | 19 | yes | 9919 | 742 | 12.5 s | [json](0x8ebc5b9cc678aa85953a1481163bca5e8f30629f.json) |
+
+Rows marked (earlier run) come from an earlier run of the same script and limits; they were not re-run, so their JSON has "reused": false.
 
 ## Totals and averages
 
@@ -47,3 +49,7 @@ None. Every token finished with a cited conclusion.
 - Limits used: 8 steps, 8000 units and 60 s per investigation, plus a 5 s per-tool limit. Set explicitly in the script.
 - The 8000 limit is not a provider token count. The app charges each accepted decision its text length (rationale for a tool step, draft for the conclusion) plus 10, and stops at 8000 units. The column 8000-limit units shows that sum. Prompt tokens and model reasoning tokens are not counted against it. The Provider tokens column is the provider's own usage figure, summed over every call of the run, and is not capped by 8000.
 - The completion request asks the provider for at most min(8192, units left), so late in a run the allowance can be small.
+
+## Known limitations
+
+- Known false positives: LINK and DAI score 60 (High) because the blacklist detector flags them, but neither token lets an owner block holders. LINK's cited function is `transferAndCall`. Muse repeated the finding instead of catching it; the citation check only proves a claim cites evidence, not that the evidence is right.
