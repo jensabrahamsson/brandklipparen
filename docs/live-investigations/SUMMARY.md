@@ -4,9 +4,9 @@ Generated 2026-11-03T21:40:42.177Z against Ethereum mainnet, 20 tokens run one a
 
 | Token | Status | Steps used | Model calls | Verdict | Sentences kept / dropped | Score | Score identical with and without Muse | Provider tokens | 8000-limit units | Time | Log |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| USDT (earlier run) | done | 5 | 6 | The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] An owner account controls priv... | 4 / 0 | 60 | yes | 49546 | 907 | 48.6 s | [json](0xdAC17F958D2ee523a2206206994597C13D831ec7.json) |
-| USDC (earlier run) | done | 1 | 2 | An owner account controls privileged functions. [E:signal:0xcc0a6bf4ceb3aa391e1bd2ec001ea8dfb16e4e76a75fb910f8c61f2aba790da3] The owner c... | 4 / 0 | 60 | yes | 16269 | 608 | 21.1 s | [json](0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48.json) |
-| DAI (earlier run) | done | 2 | 3 | The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract can write storage... | 3 / 0 | 60 | yes | 19002 | 525 | 24.1 s | [json](0x6B175474E89094C44Da98b954EedeAC495271d0F.json) |
+| USDT (pilot run) | done | 5 | 6 | The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] An owner account controls priv... | 4 / 0 | 60 | yes | 49546 | 907 | 48.6 s | [json](0xdAC17F958D2ee523a2206206994597C13D831ec7.json) |
+| USDC | done | 1 | 2 | An owner account controls privileged functions. [E:signal:0xcc0a6bf4ceb3aa391e1bd2ec001ea8dfb16e4e76a75fb910f8c61f2aba790da3] The owner c... | 4 / 0 | 60 | yes | 16269 | 608 | 21.1 s | [json](0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48.json) |
+| DAI | done | 2 | 3 | The owner can stop chosen wallets from sending tokens. [E:dev.brandklipparen.blacklist:blacklist-extended] The contract can write storage... | 3 / 0 | 60 | yes | 19002 | 525 | 24.1 s | [json](0x6B175474E89094C44Da98b954EedeAC495271d0F.json) |
 | LINK | done | 1 | 2 | The contract exposes standard ERC-20 transfer and transferFrom functions. [E:dev.brandklipparen.decompiler:0xa9059cbb] [E:dev.brandklippa... | 4 / 0 | 60 | yes | 9503 | 640 | 15.1 s | [json](0x514910771AF9Ca656af840dff83E8264EcF986CA.json) |
 | UNI | done | 7 | 8 | A function matching the mint selector was found in the bytecode. [E:dev.brandklipparen.decompiler:0x40c10f19] Standard token functions fo... | 3 / 0 | 30 | yes | 58273 | 1072 | 57.7 s | [json](0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984.json) |
 | PEPE | done | 5 | 6 | The code includes an owner-controlled setRule function which raises medium rug-pull risk, but no controlling account is proven and the co... | 3 / 0 | 24 | yes | 41110 | 1127 | 42.0 s | [json](0x6982508145454Ce325dDbE47a25d4ec3d2311933.json) |
@@ -25,14 +25,14 @@ Generated 2026-11-03T21:40:42.177Z against Ethereum mainnet, 20 tokens run one a
 | NEW11 | done | 3 | 4 | An owner account controls privileged functions, which raises rug-pull risk at medium severity and can change later with no controlling ac... | 4 / 0 | 29 | yes | 27498 | 1326 | 31.8 s | [json](0x798d1be841a82a273720ce31c822c61a67a601c3.json) |
 | NEW12 | done | 2 | 3 | The bytecode exposes standard ERC-20 metadata and supply views for name, symbol, decimals and totalSupply. [E:dev.brandklipparen.decompil... | 2 / 0 | 19 | yes | 9919 | 742 | 12.5 s | [json](0x8ebc5b9cc678aa85953a1481163bca5e8f30629f.json) |
 
-Rows marked (earlier run) come from an earlier run of the same script and limits; they were not re-run, so their JSON has "reused": false.
+USDT comes from the pilot run (20:58 UTC) with the same script and limits; its log predates the `reused` field. All other rows come from the main run (from 21:30 UTC).
 
 ## Totals and averages
 
 - Tokens run: 20. Finished with a cited conclusion: 20. Failed or not finished: 0.
 - Model calls: 84. Muse tokens (provider usage): 510112.
 - Estimated cost: not computed (no price given).
-- Score identical with and without Muse: 20 of 20.
+- Score identical with and without Muse: 20 of 20. This is guaranteed by design (Muse cannot write the score) and covered by the test `k307_scores_and_evidence_identical_with_and_without_adapter`; the runs confirm it live.
 - Averages over finished runs: 3.2 steps, 25505.6 tokens, 28.3 s per token.
 - Total time for all runs: 565.7 s.
 

@@ -376,7 +376,7 @@ table, per-token logs and method are in
 [`docs/live-investigations/SUMMARY.md`](docs/live-investigations/SUMMARY.md).
 
 - 20 of 20 runs finished. No sentence was dropped by the citation check.
-- The risk score was identical with and without Muse in all 20 runs.
+- The risk score was identical with and without Muse in all 20 runs, as the design guarantees (Muse cannot write the score; test `k307_scores_and_evidence_identical_with_and_without_adapter`).
 - 84 model calls used 510,112 provider tokens, about 25,500 per token.
 - Known false positives: LINK and DAI score 60 (High) because the blacklist detector flags them, but neither token lets an owner block holders. LINK's cited function is `transferAndCall`. Muse repeated the finding instead of catching it; the citation check only proves a claim cites evidence, not that the evidence is right.
 
