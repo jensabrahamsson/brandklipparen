@@ -12,7 +12,7 @@ stays calm and reads the contract while the market is on fire.*
 
 How it was built: one person, a team of agents — see [docs/HOW-IT-WAS-BUILT.md](docs/HOW-IT-WAS-BUILT.md).
 
-Demo video: https://youtu.be/_Uml8aa4kKc
+Demo video: https://youtu.be/DFUeeQChwZ8
 
 Meta Global AI Developer Hackathon entry · Indie Developer track ·
 "Build for Your World".
