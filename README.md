@@ -424,14 +424,26 @@ On 30 unseen mainnet tokens, never used during development, the blacklist detect
 
 Low does not mean safe. See [docs/calibration/](docs/calibration/) for the full reports.
 
+## Security
+
+The security controls, and where each one is checked.
+
+- **Threat model.** [docs/threat-model.md](docs/threat-model.md) lists 47 threats (H-xx) and 53 countermeasures (M-xx). Each countermeasure names a K-5xx requirement and a test or check; 36 of the 53 named tests and checks are in the repo today. The top two threats for the public demo are H-01 (decompilation DoS) and H-04 (draining via expensive analysis paths).
+- **Requirements tied to tests.** The K-5xx security requirements in [docs/requirements.md](docs/requirements.md) are cited by 67 test files in `tests/` and `apps/web`.
+- **Decompiler limits.** Each decompiler run is bounded by work, not wall-clock time: it is capped at 24,576 input bytes, 1 MiB of output and 2,000,000 work steps. Over-limit input returns a typed `resource-limit` error (`src/domain/types.ts`, `src/domain/decompileV2.ts`).
+- **Rate limits and quotas.** Limits apply per key and globally: a per-minute limit per key, a per-key share of the global minute budget (50% by default) and a per-key daily quota (`src/interfaces/rest/rateLimit.ts`, test `k504_limits_hold_under_overload_and_cache_serves`). Model calls also have per-key daily caps and a global daily cap of 1,000 by default. Cached assessments are held in memory, up to 1,000 entries.
+- **API keys.** Keys are stored as salted SHA-256 hashes and compared in constant time (`src/interfaces/rest/apiKeys.ts`, test `k510_key_comparison_is_constant_time`).
+- **No HTML sinks in the web UI.** Web sources may not use `innerHTML`, `dangerouslySetInnerHTML`, `outerHTML`, `eval(` or `new Function(`. A static test enforces this (`k507_no_html_sinks_or_eval_in_web_sources`, run by `npm run test:web`). An end-to-end test checks that hostile markup in a signal id renders as text (`k507_hostile_signal_renders_as_text_only`).
+- A separate multi-agent, source-level security audit found 0 confirmed vulnerabilities. Its three open leads (demo key in web bundles, shared rate budget, one-time chain id check) were fixed and covered by tests.
+
+Not externally pen-tested; this is a tested design, not a third-party certification.
+
 ## Documentation
 
 - [Requirements](docs/requirements.md)
 - [Architecture](docs/architecture.md)
 - [Infrastructure](docs/infrastructure.md)
 - [Threat model](docs/threat-model.md)
-
-A separate multi-agent, source-level security audit found 0 confirmed vulnerabilities. Its three open leads (demo key in web bundles, shared rate budget, one-time chain id check) were fixed and covered by tests.
 
 ## License
 
